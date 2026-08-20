@@ -55,10 +55,12 @@ npx prisma migrate dev
 npm run dev
 ```
 
-Requer `DATABASE_URL` apontando para o Postgres **com o schema no fim**:
+Requer `DATABASE_URL` e `DIRECT_URL` apontando para o Postgres **com o schema
+no fim**. Em desenvolvimento local as duas podem ser idênticas:
 
 ```
-postgresql://usuario:senha@host/banco?schema=controladoria
+DATABASE_URL="postgresql://usuario:senha@host/banco?schema=controladoria"
+DIRECT_URL="postgresql://usuario:senha@host/banco?schema=controladoria"
 ```
 
 Se a URL já tiver parâmetros (ex.: `?sslmode=require`), use `&schema=controladoria`.
@@ -67,7 +69,8 @@ Se a URL já tiver parâmetros (ex.: `?sslmode=require`), use `&schema=controlad
 
 | Variável | Obrigatória | Para quê |
 |---|---|---|
-| `DATABASE_URL` | sim | Postgres, com `schema=controladoria` |
+| `DATABASE_URL` | sim | Postgres **pooled**, com `schema=controladoria` — é o que a aplicação usa |
+| `DIRECT_URL` | sim | Postgres **direto** (host sem `-pooler`), mesmo schema — só para a migração do build |
 | `JWT_SECRET` | sim | assina a sessão (pode ser o mesmo da gestão) |
 | `CRON_SECRET` | sim | autentica a rota agendada |
 | `OMIE_APP_KEY_<APELIDO>` | por conexão | credencial da conta Omie daquela empresa |
@@ -89,6 +92,11 @@ gravada no banco — o cadastro guarda apenas o nome da variável.
 Publicado na Vercel. O `vercel.json` roda `prisma migrate deploy` antes do
 build, então a migração é aplicada a cada push — inclusive a criação do schema
 `controladoria` na primeira vez.
+
+Por isso `DATABASE_URL` e `DIRECT_URL` precisam existir **antes do primeiro
+deploy**: sem elas o build falha já no `prisma generate`. E a migração usa a
+`DIRECT_URL` de propósito — o pooler do Neon roda em modo transação e não
+entrega os recursos de sessão que uma migração precisa.
 
 Um agendamento diário: `10 6 * * *` UTC (03:10 de Brasília) roda o ciclo —
 sincroniza cada empresa e audita o grupo. A geração do relatório é a última

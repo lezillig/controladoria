@@ -24,9 +24,24 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// DUAS URLs para o MESMO banco, e não uma.
+//
+// `url` é a conexão que a aplicação usa em produção: a do POOLER do Neon (host
+// com `-pooler`). Sem pool, cada função serverless abre a própria conexão e o
+// banco esgota o limite em qualquer pico.
+//
+// `directUrl` é a conexão DIRETA (host sem `-pooler`), usada só pelo
+// `prisma migrate deploy` que roda antes do build. Migração precisa de recurso
+// de sessão — advisory lock e prepared statement — que o pooler em modo
+// transação não entrega. Rodar migração pelo pooler funciona até o dia em que
+// não funciona, e o sintoma ("prepared statement already exists") não se parece
+// nem um pouco com a causa.
+//
+// Em desenvolvimento local, as duas podem apontar para a mesma URL.
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------- Enums ----------
