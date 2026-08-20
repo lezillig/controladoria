@@ -5,6 +5,8 @@ import type { IndicadorMedido } from "./bsc";
 import { PERSPECTIVAS } from "./bsc";
 import type { Narrativa } from "./aiAnalyst";
 import type { QualidadeDaBase } from "./supervisor";
+import type { PanoramaConformidade } from "@/lib/conformidade/panorama";
+import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
 
 // TEMPLATE DO RELATÓRIO DIÁRIO (e-mail).
 //
@@ -61,6 +63,7 @@ export type DadosRelatorio = {
   bsc: IndicadorMedido[];
   narrativa: Narrativa | null;
   qualidadeDaBase: QualidadeDaBase;
+  conformidade: PanoramaConformidade;
   urlSistema: string | null;
 };
 
@@ -166,6 +169,69 @@ function blocoAchado(a: AuditFinding): string {
       }
     </td></tr>
   </table>`;
+}
+
+// Bloco de conformidade: o que a revisão externa apontou e onde ela e os dados
+// se encontram. Fica no relatório, e não só na tela, porque risco apontado por
+// terceiro que não chega à diretoria produz o pior resultado possível — a
+// empresa fica com o registro de que foi avisada e sem a decisão.
+function secaoConformidade(c: PanoramaConformidade): string {
+  const partes: string[] = [];
+
+  partes.push(`
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+    <tr>
+      ${cartaoKpi("Apontamentos em aberto", fmtNumero(c.abertos), c.valorEnvolvidoCents > 0 ? `${fmtBRLCompacto(c.valorEnvolvidoCents)} envolvidos` : "De consultoria, contabilidade e auditoria")}
+      ${cartaoKpi("Graves", fmtNumero(c.criticos), "Críticos e altos sem conclusão", c.criticos > 0 ? "#b91c1c" : "#15803d")}
+    </tr>
+    <tr>
+      ${cartaoKpi("Prazo vencido", fmtNumero(c.vencidos), "Prazo combinado que passou", c.vencidos > 0 ? "#b91c1c" : "#15803d")}
+      ${cartaoKpi("Reincidentes", fmtNumero(c.reincidentes), "Mesmo ponto em 3+ competências", c.reincidentes > 0 ? "#b91c1c" : "#15803d")}
+    </tr>
+  </table>`);
+
+  if (!c.documentoEsperadoRecebido && c.competenciaEsperada) {
+    partes.push(`
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;margin-top:10px;font:400 13px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#854d0e;">
+      O documento de <strong>${esc(rotuloCompetencia(c.competenciaEsperada))}</strong> ainda não foi recebido.
+      ${c.ultimaCompetencia ? `A última competência analisada é ${esc(rotuloCompetencia(c.ultimaCompetencia))}.` : ""}
+    </div>`);
+  }
+
+  for (const a of c.prioritarios) {
+    const cor = CORES_SEVERIDADE[a.severidade] ?? CORES_SEVERIDADE.INFO;
+    const marcas = [
+      `${ROTULO_AREA[a.area] ?? a.area} · ${rotuloCompetencia(a.competencia)}`,
+      a.ocorrencias >= 3 ? `${a.ocorrencias}ª competência seguida` : null,
+      a.prazo ? `prazo ${fmtData(a.prazo)}` : "sem prazo definido",
+      a.responsavel ?? "sem responsável",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+
+    partes.push(`
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid ${BORDA};border-left:3px solid ${cor.texto};border-radius:8px;margin-top:10px;">
+      <tr><td style="padding:12px 14px;">
+        <span style="display:inline-block;background:${cor.fundo};color:${cor.texto};font:600 11px/1 -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:4px 8px;border-radius:99px;">${cor.rotulo}</span>
+        <div style="font:600 14px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_TEXTO};margin-top:8px;">${esc(a.titulo)}</div>
+        <div style="font:400 13px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#334155;margin-top:6px;">${esc(a.descricao)}</div>
+        ${a.valorEnvolvidoCents !== null ? `<div style="font:600 12px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_TEXTO};margin-top:8px;">Valor apontado: ${fmtBRL(a.valorEnvolvidoCents)}</div>` : ""}
+        <div style="font:400 12px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_SUAVE};margin-top:8px;">${esc(marcas)}</div>
+      </td></tr>
+    </table>`);
+  }
+
+  partes.push(`
+  <div style="font:400 12px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_SUAVE};margin-top:10px;">
+    <strong style="color:${CINZA_TEXTO};">${fmtNumero(c.confirmadosPeloSistema)}</strong> apontamento(s) com confirmação nos próprios dados desta auditoria ·
+    <strong style="color:${CINZA_TEXTO};">${fmtNumero(c.semCobertura)}</strong> que só a revisão externa enxerga${c.naoValidados > 0 ? ` · ${fmtNumero(c.naoValidados)} proposta(s) de leitura automática aguardando conferência` : ""}.
+  </div>`);
+
+  return secao(
+    "Conformidade e riscos externos",
+    partes.join(""),
+    "O que a consultoria, a contabilidade e a auditoria apontaram — e o que os dados confirmam."
+  );
 }
 
 export function montarAssunto(dados: DadosRelatorio): string {
@@ -314,6 +380,15 @@ export function montarHtml(dados: DadosRelatorio): string {
         "Cada item traz a ação e o valor anual estimado."
       )
     );
+  }
+
+  // ---- Conformidade (o que veio de fora) ----
+  // Só entra quando existe: um bloco fixo dizendo "nenhum documento recebido"
+  // apareceria todo dia numa empresa que não usa o módulo, e bloco que sempre
+  // diz a mesma coisa treina o leitor a pular a seção — inclusive no dia em que
+  // ela tiver conteúdo.
+  if (dados.conformidade.temModulo) {
+    partes.push(secaoConformidade(dados.conformidade));
   }
 
   // ---- Fluxo de caixa ----
@@ -465,7 +540,7 @@ export function montarHtml(dados: DadosRelatorio): string {
         ${
           dados.urlSistema
             ? `<div style="margin-top:14px;">
-                 <a href="${esc(dados.urlSistema)}/controladoria" style="display:inline-block;background:${AZUL};color:#ffffff;text-decoration:none;font:600 14px/1 -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:12px 18px;border-radius:8px;">Abrir o painel completo</a>
+                 <a href="${esc(dados.urlSistema)}/" style="display:inline-block;background:${AZUL};color:#ffffff;text-decoration:none;font:600 14px/1 -apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:12px 18px;border-radius:8px;">Abrir o painel completo</a>
                </div>`
             : ""
         }
@@ -544,8 +619,26 @@ export function montarTexto(dados: DadosRelatorio): string {
   }
   linhas.push("");
 
+  const c2 = dados.conformidade;
+  if (c2.temModulo) {
+    linhas.push("CONFORMIDADE E RISCOS EXTERNOS");
+    linhas.push(
+      `${c2.abertos} apontamento(s) em aberto · ${c2.criticos} grave(s) · ${c2.vencidos} com prazo vencido · ${c2.reincidentes} reincidente(s)`
+    );
+    if (!c2.documentoEsperadoRecebido && c2.competenciaEsperada) {
+      linhas.push(`ATENÇÃO: o documento de ${rotuloCompetencia(c2.competenciaEsperada)} ainda não foi recebido.`);
+    }
+    for (const a of c2.prioritarios) {
+      linhas.push(`- [${a.severidade}] ${a.titulo} (${ROTULO_AREA[a.area] ?? a.area}, ${rotuloCompetencia(a.competencia)})`);
+    }
+    linhas.push(
+      `${c2.confirmadosPeloSistema} com confirmação nos dados · ${c2.semCobertura} que só a revisão externa enxerga.`
+    );
+    linhas.push("");
+  }
+
   if (dados.urlSistema) {
-    linhas.push(`Painel completo: ${dados.urlSistema}/controladoria`);
+    linhas.push(`Painel completo: ${dados.urlSistema}/`);
   }
 
   return linhas.join("\n");

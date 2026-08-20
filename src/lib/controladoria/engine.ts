@@ -45,7 +45,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
       }
       agentesOk.push(agente.id);
     } catch (e) {
-      // Um agente que quebra nao pode derrubar os outros nove: o relatorio do
+      // Um agente que quebra nao pode derrubar os outros dez: o relatorio do
       // dia sai com o que deu certo e com o erro registrado, em vez de nao sair.
       errosPorAgente.push({ agente: agente.id, erro: e instanceof Error ? e.message : "erro desconhecido" });
     }
@@ -66,9 +66,21 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
   // Achado sem entidade de título (projeção de caixa, indicadores do grupo)
   // fica sem conexão — e é o correto: ele fala do grupo, não de uma empresa.
   const conexaoPorTitulo = new Map(ctx.titulos.map((t) => [t.id, { id: t.conexaoId, apelido: t.conexaoApelido }]));
+  // Apontamento de conformidade também sabe de qual empresa é — e pode
+  // legitimamente não saber: consultoria que analisa os dois CNPJs no mesmo
+  // relatório produz apontamento do grupo, e forçar uma empresa ali seria
+  // inventar uma precisão que o documento não tem.
+  const conexaoPorApontamento = new Map(
+    ctx.conformidade.apontamentos
+      .filter((a) => a.conexaoId && a.conexaoApelido)
+      .map((a) => [a.id, { id: a.conexaoId as string, apelido: a.conexaoApelido as string }])
+  );
   const resolverConexao = (achado: AchadoRevisado) => {
     if (achado.entidadeTipo === "OmieTitulo" && achado.entidadeId) {
       return conexaoPorTitulo.get(achado.entidadeId) ?? null;
+    }
+    if (achado.entidadeTipo === "ConformidadeApontamento" && achado.entidadeId) {
+      return conexaoPorApontamento.get(achado.entidadeId) ?? null;
     }
     return null;
   };

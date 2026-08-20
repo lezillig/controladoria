@@ -10,11 +10,13 @@ envia um relatório gerencial e executivo por e-mail todos os dias.
 
 ```
 Omie (Azul) ──┐
-              ├─sync D-1 por empresa──▶ espelho ──▶ 10 agentes ──▶ supervisor ──▶ achados
+              ├─sync D-1 por empresa──▶ espelho ──▶ 11 agentes ──▶ supervisor ──▶ achados
 Omie (MCZ) ───┘                            │                                        │
                                             ├──▶ analytics (DRE, caixa, comparativos)│
 gestão de motoristas ──leitura──────────────┤                                        │
 (frota, ponto, contratos)                   ├──▶ BSC (4 perspectivas, metas, faróis) │
+relatórios de consultoria ──upload──────────┤                                        │
+(risco fiscal, trabalhista, ...)            ├──▶ conformidade (apontamentos × achados)│
                                             └──▶ unit economics (custo/contrato)     │
                                                                 │                     │
                                                                 └──▶ analista (IA) ──▶ relatório diário
@@ -52,10 +54,10 @@ entregaria acesso ao ERP financeiro do grupo.
 
 A escolha por **três camadas** é o que dá confiança ao resultado:
 
-### Camada 1 — Dez agentes de domínio
+### Camada 1 — Onze agentes de domínio
 
 Determinísticos e puros: recebem o mesmo retrato dos dados, não consultam banco
-nem API, não escrevem nada. São dez porque cada um responde a uma pergunta com
+nem API, não escrevem nada. São onze porque cada um responde a uma pergunta com
 **dono diferente na empresa** — o que torna o achado endereçável a alguém.
 
 | Agente | Área | O que procura |
@@ -70,8 +72,9 @@ nem API, não escrevem nada. São dez porque cada um responde a uma pergunta com
 | `rentabilidade` | Controladoria | Margem por contrato, contrato no prejuízo, veículo fora do padrão, cobertura do rateio |
 | `oportunidades` | Controladoria | **Onde reduzir custo** (seção 5), juros evitáveis anualizados, tarifas, consolidação de fornecedores, política de alçadas sugerida |
 | `administrativo` | Administrativo | Sync atrasado ou com erro, cadastro incompleto, conta sem extrato, achados críticos sem tratativa |
+| `conformidade` | Controladoria | Prazo estourado, risco grave sem responsável, apontamento externo reincidente, apontamento confirmado pelos dados, proposta de leitura não conferida, relatório mensal não recebido, ponto cego do sistema |
 
-Um agente que quebra **não derruba os outros nove**.
+Um agente que quebra **não derruba os outros dez**.
 
 ### Camada 2 — Supervisor
 
@@ -168,13 +171,116 @@ base ainda não sustenta a conclusão, e o caminho para melhorá-la.
 
 ---
 
-## 7. Ciclo diário
+## 7. Conformidade: o que vem de fora
+
+Este sistema audita os **dados**. Uma consultoria audita a **empresa**:
+contrato, obrigação acessória, enquadramento, processo, contingência. São duas
+leituras diferentes do mesmo risco, e o valor está em cruzá-las.
+
+O menu **Conformidade** recebe o relatório mensal da consultoria (também da
+contabilidade, da auditoria externa ou de uma fiscalização), guarda o arquivo
+original como evidência e transforma o conteúdo em **apontamentos rastreáveis**
+— com área, gravidade, prazo, responsável e tratativa.
+
+### O que passa a ser possível
+
+| | |
+|---|---|
+| **Confirmação cruzada** | A consultoria aponta "juros relevantes por atraso" e o agente de contas a pagar já vinha apontando os títulos um a um. O risco deixa de ser opinião de terceiro: duas fontes independentes chegaram nele por caminhos diferentes. |
+| **Ponto cego dos dois lados** | Apontamento sem achado correspondente é coisa que este sistema não sabe ver — e talvez devesse. Achado sem apontamento é coisa que a consultoria não viu. |
+| **Reincidência** | O mesmo ponto em três meses seguidos não é três problemas: é um processo que nunca foi corrigido. É o sinal de controle interno mais forte que existe, e ele é invisível quando cada relatório é lido isolado. |
+
+### Como o arquivo vira apontamento
+
+```
+upload ──▶ arquivo guardado (SHA-256, evidência) ──▶ leitura ──▶ propostas ──▶ conferência humana ──▶ apontamento
+                                                                                       │
+                                              conciliação diária com os achados ◀───────┘
+```
+
+1. **O arquivo é guardado antes de qualquer processamento** e nunca é apagado
+   por falha de leitura. Ele é a evidência, e apontamento sem fonte verificável
+   não resiste a uma discussão com o fisco ou com um auditor.
+2. **PDF e imagem vão inteiros para o modelo**, que lê tabela e layout melhor
+   que qualquer extração de texto. `.xlsx` e `.docx` são abertos por um leitor
+   de ZIP+XML próprio, sem biblioteca de terceiros — parser de documento é uma
+   das maiores superfícies de ataque que existe, e o arquivo vem de fora.
+3. **A leitura transcreve, não julga.** Cada proposta carrega o **trecho
+   literal** do documento e a página. Sem citação verificável, o apontamento não
+   é emitido.
+4. **Máquina propõe, pessoa confirma.** Enquanto não for conferida, a proposta
+   não entra no relatório da diretoria nem conta como risco assumido pela
+   empresa — e o próprio agente cobra as que ficam esperando.
+5. **Sem `ANTHROPIC_API_KEY` o módulo funciona inteiro**, apenas sem a
+   transcrição automática: o arquivo é guardado e os apontamentos são
+   cadastrados à mão. A IA acelera a digitação; ela não é o produto.
+
+### Reincidência: como o mesmo assunto é reconhecido
+
+A chave de recorrência é o conjunto **ordenado** de palavras significativas do
+assunto — insensível à ordem da frase, porque a consultoria reescreve o mesmo
+parágrafo todo mês. E, na criação, o sistema ainda procura um assunto anterior
+da mesma área com 60% ou mais de sobreposição e **reaproveita a chave dele**:
+sem isso, "juros e multa por atraso a fornecedores" e "atraso a fornecedores
+gerando juros e multa" seriam dois problemas novos em vez de um problema de três
+meses.
+
+### Conciliação com os achados
+
+Roda todo dia, logo depois da auditoria (os achados precisam existir com os ids
+definitivos). O pareamento é **determinístico** — sobreposição de vocabulário
+mais afinidade entre a área do apontamento e a família da regra —, nunca por IA:
+é uma decisão que precisa ser explicável, reprodutível e revisável. Áreas como
+trabalhista, societário e LGPD têm afinidade **vazia de propósito**: não há
+regra correspondente aqui, e é isso que faz o apontamento cair corretamente em
+"ponto cego do sistema" em vez de ser forçado num achado qualquer.
+
+A ligação nasce como **sugestão**. Só depois que uma pessoa confirma é que ela
+vale como confirmação cruzada no relatório — semelhança de texto não é prova.
+
+### O que o agente de conformidade audita
+
+| Regra | Quando dispara |
+|---|---|
+| `CONF-PRAZO` | Prazo combinado venceu e o apontamento continua aberto |
+| `CONF-PARADO` | Risco crítico ou alto há mais de 30 dias sem prazo nem responsável |
+| `CONF-REINCIDENTE` | Mesmo assunto em 3+ competências (5+ vira crítico) |
+| `CONF-CONFIRMADO` | Apontamento com ligação **confirmada** a um achado interno |
+| `CONF-NAO-CONFERIDO` | Propostas de leitura automática esperando conferência há 3+ dias |
+| `CONF-SEM-RELATORIO` | A cadência mensal foi interrompida (só dispara onde já existe cadência) |
+| `CONF-PONTO-CEGO` | Apontamentos em aberto que nenhum achado interno cobre |
+
+Duas calibragens deliberadas: assunto já reincidente **não** vira também
+`CONF-PARADO` (um problema de três meses ocuparia quatro linhas na mesa de quem
+decide), e o teto de plausibilidade aritmética do supervisor **não se aplica** a
+`CONF-*` — uma contingência trabalhista de R$ 800 mil pode superar o total de
+títulos espelhados, e suprimi-la apagaria justamente o risco mais grave da lista.
+
+### No relatório diário e no BSC
+
+O e-mail ganha o bloco **Conformidade e riscos externos** (só aparece quando há
+o que mostrar): apontamentos em aberto, graves, com prazo vencido, reincidentes,
+os cinco prioritários e o placar do cruzamento. A ordem dos prioritários é
+prazo vencido → reincidência → gravidade: um apontamento médio que se repete há
+cinco meses interessa mais à diretoria que um alto que chegou ontem — o primeiro
+é falha de gestão, o segundo ainda é notícia.
+
+No BSC, dois indicadores em **Processos internos** (e não na perspectiva
+financeira, porque risco externo vira custo meses depois — o que se controla
+hoje é a disciplina de tratar, não o valor):
+
+- `PRO-CONFORMIDADE-PRAZO` — % dos apontamentos com prazo que ainda estão dentro dele
+- `PRO-CONFORMIDADE-GRAVES` — quantidade de riscos críticos/altos em aberto
+
+---
+
+## 8. Ciclo diário
 
 Uma única rota agendada, como máquina de estados com cursor persistido:
 
 ```
 por empresa:  cadastros → títulos → movimentos → notas
-depois:       auditoria → relatório     (grupo inteiro)
+depois:       auditoria → conciliação da conformidade → relatório     (grupo inteiro)
 ```
 
 Cada invocação trabalha ~42s, grava onde parou e dispara a próxima via
@@ -188,7 +294,7 @@ bancário e antes do expediente.
 
 ---
 
-## 8. Segurança e rastreabilidade
+## 9. Segurança e rastreabilidade
 
 - **Credenciais só em variável de ambiente**, uma por empresa. O cliente da Omie
   remove qualquer eco de `app_key`/`app_secret` das mensagens de erro antes de
@@ -212,10 +318,22 @@ bancário e antes do expediente.
 - **Leitura da gestão é só leitura**, por consultas explícitas num arquivo só.
   Para endurecer mais, `prisma/seguranca-banco.sql` cria um usuário Postgres com
   escrita apenas no schema próprio e leitura apenas nas 6 tabelas necessárias.
+- **Documento de conformidade sai por um caminho só:** a rota de download, com
+  `Content-Disposition: attachment`, `nosniff`, CSP `sandbox` e filtro por
+  empresa. Nenhuma tela, contexto de auditoria ou relatório carrega o binário —
+  o arquivo vem de fora, e abri-lo *inline* no domínio do sistema seria o
+  caminho clássico de XSS por upload.
+- **Arquivo idêntico não entra duas vezes:** o SHA-256 é chave única por
+  empresa. Além de evitar apontamento duplicado, ele prova depois que o
+  documento guardado é byte a byte o que a consultoria enviou.
+- **Exclusão de documento preserva trabalho humano:** apagam-se as propostas não
+  conferidas; apontamento que alguém validou sobrevive sem o anexo. E apontamento
+  assumido nunca é excluído — encerra-se por tratativa, com justificativa, para
+  sobrar histórico.
 
 ---
 
-## 9. O que validar na PRIMEIRA execução real contra a Omie
+## 10. O que validar na PRIMEIRA execução real contra a Omie
 
 Esta é a parte honesta: o mapeamento dos campos foi escrito a partir da
 documentação pública, e **a resposta real da conta pode trazer nomes de campo
@@ -244,7 +362,7 @@ campo e por entidade. Depois da primeira carga:
 
 ---
 
-## 10. Modelo de gestão: parâmetros que valem preencher
+## 11. Modelo de gestão: parâmetros que valem preencher
 
 Vários agentes ficam **parcialmente desligados** enquanto os parâmetros não
 existirem — e dizem isso, em vez de inventar um número:

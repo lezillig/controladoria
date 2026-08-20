@@ -4,6 +4,8 @@ import { z } from "zod";
 import { fmtBRL, fmtPercent, fmtVariacao } from "./format";
 import type { PanoramaFinanceiro } from "./analytics";
 import type { IndicadorMedido } from "./bsc";
+import type { PanoramaConformidade } from "@/lib/conformidade/panorama";
+import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
 
 // ANALISTA (camada 3) — escreve a leitura executiva do relatorio diario.
 //
@@ -62,6 +64,8 @@ Regras invioláveis:
 - Se um dado estiver ausente ou marcado como sem base comparativa, diga isso explicitamente em vez de preencher a lacuna.
 - Não repita a lista de achados: eles já vão no relatório. Seu papel é dizer o que eles significam juntos.
 - Toda ação recomendada precisa ser executável por uma pessoa específica em um prazo específico.
+- Risco apontado por revisão externa que os dados desta auditoria CONFIRMAM tem prioridade sobre indício isolado: são duas fontes independentes. Diga isso quando acontecer.
+- Apontamento externo que se repete há três meses ou mais é falha de processo, não incidente do mês. Trate-o assim.
 - Nada de linguagem motivacional, superlativos ou jargão de consultoria.
 
 Escreva em português do Brasil.`;
@@ -79,6 +83,7 @@ type EntradaAnalista = {
   }[];
   bsc: IndicadorMedido[];
   limitacoesDaBase: string[];
+  conformidade: PanoramaConformidade;
 };
 
 // Monta o texto que vai para a IA. Formatado como relatorio legivel, e nao
@@ -87,7 +92,7 @@ type EntradaAnalista = {
 // que entra e exatamente o que uma pessoa leria, fica facil auditar depois o
 // que a IA tinha em maos quando escreveu cada frase.
 function montarBriefing(entrada: EntradaAnalista): string {
-  const { panorama, achados, bsc, limitacoesDaBase } = entrada;
+  const { panorama, achados, bsc, limitacoesDaBase, conformidade } = entrada;
   const c = panorama.comparativo;
 
   const linhas: string[] = [];
@@ -158,6 +163,28 @@ function montarBriefing(entrada: EntradaAnalista): string {
         (a.valorCents ? ` — valor ${fmtBRL(a.valorCents)}` : "") +
         (a.impactoCents ? `, impacto estimado ${fmtBRL(a.impactoCents)}` : "")
     );
+  }
+
+  if (conformidade.temModulo) {
+    linhas.push("");
+    linhas.push("## Riscos apontados por revisão externa (consultoria/contabilidade/auditoria)");
+    linhas.push(
+      `- ${conformidade.abertos} em aberto, sendo ${conformidade.criticos} grave(s); ` +
+        `${conformidade.vencidos} com prazo vencido; ${conformidade.reincidentes} repetido(s) em 3 ou mais competências`
+    );
+    linhas.push(
+      `- ${conformidade.confirmadosPeloSistema} confirmado(s) pelos achados desta auditoria; ` +
+        `${conformidade.semCobertura} que nenhum agente daqui consegue ver`
+    );
+    if (!conformidade.documentoEsperadoRecebido && conformidade.competenciaEsperada) {
+      linhas.push(`- ATENÇÃO: o documento de ${rotuloCompetencia(conformidade.competenciaEsperada)} não foi recebido.`);
+    }
+    for (const a of conformidade.prioritarios) {
+      linhas.push(
+        `- [${a.severidade}] ${a.titulo} (${ROTULO_AREA[a.area] ?? a.area}, ${rotuloCompetencia(a.competencia)}` +
+          `${a.ocorrencias >= 3 ? `, ${a.ocorrencias}ª competência seguida` : ""})`
+      );
+    }
   }
 
   if (limitacoesDaBase.length > 0) {

@@ -8,6 +8,7 @@ import {
   lerMotoristas,
   lerVeiculos,
 } from "@/lib/gestao/leitura";
+import { carregarConformidade } from "@/lib/conformidade/panorama";
 import type { ContextoAuditoria } from "./types";
 import { inicioDoDia, somarDias } from "./periodos";
 
@@ -88,6 +89,7 @@ export async function carregarContexto(
     clientes,
     veiculos,
     abastecimentos,
+    conformidade,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     prisma.omieTitulo.findMany({
@@ -110,6 +112,7 @@ export async function carregarContexto(
     lerClientes(companyId),
     lerVeiculos(companyId),
     lerAbastecimentos(companyId, corteRecente),
+    carregarConformidade(companyId, conexaoId),
   ]);
 
   return {
@@ -131,6 +134,7 @@ export async function carregarContexto(
     clientes,
     veiculos,
     abastecimentos,
+    conformidade,
     // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
     // leitura (ver src/lib/gestao/leitura.ts), então só faz sentido consultá-la
     // quando as quatro já rodaram.

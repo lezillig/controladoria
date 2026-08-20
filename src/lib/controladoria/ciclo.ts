@@ -1,5 +1,6 @@
 import type { OmieConexao, OmieSyncRun } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { credencialConfigurada } from "@/lib/omie/client";
 import { executarFase, FASES, proximaFase, type FaseSync } from "@/lib/omie/sync";
 import { carregarContexto, garantirConfig } from "./contexto";
@@ -177,6 +178,12 @@ export async function executarPasso(params: {
     const ctx = await carregarContexto(companyId, run.janelaFim);
     const resultado = await executarAuditoria(ctx);
 
+    // A conciliação com os apontamentos da consultoria roda DEPOIS da
+    // auditoria, e não dentro dela: ela liga apontamento a achado, e para isso
+    // os achados do dia já precisam existir com os ids definitivos. Rodar antes
+    // ligaria o relatório de hoje aos achados de ontem.
+    const conciliacao = await conciliarConformidade(companyId);
+
     await prisma.omieSyncRun.update({
       where: { id: run.id },
       data: {
@@ -192,6 +199,7 @@ export async function executarPasso(params: {
           reincidentes: resultado.reincidentes,
           fechadosAutomaticamente: resultado.fechadosAutomaticamente,
           suprimidos: resultado.suprimidos,
+          conformidade: conciliacao,
         },
       },
     });
@@ -201,6 +209,12 @@ export async function executarPasso(params: {
         `${resultado.fechadosAutomaticamente} fechado(s) automaticamente, ${resultado.suprimidos} suprimido(s) pelo supervisor. ` +
         `${resultado.totalAbertos} em aberto (${resultado.criticos} crítico(s)).`
     );
+    if (conciliacao.apontamentosComVinculo + conciliacao.apontamentosSemVinculo > 0) {
+      detalhes.push(
+        `Conformidade: ${conciliacao.apontamentosComVinculo} apontamento(s) com achado correspondente, ` +
+          `${conciliacao.apontamentosSemVinculo} sem — ${conciliacao.sugeridos} sugestão(ões) nova(s), ${conciliacao.removidos} descartada(s).`
+      );
+    }
 
     return {
       runId: run.id,

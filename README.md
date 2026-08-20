@@ -2,10 +2,16 @@
 
 Sistema de controladoria, auditoria e financeiro do grupo, integrado à Omie.
 
-Espelha o ERP em D-1, roda dez agentes de auditoria sobre os dados, revisa os
+Espelha o ERP em D-1, roda onze agentes de auditoria sobre os dados, revisa os
 achados com uma camada supervisora, mede um Balanced Scorecard e envia todo dia
 um relatório gerencial e executivo por e-mail — que abre igual no computador e
 no celular.
+
+Recebe também os **relatórios de risco da consultoria**: o menu Conformidade
+guarda o arquivo original, transforma o conteúdo em apontamentos com prazo e
+responsável, e cruza cada um com o que os agentes veem nos dados — mostrando o
+que as duas leituras confirmam, o que se repete há meses e o que só a revisão
+externa enxerga.
 
 Atende **mais de uma empresa** (mais de um CNPJ, cada uma com sua conta Omie):
 os números aparecem consolidados, sempre com a empresa de origem identificada, e
@@ -88,8 +94,9 @@ completo — sincroniza cada empresa, audita o grupo e envia o relatório.
 1. Entrar com o mesmo login da gestão de motoristas
 2. **Conexões Omie** → cadastrar uma conexão por empresa do grupo
 3. **Sincronização → Sincronizar agora** — a carga histórica roda em segundo plano
-4. Conferir **Sincronização → Preenchimento dos campos** (ver `docs/controladoria.md`, seção 9)
-5. **Modelo de gestão** → cadastrar a alçada de aprovação (a tela sugere valores a partir dos próprios pagamentos)
+4. **Conformidade** → enviar o relatório da consultoria do último mês (opcional, mas é a partir do segundo que a reincidência aparece)
+5. Conferir **Sincronização → Preenchimento dos campos** (ver `docs/controladoria.md`, seção 10)
+6. **Modelo de gestão** → cadastrar a alçada de aprovação (a tela sugere valores a partir dos próprios pagamentos)
 
 ## Documentação
 

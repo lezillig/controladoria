@@ -5,6 +5,8 @@ import { montarPanorama } from "@/lib/controladoria/analytics";
 import { medirBsc, PERSPECTIVAS } from "@/lib/controladoria/bsc";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { avaliarQualidadeDaBase } from "@/lib/controladoria/supervisor";
+import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
+import { rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { contextoDaPagina } from "./_dados";
 import { AvisoVazio, BadgeSeveridade, Barra, Farol, Kpi, Secao, SeletorEmpresa, Tabela, Variacao } from "./_componentes";
 
@@ -21,6 +23,7 @@ export default async function ControladoriaPage({ searchParams }: { searchParams
   const panorama = montarPanorama(ctx);
   const c = panorama.comparativo;
   const qualidade = avaliarQualidadeDaBase(ctx);
+  const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);
 
   const [achados, bsc, ultimoRelatorio] = await Promise.all([
     prisma.auditFinding.findMany({
@@ -191,6 +194,35 @@ export default async function ControladoriaPage({ searchParams }: { searchParams
         )}
       </Secao>
 
+      {conformidade.temModulo && (
+        <Secao
+          titulo="Conformidade e riscos externos"
+          descricao="O que consultoria, contabilidade e auditoria apontaram sobre a empresa."
+          acao={
+            <Link href="/conformidade" className="text-xs font-medium text-blue-700 hover:underline">
+              Abrir conformidade
+            </Link>
+          }
+        >
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <NumeroConformidade rotulo="Em aberto" valor={conformidade.abertos} />
+            <NumeroConformidade rotulo="Graves" valor={conformidade.criticos} alertaSePositivo />
+            <NumeroConformidade rotulo="Prazo vencido" valor={conformidade.vencidos} alertaSePositivo />
+            <NumeroConformidade rotulo="Reincidentes" valor={conformidade.reincidentes} alertaSePositivo />
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            {fmtNumero(conformidade.confirmadosPeloSistema)} com confirmação nos próprios dados desta auditoria ·{" "}
+            {fmtNumero(conformidade.semCobertura)} que só a revisão externa enxerga.
+            {!conformidade.documentoEsperadoRecebido && conformidade.competenciaEsperada && (
+              <span className="font-medium text-amber-700">
+                {" "}
+                O documento de {rotuloCompetencia(conformidade.competenciaEsperada)} ainda não chegou.
+              </span>
+            )}
+          </p>
+        </Secao>
+      )}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Secao titulo="Comparativos" descricao="Regime de competência, pela data de vencimento.">
           <Tabela
@@ -335,6 +367,26 @@ export default async function ControladoriaPage({ searchParams }: { searchParams
           Ver histórico
         </Link>
       </p>
+    </div>
+  );
+}
+
+// Número seco, sem cartão: aqui a pergunta não é "quanto", é "tem ou não tem".
+// Zero fica cinza de propósito — só o que exige ação ganha cor.
+function NumeroConformidade({
+  rotulo,
+  valor,
+  alertaSePositivo = false,
+}: {
+  rotulo: string;
+  valor: number;
+  alertaSePositivo?: boolean;
+}) {
+  const cor = alertaSePositivo && valor > 0 ? "text-red-700" : "text-slate-900";
+  return (
+    <div>
+      <p className={`text-2xl font-semibold ${cor}`}>{fmtNumero(valor)}</p>
+      <p className="mt-0.5 text-xs text-slate-500">{rotulo}</p>
     </div>
   );
 }

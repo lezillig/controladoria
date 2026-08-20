@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
+import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
+import { carregarConformidade } from "@/lib/conformidade/panorama";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { carregarContexto } from "@/lib/controladoria/contexto";
 import { executarAuditoria } from "@/lib/controladoria/engine";
@@ -40,6 +42,15 @@ export async function gerarRelatorioAgora(formData: FormData): Promise<Resultado
     // achados de ontem, com dados de hoje, produziria um documento que não
     // corresponde a nenhum momento real da empresa.
     await executarAuditoria(ctx);
+    // Mesma ordem do ciclo diário (ver ciclo.ts): a conciliação com os
+    // apontamentos da consultoria depende dos achados já persistidos.
+    await conciliarConformidade(session.companyId);
+    // O contexto foi montado antes da auditoria, então os vínculos recém-criados
+    // ainda não estão nele. Só esta parte é recarregada — refazer o contexto
+    // inteiro custaria uma segunda leitura completa da base para atualizar três
+    // listas. No ciclo diário isso não é preciso: lá o relatório é outra
+    // invocação, com contexto novo.
+    ctx.conformidade = await carregarConformidade(session.companyId);
 
     const resultado = await gerarEEnviarRelatorio(ctx, { enviar });
 

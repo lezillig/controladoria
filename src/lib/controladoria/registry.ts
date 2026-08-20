@@ -1,6 +1,7 @@
 import { agenteAdministrativo } from "./agents/administrativo";
 import { agenteAntifraude } from "./agents/antifraude";
 import { agenteConciliacao } from "./agents/conciliacao";
+import { agenteConformidade } from "./agents/conformidade";
 import { agenteContasPagar } from "./agents/contasPagar";
 import { agenteContasReceber } from "./agents/contasReceber";
 import { agenteCustos } from "./agents/custos";
@@ -15,7 +16,7 @@ import type { Agente } from "./types";
 // Estrutura em tres camadas, desenhada para dar confianca ao resultado — e
 // nao apenas quantidade de alertas:
 //
-//   Camada 1 — DEZ agentes de dominio (abaixo). Deterministicos, puros,
+//   Camada 1 — ONZE agentes de dominio (abaixo). Deterministicos, puros,
 //   cada um dono de uma pergunta de negocio. Nao conversam entre si: um
 //   agente que depende do resultado de outro cria ordem de execucao implicita
 //   e, no dia em que um falhar, o outro passa a mentir em silencio.
@@ -49,6 +50,7 @@ export const AGENTES: Agente[] = [
   agenteRentabilidade,
   agenteOportunidades,
   agenteAdministrativo,
+  agenteConformidade,
 ];
 
 export function agentePorId(id: string): Agente | undefined {

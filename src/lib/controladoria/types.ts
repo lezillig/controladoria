@@ -21,11 +21,12 @@ import type {
   MotoristaGestao,
   VeiculoGestao,
 } from "@/lib/gestao/leitura";
+import type { DadosConformidade } from "@/lib/conformidade/panorama";
 
 // Contexto carregado UMA vez por execucao e compartilhado por todos os
 // agentes. Cada agente e uma funcao pura sobre este contexto: nao consulta o
 // banco, nao chama a Omie, nao escreve nada. Tres ganhos concretos disso:
-// (1) rodar 10 agentes custa 1 leitura do banco, e nao 10 (o relatorio
+// (1) rodar 11 agentes custa 1 leitura do banco, e nao 11 (o relatorio
 // diario roda dentro do teto de 60s da Vercel); (2) todo agente enxerga
 // exatamente o MESMO retrato dos dados, entao dois achados nunca se
 // contradizem por terem lido a base em momentos diferentes; (3) agente puro
@@ -70,6 +71,13 @@ export type ContextoAuditoria = {
   veiculos: VeiculoGestao[];
   abastecimentos: AbastecimentoGestao[];
   gestao: DisponibilidadeGestao;
+
+  // O que veio de fora: relatorios de consultoria, contabilidade e auditoria
+  // externa, ja transformados em apontamentos rastreaveis, mais as ligacoes
+  // deles com os achados dos agentes. Entra no contexto como qualquer outra
+  // fonte para que a auditoria consiga cruzar as duas leituras — e apontar
+  // tanto o risco que as duas confirmam quanto o que so uma delas ve.
+  conformidade: DadosConformidade;
 
   ultimoSyncConcluido: OmieSyncRun | null;
 };

@@ -1,6 +1,7 @@
 import type { OmieConexao, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { buscarEmpresa } from "@/lib/gestao/leitura";
+import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { enviarEmail, isEnvioDisponivel } from "@/lib/email/send";
 import { gerarNarrativa } from "./aiAnalyst";
 import { montarPanorama } from "./analytics";
@@ -60,6 +61,7 @@ export async function gerarEEnviarRelatorio(
   await gravarSnapshotBsc(ctx, bsc);
 
   const qualidadeDaBase = avaliarQualidadeDaBase(ctx);
+  const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);
 
   // A narrativa recebe apenas os achados de maior confianca: abaixo do piso,
   // o supervisor ja sinalizou que o achado depende de verificacao — e nao faz
@@ -78,6 +80,7 @@ export async function gerarEEnviarRelatorio(
     })),
     bsc,
     limitacoesDaBase: qualidadeDaBase.limitacoes,
+    conformidade,
   });
 
   const dados: DadosRelatorio = {
@@ -88,6 +91,7 @@ export async function gerarEEnviarRelatorio(
     bsc,
     narrativa,
     qualidadeDaBase,
+    conformidade,
     urlSistema: urlDoSistema(),
   };
 
@@ -110,6 +114,10 @@ export async function gerarEEnviarRelatorio(
       .filter((a) => a.categoria === "OPORTUNIDADE")
       .reduce((acc, a) => acc + (a.impactoCents ?? 0), 0),
     qualidadeBase: qualidadeDaBase.score,
+    conformidadeAbertos: conformidade.abertos,
+    conformidadeGraves: conformidade.criticos,
+    conformidadeVencidos: conformidade.vencidos,
+    conformidadeReincidentes: conformidade.reincidentes,
     bsc: bsc.map((i) => ({ codigo: i.indicador.codigo, valor: i.valor, farol: i.farol })),
   } satisfies Prisma.InputJsonObject;
 

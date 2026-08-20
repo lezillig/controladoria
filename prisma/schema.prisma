@@ -88,6 +88,57 @@ enum BscPerspectiva {
   APRENDIZADO_CRESCIMENTO
 }
 
+// ---------- Conformidade ----------
+// Quem produziu o documento. Importa para a leitura do risco: o mesmo
+// apontamento tem peso diferente vindo de uma revisão contratada pela empresa
+// e de um auto de fiscalização.
+enum ConformidadeOrigem {
+  CONSULTORIA
+  CONTABILIDADE
+  AUDITORIA_EXTERNA
+  FISCALIZACAO
+  JURIDICO
+  INTERNO
+}
+
+// Área do risco — é o que endereça o apontamento a um responsável. Deliberadamente
+// mais larga que a lista de agentes: a consultoria aponta coisa que este sistema
+// não tem como ver (trabalhista, societário, LGPD), e esconder isso atrás de uma
+// taxonomia financeira faria o módulo perder justamente o que ele acrescenta.
+enum ConformidadeArea {
+  FISCAL
+  TRABALHISTA
+  PREVIDENCIARIO
+  CONTABIL
+  FINANCEIRO
+  SOCIETARIO
+  REGULATORIO
+  CONTRATUAL
+  LGPD
+  OUTRO
+}
+
+// Estado da leitura do arquivo. PENDENTE não é erro: é o estado normal quando
+// a leitura por IA não está habilitada — o documento fica guardado como
+// evidência e os apontamentos são cadastrados à mão.
+enum ConformidadeExtracao {
+  PENDENTE
+  EXTRAIDO
+  MANUAL
+  ERRO
+}
+
+// Tratativa do apontamento. ACEITO_COM_RISCO existe separado de RESOLVIDO e de
+// NAO_SE_APLICA de propósito: é a decisão consciente de conviver com o risco —
+// legítima, comum, e a que mais precisa ficar registrada com nome e data.
+enum ConformidadeStatus {
+  ABERTO
+  EM_TRATATIVA
+  RESOLVIDO
+  ACEITO_COM_RISCO
+  NAO_SE_APLICA
+}
+
 // ============================================================================
 // Conexão Omie
 // ============================================================================
@@ -131,6 +182,12 @@ model OmieConexao {
   movimentos      OmieMovimento[]
   notas           OmieNota[]
   syncRuns        OmieSyncRun[]
+
+  // SetNull nos dois: desativar/remover uma conexão não pode apagar o
+  // relatório da consultoria nem os apontamentos já tratados — eles viram
+  // documento do grupo, que é o que de fato são a partir dali.
+  conformidadeDocumentos   ConformidadeDocumento[]
+  conformidadeApontamentos ConformidadeApontamento[]
 
   @@unique([companyId, apelido])
   @@unique([companyId, credencialRef])
@@ -518,6 +575,11 @@ model AuditFinding {
   tratadoPorUserId    String?
   observacaoTratativa String?
 
+  // Apontamentos de conformidade que este achado confirma. É a ponte entre o
+  // que a consultoria escreveu no relatório mensal e o que os agentes veem
+  // todo dia nos dados.
+  vinculosConformidade ConformidadeVinculo[]
+
   @@unique([companyId, chave])
   @@index([companyId, status, severidade])
   @@index([companyId, categoria, status])
@@ -665,6 +727,173 @@ model OmieVinculoCentroCusto {
 
   @@index([companyId, tipoOrigem])
   @@index([companyId, conexaoId])
+}
+
+// ============================================================================
+// Conformidade — o que vem de fora
+// ============================================================================
+// Este sistema audita os DADOS. Uma consultoria audita a EMPRESA: contrato,
+// obrigação acessória, enquadramento, processo, contingência. São duas leituras
+// diferentes do mesmo risco, e o valor está em cruzá-las.
+//
+// Três coisas passam a ser possíveis quando o relatório mensal da consultoria
+// entra no sistema em vez de ficar num anexo de e-mail:
+//
+//   1. CONFIRMAÇÃO CRUZADA. Quando a consultoria aponta "juros relevantes por
+//      atraso" e o agente de contas a pagar já vinha apontando os títulos um a
+//      um, o risco deixa de ser opinião — duas fontes independentes chegaram
+//      nele por caminhos diferentes.
+//   2. PONTO CEGO, dos dois lados. Apontamento sem nenhum achado correspondente
+//      é coisa que este sistema não sabe ver (e talvez devesse). Achado sem
+//      apontamento é coisa que a consultoria não viu.
+//   3. REINCIDÊNCIA. O mesmo apontamento repetido em três meses seguidos não é
+//      três problemas: é um processo que nunca foi corrigido — e esse é o sinal
+//      de controle interno mais forte que existe, invisível quando cada
+//      relatório é lido isolado.
+
+model ConformidadeDocumento {
+  id             String       @id @default(cuid())
+  companyId      String
+  // Empresa a que o documento se refere. Nulo = documento do grupo (o caso de
+  // uma consultoria que analisa os dois CNPJs no mesmo relatório).
+  conexaoId      String?
+  conexao        OmieConexao? @relation(fields: [conexaoId], references: [id], onDelete: SetNull)
+  conexaoApelido String?
+
+  titulo        String
+  origem        ConformidadeOrigem @default(CONSULTORIA)
+  // Quem emitiu (nome do escritório/consultoria). Texto livre: não vale criar
+  // cadastro de fornecedor de serviço para um campo que aparece em relatório.
+  emissor       String?
+  // Mês a que o documento se refere, sempre no dia 1. É a chave da leitura
+  // mês a mês — sem ela não há como dizer "o relatório de julho não chegou".
+  competencia   DateTime
+  dataDocumento DateTime?
+
+  arquivoNome   String
+  mimeType      String
+  tamanhoBytes  Int
+  // SHA-256 do arquivo. Serve a dois propósitos: impedir o mesmo anexo de
+  // entrar duas vezes (e duplicar todos os apontamentos dele), e provar depois
+  // que o arquivo guardado é byte a byte o que a consultoria enviou.
+  sha256        String
+  // O arquivo original, no banco. Não em armazenamento externo, de propósito:
+  // são poucos documentos por mês, e um apontamento cuja evidência de origem
+  // se perdeu não vale nada numa discussão com o fisco ou com o auditor. Nunca
+  // é lido nas listagens — só na rota de download (ver o comentário lá).
+  conteudo      Bytes
+  textoExtraido String?
+
+  extracao     ConformidadeExtracao @default(PENDENTE)
+  extracaoErro String?
+  extraidoEm   DateTime?
+  resumo       String?
+
+  enviadoPorUserId String?
+  enviadoPorNome   String?
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @updatedAt
+
+  apontamentos ConformidadeApontamento[]
+
+  @@unique([companyId, sha256])
+  @@index([companyId, competencia])
+}
+
+model ConformidadeApontamento {
+  id             String       @id @default(cuid())
+  companyId      String
+  conexaoId      String?
+  conexao        OmieConexao? @relation(fields: [conexaoId], references: [id], onDelete: SetNull)
+  conexaoApelido String?
+
+  // Anulável, e com SetNull: um apontamento já tratado por uma pessoa sobrevive
+  // à exclusão do arquivo que o originou. O trabalho humano vale mais que o
+  // vínculo com o anexo.
+  documentoId String?
+  documento   ConformidadeDocumento? @relation(fields: [documentoId], references: [id], onDelete: SetNull)
+
+  competencia  DateTime
+  area         ConformidadeArea @default(OUTRO)
+  severidade   AuditSeveridade  @default(MEDIA)
+  titulo       String
+  descricao    String
+  recomendacao String?
+
+  // Trecho literal do documento que originou o apontamento, e a página. É o que
+  // permite conferir a leitura contra a fonte sem reabrir o PDF inteiro — e o
+  // que impede o módulo de virar um resumo em que ninguém confia.
+  trechoOrigem String?
+  paginaOrigem String?
+
+  valorEnvolvidoCents Int?
+
+  status              ConformidadeStatus @default(ABERTO)
+  responsavel         String?
+  prazo               DateTime?
+  observacaoTratativa String?
+  tratadoPorUserId    String?
+  resolvidoEm         DateTime?
+
+  // Proposto pela leitura automática e ainda não conferido por uma pessoa.
+  // Enquanto `validado` for falso, o apontamento aparece marcado como proposta:
+  // texto extraído por máquina não pode entrar no relatório da diretoria com a
+  // mesma autoridade de um ponto conferido.
+  propostoPorIa     Boolean   @default(false)
+  validado          Boolean   @default(false)
+  validadoPorUserId String?
+  validadoEm        DateTime?
+
+  // Assunto canônico do apontamento, normalizado. É o que reconhece o MESMO
+  // ponto entre competências diferentes mesmo quando a consultoria reescreve a
+  // frase — a base da detecção de reincidência.
+  chaveRecorrencia    String
+  primeiraCompetencia DateTime
+  ocorrencias         Int      @default(1)
+
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  vinculos ConformidadeVinculo[]
+
+  @@index([companyId, status, severidade])
+  @@index([companyId, competencia])
+  @@index([companyId, chaveRecorrencia])
+  @@index([documentoId])
+}
+
+// Ligação entre um apontamento da consultoria e um achado dos agentes.
+//
+// A sugestão é automática e por semelhança de texto — portanto falível, e por
+// isso nasce marcada como sugestão. Só depois que uma pessoa confirma é que o
+// par passa a valer como confirmação cruzada no relatório. Máquina propõe a
+// ligação; gente decide que ela é verdadeira.
+model ConformidadeVinculo {
+  id            String                  @id @default(cuid())
+  companyId     String
+  apontamentoId String
+  apontamento   ConformidadeApontamento @relation(fields: [apontamentoId], references: [id], onDelete: Cascade)
+  achadoId      String
+  achado        AuditFinding            @relation(fields: [achadoId], references: [id], onDelete: Cascade)
+  // Chave do achado desnormalizada: o vínculo continua legível no histórico
+  // mesmo depois de o achado mudar de status.
+  achadoChave   String
+  // "CONFIRMA" (mesmo fato, visto pelos dois lados) | "RELACIONADO" (assunto
+  // vizinho, útil como contexto).
+  tipo          String                  @default("CONFIRMA")
+  automatico    Boolean                 @default(true)
+  // Pontuação da semelhança que gerou a sugestão (0-100). Fica gravada para a
+  // regra de corte poder ser revista depois sem perder o histórico do que o
+  // sistema achava na época.
+  pontuacao     Int                     @default(0)
+
+  confirmadoPorUserId String?
+  confirmadoEm        DateTime?
+  criadoEm            DateTime  @default(now())
+
+  @@unique([apontamentoId, achadoId])
+  @@index([companyId])
+  @@index([achadoId])
 }
 
 // ============================================================================

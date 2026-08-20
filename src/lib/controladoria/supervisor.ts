@@ -99,6 +99,10 @@ const REGRAS_EQUIVALENTES: [string, string][] = [
   ["CP-DUPLICIDADE", "CB-DEBITO-DUPLICADO"],
   ["CP-JUROS", "OP-JUROS-ANO"],
   ["CR-INADIMPLENCIA", "CR-PERDA-PROVAVEL"],
+  // Apontamento externo com prazo estourado E confirmação nos dados: a cobrança
+  // do prazo é o que exige ação hoje; a confirmação é o argumento que sustenta
+  // a prioridade. Uma linha, não duas.
+  ["CONF-PRAZO", "CONF-CONFIRMADO"],
 ];
 
 // Regras cujo achado ja e agregado por natureza (falam do conjunto, nao de um
@@ -113,7 +117,14 @@ const REGRAS_AGREGADAS = new Set([
   "OP-ALCADA",
   "FI-RECEITA-SEM-NOTA",
   "RE-COBERTURA-BAIXA",
+  "CONF-NAO-CONFERIDO",
+  "CONF-SEM-RELATORIO",
+  "CONF-PONTO-CEGO",
 ]);
+
+// Regras cujo valor NAO foi calculado por este sistema: veio escrito num
+// documento externo (ver o Controle 2, mais abaixo).
+const REGRAS_COM_VALOR_EXTERNO = (regra: string): boolean => regra.startsWith("CONF-");
 
 const ESCALA: AuditSeveridade[] = ["INFO", "BAIXA", "MEDIA", "ALTA", "CRITICA"];
 
@@ -205,7 +216,13 @@ export function supervisionar(
   candidatos = candidatos.filter((a) => {
     const valores = [a.valorCents, a.impactoCents].filter((v): v is number => v !== undefined);
     const negativo = valores.some((v) => v < 0);
-    const absurdo = valores.some((v) => v > tetoPlausivel);
+    // O teto só vale para número CALCULADO sobre o espelho da Omie. Valor de
+    // apontamento externo foi lido de um relatório de consultoria e pode
+    // legitimamente superar o total de títulos espelhados — uma contingência
+    // trabalhista estimada em R$ 800 mil é maior que o movimento de um mês, e
+    // suprimi-la seria apagar justamente o risco mais grave da lista. Valor
+    // negativo continua sendo erro em qualquer origem.
+    const absurdo = !REGRAS_COM_VALOR_EXTERNO(a.regra) && valores.some((v) => v > tetoPlausivel);
     if (!negativo && !absurdo) return true;
     suprimidos.push({
       regra: a.regra,

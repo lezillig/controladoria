@@ -11,6 +11,7 @@ import {
   PiggyBank,
   Receipt,
   RefreshCw,
+  ScrollText,
   ShieldCheck,
   SlidersHorizontal,
   Target,
@@ -33,6 +34,10 @@ type NavItem = {
 const NAV: NavItem[] = [
   { href: "/", label: "Painel financeiro", icon: LayoutDashboard },
   { href: "/auditoria", label: "Auditoria e achados", icon: ShieldCheck },
+  // Logo depois da auditoria de propósito: são as duas leituras do mesmo risco
+  // — a que o sistema faz nos dados e a que a consultoria faz na empresa — e
+  // quem abre uma quase sempre quer conferir a outra.
+  { href: "/conformidade", label: "Conformidade", icon: ScrollText },
   { href: "/titulos", label: "Contas a pagar e receber", icon: Receipt },
   { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote },
   { href: "/conciliacao", label: "Conciliação bancária", icon: Landmark },

@@ -1,5 +1,6 @@
 import type { BscPerspectiva, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { estaEmAberto, estaVencido } from "@/lib/conformidade/panorama";
 import { dentro, inicioDoMes, montarJanelas } from "./periodos";
 import { emAberto, saldoAberto, somar, titulosAtivos } from "./agents/comum";
 import { calcularCiclo } from "./agents/fluxoCaixa";
@@ -243,6 +244,50 @@ export const INDICADORES_BSC: IndicadorBsc[] = [
       if (pagos.length === 0) return { valor: null };
       const emDia = pagos.filter((t) => t.dataUltimaBaixa! <= t.dataVencimento).length;
       return { valor: pct(emDia, pagos.length), detalhes: { emDia, total: pagos.length } };
+    },
+  },
+
+  // Os dois indicadores de conformidade ficam em PROCESSOS INTERNOS, e nao na
+  // perspectiva financeira, por uma razao de causa e efeito: risco apontado por
+  // uma revisao externa vira custo (multa, autuacao, contingencia) meses depois
+  // — o que se controla hoje e a DISCIPLINA de tratar o apontamento, nao o
+  // valor, que quando aparece no resultado ja e tarde.
+  {
+    codigo: "PRO-CONFORMIDADE-PRAZO",
+    nome: "Apontamentos de conformidade no prazo",
+    perspectiva: "PROCESSOS_INTERNOS",
+    unidade: "PERCENTUAL",
+    direcao: "MAIOR_MELHOR",
+    descricao: "Apontamentos externos em aberto com prazo definido que ainda estão dentro dele.",
+    metaSugerida: 100,
+    calcular: (ctx) => {
+      const abertos = ctx.conformidade.apontamentos.filter(estaEmAberto);
+      const comPrazo = abertos.filter((a) => a.prazo !== null);
+      // Sem prazo cadastrado nao ha o que medir. Devolver 100% aqui seria pior
+      // que devolver "sem dado": pintaria de verde justamente a empresa que
+      // ainda nao combinou prazo nenhum.
+      if (comPrazo.length === 0) return { valor: null };
+      const noPrazo = comPrazo.filter((a) => !estaVencido(a, ctx.dataReferencia)).length;
+      return { valor: pct(noPrazo, comPrazo.length), detalhes: { noPrazo, comPrazo: comPrazo.length, semPrazo: abertos.length - comPrazo.length } };
+    },
+  },
+  {
+    codigo: "PRO-CONFORMIDADE-GRAVES",
+    nome: "Riscos externos graves em aberto",
+    perspectiva: "PROCESSOS_INTERNOS",
+    unidade: "QUANTIDADE",
+    direcao: "MENOR_MELHOR",
+    descricao: "Apontamentos críticos ou altos de consultoria, contabilidade ou auditoria ainda sem tratativa concluída.",
+    metaSugerida: 0,
+    calcular: (ctx) => {
+      if (ctx.conformidade.apontamentos.length === 0) return { valor: null };
+      const graves = ctx.conformidade.apontamentos.filter(
+        (a) => estaEmAberto(a) && (a.severidade === "CRITICA" || a.severidade === "ALTA")
+      );
+      return {
+        valor: graves.length,
+        detalhes: { reincidentes: graves.filter((a) => a.ocorrencias >= 3).length },
+      };
     },
   },
 
