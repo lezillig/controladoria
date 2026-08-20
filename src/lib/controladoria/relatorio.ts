@@ -165,17 +165,18 @@ export async function gerarEEnviarRelatorio(
     };
   }
 
+  // Envio de e-mail não configurado: o relatório fica GERADO, não "com erro".
+  // A distinção importa porque o sistema pode operar meses assim de propósito
+  // (o e-mail é uma fase posterior) — e uma lista que exibe "falha" todo dia
+  // por uma escolha deliberada treina o usuário a ignorar o status, que é
+  // justamente o que ele precisa enxergar quando a falha for real.
   if (!isEnvioDisponivel()) {
-    await prisma.relatorioDiario.update({
-      where: { id: relatorio.id },
-      data: { status: "ERRO_ENVIO", erro: "RESEND_API_KEY não configurada — relatório gerado, mas não enviado." },
-    });
     return {
       relatorioId: relatorio.id,
       assunto,
       enviado: false,
       destinatarios: para,
-      erro: "RESEND_API_KEY não configurada — relatório gerado, mas não enviado.",
+      erro: null,
       achadosTotal: achados.length,
       achadosCriticos: criticos,
       narrativaGerada: narrativa !== null,

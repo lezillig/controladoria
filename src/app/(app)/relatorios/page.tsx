@@ -82,8 +82,9 @@ export default async function RelatoriosPage() {
         </div>
         {!isEnvioDisponivel() && (
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            Envio desativado: falta a variável de ambiente <code className="font-mono">RESEND_API_KEY</code>. Os relatórios
-            continuam sendo gerados e ficam disponíveis aqui.
+            Envio de e-mail ainda não ativado (falta a variável <code className="font-mono">RESEND_API_KEY</code>). Os
+            relatórios continuam sendo gerados todos os dias e ficam disponíveis aqui, com o mesmo conteúdo que será
+            enviado quando o e-mail for ligado — basta clicar em <strong>abrir</strong> na lista abaixo.
           </p>
         )}
       </Secao>
