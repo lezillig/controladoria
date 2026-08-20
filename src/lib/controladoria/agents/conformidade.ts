@@ -171,9 +171,17 @@ function reincidentes(ctx: ContextoAuditoria): AchadoNovo[] {
         `O mesmo assunto aparece nos relatórios de ${meses.join(", ")}, desde ${rotuloCompetencia(primeira)}. ` +
         `Repetição nessa escala não é um problema que voltou: é um processo que nunca foi corrigido — e cada mês novo ` +
         `aumenta o tempo de exposição, não a chance de resolver sozinho.`,
+      // A recomendação muda com a natureza porque a causa é outra. Documento
+      // cobrado cinco vezes e nunca enviado quase nunca é esquecimento: ou
+      // ninguém foi designado para produzi-lo, ou ele não existe — e nesse caso
+      // a resposta honesta ("não temos") encerra o assunto, enquanto o silêncio
+      // o mantém aberto para sempre.
       recomendacao:
-        "Tratar a CAUSA, não a ocorrência do mês: quem executa a rotina, o que falta (sistema, alçada, treinamento, prazo) " +
-        "e qual controle passa a impedir a recorrência. Enquanto a causa não muda, o apontamento volta no mês que vem.",
+        a.natureza === "DOCUMENTO"
+          ? "Documento cobrado em todas essas competências e nunca entregue costuma significar uma de duas coisas: ninguém foi designado para produzi-lo, ou ele não existe. Definir o responsável com data — ou responder formalmente que o documento não existe, o que também encerra o ponto."
+          : a.natureza === "QUESTIONAMENTO"
+            ? "Pergunta repetida sem resposta trava a conformidade das competências seguintes. Levar à contabilidade com prazo, ou responder com o que a empresa sabe e registrar a limitação."
+            : "Tratar a CAUSA, não a ocorrência do mês: quem executa a rotina, o que falta (sistema, alçada, treinamento, prazo) e qual controle passa a impedir a recorrência. Enquanto a causa não muda, o apontamento volta no mês que vem.",
       valorCents: serie.reduce((acc, x) => acc + (x.valorEnvolvidoCents ?? 0), 0) || undefined,
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "ConformidadeApontamento",

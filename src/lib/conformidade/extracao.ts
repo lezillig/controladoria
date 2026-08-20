@@ -1,4 +1,5 @@
 import { inflateRawSync } from "node:zlib";
+import { lerMsg } from "./outlook";
 
 // LEITURA DOS ARQUIVOS RECEBIDOS DA CONSULTORIA.
 //
@@ -16,7 +17,7 @@ import { inflateRawSync } from "node:zlib";
 // nativamente; .docx e .xlsx são ZIP com XML dentro, e o leitor abaixo faz
 // exatamente o mínimo para tirar o texto deles.
 
-export type FormatoDocumento = "PDF" | "IMAGEM" | "TEXTO" | "OOXML" | "NAO_SUPORTADO";
+export type FormatoDocumento = "PDF" | "IMAGEM" | "TEXTO" | "OOXML" | "EMAIL" | "NAO_SUPORTADO";
 
 // Teto do texto que segue para a leitura automática. Relatório de consultoria
 // raramente passa disso; planilha de 50 mil linhas passa fácil, e mandá-la
@@ -41,6 +42,9 @@ export function classificarArquivo(nomeArquivo: string, mimeType: string): Forma
   const ext = extensaoDe(nomeArquivo);
   const mime = (mimeType || "").toLowerCase();
 
+  // .msg antes de tudo: é assim que o documento chega de verdade — ninguém
+  // salva o anexo, encaminha o e-mail (ver outlook.ts).
+  if (ext === "msg" || mime === "application/vnd.ms-outlook") return "EMAIL";
   if (ext === "pdf" || mime === "application/pdf") return "PDF";
   if (EXTENSOES_IMAGEM.has(ext) || mime.startsWith("image/")) return "IMAGEM";
   if (EXTENSOES_OOXML.has(ext) || mime.includes("openxmlformats")) return "OOXML";
@@ -67,6 +71,9 @@ export function extrairTexto(formato: FormatoDocumento, conteudo: Buffer, nomeAr
     if (formato === "TEXTO") {
       return { texto: limitar(conteudo.toString("utf8")), erro: null };
     }
+    if (formato === "EMAIL") {
+      return { texto: limitar(textoDoEmail(conteudo)), erro: null };
+    }
     if (formato === "OOXML") {
       const ext = extensaoDe(nomeArquivo);
       if (ext === "xlsx") return { texto: limitar(textoDePlanilha(conteudo)), erro: null };
@@ -79,6 +86,60 @@ export function extrairTexto(formato: FormatoDocumento, conteudo: Buffer, nomeAr
   } catch (e) {
     return { texto: null, erro: e instanceof Error ? e.message : "falha ao ler o arquivo" };
   }
+}
+
+// O corpo do e-mail com os cabeçalhos que importam. Não é acessório: nos
+// relatórios que este grupo recebe, o PDF traz as tabelas e o CORPO DO E-MAIL
+// traz a lista acionável ("Documentos que devem ser enviados até o dia 10/08",
+// "Verificar com a contabilidade") com a referência de página. Ler só o anexo
+// perderia metade do conteúdo — e justamente a metade com prazo.
+function textoDoEmail(conteudo: Buffer): string {
+  const m = lerMsg(conteudo);
+  const partes = [
+    m.assunto ? `Assunto: ${m.assunto}` : null,
+    m.remetenteNome || m.remetenteEmail ? `De: ${[m.remetenteNome, m.remetenteEmail].filter(Boolean).join(" ")}` : null,
+    m.destinatarios ? `Para: ${m.destinatarios}` : null,
+    m.data ? `Data: ${m.data.toLocaleDateString("pt-BR")}` : null,
+    m.anexos.length > 0 ? `Anexos: ${m.anexos.map((a) => a.nome).join(", ")}` : null,
+    "",
+    m.corpo ?? "",
+  ];
+  return partes.filter((p) => p !== null).join("\n");
+}
+
+// Anexos que valem ser lidos como conteúdo. Duas exclusões, ambas aprendidas
+// nos e-mails reais: os arquivos gerados pelo Outlook para a assinatura
+// (`Outlook-xxxx.png`, `image001.jpg`) e as imagens pequenas — o logotipo do
+// escritório tem 86 KB e aparece em todo e-mail; a captura de tela que É o
+// apontamento tem 400 KB ou mais.
+const NOME_DE_ASSINATURA = /^(outlook-[a-z0-9]+|image\d{3})\.(png|jpe?g|gif)$/i;
+const TAMANHO_MINIMO_IMAGEM = 100 * 1024;
+const MAXIMO_IMAGENS = 5;
+
+export type AnexoRelevante = { nome: string; conteudo: Buffer; formato: FormatoDocumento };
+
+export function anexosRelevantes(conteudo: Buffer): { anexos: AnexoRelevante[]; totalAnexos: number } {
+  const m = lerMsg(conteudo);
+  const uteis = m.anexos.filter((a) => !NOME_DE_ASSINATURA.test(a.nome));
+
+  const pdfs = uteis
+    .filter((a) => classificarArquivo(a.nome, a.mimeType ?? "") === "PDF")
+    // O maior primeiro: quando vêm vários PDFs (a apresentação, mais dois
+    // exemplos de planilha), o relatório é sempre o maior.
+    .sort((x, y) => y.conteudo.length - x.conteudo.length)
+    .map((a) => ({ nome: a.nome, conteudo: a.conteudo, formato: "PDF" as FormatoDocumento }));
+
+  if (pdfs.length > 0) return { anexos: pdfs.slice(0, 3), totalAnexos: m.anexos.length };
+
+  // Sem PDF, as capturas de tela são o conteúdo — é o caso do e-mail que avisa
+  // de inscrição em dívida ativa, em que o corpo diz "consta uma mensagem nova"
+  // e a mensagem em si está no print.
+  const imagens = uteis
+    .filter((a) => classificarArquivo(a.nome, a.mimeType ?? "") === "IMAGEM" && a.conteudo.length >= TAMANHO_MINIMO_IMAGEM)
+    .slice(0, MAXIMO_IMAGENS)
+    .map((a) => ({ nome: a.nome, conteudo: a.conteudo, formato: "IMAGEM" as FormatoDocumento }));
+
+  return { anexos: imagens, totalAnexos: m.anexos.length };
 }
 
 function limitar(texto: string): string {

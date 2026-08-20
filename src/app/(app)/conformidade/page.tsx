@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { AuditSeveridade, ConformidadeArea, ConformidadeStatus } from "@prisma/client";
+import type { AuditSeveridade, ConformidadeArea, ConformidadeNatureza, ConformidadeStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { canManageControladoria } from "@/lib/permissions";
 import { isLeituraDisponivel } from "@/lib/conformidade/analise";
@@ -13,12 +13,15 @@ import {
 import {
   AREAS,
   competenciaParaTexto,
+  NATUREZAS,
   ROTULO_AREA,
+  ROTULO_NATUREZA,
   ROTULO_ORIGEM,
   ROTULO_STATUS,
   rotuloCompetencia,
   STATUS_EM_ABERTO,
 } from "@/lib/conformidade/tipos";
+import { OBRIGACAO_POR_CODIGO, OBRIGACOES, TESES } from "@/lib/conformidade/obrigacoes";
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import { inicioDoDia } from "@/lib/controladoria/periodos";
 import { AvisoVazio, BadgeSeveridade, Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
@@ -37,9 +40,10 @@ import { confirmarVinculo, descartarApontamento, excluirDocumento, removerVincul
 //   3. Quais apontamentos os nossos próprios dados confirmam?
 //   4. O que só a revisão externa enxerga — ou seja, onde este sistema é cego?
 
-type Filtros = { empresa?: string; status?: string; area?: string; competencia?: string };
+type Filtros = { empresa?: string; status?: string; area?: string; natureza?: string; competencia?: string };
 
 const AREAS_VALIDAS = AREAS.map((a) => a.valor);
+const NATUREZAS_VALIDAS = NATUREZAS.map((n) => n.valor);
 
 export default async function ConformidadePage({ searchParams }: { searchParams: Promise<Filtros> }) {
   const session = await sessaoControladoria();
@@ -73,6 +77,9 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
 
   const statusFiltro = filtros.status ?? "ABERTOS";
   const areaFiltro = AREAS_VALIDAS.includes(filtros.area as ConformidadeArea) ? (filtros.area as ConformidadeArea) : null;
+  const naturezaFiltro = NATUREZAS_VALIDAS.includes(filtros.natureza as ConformidadeNatureza)
+    ? (filtros.natureza as ConformidadeNatureza)
+    : null;
 
   const apontamentos = dados.apontamentos.filter((a) => {
     if (statusFiltro === "ABERTOS" && !(STATUS_EM_ABERTO as ConformidadeStatus[]).includes(a.status)) return false;
@@ -83,6 +90,7 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
       return false;
     }
     if (areaFiltro && a.area !== areaFiltro) return false;
+    if (naturezaFiltro && a.natureza !== naturezaFiltro) return false;
     if (filtros.competencia && competenciaParaTexto(a.competencia) !== filtros.competencia) return false;
     return true;
   });
@@ -202,6 +210,23 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
                 </p>
               </div>
             </div>
+
+            {panorama.porNatureza.length > 0 && (
+              <div className="mt-4 flex flex-wrap items-center gap-1.5">
+                <span className="mr-1 text-xs text-slate-500">Como se resolve:</span>
+                {panorama.porNatureza.map((n) => (
+                  <Link
+                    key={n.natureza}
+                    href={comEmpresa(`${rota}?natureza=${n.natureza}`)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium ${
+                      naturezaFiltro === n.natureza ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    }`}
+                  >
+                    {n.rotulo} · {n.abertos}
+                  </Link>
+                ))}
+              </div>
+            )}
 
             {panorama.porArea.length > 0 && (
               <div className="mt-4">
@@ -338,6 +363,46 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
         </Secao>
       )}
 
+      <Secao
+        titulo="Fundamentação técnica e legal"
+        descricao="O catálogo que o sistema usa para classificar o apontamento, preencher a base legal e explicar o risco. É referência versionada em código, não tabela editável — e não substitui a assessoria: prazo de obrigação acessória muda, e a data aqui serve para alertar, nunca para decidir."
+      >
+        <Tabela
+          colunas={["Obrigação", "Base legal", "Prazo", "Prova de cumprimento"]}
+          linhas={OBRIGACOES.map((o) => [
+            <span key="n">
+              <span className="font-medium text-slate-800">{o.nome}</span>
+              <span className="block text-xs text-slate-400">
+                {ROTULO_AREA[o.area] ?? o.area} · {o.periodicidade.toLowerCase()} · {o.codigo}
+              </span>
+            </span>,
+            <span key="b" className="text-xs text-slate-600">{o.baseLegal}</span>,
+            <span key="p" className="text-xs text-slate-600">{o.prazo}</span>,
+            <span key="e" className="text-xs text-slate-600">{o.evidencia.join(" · ")}</span>,
+          ])}
+        />
+
+        <h3 className="mt-6 text-sm font-semibold text-slate-900">Onde este setor costuma errar</h3>
+        <p className="mt-1 text-xs text-slate-500">
+          Teses e enquadramentos típicos do transporte de passageiros por fretamento. São o que a revisão externa procura
+          primeiro — e o que o sistema usa para não classificar um apontamento fiscal como &quot;outro&quot;.
+        </p>
+        <ul className="mt-3 space-y-3">
+          {TESES.map((t) => (
+            <li key={t.codigo} className="rounded-lg border border-slate-200 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-medium text-slate-900">{t.titulo}</span>
+                <span className="rounded-full bg-violet-50 px-2 py-0.5 text-xs font-medium text-violet-700">
+                  {ROTULO_AREA[t.area] ?? t.area}
+                </span>
+              </div>
+              <p className="mt-1 text-xs font-medium text-slate-500">{t.baseLegal}</p>
+              <p className="mt-1 text-xs leading-relaxed text-slate-600">{t.oQueObservar}</p>
+            </li>
+          ))}
+        </ul>
+      </Secao>
+
       <Secao titulo="Como este módulo trabalha">
         <ul className="list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-600">
           <li>
@@ -383,6 +448,7 @@ function CartaoApontamento({
   const vencido = estaVencido(a, hoje);
   const proposta = a.propostoPorIa && !a.validado;
   const reincidente = a.ocorrencias >= OCORRENCIAS_PARA_REINCIDENCIA;
+  const obrigacao = a.obrigacaoCodigo ? OBRIGACAO_POR_CODIGO.get(a.obrigacaoCodigo) : undefined;
 
   return (
     <li
@@ -395,6 +461,9 @@ function CartaoApontamento({
         <BadgeSeveridade severidade={a.severidade} />
         <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700 ring-1 ring-violet-200">
           {ROTULO_AREA[a.area] ?? a.area}
+        </span>
+        <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-white">
+          {ROTULO_NATUREZA[a.natureza] ?? a.natureza}
         </span>
         <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
           {rotuloCompetencia(a.competencia)}
@@ -419,6 +488,18 @@ function CartaoApontamento({
 
       <h3 className="mt-2 text-sm font-semibold text-slate-900">{a.titulo}</h3>
       <p className="mt-1 text-sm leading-relaxed text-slate-600">{a.descricao}</p>
+
+      {(a.baseLegal || obrigacao) && (
+        <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-violet-700">Fundamentação</p>
+          {a.baseLegal && <p className="mt-1 text-xs leading-relaxed text-slate-700">{a.baseLegal}</p>}
+          {obrigacao && (
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              <strong>{obrigacao.nome}</strong> · {obrigacao.prazo}. {obrigacao.risco}
+            </p>
+          )}
+        </div>
+      )}
 
       {a.trechoOrigem && (
         <blockquote className="mt-3 border-l-2 border-slate-300 pl-3 text-sm italic leading-relaxed text-slate-500">
@@ -490,6 +571,7 @@ function CartaoApontamento({
             {vencido ? " (vencido)" : ""}
           </span>
         )}
+        {a.competenciaAlvo && <span>refere-se a {rotuloCompetencia(a.competenciaAlvo)}</span>}
         {reincidente && <span>desde {rotuloCompetencia(a.primeiraCompetencia)}</span>}
         {a.propostoPorIa && <span>{a.validado ? "lido automaticamente, conferido" : "lido automaticamente"}</span>}
       </p>

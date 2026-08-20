@@ -3,7 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
-import { AREAS } from "@/lib/conformidade/tipos";
+import { AREAS, NATUREZAS } from "@/lib/conformidade/tipos";
+import { OBRIGACOES } from "@/lib/conformidade/obrigacoes";
 import { registrarApontamento } from "./actions";
 
 // Cadastro manual de apontamento.
@@ -85,6 +86,17 @@ export default function NovoApontamentoForm({
         </div>
 
         <div>
+          <label className={labelClass}>Como se resolve</label>
+          <select name="natureza" defaultValue="RISCO" className={inputClass}>
+            {NATUREZAS.map((n) => (
+              <option key={n.valor} value={n.valor}>
+                {n.rotulo}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
           <label className={labelClass}>Gravidade</label>
           <select name="severidade" defaultValue="MEDIA" className={inputClass}>
             {SEVERIDADES.map((s) => (
@@ -126,6 +138,32 @@ export default function NovoApontamentoForm({
             <p className="mt-1 text-xs text-slate-500">Ignorado quando há documento de origem: vale a empresa do documento.</p>
           </div>
         )}
+
+        <div>
+          <label className={labelClass}>Obrigação relacionada</label>
+          <select name="obrigacaoCodigo" defaultValue="" className={inputClass}>
+            <option value="">Nenhuma</option>
+            {OBRIGACOES.map((o) => (
+              <option key={o.codigo} value={o.codigo}>
+                {o.nome}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-500">Traz a base legal, o prazo e o risco do catálogo do sistema.</p>
+        </div>
+
+        <div>
+          <label className={labelClass}>Competência a que se refere</label>
+          <input name="competenciaAlvo" type="month" className={inputClass} />
+          <p className="mt-1 text-xs text-slate-500">
+            Quando o apontamento cobra um período anterior — o relatório de julho pedindo o balancete do 1º tri.
+          </p>
+        </div>
+
+        <div className="sm:col-span-2">
+          <label className={labelClass}>Base legal</label>
+          <input name="baseLegal" type="text" placeholder="Em branco, usa a da obrigação selecionada" className={inputClass} />
+        </div>
 
         <div>
           <label className={labelClass}>Valor envolvido (R$)</label>

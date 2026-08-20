@@ -1,6 +1,13 @@
-import type { AuditSeveridade, ConformidadeArea, ConformidadeExtracao, ConformidadeOrigem, ConformidadeStatus } from "@prisma/client";
+import type {
+  AuditSeveridade,
+  ConformidadeArea,
+  ConformidadeExtracao,
+  ConformidadeNatureza,
+  ConformidadeOrigem,
+  ConformidadeStatus,
+} from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { ROTULO_AREA, STATUS_EM_ABERTO } from "./tipos";
+import { NATUREZAS, ROTULO_AREA, STATUS_EM_ABERTO } from "./tipos";
 
 // Os dados de conformidade como o resto do sistema os enxerga, e a leitura
 // agregada que o painel, o relatório diário e o agente compartilham.
@@ -33,7 +40,11 @@ export type ApontamentoConformidade = {
   conexaoApelido: string | null;
   documentoId: string | null;
   competencia: Date;
+  competenciaAlvo: Date | null;
   area: ConformidadeArea;
+  natureza: ConformidadeNatureza;
+  baseLegal: string | null;
+  obrigacaoCodigo: string | null;
   severidade: AuditSeveridade;
   titulo: string;
   descricao: string;
@@ -107,7 +118,11 @@ export async function carregarConformidade(companyId: string, conexaoId?: string
         conexaoApelido: true,
         documentoId: true,
         competencia: true,
+        competenciaAlvo: true,
         area: true,
+        natureza: true,
+        baseLegal: true,
+        obrigacaoCodigo: true,
         severidade: true,
         titulo: true,
         descricao: true,
@@ -158,6 +173,7 @@ export type PanoramaConformidade = {
   semCobertura: number;
   valorEnvolvidoCents: number;
   porArea: { area: ConformidadeArea; rotulo: string; abertos: number; criticos: number }[];
+  porNatureza: { natureza: ConformidadeNatureza; rotulo: string; abertos: number }[];
   ultimaCompetencia: Date | null;
   competenciaEsperada: Date | null;
   documentoEsperadoRecebido: boolean;
@@ -198,6 +214,14 @@ export function montarPanoramaConformidade(dados: DadosConformidade, referencia:
     }))
     .sort((x, y) => y.criticos - x.criticos || y.abertos - x.abertos);
 
+  // Ordem fixa do catálogo, e não por volume: a lista precisa ficar no mesmo
+  // lugar de um mês para o outro para alguém conseguir comparar de relance.
+  const porNatureza = NATUREZAS.map((n) => ({
+    natureza: n.valor,
+    rotulo: n.rotulo,
+    abertos: abertos.filter((a) => a.natureza === n.valor).length,
+  })).filter((n) => n.abertos > 0);
+
   const esperada = competenciaEsperada(referencia);
 
   // A ordem do bloco executivo: primeiro o que tem prazo estourado, depois o
@@ -227,6 +251,7 @@ export function montarPanoramaConformidade(dados: DadosConformidade, referencia:
     semCobertura: abertos.filter((a) => !apontamentosComVinculo.has(a.id)).length,
     valorEnvolvidoCents: abertos.reduce((acc, a) => acc + (a.valorEnvolvidoCents ?? 0), 0),
     porArea,
+    porNatureza,
     ultimaCompetencia: dados.documentos[0]?.competencia ?? null,
     competenciaEsperada: esperada,
     documentoEsperadoRecebido:

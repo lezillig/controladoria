@@ -7,8 +7,9 @@ achados com uma camada supervisora, mede um Balanced Scorecard e envia todo dia
 um relatório gerencial e executivo por e-mail — que abre igual no computador e
 no celular.
 
-Recebe também os **relatórios de risco da consultoria**: o menu Conformidade
-guarda o arquivo original, transforma o conteúdo em apontamentos com prazo e
+Recebe também os **relatórios de risco da consultoria** — basta encaminhar o
+e-mail: o menu Conformidade lê o corpo e os anexos juntos, guarda o arquivo
+original, transforma o conteúdo em apontamentos com base legal, prazo e
 responsável, e cruza cada um com o que os agentes veem nos dados — mostrando o
 que as duas leituras confirmam, o que se repete há meses e o que só a revisão
 externa enxerga.

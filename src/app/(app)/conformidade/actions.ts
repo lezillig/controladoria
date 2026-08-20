@@ -2,11 +2,19 @@
 
 import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
-import type { AuditSeveridade, ConformidadeArea, ConformidadeOrigem, ConformidadeStatus } from "@prisma/client";
+import type {
+  AuditSeveridade,
+  ConformidadeArea,
+  ConformidadeNatureza,
+  ConformidadeOrigem,
+  ConformidadeStatus,
+} from "@prisma/client";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { buscarEmpresa } from "@/lib/gestao/leitura";
-import { lerDocumento, type ApontamentoExtraido } from "@/lib/conformidade/analise";
+import { lerDocumento, sugestoesDoEmail, type ApontamentoExtraido } from "@/lib/conformidade/analise";
+import { classificarArquivo } from "@/lib/conformidade/extracao";
+import { OBRIGACAO_POR_CODIGO } from "@/lib/conformidade/obrigacoes";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { chaveRecorrencia, competenciaDeTexto, escolherChaveRecorrencia, rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { parseLocalDate } from "@/lib/date";
@@ -43,6 +51,9 @@ const STATUS_VALIDOS: ConformidadeStatus[] = [
   "ABERTO", "EM_TRATATIVA", "RESOLVIDO", "ACEITO_COM_RISCO", "NAO_SE_APLICA",
 ];
 const SEVERIDADES_VALIDAS: AuditSeveridade[] = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
+const NATUREZAS_VALIDAS: ConformidadeNatureza[] = [
+  "RISCO", "DOCUMENTO", "QUESTIONAMENTO", "DIVERGENCIA", "OBRIGACAO", "OPORTUNIDADE",
+];
 
 export type ResultadoDocumento = {
   erro?: string;
@@ -73,17 +84,24 @@ export async function enviarDocumento(formData: FormData): Promise<ResultadoDocu
   const competencia = competenciaDeTexto(String(formData.get("competencia") ?? ""));
   if (!competencia) return { erro: "Informe a competência (mês a que o documento se refere)." };
 
-  const titulo = String(formData.get("titulo") ?? "").trim() || arquivo.name;
-  const emissor = String(formData.get("emissor") ?? "").trim() || null;
   const origemBruta = String(formData.get("origem") ?? "CONSULTORIA") as ConformidadeOrigem;
   const origem = ORIGENS_VALIDAS.includes(origemBruta) ? origemBruta : "CONSULTORIA";
-
-  const dataDocumentoTexto = String(formData.get("dataDocumento") ?? "").trim();
-  const dataDocumento = dataDocumentoTexto ? parseLocalDate(dataDocumentoTexto) : null;
 
   const conexao = await resolverConexao(session.companyId, formData.get("conexaoId"));
 
   const conteudo = Buffer.from(await arquivo.arrayBuffer());
+
+  // Quando o que chega é o e-mail encaminhado, remetente, data e assunto já
+  // estão dentro do arquivo. Preenchem apenas o que a pessoa deixou em branco:
+  // sobrescrever o que ela digitou seria o sistema achando que sabe mais que
+  // quem estava na reunião.
+  const doEmail = classificarArquivo(arquivo.name, arquivo.type) === "EMAIL" ? sugestoesDoEmail(conteudo) : null;
+
+  const titulo = String(formData.get("titulo") ?? "").trim() || doEmail?.assunto || arquivo.name;
+  const emissor = String(formData.get("emissor") ?? "").trim() || doEmail?.emissor || null;
+
+  const dataDocumentoTexto = String(formData.get("dataDocumento") ?? "").trim();
+  const dataDocumento = dataDocumentoTexto ? parseLocalDate(dataDocumentoTexto) : (doEmail?.dataDocumento ?? null);
   const sha256 = createHash("sha256").update(conteudo).digest("hex");
 
   // O mesmo arquivo enviado duas vezes duplicaria todos os apontamentos dele —
@@ -262,13 +280,26 @@ async function criarApontamentos(
       continue;
     }
 
+    // O código da obrigação só é aceito se existir no catálogo: um código
+    // inventado apontaria para uma fundamentação inexistente na tela, que é
+    // pior que fundamentação nenhuma.
+    const obrigacaoCodigo = item.obrigacaoCodigo && OBRIGACAO_POR_CODIGO.has(item.obrigacaoCodigo)
+      ? item.obrigacaoCodigo
+      : null;
+
     await inserirApontamento({
       companyId,
       conexaoId: documento.conexaoId,
       conexaoApelido: documento.conexaoApelido,
       documentoId: documento.id,
       competencia: documento.competencia,
+      competenciaAlvo: item.competenciaAlvo ? competenciaDeTexto(item.competenciaAlvo) : null,
       area,
+      natureza: NATUREZAS_VALIDAS.includes(item.natureza as ConformidadeNatureza)
+        ? (item.natureza as ConformidadeNatureza)
+        : "RISCO",
+      baseLegal: item.baseLegal?.slice(0, 300) ?? OBRIGACAO_POR_CODIGO.get(obrigacaoCodigo ?? "")?.baseLegal ?? null,
+      obrigacaoCodigo,
       severidade,
       titulo: item.titulo.slice(0, 300),
       descricao: item.descricao,
@@ -303,7 +334,11 @@ async function inserirApontamento(dados: {
   conexaoApelido: string | null;
   documentoId: string | null;
   competencia: Date;
+  competenciaAlvo?: Date | null;
   area: ConformidadeArea;
+  natureza: ConformidadeNatureza;
+  baseLegal?: string | null;
+  obrigacaoCodigo?: string | null;
   severidade: AuditSeveridade;
   titulo: string;
   descricao: string;
@@ -404,6 +439,11 @@ export async function registrarApontamento(formData: FormData): Promise<Resultad
   const area = AREAS_VALIDAS.includes(areaBruta) ? areaBruta : "OUTRO";
   const severidadeBruta = String(formData.get("severidade") ?? "MEDIA") as AuditSeveridade;
   const severidade = SEVERIDADES_VALIDAS.includes(severidadeBruta) ? severidadeBruta : "MEDIA";
+  const naturezaBruta = String(formData.get("natureza") ?? "RISCO") as ConformidadeNatureza;
+  const natureza = NATUREZAS_VALIDAS.includes(naturezaBruta) ? naturezaBruta : "RISCO";
+  const obrigacaoBruta = String(formData.get("obrigacaoCodigo") ?? "").trim();
+  const obrigacaoCodigo = OBRIGACAO_POR_CODIGO.has(obrigacaoBruta) ? obrigacaoBruta : null;
+  const competenciaAlvo = competenciaDeTexto(String(formData.get("competenciaAlvo") ?? ""));
 
   const documentoId = String(formData.get("documentoId") ?? "").trim() || null;
   const documento = documentoId
@@ -430,7 +470,11 @@ export async function registrarApontamento(formData: FormData): Promise<Resultad
     conexaoApelido: conexao.apelido,
     documentoId: documento?.id ?? null,
     competencia,
+    competenciaAlvo,
     area,
+    natureza,
+    baseLegal: String(formData.get("baseLegal") ?? "").trim() || OBRIGACAO_POR_CODIGO.get(obrigacaoCodigo ?? "")?.baseLegal || null,
+    obrigacaoCodigo,
     severidade,
     titulo: titulo.slice(0, 300),
     descricao,

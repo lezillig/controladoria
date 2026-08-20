@@ -128,6 +128,29 @@ enum ConformidadeExtracao {
   ERRO
 }
 
+// O QUE o apontamento é. Aprendido lendo os relatórios reais que o grupo
+// recebe: a consultoria não produz uma lista homogênea de "riscos" — produz
+// quatro coisas diferentes, que se resolvem de formas diferentes, e tratar
+// todas como "risco" faz a lista inteira parecer igualmente grave.
+//
+//   DOCUMENTO      resolve-se enviando um arquivo (é a maior parte da lista, e
+//                  a que mais reincide: "apuração de IRPJ/CSLL do 2º tri/24"
+//                  foi pedida em dez/25 e continuava pendente em jul/26)
+//   QUESTIONAMENTO resolve-se com uma resposta da contabilidade
+//   DIVERGENCIA    consultoria e contabilidade discordam — só uma decisão da
+//                  empresa encerra, e enquanto não encerra o risco corre
+//   OBRIGACAO      obrigação acessória entregue fora do prazo ou não entregue
+//   RISCO          exposição identificada (enquadramento, tese, contingência)
+//   OPORTUNIDADE   dinheiro a recuperar (pagamento a maior, crédito não usado)
+enum ConformidadeNatureza {
+  RISCO
+  DOCUMENTO
+  QUESTIONAMENTO
+  DIVERGENCIA
+  OBRIGACAO
+  OPORTUNIDADE
+}
+
 // Tratativa do apontamento. ACEITO_COM_RISCO existe separado de RESOLVIDO e de
 // NAO_SE_APLICA de propósito: é a decisão consciente de conviver com o risco —
 // legítima, comum, e a que mais precisa ficar registrada com nome e data.
@@ -814,11 +837,32 @@ model ConformidadeApontamento {
   documento   ConformidadeDocumento? @relation(fields: [documentoId], references: [id], onDelete: SetNull)
 
   competencia  DateTime
-  area         ConformidadeArea @default(OUTRO)
-  severidade   AuditSeveridade  @default(MEDIA)
+  area         ConformidadeArea     @default(OUTRO)
+  natureza     ConformidadeNatureza @default(RISCO)
+  severidade   AuditSeveridade      @default(MEDIA)
   titulo       String
   descricao    String
   recomendacao String?
+
+  // Norma que sustenta o apontamento, e o código da obrigação no catálogo do
+  // sistema (src/lib/conformidade/obrigacoes.ts). Guardar o CÓDIGO, e não o
+  // texto do prazo e do risco, é o que permite corrigir a fundamentação num
+  // lugar só quando a legislação mudar — sem reescrever apontamento antigo, que
+  // é registro histórico e não pode ser alterado retroativamente.
+  baseLegal       String?
+  obrigacaoCodigo String?
+
+  // Competência a que o apontamento SE REFERE, quando é outra que não a do
+  // relatório. É o caso mais comum da lista de documentos pendentes: o
+  // relatório de julho/26 cobra a apuração do 2º trimestre de 2024.
+  //
+  // Separada de `competencia` de propósito, e não em vez dela: a reincidência
+  // se conta pelas competências dos RELATÓRIOS em que o assunto reapareceu.
+  // Se o registro fosse arquivado na competência de origem, as cinco cobranças
+  // do mesmo trimestre colapsariam numa só e o sistema mostraria "1 ocorrência"
+  // para um problema que a empresa arrasta há oito meses — exatamente o
+  // contrário do que este módulo existe para mostrar.
+  competenciaAlvo DateTime?
 
   // Trecho literal do documento que originou o apontamento, e a página. É o que
   // permite conferir a leitura contra a fonte sem reabrir o PDF inteiro — e o

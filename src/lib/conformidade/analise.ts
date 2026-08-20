@@ -1,7 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { classificarArquivo, extrairTexto, mimeParaModelo, type FormatoDocumento } from "./extracao";
+import { anexosRelevantes, classificarArquivo, extrairTexto, mimeParaModelo, type FormatoDocumento } from "./extracao";
+import { fundamentacaoParaLeitura } from "./obrigacoes";
+import { lerMsg } from "./outlook";
 import { rotuloCompetencia } from "./tipos";
 
 // LEITURA AUTOMÁTICA DO RELATÓRIO DA CONSULTORIA.
@@ -40,10 +42,25 @@ const AREAS_VALIDAS = [
   "OUTRO",
 ] as const;
 
+const NATUREZAS_VALIDAS = ["RISCO", "DOCUMENTO", "QUESTIONAMENTO", "DIVERGENCIA", "OBRIGACAO", "OPORTUNIDADE"] as const;
+
 const ApontamentoSchema = z.object({
   titulo: z.string().describe("Uma linha, específica. Não use 'Risco fiscal' — diga qual risco fiscal."),
   descricao: z.string().describe("O que o documento afirma, em 2 a 4 frases, sem opinião própria."),
   area: z.enum(AREAS_VALIDAS),
+  natureza: z
+    .enum(NATUREZAS_VALIDAS)
+    .describe(
+      "DOCUMENTO = a empresa precisa enviar um arquivo. QUESTIONAMENTO = precisa responder. DIVERGENCIA = as duas partes discordam. OBRIGACAO = declaração entregue fora do prazo ou não entregue. RISCO = exposição identificada. OPORTUNIDADE = dinheiro a recuperar."
+    ),
+  baseLegal: z
+    .string()
+    .nullable()
+    .describe("A norma citada NO DOCUMENTO, ou a do catálogo de obrigações quando for evidente qual é. Nulo se não houver."),
+  obrigacaoCodigo: z
+    .string()
+    .nullable()
+    .describe("Código da obrigação do catálogo (ISS, ICMS-TRANSPORTE, EFD-ICMS-IPI, EFD-CONTRIBUICOES, DCTFWEB, ...). Nulo se nenhuma se aplicar."),
   severidade: z
     .enum(["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"])
     .describe("A gravidade que O DOCUMENTO atribui. Se ele não graduar, use MEDIA."),
@@ -55,6 +72,12 @@ const ApontamentoSchema = z.object({
   recomendacao: z.string().nullable().describe("A providência que o documento recomenda. Nulo se ele não recomendar nada."),
   trechoOrigem: z.string().nullable().describe("Citação literal do documento, até 300 caracteres. Nunca parafraseie aqui."),
   paginaOrigem: z.string().nullable().describe("Página, seção ou aba onde o trecho aparece."),
+  competenciaAlvo: z
+    .string()
+    .nullable()
+    .describe(
+      "Competência A QUE O APONTAMENTO SE REFERE, em AAAA-MM (para trimestre, o primeiro mês dele). Campo informativo e separado da competência do relatório. Nulo quando o apontamento não se refere a um período específico."
+    ),
   valorEnvolvidoReais: z.number().nullable().describe("Valor em reais SOMENTE se o documento informar um. Nunca estime."),
   prazoSugeridoDias: z.number().int().nullable().describe("Prazo em dias se o documento indicar um. Nulo caso contrário."),
 });
@@ -67,20 +90,46 @@ const LeituraSchema = z.object({
 export type ApontamentoExtraido = z.infer<typeof ApontamentoSchema>;
 export type LeituraDocumento = z.infer<typeof LeituraSchema>;
 
-const SYSTEM_PROMPT = `Você organiza, para o sistema de controladoria de um grupo brasileiro de fretamento e transporte de passageiros, os relatórios de risco que a empresa recebe de consultorias, da contabilidade e de auditorias.
+const SYSTEM_PROMPT = `Você organiza, para o sistema de controladoria de um grupo brasileiro de fretamento e transporte de passageiros (Lucro Presumido, sede em São Paulo, filiais), os relatórios de conformidade e risco que a empresa recebe de consultorias tributárias, da contabilidade e de escritórios de advocacia.
 
-Sua tarefa é TRANSCREVER E ESTRUTURAR os apontamentos que o documento faz. Não é analisar a empresa, não é opinar sobre os riscos e não é complementar o que o documento deixou de dizer.
+Sua tarefa é TRANSCREVER E ESTRUTURAR o que o documento aponta. Não é analisar a empresa, não é opinar sobre os riscos e não é complementar o que o documento deixou de dizer.
 
-Regras invioláveis:
-- Só existe apontamento se o documento apontar. Texto descritivo, metodologia, sumário, capa, glossário e elogio não viram apontamento.
+## Como esses documentos são feitos
+
+O relatório mensal típico é uma apresentação com, nesta ordem:
+
+1. GRADES DE ENTREGA por tributo (ISS, ICMS, PIS/COFINS, IRPJ/CSLL, previdenciárias), com uma linha por documento exigido (acompanhamento, guia, comprovante, EFD, balancete) e uma coluna por mês. Célula vazia ou marcada em vermelho = não entregue.
+2. TABELAS DE CONFORMIDADE que confrontam, mês a mês, o valor apurado, o declarado na DCTFWeb, o pago no e-CAC e o compensado por PER/DCOMP. Linha em que esses valores não fecham é apontamento.
+3. CAIXAS DE COMENTÁRIO ao lado das tabelas, muitas vezes citando quem falou ("TrustTax: ...", "Contabilidade: ...", "Valestrá: ..."). Quando as duas partes se contradizem, isso é uma DIVERGENCIA — e é apontamento por si só, independentemente de quem tem razão.
+4. CERTIDÕES (federal, estadual, municipais por inscrição). "Não foi possível emitir a Certidão Negativa" é apontamento, não é problema de portal.
+5. "Documentação - Pendente" e "Documentação - Atual": listas do que falta enviar. Cada item é um apontamento de natureza DOCUMENTO, e a competência dele é a do documento faltante (não a do relatório).
+6. "Apontamentos / Questionamentos", às vezes numerados e às vezes em imagem: são os RISCO e QUESTIONAMENTO.
+
+Quando o documento for um e-mail, o corpo costuma trazer a lista acionável com prazo ("Documentos que devem ser enviados até o dia 10/08") e referências de página ("p. 12 e 13"). Trate essa lista como apontamentos e use a referência de página em paginaOrigem.
+
+## Regras invioláveis
+
+- Só existe apontamento se o documento apontar. Capa, sumário, metodologia, gráfico de histórico e tabela que fecha certo não viram apontamento.
 - Cada apontamento precisa do trecho LITERAL do documento em trechoOrigem. Se você não conseguir citar, não emita o apontamento.
-- Nunca invente valor, prazo, competência ou norma. Se o documento não traz, o campo é nulo.
+- Nunca invente valor, prazo, competência ou norma. Se o documento não traz, o campo é nulo. baseLegal só é preenchida quando o documento cita a norma ou quando o catálogo abaixo a torna inequívoca.
+- Um item da lista de documentos pendentes = um apontamento. "Apuração de IRPJ/CSLL: 2º, 3º e 4º trimestre de 2024" são TRÊS apontamentos, um por trimestre, porque cada um se resolve sozinho e cada um reincide sozinho.
+- competenciaAlvo é a competência A QUE O APONTAMENTO SE REFERE, não a do relatório: um relatório de julho que cobra o balancete do 1º tri/26 tem competenciaAlvo 2026-01.
 - Não junte dois assuntos diferentes num apontamento só, e não repita o mesmo assunto em dois apontamentos.
-- A severidade é a que o documento atribui. Você não reclassifica o risco.
-- assuntoCanonico é o que permite reconhecer o mesmo problema no mês seguinte: use o assunto em si ("credito de pis cofins sobre combustivel"), sem mês, valor ou nome de empresa.
+- A severidade é a que o documento atribui. Sem graduação explícita, use este critério: CRITICA para inscrição em dívida ativa, certidão positiva e compensação sem lastro; ALTA para tributo não recolhido, divergência de apuração e obrigação não entregue; MEDIA para documento pendente e questionamento aberto; BAIXA para recomendação de forma (redação de nota, descrição de item).
+- assuntoCanonico é o que reconhece o mesmo problema no mês seguinte: use o assunto em si ("apuracao irpj csll segundo trimestre 2024", "origem do credito das perdcomps"), sem mês do relatório, valor ou nome de pessoa.
 - Se o documento não contiver nenhum apontamento, devolva a lista vazia e explique isso no resumo. Lista vazia é uma resposta correta e esperada.
 
 Escreva em português do Brasil.`;
+
+// A fundamentação vai como mensagem separada, e não colada no prompt de
+// sistema, por um motivo prático: ela muda quando a legislação muda, e mantê-la
+// visível como "o que o modelo tinha em mãos" torna auditável, depois, por que
+// um apontamento foi classificado numa área e não noutra.
+function mensagemDeFundamentacao(): string {
+  return `Catálogo de referência do sistema — use-o para classificar a área, preencher obrigacaoCodigo e, quando for inequívoco, a base legal. NÃO use este catálogo para criar apontamentos: ele é referência, não fonte.
+
+${fundamentacaoParaLeitura()}`;
+}
 
 export type ResultadoLeitura =
   | { ok: true; leitura: LeituraDocumento; textoExtraido: string | null }
@@ -140,7 +189,11 @@ export async function lerDocumento(params: {
       output_config: { effort: "high" },
       system: SYSTEM_PROMPT,
       output_format: betaZodOutputFormat(LeituraSchema),
-      messages: [{ role: "user", content: [...blocosDoDocumento(formato, params, textoExtraido), { type: "text", text: instrucao }] }],
+      messages: [
+        { role: "user", content: mensagemDeFundamentacao() },
+        { role: "assistant", content: "Catálogo recebido. Envie o documento." },
+        { role: "user", content: [...blocosDoDocumento(formato, params, textoExtraido), { type: "text", text: instrucao }] },
+      ],
     });
 
     const leitura = message.parsed_output;
@@ -162,27 +215,51 @@ function blocosDoDocumento(
   params: { conteudo: Buffer; arquivoNome: string },
   texto: string | null
 ): Anthropic.Beta.BetaContentBlockParam[] {
-  if (formato === "PDF") {
-    return [
-      {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: params.conteudo.toString("base64") },
-      },
-    ];
+  if (formato === "PDF") return [blocoPdf(params.conteudo)];
+  if (formato === "IMAGEM") return [blocoImagem(params.conteudo, params.arquivoNome)];
+
+  // E-mail: os anexos entram como documento, e o corpo entra como texto DEPOIS
+  // deles. A ordem importa — o corpo é o que dá contexto ("resumo da reunião de
+  // 23/07", "enviar até o dia 10/08") ao que está no anexo, e chegar por último
+  // faz o modelo lê-lo já sabendo do que se trata.
+  if (formato === "EMAIL") {
+    const { anexos } = anexosRelevantes(params.conteudo);
+    const blocos = anexos.map((a) =>
+      a.formato === "PDF" ? blocoPdf(a.conteudo) : blocoImagem(a.conteudo, a.nome)
+    );
+    return [...blocos, { type: "text", text: `<email arquivo="${params.arquivoNome}">\n${texto ?? ""}\n</email>` }];
   }
-  if (formato === "IMAGEM") {
-    return [
-      {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: mimeParaModelo(formato, params.arquivoNome) as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
-          data: params.conteudo.toString("base64"),
-        },
-      },
-    ];
-  }
+
   return [{ type: "text", text: `<documento nome="${params.arquivoNome}">\n${texto ?? ""}\n</documento>` }];
+}
+
+function blocoPdf(conteudo: Buffer): Anthropic.Beta.BetaContentBlockParam {
+  return { type: "document", source: { type: "base64", media_type: "application/pdf", data: conteudo.toString("base64") } };
+}
+
+function blocoImagem(conteudo: Buffer, nome: string): Anthropic.Beta.BetaContentBlockParam {
+  return {
+    type: "image",
+    source: {
+      type: "base64",
+      media_type: mimeParaModelo("IMAGEM", nome) as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+      data: conteudo.toString("base64"),
+    },
+  };
+}
+
+// Dados que o próprio e-mail já responde e que a pessoa teria de digitar:
+// quem enviou e quando. Usados apenas para preencher o que ficou em branco no
+// formulário — nunca para sobrescrever o que alguém informou.
+export type SugestoesDoEmail = { emissor: string | null; dataDocumento: Date | null; assunto: string | null };
+
+export function sugestoesDoEmail(conteudo: Buffer): SugestoesDoEmail | null {
+  try {
+    const m = lerMsg(conteudo);
+    return { emissor: m.remetenteNome ?? m.remetenteEmail, dataDocumento: m.data, assunto: m.assunto };
+  } catch {
+    return null;
+  }
 }
 
 function mensagemDeErro(e: unknown): string {

@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
-import { ORIGENS } from "@/lib/conformidade/tipos";
+import { EXTENSOES_ACEITAS, ORIGENS } from "@/lib/conformidade/tipos";
 import { enviarDocumento } from "./actions";
 
 // Envio do documento recebido da consultoria.
@@ -63,11 +63,13 @@ export default function UploadForm({
             name="arquivo"
             type="file"
             required
-            accept=".pdf,.png,.jpg,.jpeg,.webp,.xlsx,.docx,.csv,.txt,.md"
+            accept={EXTENSOES_ACEITAS}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700"
           />
           <p className="mt-1 text-xs text-slate-500">
-            PDF, imagem, planilha, Word ou texto — até 8 MB. O arquivo original fica guardado como evidência do apontamento.
+            <strong>Encaminhe o e-mail da consultoria (.msg)</strong> e o sistema lê o corpo e os anexos juntos — é o corpo
+            que traz o prazo (&quot;enviar até o dia 10/08&quot;) e o anexo que traz as tabelas. Também aceita PDF, imagem,
+            planilha, Word ou texto. Até 8 MB. O arquivo original fica guardado como evidência do apontamento.
           </p>
         </div>
 
@@ -80,17 +82,19 @@ export default function UploadForm({
         <div>
           <label className={labelClass}>Data do documento</label>
           <input name="dataDocumento" type="date" className={inputClass} />
+          <p className="mt-1 text-xs text-slate-500">Em branco, usa a data do e-mail.</p>
         </div>
 
         <div>
           <label className={labelClass}>Título</label>
           <input name="titulo" type="text" placeholder="Ex.: Revisão fiscal mensal" className={inputClass} />
-          <p className="mt-1 text-xs text-slate-500">Em branco, usa o nome do arquivo.</p>
+          <p className="mt-1 text-xs text-slate-500">Em branco, usa o assunto do e-mail ou o nome do arquivo.</p>
         </div>
 
         <div>
           <label className={labelClass}>Emissor</label>
           <input name="emissor" type="text" placeholder="Nome da consultoria ou escritório" className={inputClass} />
+          <p className="mt-1 text-xs text-slate-500">Em branco, usa o remetente do e-mail.</p>
         </div>
 
         <div>

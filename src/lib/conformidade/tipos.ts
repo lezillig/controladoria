@@ -1,4 +1,4 @@
-import type { ConformidadeArea, ConformidadeOrigem, ConformidadeStatus } from "@prisma/client";
+import type { ConformidadeArea, ConformidadeNatureza, ConformidadeOrigem, ConformidadeStatus } from "@prisma/client";
 
 // Vocabulário do módulo de Conformidade: rótulos em português, listas para os
 // seletores da tela e as duas normalizações que precisam ser idênticas na
@@ -8,6 +8,12 @@ import type { ConformidadeArea, ConformidadeOrigem, ConformidadeStatus } from "@
 // agosto é "o mesmo de julho" ou um novo: duas implementações ligeiramente
 // diferentes fariam o sistema perder exatamente o sinal mais valioso que ele
 // tem — o problema que se repete.
+
+// Extensões aceitas no formulário de envio. Vive aqui, e não junto da
+// classificação de formato, porque o formulário é componente de cliente e
+// `extracao.ts` importa `node:zlib` — arrastá-lo para o navegador quebraria o
+// bundle por causa de uma string.
+export const EXTENSOES_ACEITAS = ".msg,.pdf,.png,.jpg,.jpeg,.webp,.xlsx,.docx,.csv,.txt,.md";
 
 export const AREAS: { valor: ConformidadeArea; rotulo: string; explicacao: string }[] = [
   { valor: "FISCAL", rotulo: "Fiscal", explicacao: "Tributos, créditos, obrigações acessórias, enquadramento." },
@@ -23,6 +29,21 @@ export const AREAS: { valor: ConformidadeArea; rotulo: string; explicacao: strin
 ];
 
 export const ROTULO_AREA: Record<string, string> = Object.fromEntries(AREAS.map((a) => [a.valor, a.rotulo]));
+
+// A natureza diz COMO se resolve — e é por isso que ela não é um detalhe de
+// classificação: a lista de uma consultoria mistura "envie o balancete" com
+// "sua compensação não tem lastro", e tratar as duas como "risco" faz a
+// primeira parecer grave demais e a segunda, de menos.
+export const NATUREZAS: { valor: ConformidadeNatureza; rotulo: string; explicacao: string }[] = [
+  { valor: "DOCUMENTO", rotulo: "Documento pendente", explicacao: "Resolve-se enviando um arquivo. É a maior parte de qualquer relatório — e a que mais se arrasta." },
+  { valor: "QUESTIONAMENTO", rotulo: "Questionamento", explicacao: "A consultoria perguntou; a contabilidade ou a empresa precisa responder." },
+  { valor: "DIVERGENCIA", rotulo: "Divergência técnica", explicacao: "Consultoria e contabilidade discordam. Só uma decisão da empresa encerra — e o risco corre enquanto não encerra." },
+  { valor: "OBRIGACAO", rotulo: "Obrigação acessória", explicacao: "Declaração entregue fora do prazo ou não entregue." },
+  { valor: "RISCO", rotulo: "Risco identificado", explicacao: "Exposição de enquadramento, tese ou contingência." },
+  { valor: "OPORTUNIDADE", rotulo: "Dinheiro a recuperar", explicacao: "Pagamento a maior, crédito não aproveitado, retenção não compensada." },
+];
+
+export const ROTULO_NATUREZA: Record<string, string> = Object.fromEntries(NATUREZAS.map((n) => [n.valor, n.rotulo]));
 
 export const ORIGENS: { valor: ConformidadeOrigem; rotulo: string }[] = [
   { valor: "CONSULTORIA", rotulo: "Consultoria" },

@@ -201,19 +201,72 @@ upload ──▶ arquivo guardado (SHA-256, evidência) ──▶ leitura ──
 1. **O arquivo é guardado antes de qualquer processamento** e nunca é apagado
    por falha de leitura. Ele é a evidência, e apontamento sem fonte verificável
    não resiste a uma discussão com o fisco ou com um auditor.
-2. **PDF e imagem vão inteiros para o modelo**, que lê tabela e layout melhor
-   que qualquer extração de texto. `.xlsx` e `.docx` são abertos por um leitor
-   de ZIP+XML próprio, sem biblioteca de terceiros — parser de documento é uma
-   das maiores superfícies de ataque que existe, e o arquivo vem de fora.
-3. **A leitura transcreve, não julga.** Cada proposta carrega o **trecho
+2. **O caminho normal é encaminhar o e-mail da consultoria** (`.msg`). O sistema
+   lê o corpo e os anexos juntos, porque os dois carregam metades diferentes do
+   conteúdo: o PDF tem as tabelas de conformidade, e o corpo do e-mail tem a
+   lista acionável com prazo ("Documentos que devem ser enviados até o dia
+   10/08") e as referências de página. Ler só o anexo perderia justamente a
+   metade com data. Remetente, assunto e data do e-mail preenchem sozinhos o
+   que ficar em branco no formulário.
+3. **PDF e imagem vão inteiros para o modelo**, que lê tabela e layout melhor
+   que qualquer extração de texto — e nesses relatórios os slides de
+   "Apontamentos/Questionamentos" são imagens, então extração de texto puro
+   simplesmente não os enxerga. `.xlsx`, `.docx` e `.msg` são abertos por
+   leitores próprios (ZIP+XML e OLE2/CFB), sem biblioteca de terceiros —
+   parser de documento é uma das maiores superfícies de ataque que existe, e o
+   arquivo vem de fora.
+4. **A leitura transcreve, não julga.** Cada proposta carrega o **trecho
    literal** do documento e a página. Sem citação verificável, o apontamento não
    é emitido.
-4. **Máquina propõe, pessoa confirma.** Enquanto não for conferida, a proposta
+5. **Máquina propõe, pessoa confirma.** Enquanto não for conferida, a proposta
    não entra no relatório da diretoria nem conta como risco assumido pela
    empresa — e o próprio agente cobra as que ficam esperando.
-5. **Sem `ANTHROPIC_API_KEY` o módulo funciona inteiro**, apenas sem a
+6. **Sem `ANTHROPIC_API_KEY` o módulo funciona inteiro**, apenas sem a
    transcrição automática: o arquivo é guardado e os apontamentos são
    cadastrados à mão. A IA acelera a digitação; ela não é o produto.
+
+### Quatro coisas diferentes numa lista só
+
+Lendo os relatórios reais que o grupo recebe, ficou claro que uma consultoria
+não produz uma lista homogênea de "riscos". Ela produz coisas que se resolvem de
+formas diferentes, e tratar todas como risco faz a lista inteira parecer
+igualmente grave — que é o mesmo que não priorizar nada. Por isso cada
+apontamento tem uma **natureza**:
+
+| Natureza | Como se resolve |
+|---|---|
+| **Documento pendente** | Enviando um arquivo. É a maior parte de qualquer relatório — e a que mais se arrasta. |
+| **Questionamento** | Com uma resposta da contabilidade ou da empresa. |
+| **Divergência técnica** | Só uma decisão da empresa encerra. Enquanto não encerra, o risco corre. |
+| **Obrigação acessória** | Declaração entregue fora do prazo ou não entregue. |
+| **Risco identificado** | Exposição de enquadramento, tese ou contingência. |
+| **Dinheiro a recuperar** | Pagamento a maior, crédito não aproveitado. |
+
+A natureza também muda a recomendação do agente na reincidência: documento
+cobrado cinco vezes e nunca entregue quase nunca é esquecimento — ou ninguém foi
+designado para produzi-lo, ou ele não existe, e nesse caso a resposta formal
+"não temos" encerra o ponto, enquanto o silêncio o mantém aberto para sempre.
+
+### Fundamentação técnica e legal
+
+`src/lib/conformidade/obrigacoes.ts` traz o catálogo das obrigações que uma
+operação de fretamento no Lucro Presumido cumpre todo mês — ISS, ICMS/CT-e, EFD
+ICMS/IPI, EFD-Contribuições, DCTFWeb, eSocial, contribuição patronal, retenção
+de 11% na cessão de mão de obra, IRPJ/CSLL trimestral, ECD, ECF, FGTS e as
+certidões — com a norma que as cria, o prazo, a evidência que prova o
+cumprimento e o risco de não cumprir. Junto vem a lista das **teses em que este
+setor erra**: isenção do art. 78 do Anexo I do RICMS-SP aplicada fora das
+hipóteses, crédito outorgado do art. 11 do Anexo III, compensação sem lastro
+(art. 74 da Lei 9.430/96), ajuste M220/M620 sem processo ativo, dívida ativa não
+tributária e locação com motorista lida como cessão de mão de obra.
+
+O catálogo vive em código, e não no banco, por três razões: ele **fundamenta a
+leitura automática** (é o que faz "registro C110 inexistente" ser classificado
+como EFD ICMS/IPI, com base legal preenchida sem invenção), **fundamenta a
+tela** (quem abre o apontamento vê a norma, o prazo e a consequência) e **fica
+versionado** — prazo de obrigação acessória muda, e quando mudar o diff mostra o
+que mudou e quando. Não substitui a assessoria: é o mapa que permite ao sistema
+conversar com ela na mesma língua.
 
 ### Reincidência: como o mesmo assunto é reconhecido
 
