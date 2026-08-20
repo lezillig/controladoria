@@ -1,0 +1,9 @@
+{
+  "buildCommand": "prisma migrate deploy && next build",
+  "crons": [
+    {
+      "path": "/api/cron/controladoria",
+      "schedule": "10 6 * * *"
+    }
+  ]
+}

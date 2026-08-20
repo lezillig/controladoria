@@ -1,0 +1,138 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
+import { salvarConfiguracao } from "./actions";
+
+export type ValoresConfig = {
+  emails: string;
+  dataInicioBase: string;
+  limiteAlcada: string;
+  saldoMinimo: string;
+  metaMargem: string;
+  toleranciaVariacao: string;
+  diasAtrasoCritico: string;
+  limiteConcentracao: string;
+};
+
+export default function ConfiguracaoForm({
+  valores,
+  alcadaSugerida,
+}: {
+  valores: ValoresConfig;
+  alcadaSugerida: { operacional: string; gerencial: string; diretoria: string; amostra: number } | null;
+}) {
+  const [erro, setErro] = useState<string | null>(null);
+  const [salvo, setSalvo] = useState(false);
+  const [processando, iniciar] = useTransition();
+  const router = useRouter();
+
+  return (
+    <form
+      className="space-y-6"
+      action={(formData) => {
+        setErro(null);
+        setSalvo(false);
+        iniciar(async () => {
+          const resultado = await salvarConfiguracao(formData);
+          if (resultado.erro) {
+            setErro(resultado.erro);
+            return;
+          }
+          setSalvo(true);
+          router.refresh();
+        });
+      }}
+    >
+      <Campo
+        rotulo="Destinatários do relatório diário"
+        ajuda="Separados por vírgula. Quem recebe relatório gerencial muda com o tempo — por isso fica aqui, e não no código."
+      >
+        <input name="emails" defaultValue={valores.emails} className={inputClass} />
+      </Campo>
+
+      <Campo
+        rotulo="Início da base histórica"
+        ajuda="A partir de que data a carga da Omie é feita. Recuar esta data dispara a carga dos meses anteriores em segundo plano, e é o que dá comparação ano contra ano."
+      >
+        <input name="dataInicioBase" type="date" defaultValue={valores.dataInicioBase} className={inputClass} />
+      </Campo>
+
+      <Campo
+        rotulo="Alçada de aprovação de pagamentos (R$)"
+        ajuda="Valor acima do qual um pagamento exige aprovação de nível superior. É o que liga a detecção de fracionamento — vários pagamentos logo abaixo do teto para evitar a aprovação."
+      >
+        <input name="limiteAlcada" inputMode="decimal" defaultValue={valores.limiteAlcada} className={inputClass} placeholder="ex.: 10000" />
+        {alcadaSugerida && (
+          <div className="mt-2 rounded-lg bg-blue-50 p-3 text-xs text-blue-900">
+            <p className="font-medium">Sugestão calculada sobre {alcadaSugerida.amostra} pagamentos reais desta operação:</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              <li>
+                Até <strong>{alcadaSugerida.operacional}</strong> — aprovação do financeiro (cobre a rotina)
+              </li>
+              <li>
+                Até <strong>{alcadaSugerida.gerencial}</strong> — dupla aprovação: financeiro + gestor
+              </li>
+              <li>
+                Acima disso — aprovação da diretoria; acima de <strong>{alcadaSugerida.diretoria}</strong>, também contrato
+                formal e conferência da conta bancária do fornecedor
+              </li>
+            </ul>
+            <p className="mt-2">
+              Regra que sustenta o resto, independentemente dos valores: quem cadastra o título nunca pode ser quem aprova o
+              pagamento.
+            </p>
+          </div>
+        )}
+      </Campo>
+
+      <Campo
+        rotulo="Saldo mínimo de caixa (R$)"
+        ajuda="Colchão de segurança. Abaixo dele, o sistema abre um alerta antes que a falta de saldo vire juros de conta garantida. Em branco, a verificação não roda — o sistema não inventa um número."
+      >
+        <input name="saldoMinimo" inputMode="decimal" defaultValue={valores.saldoMinimo} className={inputClass} />
+      </Campo>
+
+      <Campo
+        rotulo="Meta de margem por contrato (%)"
+        ajuda="Usada para apontar contratos abaixo do esperado. Em branco, o sistema só aponta margem negativa — não arbitra qual margem positiva é 'boa'."
+      >
+        <input name="metaMargem" inputMode="decimal" defaultValue={valores.metaMargem} className={inputClass} />
+      </Campo>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Campo rotulo="Tolerância de variação de custo (%)" ajuda="Acima disso, a alta de uma categoria vira achado.">
+          <input name="toleranciaVariacao" inputMode="decimal" defaultValue={valores.toleranciaVariacao} className={inputClass} />
+        </Campo>
+        <Campo rotulo="Atraso crítico (dias)" ajuda="A partir de quantos dias um título vencido sobe de severidade.">
+          <input name="diasAtrasoCritico" inputMode="numeric" defaultValue={valores.diasAtrasoCritico} className={inputClass} />
+        </Campo>
+        <Campo rotulo="Limite de concentração (%)" ajuda="Participação de um único cliente ou fornecedor a partir da qual vira risco.">
+          <input name="limiteConcentracao" inputMode="decimal" defaultValue={valores.limiteConcentracao} className={inputClass} />
+        </Campo>
+      </div>
+
+      {erro && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{erro}</p>}
+      {salvo && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Parâmetros salvos.</p>}
+
+      <button type="submit" disabled={processando} className={primaryButtonClass}>
+        {processando ? "Salvando..." : "Salvar parâmetros"}
+      </button>
+      <p className="text-xs text-slate-500">
+        Toda alteração aqui fica registrada com autor, data e valores anterior e novo — o módulo audita também quem mexe
+        nele.
+      </p>
+    </form>
+  );
+}
+
+function Campo({ rotulo, ajuda, children }: { rotulo: string; ajuda: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className={labelClass}>{rotulo}</label>
+      {children}
+      <p className="mt-1 text-xs text-slate-500">{ajuda}</p>
+    </div>
+  );
+}

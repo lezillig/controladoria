@@ -1,0 +1,702 @@
+// Schema do sistema de Controladoria.
+//
+// Este sistema é INDEPENDENTE do sistema de gestão de motoristas — outro
+// repositório, outro deploy, outro login — mas compartilha o mesmo banco
+// Postgres, num SCHEMA PRÓPRIO (`controladoria`, definido pelo parâmetro
+// `?schema=controladoria` na DATABASE_URL).
+//
+// Por que schema separado e não banco separado:
+//   - Cada aplicação passa a ter a SUA tabela de migrações dentro do próprio
+//     schema. Sem isso, dois `prisma migrate deploy` disputariam o mesmo
+//     histórico e um sobrescreveria o outro — falha silenciosa e difícil de
+//     diagnosticar.
+//   - As tabelas da operação (motoristas, veículos, abastecimentos, clientes)
+//     continuam alcançáveis, em SOMENTE LEITURA, pelo schema `public` — é o
+//     que mantém vivos os cruzamentos que dão valor à auditoria: combustível
+//     da Omie contra o extrato do cartão de frota, fornecedor cujo CPF é de um
+//     motorista da folha, custo por veículo e por funcionário.
+//   - Essa leitura é feita por consultas explícitas (ver src/lib/gestao),
+//     nunca por modelo do Prisma: modelar aqui uma tabela de que este sistema
+//     não é dono seria convite para o dia em que uma migração daqui tentasse
+//     alterá-la.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Enums ----------
+
+enum OmieNaturezaTitulo {
+  PAGAR
+  RECEBER
+}
+
+enum OmieSyncStatus {
+  EXECUTANDO
+  CONCLUIDO
+  ERRO
+}
+
+// Severidade do achado — dirige a ordenacao do relatorio e o que vira alerta
+// imediato no e-mail.
+enum AuditSeveridade {
+  CRITICA
+  ALTA
+  MEDIA
+  BAIXA
+  INFO
+}
+
+// Natureza do achado. Separado da severidade de proposito: um indicio de
+// FRAUDE de valor baixo continua sendo fraude (tratativa diferente de um erro
+// de digitacao do mesmo valor), e OPORTUNIDADE nao e problema nenhum — e
+// dinheiro que da pra economizar, com acao recomendada e impacto estimado.
+enum AuditCategoria {
+  FRAUDE
+  ERRO_PROCESSO
+  PERDA_FINANCEIRA
+  RISCO_FINANCEIRO
+  CONFORMIDADE
+  OPORTUNIDADE
+}
+
+enum AuditStatus {
+  ABERTO
+  EM_ANALISE
+  RESOLVIDO
+  IGNORADO
+  // Fechado automaticamente pelo motor: a condicao que gerou o achado deixou
+  // de existir. Diferente de RESOLVIDO, que e tratativa humana registrada.
+  OBSOLETO
+}
+
+enum RelatorioStatus {
+  GERADO
+  ENVIADO
+  ERRO_ENVIO
+}
+
+enum BscPerspectiva {
+  FINANCEIRA
+  CLIENTE
+  PROCESSOS_INTERNOS
+  APRENDIZADO_CRESCIMENTO
+}
+
+// ============================================================================
+// Conexão Omie
+// ============================================================================
+// O grupo opera com mais de um CNPJ (Azul e MCZ), cada um com sua própria
+// conta na Omie e sua própria numeração de lançamentos. Isso NÃO é detalhe de
+// configuração: o título nº 12345 existe nas duas contas e são documentos
+// diferentes. Sem a dimensão de conexão em cada chave única, um sobrescreveria
+// o outro em silêncio — e num sistema de auditoria o número errado é pior que
+// número nenhum, porque parece plausível.
+//
+// Toda tabela espelhada carrega `conexaoId`, e toda chave natural inclui a
+// conexão. O `apelido` vai desnormalizado junto, para tela, relatório e chave
+// de achado mostrarem a empresa de origem sem depender de join.
+model OmieConexao {
+  id        String  @id @default(cuid())
+  companyId String
+  nome      String
+  // Rótulo curto usado em filtros, listas e chaves de achado ("AZUL", "MCZ").
+  apelido   String
+  cnpj      String?
+  // Nome do SUFIXO das variáveis de ambiente que guardam as credenciais:
+  // `AZUL` resolve para OMIE_APP_KEY_AZUL / OMIE_APP_SECRET_AZUL.
+  //
+  // A credencial em si NUNCA é gravada no banco. Guardar app_key/app_secret
+  // aqui significaria que um vazamento de banco (backup, dump, acesso de
+  // leitura de um terceiro) entregaria acesso ao ERP financeiro do grupo. O
+  // banco guarda apenas o NOME da variável de ambiente.
+  credencialRef String
+  ativa     Boolean  @default(true)
+  ordem     Int      @default(0)
+  criadoEm  DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  parceiros       OmieParceiro[]
+  categorias      OmieCategoria[]
+  departamentos   OmieDepartamento[]
+  projetos        OmieProjeto[]
+  contasCorrentes OmieContaCorrente[]
+  titulos         OmieTitulo[]
+  baixas          OmieBaixa[]
+  movimentos      OmieMovimento[]
+  notas           OmieNota[]
+  syncRuns        OmieSyncRun[]
+
+  @@unique([companyId, apelido])
+  @@unique([companyId, credencialRef])
+  @@index([companyId, ativa])
+}
+
+// ============================================================================
+// Espelho da Omie
+// ============================================================================
+// Espelho LOCAL, somente leitura: nada aqui é fonte de verdade contábil, a
+// Omie é. O espelho existe porque auditoria de verdade precisa de três coisas
+// que a API sozinha não dá: histórico estável (o achado precisa provar o que
+// estava lá ontem), cruzamento entre domínios, e consulta rápida o bastante
+// para rodar dezenas de regras num relatório diário sem estourar o limite de
+// chamadas da Omie.
+//
+// Todo valor monetário em CENTAVOS (Int): float em dinheiro acumula erro de
+// arredondamento e, num sistema cujo propósito é apontar divergência de
+// centavos, isso geraria achado falso.
+//
+// Todo código vindo da Omie é String, não Int: os códigos reais passam de 10
+// dígitos e estouram o Int32 do Postgres.
+
+model OmieParceiro {
+  id               String      @id @default(cuid())
+  companyId        String
+  conexaoId        String
+  conexao          OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido   String
+  codigoOmie       String
+  codigoIntegracao String?
+  nome             String
+  nomeFantasia     String?
+  // Somente dígitos — o cruzamento com o CPF do motorista (fornecedor que é
+  // funcionário) só funciona com os dois lados normalizados.
+  documento        String?
+  ehCliente        Boolean     @default(false)
+  ehFornecedor     Boolean     @default(false)
+  email            String?
+  cidade           String?
+  estado           String?
+  inativo          Boolean     @default(false)
+  bloqueado        Boolean     @default(false)
+  // Hash SHA-256 de banco+agência+conta, NUNCA os dados em claro. Serve a um
+  // propósito único: detectar TROCA de conta bancária de fornecedor entre duas
+  // sincronizações — o vetor mais comum de fraude de boleto/PIX no Brasil. O
+  // hash dá o alerta sem este sistema virar mais um lugar de onde vazar dado
+  // bancário de terceiro.
+  contaBancariaHash       String?
+  contaBancariaAlteradaEm DateTime?
+  sincronizadoEm          DateTime  @default(now())
+
+  @@unique([conexaoId, codigoOmie])
+  @@index([companyId, documento])
+}
+
+model OmieCategoria {
+  id                String      @id @default(cuid())
+  companyId         String
+  conexaoId         String
+  conexao           OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido    String
+  codigo            String
+  descricao         String
+  natureza          String?
+  categoriaSuperior String?
+  totalizadora      Boolean     @default(false)
+  inativa           Boolean     @default(false)
+  sincronizadoEm    DateTime    @default(now())
+
+  @@unique([conexaoId, codigo])
+  @@index([companyId])
+}
+
+model OmieDepartamento {
+  id             String      @id @default(cuid())
+  companyId      String
+  conexaoId      String
+  conexao        OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido String
+  codigo         String
+  descricao      String
+  estrutura      String?
+  inativo        Boolean     @default(false)
+  sincronizadoEm DateTime    @default(now())
+
+  @@unique([conexaoId, codigo])
+  @@index([companyId])
+}
+
+model OmieProjeto {
+  id             String      @id @default(cuid())
+  companyId      String
+  conexaoId      String
+  conexao        OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido String
+  codigo         String
+  nome           String
+  inativo        Boolean     @default(false)
+  sincronizadoEm DateTime    @default(now())
+
+  @@unique([conexaoId, codigo])
+  @@index([companyId])
+}
+
+model OmieContaCorrente {
+  id                String      @id @default(cuid())
+  companyId         String
+  conexaoId         String
+  conexao           OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido    String
+  codigo            String
+  descricao         String
+  tipo              String?
+  banco             String?
+  agencia           String?
+  numeroConta       String?
+  saldoInicialCents Int         @default(0)
+  inativa           Boolean     @default(false)
+  sincronizadoEm    DateTime    @default(now())
+
+  @@unique([conexaoId, codigo])
+  @@index([companyId])
+}
+
+// Uma tabela para as duas naturezas (pagar e receber), discriminadas por
+// `natureza`. As regras de auditoria são quase simétricas — duas tabelas
+// obrigariam a escrever cada regra duas vezes, e é exatamente aí que uma das
+// cópias fica para trás.
+model OmieTitulo {
+  id               String             @id @default(cuid())
+  companyId        String
+  conexaoId        String
+  conexao          OmieConexao        @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido   String
+  natureza         OmieNaturezaTitulo
+  codigoLancamento String
+  codigoIntegracao String?
+
+  parceiroCodigo    String?
+  // Nome desnormalizado: o relatório lista dezenas de títulos e não pode
+  // depender de join com um cadastro que talvez ainda não tenha sido
+  // sincronizado (a Omie devolve o título antes do cadastro se o backfill
+  // parou no meio).
+  parceiroNome      String?
+  parceiroDocumento String?
+
+  numeroDocumento     String?
+  numeroParcela       String?
+  tipoDocumento       String?
+  categoriaCodigo     String?
+  categoriaDescricao  String?
+  departamentoCodigo  String?
+  projetoCodigo       String?
+  contaCorrenteCodigo String?
+
+  dataEmissao    DateTime?
+  dataVencimento DateTime
+  dataPrevisao   DateTime?
+  dataRegistro   DateTime?
+  dataEntrada    DateTime?
+
+  valorDocumentoCents Int
+  saldoCents          Int?
+  // Totais consolidados das baixas. Ficam aqui, e não só na tabela de baixas,
+  // porque toda regra de perda financeira ("pagou juros", "pagou acima do
+  // documento") filtra por esses valores sobre milhares de títulos — agregar
+  // por join a cada regra era o gargalo do relatório diário.
+  valorPagoCents  Int       @default(0)
+  jurosCents      Int       @default(0)
+  multaCents      Int       @default(0)
+  descontoCents   Int       @default(0)
+  tarifaCents     Int       @default(0)
+  dataUltimaBaixa DateTime?
+
+  // Texto cru da Omie ("ATRASADO", "A VENCER", "PAGO", "LIQUIDADO",
+  // "CANCELADO"...). Não normalizado para enum de propósito: um status novo do
+  // ERP não pode quebrar o sync.
+  status         String
+  liquidado      Boolean   @default(false)
+  cancelado      Boolean   @default(false)
+  observacao     String?
+  origem         String?
+  alteradoEmOmie DateTime?
+  sincronizadoEm DateTime  @default(now())
+
+  baixas OmieBaixa[]
+
+  @@unique([conexaoId, natureza, codigoLancamento])
+  @@index([companyId, natureza, dataVencimento])
+  @@index([companyId, natureza, status])
+  @@index([companyId, dataUltimaBaixa])
+  @@index([companyId, parceiroCodigo])
+}
+
+// Cada pagamento/recebimento de um título. É aqui que moram juros, multa,
+// desconto e tarifa — os números que respondem "quanto a má gestão de prazo
+// custou este mês", que o título sozinho não conta.
+model OmieBaixa {
+  id        String      @id @default(cuid())
+  companyId String
+  conexaoId String
+  conexao   OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  tituloId  String
+  titulo    OmieTitulo  @relation(fields: [tituloId], references: [id], onDelete: Cascade)
+  // Chave natural dentro da conexão. Existe porque nem todo endpoint de baixa
+  // da Omie devolve identificador próprio, e sem chave estável a reimportação
+  // duplicaria as baixas — inflando o juros do relatório.
+  chave               String
+  dataBaixa           DateTime
+  valorCents          Int
+  jurosCents          Int      @default(0)
+  multaCents          Int      @default(0)
+  descontoCents       Int      @default(0)
+  tarifaCents         Int      @default(0)
+  contaCorrenteCodigo String?
+  observacao          String?
+  liquidaTitulo       Boolean  @default(true)
+  sincronizadoEm      DateTime @default(now())
+
+  @@unique([conexaoId, chave])
+  @@index([companyId, dataBaixa])
+  @@index([tituloId])
+}
+
+// Base da conciliação bancária: o que de fato entrou e saiu da conta,
+// independente de existir título. Movimento sem título e título baixado sem
+// movimento são os dois lados do mesmo furo.
+model OmieMovimento {
+  id                  String      @id @default(cuid())
+  companyId           String
+  conexaoId           String
+  conexao             OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido      String
+  contaCorrenteCodigo String
+  codigoLancamento    String
+  data                DateTime
+  // Com sinal: negativo = saída. Somar valor absoluto e depois aplicar sinal
+  // por natureza é a receita clássica para o erro de sinal invertido.
+  valorCents      Int
+  natureza        String?
+  tipo            String?
+  categoriaCodigo String?
+  parceiroCodigo  String?
+  parceiroNome    String?
+  documento       String?
+  observacao      String?
+  conciliado      Boolean   @default(false)
+  dataConciliacao DateTime?
+  tituloCodigo    String?
+  sincronizadoEm  DateTime  @default(now())
+
+  @@unique([conexaoId, codigoLancamento])
+  @@index([companyId, data])
+  @@index([companyId, contaCorrenteCodigo, data])
+}
+
+// Cabeçalho de NF-e e NFS-e. Não guarda item nem XML completo: o objetivo é
+// análise fiscal agregada (carga tributária efetiva, nota cancelada com título
+// ativo, faturamento sem nota) — não substituir o arquivo fiscal, que continua
+// sendo o da Omie/contador.
+model OmieNota {
+  id                 String      @id @default(cuid())
+  companyId          String
+  conexaoId          String
+  conexao            OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido     String
+  tipo               String
+  chave              String
+  numero             String?
+  serie              String?
+  chaveAcesso        String?
+  dataEmissao        DateTime
+  parceiroCodigo     String?
+  parceiroNome       String?
+  valorCents         Int
+  valorServicosCents Int?
+  baseIssCents       Int?
+  valorIssCents      Int?
+  valorPisCents      Int?
+  valorCofinsCents   Int?
+  valorIcmsCents     Int?
+  valorIpiCents      Int?
+  valorIrCents       Int?
+  valorCsllCents     Int?
+  valorInssCents     Int?
+  cancelada          Boolean     @default(false)
+  naturezaOperacao   String?
+  cfop               String?
+  sincronizadoEm     DateTime    @default(now())
+
+  @@unique([conexaoId, chave])
+  @@index([companyId, dataEmissao])
+}
+
+// Uma linha por execução do ciclo (que pode ter várias invocações
+// encadeadas). É também a evidência de que o sistema está mesmo em D-1: o
+// agente administrativo audita esta tabela e abre achado quando a última
+// execução concluída ficou para trás.
+model OmieSyncRun {
+  id           String         @id @default(cuid())
+  companyId    String
+  conexaoId    String?
+  conexao      OmieConexao?   @relation(fields: [conexaoId], references: [id], onDelete: SetNull)
+  iniciadoEm   DateTime       @default(now())
+  finalizadoEm DateTime?
+  status       OmieSyncStatus @default(EXECUTANDO)
+  // Fase da máquina de estados. Persistida porque cada invocação encadeada é
+  // um processo novo, sem memória da anterior.
+  fase           String   @default("cadastros")
+  cursor         String?
+  janelaInicio   DateTime
+  janelaFim      DateTime
+  backfill       Boolean  @default(false)
+  invocacoes     Int      @default(1)
+  cadastros      Int      @default(0)
+  titulosPagar   Int      @default(0)
+  titulosReceber Int      @default(0)
+  baixas         Int      @default(0)
+  movimentos     Int      @default(0)
+  notas          Int      @default(0)
+  achados        Int      @default(0)
+  erro           String?
+  detalhes       Json?
+
+  @@index([companyId, iniciadoEm])
+  @@index([companyId, status])
+  @@index([conexaoId, status])
+}
+
+// ============================================================================
+// Achados de auditoria
+// ============================================================================
+// Persistido, e não recalculado a cada carregamento, por três motivos: o
+// achado precisa de TRATATIVA (alguém marca como resolvido e escreve o
+// porquê), de HISTÓRICO (quando apareceu, quanto tempo levou para ser tratado
+// — o indicador de controle interno) e precisa aparecer no e-mail do dia
+// seguinte mesmo que o dado de origem já tenha mudado.
+model AuditFinding {
+  id        String  @id @default(cuid())
+  companyId String
+  // Conexão a que o achado se refere. Nulo em achados consolidados do grupo
+  // (ex.: projeção de caixa somando as duas empresas).
+  conexaoId      String?
+  conexaoApelido String?
+  agente         String
+  regra          String
+  severidade     AuditSeveridade
+  categoria      AuditCategoria
+  titulo         String
+  descricao      String
+  recomendacao   String?
+  // Dinheiro do fato (ex.: valor do título pago em duplicidade).
+  valorCents     Int?
+  // Economia/recuperação estimada se a recomendação for executada. Separado de
+  // valorCents de propósito: num juros de R$ 5.000 pago, valorCents é a perda
+  // consumada e impactoCents é o que dá para evitar daqui para frente — somar
+  // os dois no mesmo campo inflaria o total do relatório.
+  impactoCents   Int?
+  dataReferencia DateTime?
+  entidadeTipo   String?
+  entidadeId     String?
+  entidadeRef    String?
+  evidencia      Json?
+  // Chave determinística (agente + regra + conexão + entidade + período). Uma
+  // reexecução sobre o mesmo dado reencontra o achado em vez de duplicar — é o
+  // que permite rodar a auditoria todo dia sem a lista virar lixo, e o que
+  // preserva a tratativa já feita por uma pessoa.
+  chave     String
+  // Confiança atribuída pelo SUPERVISOR (0-100), não pelo agente que emitiu.
+  // Um agente determinístico sempre "tem certeza" do que calculou; quem sabe
+  // se o dado de base era confiável, se outro agente disse o contrário e se o
+  // achado já foi julgado falso-positivo é a camada de revisão.
+  confianca Int     @default(100)
+  // O que o supervisor mudou e por quê. Fica visível na UI junto do achado:
+  // revisão invisível é indistinguível de censura.
+  notaSupervisor      String?
+  chaveRelacionada    String?
+  status              AuditStatus @default(ABERTO)
+  detectadoEm         DateTime    @default(now())
+  atualizadoEm        DateTime    @updatedAt
+  ultimaOcorrencia    DateTime    @default(now())
+  ocorrencias         Int         @default(1)
+  resolvidoEm         DateTime?
+  tratadoPorUserId    String?
+  observacaoTratativa String?
+
+  @@unique([companyId, chave])
+  @@index([companyId, status, severidade])
+  @@index([companyId, categoria, status])
+  @@index([companyId, detectadoEm])
+  @@index([conexaoId, status])
+}
+
+// ============================================================================
+// Relatório diário
+// ============================================================================
+// O HTML enviado fica guardado inteiro: o relatório é uma peça de
+// controladoria com data — o que se sabia naquele dia, com os números daquele
+// dia. Reconstruí-lo depois a partir da base atual daria outro resultado, e
+// perderia justamente o valor de trilha.
+model RelatorioDiario {
+  id             String          @id @default(cuid())
+  companyId      String
+  dataReferencia DateTime
+  // Nulo = relatório consolidado do grupo. Preenchido = relatório de uma
+  // empresa só (ver ControladoriaConfig.relatorioPorConexao).
+  conexaoId       String?
+  conexaoApelido  String?
+  geradoEm        DateTime        @default(now())
+  enviadoEm       DateTime?
+  status          RelatorioStatus @default(GERADO)
+  destinatarios   String
+  assunto         String
+  html            String
+  resumo          Json
+  narrativaIa     Json?
+  erro            String?
+  achadosTotal    Int             @default(0)
+  achadosCriticos Int             @default(0)
+
+  @@unique([companyId, dataReferencia, conexaoId])
+  @@index([companyId, dataReferencia])
+}
+
+// Parâmetros do modelo de gestão financeira da empresa. São os números que
+// transformam regra genérica em política DESTA empresa: sem alçada cadastrada,
+// por exemplo, o agente antifraude não tem como saber que três pagamentos de
+// R$ 9.900 no mesmo dia são fracionamento de um de R$ 29.700.
+model ControladoriaConfig {
+  id                                  String   @id @default(cuid())
+  companyId                           String   @unique
+  emailsRelatorio                     String   @default("")
+  dataInicioBase                      DateTime
+  limiteAlcadaCents                   Int?
+  metaMargemPercent                   Float?
+  toleranciaVariacaoPercent           Float    @default(20)
+  diasAtrasoCritico                   Int      @default(30)
+  saldoMinimoCaixaCents               Int?
+  limiteConcentracaoFornecedorPercent Float    @default(25)
+  // Um e-mail consolidado do grupo, ou um por empresa. Grupo cujos CNPJs
+  // operam junto costuma querer o consolidado; quando cada empresa tem gestor
+  // próprio, o separado funciona melhor.
+  relatorioPorConexao                 Boolean  @default(false)
+  atualizadoEm                        DateTime @updatedAt
+}
+
+// ============================================================================
+// BSC — Balanced Scorecard
+// ============================================================================
+// O catálogo de indicadores (código, perspectiva, unidade, direção, fórmula)
+// vive em CÓDIGO (src/lib/controladoria/bsc.ts): a fórmula de um indicador é
+// regra de negócio versionada, revisável em diff, não dado editável em tela. O
+// banco guarda só o que é decisão da empresa (a meta) e o que é histórico (a
+// medição de cada dia).
+
+model BscMeta {
+  id        String @id @default(cuid())
+  companyId String
+  codigo    String
+  meta      Float
+  // Faixa amarela: quanto o realizado pode se afastar da meta antes de virar
+  // vermelho (em % da meta).
+  toleranciaPercent   Float    @default(10)
+  ativo               Boolean  @default(true)
+  observacao          String?
+  atualizadoEm        DateTime @updatedAt
+  atualizadoPorUserId String?
+
+  @@unique([companyId, codigo])
+}
+
+// Medição diária. É o que dá tendência ao BSC e o que permite auditar depois
+// "o indicador estava mesmo verde naquele dia?" — recalcular a partir da base
+// de hoje não responde isso.
+model BscSnapshot {
+  id             String         @id @default(cuid())
+  companyId      String
+  dataReferencia DateTime
+  codigo         String
+  perspectiva    BscPerspectiva
+  valor          Float?
+  meta           Float?
+  // "VERDE" | "AMARELO" | "VERMELHO" | "SEM_META" | "SEM_DADO"
+  farol          String
+  detalhes       Json?
+  criadoEm       DateTime       @default(now())
+
+  @@unique([companyId, dataReferencia, codigo])
+  @@index([companyId, codigo, dataReferencia])
+}
+
+// ============================================================================
+// Rateio / unit economics
+// ============================================================================
+// De-para entre a dimensão de custo da Omie (departamento, projeto, categoria,
+// fornecedor ou um texto do título) e os cadastros operacionais que vivem no
+// sistema de gestão (Cliente = contrato, Vehicle = placa, Driver = pessoa).
+//
+// Os ids de destino apontam para tabelas do schema `public`, de outro sistema,
+// e por isso NÃO há chave estrangeira: este sistema não é dono daquelas
+// tabelas e não pode impedir que a gestão apague um cadastro. O vínculo órfão
+// é tratado na leitura — o destino não é encontrado e o custo volta para "não
+// alocado", que é o comportamento correto: melhor um custo não alocado e
+// visível do que um número errado com aparência de certo.
+model OmieVinculoCentroCusto {
+  id        String @id @default(cuid())
+  companyId String
+  // "DEPARTAMENTO" | "PROJETO" | "CATEGORIA" | "PARCEIRO" | "TEXTO"
+  tipoOrigem   String
+  valorOrigem  String
+  rotuloOrigem String?
+  // Nulo = vale para todas as conexões (ex.: uma regra por TEXTO). Preenchido
+  // = só para aquela empresa, que é o caso comum de departamento e categoria,
+  // já que os códigos são independentes entre as contas Omie.
+  conexaoId  String?
+  clienteId  String?
+  vehicleId  String?
+  driverId   String?
+  // Percentual do valor do título que vai para este destino. Permite ratear um
+  // custo compartilhado (ex.: aluguel da garagem) em vez de obrigar tudo ou
+  // nada. Quando a soma não fecha 100%, o resto entra em "não alocado" e vira
+  // achado — em vez de o sistema inventar um rateio.
+  percentual Float   @default(100)
+  // Sugestão automática ainda não confirmada. Sugestão NUNCA entra no cálculo
+  // sozinha: a máquina sugere, a pessoa confirma.
+  sugerido            Boolean   @default(false)
+  confirmadoPorUserId String?
+  confirmadoEm        DateTime?
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  @@index([companyId, tipoOrigem])
+  @@index([companyId, conexaoId])
+}
+
+// ============================================================================
+// Rastreabilidade das ações humanas
+// ============================================================================
+// Trilha append-only de tudo que uma pessoa faz neste sistema: tratar achado,
+// mudar parâmetro do modelo de gestão, mudar meta do BSC, disparar sync ou
+// relatório manualmente, cadastrar conexão.
+//
+// Num sistema cujo produto é apontar o erro dos outros, quem mexe no próprio
+// sistema tem que ficar registrado — senão a primeira pergunta de qualquer
+// auditor externo ("quem desligou este alerta, e quando?") não tem resposta.
+// Nunca atualizada nem apagada.
+model ControladoriaEventLog {
+  id           String  @id @default(cuid())
+  companyId    String
+  userId       String?
+  userNome     String?
+  userEmail    String?
+  acao         String
+  entidadeTipo String?
+  entidadeId   String?
+  descricao    String
+  antes        Json?
+  depois       Json?
+  // IP e user-agent da requisição. Guardados porque um registro de "quem" sem
+  // "de onde" perde metade do valor forense quando a credencial em si é o que
+  // está sob suspeita.
+  ip           String?
+  userAgent    String?
+  criadoEm     DateTime @default(now())
+
+  @@index([companyId, criadoEm])
+  @@index([companyId, entidadeTipo, entidadeId])
+}
