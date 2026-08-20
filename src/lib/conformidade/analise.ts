@@ -3,6 +3,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { anexosRelevantes, classificarArquivo, extrairTexto, mimeParaModelo, type FormatoDocumento } from "./extracao";
 import { fundamentacaoParaLeitura } from "./obrigacoes";
+import { fundamentacaoDaTransicao } from "./regime";
 import { lerMsg } from "./outlook";
 import { rotuloCompetencia } from "./tipos";
 
@@ -128,7 +129,9 @@ Escreva em português do Brasil.`;
 function mensagemDeFundamentacao(): string {
   return `Catálogo de referência do sistema — use-o para classificar a área, preencher obrigacaoCodigo e, quando for inequívoco, a base legal. NÃO use este catálogo para criar apontamentos: ele é referência, não fonte.
 
-${fundamentacaoParaLeitura()}`;
+${fundamentacaoParaLeitura()}
+
+${fundamentacaoDaTransicao()}`;
 }
 
 export type ResultadoLeitura =

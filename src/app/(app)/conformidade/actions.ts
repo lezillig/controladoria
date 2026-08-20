@@ -16,7 +16,8 @@ import { lerDocumento, sugestoesDoEmail, type ApontamentoExtraido } from "@/lib/
 import { classificarArquivo } from "@/lib/conformidade/extracao";
 import { OBRIGACAO_POR_CODIGO } from "@/lib/conformidade/obrigacoes";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
-import { chaveRecorrencia, competenciaDeTexto, escolherChaveRecorrencia, rotuloCompetencia } from "@/lib/conformidade/tipos";
+import { chaveRecorrencia, competenciaDe, competenciaDeTexto, escolherChaveRecorrencia, rotuloCompetencia } from "@/lib/conformidade/tipos";
+import { DECISOES, PREPARACAO } from "@/lib/conformidade/regime";
 import { parseLocalDate } from "@/lib/date";
 import { registrarEvento } from "../auditoria/actions";
 
@@ -620,6 +621,95 @@ export async function descartarApontamento(formData: FormData): Promise<void> {
     descricao: `Proposta de leitura automática "${atual.titulo}" descartada sem virar apontamento.`,
   });
 
+  revalidarConformidade();
+}
+
+// Transforma um item do catálogo de transição de regime em apontamento
+// rastreável. É o passo que separa um documento de referência de um plano com
+// dono: enquanto o item vive só no catálogo, ele é leitura; virando apontamento,
+// entra na cobrança diária, no relatório e na conta de reincidência.
+//
+// A competência é o MÊS CORRENTE, e não a da virada: o item existe a partir de
+// agora, e é agora que o prazo dele começa a correr.
+export async function criarApontamentoDaTransicao(formData: FormData): Promise<void> {
+  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const codigo = String(formData.get("codigo") ?? "");
+
+  const decisao = DECISOES.find((d) => d.codigo === codigo);
+  const preparacao = PREPARACAO.find((p) => p.codigo === codigo);
+  if (!decisao && !preparacao) return;
+
+  // Idempotente: dois cliques no mesmo item não criam dois apontamentos.
+  const existente = await prisma.conformidadeApontamento.findFirst({
+    where: { companyId: session.companyId, obrigacaoCodigo: codigo },
+    select: { id: true },
+  });
+  if (existente) {
+    revalidarConformidade();
+    return;
+  }
+
+  const base = decisao
+    ? {
+        titulo: decisao.titulo,
+        descricao: `${decisao.pergunta}\n\n${decisao.porQueImporta}`,
+        area: decisao.area,
+        natureza: decisao.natureza,
+        baseLegal: decisao.baseLegal,
+        recomendacao: decisao.confirmar
+          ? "Levar à assessoria fiscal para parecer antes de transformar em decisão da empresa."
+          : null,
+      }
+    : {
+        titulo: preparacao!.titulo,
+        descricao: `${preparacao!.quando}\n\n${preparacao!.porQue}`,
+        area: preparacao!.area,
+        natureza: preparacao!.natureza,
+        baseLegal: null,
+        recomendacao: preparacao!.comoFazer,
+      };
+
+  const hoje = new Date();
+  const id = await inserirApontamento({
+    companyId: session.companyId,
+    // Projeto de transição é do grupo, não de uma empresa: a decisão de regime
+    // vale para o CNPJ que migra, mas a preparação (fechamento, plano de contas,
+    // controle patrimonial) atravessa a operação inteira.
+    conexaoId: null,
+    conexaoApelido: null,
+    documentoId: null,
+    competencia: competenciaDe(hoje),
+    area: base.area,
+    natureza: base.natureza,
+    baseLegal: base.baseLegal,
+    obrigacaoCodigo: codigo,
+    severidade: "ALTA",
+    titulo: base.titulo.slice(0, 300),
+    descricao: base.descricao,
+    recomendacao: base.recomendacao,
+    trechoOrigem: null,
+    paginaOrigem: null,
+    valorEnvolvidoCents: null,
+    prazo: null,
+    chaveRecorrencia: chaveRecorrencia(base.area, codigo),
+    // Não é proposta de leitura automática: veio de um catálogo revisado em
+    // código, e quem clicou está assumindo o item.
+    propostoPorIa: false,
+    validadoPorUserId: session.userId,
+  });
+
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "CONFORMIDADE_TRANSICAO_ADOTADA",
+    entidadeTipo: "ConformidadeApontamento",
+    entidadeId: id,
+    descricao: `Item "${base.titulo}" (${codigo}) do plano de transição para o Lucro Real virou apontamento.`,
+  });
+
+  revalidatePath("/conformidade/transicao");
   revalidarConformidade();
 }
 

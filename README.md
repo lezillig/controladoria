@@ -12,7 +12,10 @@ e-mail: o menu Conformidade lê o corpo e os anexos juntos, guarda o arquivo
 original, transforma o conteúdo em apontamentos com base legal, prazo e
 responsável, e cruza cada um com o que os agentes veem nos dados — mostrando o
 que as duas leituras confirmam, o que se repete há meses e o que só a revisão
-externa enxerga.
+externa enxerga. Traz também o plano de **transição para o Lucro Real em
+janeiro de 2027**, com o que muda na reforma tributária, o que a operação pode
+creditar antes e depois, e por que fretamento é tratado de forma diferente do
+transporte público.
 
 Atende **mais de uma empresa** (mais de um CNPJ, cada uma com sua conta Omie):
 os números aparecem consolidados, sempre com a empresa de origem identificada, e

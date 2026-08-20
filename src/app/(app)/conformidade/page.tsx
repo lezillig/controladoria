@@ -112,6 +112,18 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
 
       <SeletorEmpresa conexoes={conexoes} ativa={escopo.conexaoId} rota={rota} />
 
+      <Link
+        href="/conformidade/transicao"
+        className="block rounded-xl border border-blue-200 bg-blue-50 px-4 py-4 transition-colors hover:border-blue-400"
+      >
+        <p className="text-sm font-semibold text-blue-900">Transição para o Lucro Real em janeiro de 2027</p>
+        <p className="mt-1 text-xs leading-relaxed text-blue-800">
+          O que muda com a reforma tributária, o que a operação pode creditar hoje e depois de 2027, por que fretamento
+          é tratado de forma diferente do transporte público, e o que precisa estar de pé antes da virada — com cada
+          decisão virando apontamento com prazo e responsável.
+        </p>
+      </Link>
+
       {!panorama.temModulo ? (
         <>
           <AvisoVazio

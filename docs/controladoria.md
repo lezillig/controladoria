@@ -309,6 +309,50 @@ decide), e o teto de plausibilidade aritmética do supervisor **não se aplica**
 `CONF-*` — uma contingência trabalhista de R$ 800 mil pode superar o total de
 títulos espelhados, e suprimi-la apagaria justamente o risco mais grave da lista.
 
+### Transição para o Lucro Real em janeiro de 2027
+
+`/conformidade/transicao`, alimentada por `src/lib/conformidade/regime.ts`. Mudar
+de regime não é evento contábil: é projeto com prazo, decisões que precisam de
+dono e pré-requisitos que levam meses. E os pré-requisitos falham exatamente
+onde a conformidade desta empresa já falha — o balancete trimestral cobrado
+desde dez/2025 é pendência de obrigação acessória no Presumido e **base de
+cálculo do imposto** no Real. Mesmo item, duas gravidades: é essa continuidade
+que faz as duas coisas morarem na mesma tela.
+
+**Fretamento não é transporte público, e a diferença decide quase tudo.** O
+catálogo separa as três modalidades porque a lei as separa:
+
+| | Urbano (4921-3) | Linha regular concedida (4922-1) | **Fretamento (4929-9)** |
+|---|---|---|---|
+| Natureza | Serviço público delegado | Serviço público delegado | **Contrato privado, sem itinerário fixo** |
+| Documento | Bilhete / NFS-e | BP-e | **CT-e OS, modelo 67** |
+| Desoneração da folha | alcança | alcança | **não alcança** |
+| Reforma | alíquota zero | redução | **provável regime cheio** |
+
+Tratar as três como a mesma coisa produziria, aqui, otimismo injustificado — e
+é o erro mais comum quando se fala genericamente em "transporte de passageiros".
+Some-se o risco de **descaracterização**: transportado sem vínculo com o
+contratante deixa de ser fretamento e aproxima a operação de linha regular sem
+autorização, com a mesma prova servindo aos dois lados — a descrição da nota,
+que é justamente o que a consultoria já questiona.
+
+**Duas coisas tornam a janela de 2027 específica**, e o catálogo é construído em
+cima delas: em 2027 PIS e COFINS são extintos, então quem migra em janeiro nunca
+apura EFD-Contribuições não cumulativa — a parte mais cara da mudança; e o
+crédito de CBS/IBS não depende do regime de IRPJ, então a escolha entre
+Presumido e Real vira uma decisão exclusivamente de IRPJ/CSLL.
+
+A tabela de créditos responde à pergunta que sempre vem primeiro (o que se pode
+creditar) e à que decide o tamanho do ganho: **folha não gera crédito em regime
+nenhum** — nem no não cumulativo, nem na CBS/IBS. Numa operação cujo maior custo
+é folha, quem dimensiona o ganho pelo total de custos erra por um fator grande.
+
+Cada decisão e cada item de preparação vira **apontamento com um clique**, com
+área, natureza e base legal preenchidas — é o que separa um documento de
+referência de um plano com dono. Itens que dependem de norma em transição saem
+marcados como *confirmar com a assessoria*: o sistema organiza a decisão, quem
+decide o enquadramento é a assessoria.
+
 ### No relatório diário e no BSC
 
 O e-mail ganha o bloco **Conformidade e riscos externos** (só aparece quando há
