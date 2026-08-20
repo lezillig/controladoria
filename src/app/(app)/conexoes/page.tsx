@@ -5,6 +5,7 @@ import { credencialConfigurada, nomesDasVariaveis } from "@/lib/omie/client";
 import { fmtData, fmtDocumento, fmtNumero } from "@/lib/controladoria/format";
 import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
 import ConexaoForm from "./ConexaoForm";
+import TesteConexao from "./TesteConexao";
 import { alternarConexao } from "./actions";
 
 // CONEXÕES OMIE — uma por CNPJ do grupo.
@@ -147,6 +148,26 @@ export default async function ConexoesPage() {
           />
         )}
       </Secao>
+
+      {podeEditar && conexoes.some((c) => c.ativa && credencialConfigurada(c.credencialRef)) && (
+        <Secao
+          titulo="Testar a integração"
+          descricao="Consulta cada endpoint da Omie com os mesmos parâmetros que a sincronização usa, sem gravar nada. Descobrir aqui que uma credencial não vale leva trinta segundos; descobrir no ciclo automático leva uma madrugada."
+        >
+          <ul className="space-y-5">
+            {conexoes
+              .filter((c) => c.ativa && credencialConfigurada(c.credencialRef))
+              .map((c) => (
+                <li key={c.id}>
+                  <p className="mb-2 text-sm font-medium text-slate-800">
+                    {c.apelido} <span className="font-normal text-slate-500">— {c.nome}</span>
+                  </p>
+                  <TesteConexao conexaoId={c.id} />
+                </li>
+              ))}
+          </ul>
+        </Secao>
+      )}
 
       {podeEditar && (
         <Secao

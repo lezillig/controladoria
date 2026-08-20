@@ -59,6 +59,10 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
     anterior.limiteConcentracaoFornecedorPercent
   );
 
+  // Checkbox ausente no formulário significa desmarcado — o navegador
+  // simplesmente não envia o campo.
+  const relatorioAutomatico = formData.get("relatorioAutomatico") === "1";
+
   if (toleranciaVariacaoPercent < 0 || limiteConcentracaoFornecedorPercent <= 0 || diasAtrasoCritico < 1) {
     return { erro: "Os parâmetros percentuais e de prazo precisam ser positivos." };
   }
@@ -74,6 +78,7 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
       toleranciaVariacaoPercent,
       diasAtrasoCritico,
       limiteConcentracaoFornecedorPercent,
+      relatorioAutomatico,
     },
   });
 
@@ -95,6 +100,7 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
       toleranciaVariacaoPercent: anterior.toleranciaVariacaoPercent,
       diasAtrasoCritico: anterior.diasAtrasoCritico,
       limiteConcentracaoFornecedorPercent: anterior.limiteConcentracaoFornecedorPercent,
+      relatorioAutomatico: anterior.relatorioAutomatico,
     },
     depois: {
       emails: atualizada.emailsRelatorio,
@@ -105,6 +111,7 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
       toleranciaVariacaoPercent: atualizada.toleranciaVariacaoPercent,
       diasAtrasoCritico: atualizada.diasAtrasoCritico,
       limiteConcentracaoFornecedorPercent: atualizada.limiteConcentracaoFornecedorPercent,
+      relatorioAutomatico: atualizada.relatorioAutomatico,
     },
   });
 

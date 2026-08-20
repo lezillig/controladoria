@@ -660,6 +660,17 @@ model ControladoriaConfig {
   // operam junto costuma querer o consolidado; quando cada empresa tem gestor
   // próprio, o separado funciona melhor.
   relatorioPorConexao                 Boolean  @default(false)
+  // Se o ciclo diário gera relatório depois de auditar. Nasce DESLIGADO de
+  // propósito: durante a integração com a Omie o que se quer é espelhar e
+  // conferir os dados, e um relatório gerado todo dia sobre uma base ainda
+  // incompleta produziria histórico enganoso — documento com data, com
+  // números que ninguém validou, guardado como se fosse retrato do dia.
+  //
+  // Não desliga a auditoria: os agentes continuam rodando, porque é o achado
+  // que revela o que ficou faltando no espelho. Também não impede a geração
+  // manual em Relatórios, que é como se confere o resultado antes de ligar o
+  // automático.
+  relatorioAutomatico                 Boolean  @default(false)
   atualizadoEm                        DateTime @updatedAt
 }
 

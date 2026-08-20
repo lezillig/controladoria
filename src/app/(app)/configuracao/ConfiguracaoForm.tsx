@@ -14,6 +14,7 @@ export type ValoresConfig = {
   toleranciaVariacao: string;
   diasAtrasoCritico: string;
   limiteConcentracao: string;
+  relatorioAutomatico: boolean;
 };
 
 export default function ConfiguracaoForm({
@@ -45,6 +46,22 @@ export default function ConfiguracaoForm({
         });
       }}
     >
+      <Campo
+        rotulo="Relatório diário automático"
+        ajuda="Enquanto estiver desligado, o ciclo da madrugada sincroniza a Omie e roda a auditoria, mas não gera relatório. É o modo certo durante a integração: relatório gerado sobre uma base ainda incompleta vira histórico enganoso — documento com data, com números que ninguém validou. A geração manual em Relatórios continua funcionando."
+      >
+        <label className="flex items-center gap-2.5 text-sm text-slate-700">
+          <input
+            name="relatorioAutomatico"
+            type="checkbox"
+            value="1"
+            defaultChecked={valores.relatorioAutomatico}
+            className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
+          />
+          Gerar o relatório diário ao fim de cada ciclo
+        </label>
+      </Campo>
+
       <Campo
         rotulo="Destinatários do relatório diário"
         ajuda="Separados por vírgula. Quem recebe relatório gerencial muda com o tempo — por isso fica aqui, e não no código."

@@ -184,10 +184,18 @@ export async function executarPasso(params: {
     // ligaria o relatório de hoje aos achados de ontem.
     const conciliacao = await conciliarConformidade(companyId);
 
+    // Com o relatório automático desligado — o padrão durante a integração —
+    // o ciclo termina aqui. A auditoria continua rodando: é o achado que
+    // revela o que ficou faltando no espelho, e é justamente o que se quer
+    // enxergar enquanto a carga histórica avança.
+    const geraRelatorio = config.relatorioAutomatico;
+    const proximaFaseDoCiclo = geraRelatorio ? "relatorio" : "concluido";
+
     await prisma.omieSyncRun.update({
       where: { id: run.id },
       data: {
-        fase: "relatorio",
+        fase: proximaFaseDoCiclo,
+        ...(geraRelatorio ? {} : { status: "CONCLUIDO" as const, finalizadoEm: new Date() }),
         cursor: null,
         invocacoes: { increment: 1 },
         achados: resultado.totalAbertos,
@@ -216,13 +224,20 @@ export async function executarPasso(params: {
       );
     }
 
+    if (!geraRelatorio) {
+      detalhes.push(
+        "Relatório automático desligado no modelo de gestão — o ciclo encerrou depois da auditoria. " +
+          "Para gerar um relatório e conferir o resultado, use Relatórios → Gerar sem enviar."
+      );
+    }
+
     return {
       runId: run.id,
-      fase: "relatorio",
+      fase: proximaFaseDoCiclo,
       conexaoApelido: null,
       backfill: false,
-      concluido: false,
-      continua: true,
+      concluido: !geraRelatorio,
+      continua: geraRelatorio,
       detalhes,
     };
   }

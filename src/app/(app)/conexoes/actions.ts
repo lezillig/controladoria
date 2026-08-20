@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { credencialConfigurada, normalizarCredencialRef } from "@/lib/omie/client";
+import { diagnosticarConexao, type ResultadoDiagnostico } from "@/lib/omie/diagnostico";
 import { registrarEvento } from "../auditoria/actions";
 
 // Cadastro das conexões Omie — uma por CNPJ do grupo.
@@ -87,6 +88,52 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
   }
 
   return { ok: true };
+}
+
+export type ResultadoTeste = { erro?: string; diagnostico?: ResultadoDiagnostico };
+
+// Testa a conexão contra a Omie de verdade, endpoint por endpoint, sem gravar
+// nada. É o primeiro passo da integração: descobrir que a credencial não vale
+// ou que um endpoint não está liberado leva trinta segundos aqui e levaria uma
+// madrugada inteira se ficasse para o primeiro ciclo automático.
+export async function testarConexao(formData: FormData): Promise<ResultadoTeste> {
+  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { erro: "Conexão não informada." };
+
+  const conexao = await prisma.omieConexao.findFirst({
+    where: { id, companyId: session.companyId },
+    select: { apelido: true, credencialRef: true },
+  });
+  if (!conexao) return { erro: "Conexão não encontrada." };
+
+  if (!credencialConfigurada(conexao.credencialRef)) {
+    return {
+      erro: `As variáveis OMIE_APP_KEY_${conexao.credencialRef} e OMIE_APP_SECRET_${conexao.credencialRef} não existem neste ambiente. Cadastre-as na hospedagem e faça um novo deploy antes de testar.`,
+    };
+  }
+
+  try {
+    const diagnostico = await diagnosticarConexao(id, session.companyId);
+
+    await registrarEvento({
+      companyId: session.companyId,
+      userId: session.userId,
+      userNome: session.name,
+      userEmail: session.email,
+      acao: "CONEXAO_TESTADA",
+      entidadeTipo: "OmieConexao",
+      entidadeId: id,
+      descricao: `Diagnóstico da conexão ${conexao.apelido}: ${diagnostico.ok} endpoint(s) com dado, ${diagnostico.vazios} sem registro no período, ${diagnostico.erros} com erro.`,
+      depois: {
+        erros: diagnostico.endpoints.filter((e) => e.estado === "ERRO").map((e) => ({ endpoint: e.chave, erro: e.erro })),
+      },
+    });
+
+    return { diagnostico };
+  } catch (e) {
+    return { erro: e instanceof Error ? e.message : "Falha ao testar a conexão." };
+  }
 }
 
 async function proximaOrdem(companyId: string): Promise<number> {

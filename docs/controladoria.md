@@ -377,8 +377,20 @@ Uma única rota agendada, como máquina de estados com cursor persistido:
 
 ```
 por empresa:  cadastros → títulos → movimentos → notas
-depois:       auditoria → conciliação da conformidade → relatório     (grupo inteiro)
+depois:       auditoria → conciliação da conformidade → relatório*    (grupo inteiro)
+
+* só com "Relatório diário automático" ligado no modelo de gestão — nasce
+  desligado, e sem ele o ciclo encerra depois da auditoria.
 ```
+
+**Por que o relatório nasce desligado.** Durante a integração o que se quer é
+espelhar e conferir. Um relatório gerado todo dia sobre uma base ainda
+incompleta produz histórico enganoso — documento com data, com números que
+ninguém validou, guardado como se fosse o retrato daquele dia (ver o comentário
+em `RelatorioDiario`, sobre por que o HTML é preservado inteiro). A auditoria
+continua rodando: é o achado que revela o que ficou faltando no espelho. E a
+geração manual em **Relatórios → Gerar sem enviar** continua disponível, que é
+como se confere o resultado antes de ligar o automático.
 
 Cada invocação trabalha ~42s, grava onde parou e dispara a próxima via
 `waitUntil` — o plano Hobby da Vercel tem 60s de teto duro por invocação.
@@ -427,6 +439,28 @@ bancário e antes do expediente.
   conferidas; apontamento que alguém validou sobrevive sem o anexo. E apontamento
   assumido nunca é excluído — encerra-se por tratativa, com justificativa, para
   sobrar histórico.
+
+---
+
+### Testar a integração antes de carregar
+
+**Conexões Omie → Testar a integração** consulta cada endpoint com **os mesmos
+parâmetros que a sincronização usa**, sem gravar nada. Um teste que usasse uma
+chamada mais simples poderia passar enquanto o sync falha, e teste que mente é
+pior que teste nenhum.
+
+Para cada endpoint ele mostra três coisas, e as três importam por motivos
+diferentes:
+
+| | Por que importa |
+|---|---|
+| **Estado** | Separa "não conectou" de "conectou e não há registro no período". A Omie responde HTTP 500 nos dois casos, e confundi-los é o erro mais comum ao ligar uma integração com esse ERP. |
+| **Campos que o mapeamento não preencheu** | É aqui que aparece um nome de campo divergente. Campo com nome diferente **não quebra o sync** — grava nulo em silêncio, e o problema só aparece semanas depois como uma coluna vazia no relatório. |
+| **Campos crus da conta** | O que a conta de fato devolveu, incluindo um nível de aninhamento. Permite corrigir `mapping.ts` sem precisar de acesso à conta Omie. |
+
+O extrato é testado por último e usa o código de conta corrente que o próprio
+diagnóstico acabou de obter — não há como consultá-lo sem uma conta válida, e
+testar a cadeia inteira é justamente como o sync funciona.
 
 ---
 

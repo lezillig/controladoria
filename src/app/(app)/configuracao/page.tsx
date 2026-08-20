@@ -49,6 +49,7 @@ export default async function ConfiguracaoPage() {
             toleranciaVariacao: String(config.toleranciaVariacaoPercent).replace(".", ","),
             diasAtrasoCritico: String(config.diasAtrasoCritico),
             limiteConcentracao: String(config.limiteConcentracaoFornecedorPercent).replace(".", ","),
+            relatorioAutomatico: config.relatorioAutomatico,
           }}
           alcadaSugerida={
             sugestao

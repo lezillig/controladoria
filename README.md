@@ -90,17 +90,22 @@ Publicado na Vercel. O `vercel.json` roda `prisma migrate deploy` antes do
 build, então a migração é aplicada a cada push — inclusive a criação do schema
 `controladoria` na primeira vez.
 
-Um agendamento diário: `10 6 * * *` UTC (03:10 de Brasília) roda o ciclo
-completo — sincroniza cada empresa, audita o grupo e envia o relatório.
+Um agendamento diário: `10 6 * * *` UTC (03:10 de Brasília) roda o ciclo —
+sincroniza cada empresa e audita o grupo. A geração do relatório é a última
+etapa e só acontece com **Relatório diário automático** ligado no modelo de
+gestão; ele nasce desligado, para a fase de integração espelhar e conferir sem
+produzir documento com data sobre uma base ainda incompleta.
 
 ## Primeiros passos depois do deploy
 
 1. Entrar com o mesmo login da gestão de motoristas
 2. **Conexões Omie** → cadastrar uma conexão por empresa do grupo
-3. **Sincronização → Sincronizar agora** — a carga histórica roda em segundo plano
-4. **Conformidade** → enviar o relatório da consultoria do último mês (opcional, mas é a partir do segundo que a reincidência aparece)
+3. **Conexões Omie → Testar a integração** — consulta cada endpoint sem gravar nada e mostra, por endpoint, se respondeu, quantos registros vieram e quais campos o mapeamento não conseguiu preencher. É onde um nome de campo divergente aparece antes de virar coluna vazia no relatório.
+4. **Sincronização → Sincronizar agora** — a carga histórica roda em segundo plano
 5. Conferir **Sincronização → Preenchimento dos campos** (ver `docs/controladoria.md`, seção 10)
 6. **Modelo de gestão** → cadastrar a alçada de aprovação (a tela sugere valores a partir dos próprios pagamentos)
+7. **Conformidade** → enviar o relatório da consultoria do último mês (opcional, mas é a partir do segundo que a reincidência aparece)
+8. Quando os números fecharem, ligar **Modelo de gestão → Relatório diário automático** — ele nasce desligado, para não gerar histórico sobre uma base ainda incompleta
 
 ## Documentação
 

@@ -1,0 +1,128 @@
+"use client";
+
+import { useState, useTransition } from "react";
+import { secondaryButtonClass } from "@/lib/ui";
+import type { ResultadoDiagnostico, ResultadoEndpoint } from "@/lib/omie/diagnostico";
+import { testarConexao } from "./actions";
+
+// Resultado do teste de integração, renderizado abaixo da conexão.
+//
+// A tela mostra três coisas por endpoint, e as três importam por motivos
+// diferentes:
+//
+//   ESTADO — separa "não conectou" de "conectou e não há registro no período".
+//   Confundir os dois é o erro mais comum ao ligar uma integração com a Omie,
+//   porque a API responde HTTP 500 nos dois casos.
+//
+//   CAMPOS QUE O MAPEAMENTO NÃO PREENCHEU — é aqui que aparece um nome de
+//   campo divergente. Campo vazio não quebra o sync: ele grava nulo em
+//   silêncio, e o problema só aparece semanas depois como uma coluna vazia no
+//   relatório.
+//
+//   CAMPOS CRUS — o que a conta de fato devolveu. É a informação que permite
+//   corrigir o mapeamento sem precisar de acesso à conta Omie.
+
+const CORES: Record<ResultadoEndpoint["estado"], string> = {
+  OK: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  VAZIO: "bg-slate-100 text-slate-600 ring-slate-200",
+  ERRO: "bg-red-50 text-red-700 ring-red-200",
+  PULADO: "bg-amber-50 text-amber-800 ring-amber-200",
+};
+
+const ROTULOS: Record<ResultadoEndpoint["estado"], string> = {
+  OK: "respondeu com dados",
+  VAZIO: "sem registro no período",
+  ERRO: "erro",
+  PULADO: "não testado",
+};
+
+export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
+  const [resultado, setResultado] = useState<ResultadoDiagnostico | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [processando, iniciar] = useTransition();
+
+  return (
+    <div>
+      <form
+        action={(formData) => {
+          setErro(null);
+          setResultado(null);
+          iniciar(async () => {
+            const r = await testarConexao(formData);
+            if (r.erro) setErro(r.erro);
+            if (r.diagnostico) setResultado(r.diagnostico);
+          });
+        }}
+      >
+        <input type="hidden" name="id" value={conexaoId} />
+        <button type="submit" disabled={processando} className={`${secondaryButtonClass} text-xs`}>
+          {processando ? "Consultando a Omie..." : "Testar integração"}
+        </button>
+      </form>
+
+      {erro && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-800">{erro}</p>}
+
+      {resultado && (
+        <div className="mt-3 rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <p className="text-sm font-semibold text-slate-900">
+              {resultado.conexao.apelido} · {resultado.ok} com dados, {resultado.vazios} sem registro,{" "}
+              <span className={resultado.erros > 0 ? "text-red-700" : undefined}>{resultado.erros} com erro</span>
+            </p>
+            <p className="text-xs text-slate-400">
+              nada foi gravado — consulta de amostra dos últimos 90 dias
+            </p>
+          </div>
+
+          <ul className="mt-3 space-y-3">
+            {resultado.endpoints.map((e) => (
+              <li key={e.chave} className="border-t border-slate-100 pt-3 first:border-t-0 first:pt-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${CORES[e.estado]}`}>
+                    {ROTULOS[e.estado]}
+                  </span>
+                  <span className="text-sm font-medium text-slate-800">{e.rotulo}</span>
+                  <span className="font-mono text-xs text-slate-400">{e.call}</span>
+                  {e.estado === "OK" && (
+                    <span className="text-xs text-slate-500">
+                      {e.registros} de amostra
+                      {e.totalNaConta > 0 && ` · ${e.totalNaConta.toLocaleString("pt-BR")} no período`}
+                      {e.listaEncontradaEm && ` · lista em "${e.listaEncontradaEm}"`}
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-400">{e.duracaoMs} ms</span>
+                </div>
+
+                {e.erro && <p className="mt-1.5 text-xs leading-relaxed text-red-800">{e.erro}</p>}
+
+                {e.camposVazios.length > 0 && (
+                  <p className="mt-1.5 text-xs leading-relaxed text-amber-800">
+                    <strong>Não preenchidos pelo mapeamento:</strong> {e.camposVazios.join(", ")}
+                  </p>
+                )}
+
+                {e.camposRecebidos.length > 0 && (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">
+                      campos que a conta devolveu ({e.camposRecebidos.length})
+                    </summary>
+                    <p className="mt-1 font-mono text-xs leading-relaxed text-slate-500">
+                      {e.camposRecebidos.join(" · ")}
+                    </p>
+                  </details>
+                )}
+              </li>
+            ))}
+          </ul>
+
+          <p className="mt-4 text-xs leading-relaxed text-slate-500">
+            <strong>Sem registro no período</strong> é sucesso de integração, não falha: a Omie responde com erro
+            quando a consulta não encontra nada, e o sistema já trata isso. O que exige ação é a linha em vermelho — e
+            a lista de campos não preenchidos, que é onde aparece um nome de campo diferente do que o mapeamento
+            espera.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

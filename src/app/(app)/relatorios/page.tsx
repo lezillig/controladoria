@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { canManageControladoria } from "@/lib/permissions";
 import { isEnvioDisponivel } from "@/lib/email/send";
@@ -55,10 +56,25 @@ export default async function RelatoriosPage() {
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Relatórios diários</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Gerado e enviado automaticamente todo dia de madrugada, com os dados de D-1. Cada relatório fica guardado
-          exatamente como foi enviado.
+          Gerado todo dia de madrugada, com os dados de D-1. Cada relatório fica guardado exatamente como foi enviado.
         </p>
       </div>
+
+      {!config.relatorioAutomatico && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <p className="text-sm font-semibold text-sky-900">Relatório automático desligado</p>
+          <p className="mt-1 text-xs leading-relaxed text-sky-800">
+            O ciclo da madrugada continua sincronizando a Omie e rodando a auditoria, mas para antes de gerar
+            relatório. É o modo certo enquanto a integração está sendo conferida: relatório gerado sobre uma base ainda
+            incompleta vira histórico enganoso. Gere manualmente abaixo para ver o resultado e, quando os números
+            fecharem, ligue em{" "}
+            <Link href="/configuracao" className="font-medium underline">
+              Modelo de gestão
+            </Link>
+            .
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Kpi rotulo="Relatórios guardados" valor={fmtNumero(relatorios.length)} apoio="Últimos 60" />
