@@ -25,7 +25,18 @@ const DEADLINE_MS = 48_000;
 
 export type ResultadoSync = { erro?: string; mensagens?: string[]; concluido?: boolean };
 
-export async function sincronizarAgora(): Promise<ResultadoSync> {
+// `encadear` distingue quem está conduzindo a carga.
+//
+// Quando a aba está aberta, ela chama esta ação em corrente, uma rodada após a
+// outra — e disparar o ciclo em segundo plano a cada rodada colocaria dois
+// motores sobre a MESMA execução, brigando pelo mesmo cursor. Não corrompe
+// nada (toda escrita é upsert por chave natural), mas gasta invocação e
+// embaralha o diagnóstico: fica impossível saber qual dos dois avançou o quê.
+//
+// Com a aba fechada não há quem chame de novo, e aí o disparo é o que faz a
+// carga continuar.
+export async function sincronizarAgora(opts?: { encadear?: boolean }): Promise<ResultadoSync> {
+  const encadear = opts?.encadear ?? true;
   const session = await requireRole("ADMIN", "CONTROLADORIA");
 
   if (!existeAlgumaCredencialOmie()) {
@@ -51,11 +62,15 @@ export async function sincronizarAgora(): Promise<ResultadoSync> {
     // sem ele, o laço consumiria o tempo inteiro sem sair do lugar.
     for (let i = 0; i < 60; i++) {
       if (Date.now() - iniciado > ORCAMENTO_MS) {
-        mensagens.push(
-          dispararProximaInvocacao({ companyId: session.companyId }).disparado
-            ? "Tempo desta execução esgotado — o restante continua sozinho, em segundo plano. Pode fechar a aba e recarregar esta página daqui a pouco para ver o avanço."
-            : "Tempo desta execução esgotado — o restante continua na próxima execução manual (ou no ciclo automático da madrugada)."
-        );
+        if (!encadear) {
+          mensagens.push("Rodada concluída — a próxima começa em seguida, nesta aba.");
+        } else {
+          mensagens.push(
+            dispararProximaInvocacao({ companyId: session.companyId }).disparado
+              ? "Tempo desta execução esgotado — o restante continua sozinho, em segundo plano."
+              : "Tempo desta execução esgotado — o restante continua na próxima execução manual (ou no ciclo automático da madrugada)."
+          );
+        }
         break;
       }
 

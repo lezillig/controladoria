@@ -12,6 +12,10 @@ import { encerrarExecucaoTravada, sincronizarAgora } from "./actions";
 
 const INTERVALO_ATUALIZACAO_MS = 15_000;
 
+// Sinalizador de "a carga foi pedida e ainda não terminou". Fica no navegador
+// de quem pediu — não é estado do sistema, é intenção de quem está na tela.
+const MARCA_CARGA = "controladoria:carga-em-andamento";
+
 export default function SyncButton({
   temExecucaoTravada,
   emAndamento,
@@ -41,10 +45,33 @@ export default function SyncButton({
   // não duplica nada.
   const continuando = useRef(false);
 
+  // A intenção de continuar sobrevive ao recarregamento da página.
+  //
+  // Isto é uma armadilha real, não uma hipótese: para ver o progresso a pessoa
+  // recarrega a página, e recarregar levava a corrente junto. O sintoma era a
+  // carga parar sozinha logo depois de alguém conferir se ela estava andando.
+  //
+  // A marca fica no navegador, é apenas um sinalizador, e some quando a carga
+  // termina, dá erro ou a pessoa manda parar. Cada leitura e escrita vai
+  // protegida: navegação anônima e políticas de site que bloqueiam
+  // armazenamento fazem o acesso lançar, e uma tela de sincronização não pode
+  // quebrar por causa disso.
+  const marcar = (ligado: boolean) => {
+    try {
+      if (ligado) localStorage.setItem(MARCA_CARGA, "1");
+      else localStorage.removeItem(MARCA_CARGA);
+    } catch {
+      // Sem armazenamento a corrente continua funcionando nesta aba; ela só
+      // não sobrevive a um recarregamento.
+    }
+  };
+
   const rodar = useCallback(() => {
     iniciar(async () => {
       while (continuando.current) {
-        const resultado = await sincronizarAgora();
+        // Sem encadear pelo servidor: esta aba já é o motor, e dois motores
+        // sobre a mesma execução só gastam invocação.
+        const resultado = await sincronizarAgora({ encadear: false });
         setErro(resultado.erro ?? null);
         setMensagens(resultado.mensagens ?? []);
         setConcluido(Boolean(resultado.concluido));
@@ -53,12 +80,34 @@ export default function SyncButton({
 
         // Erro encerra a corrente: insistir sobre uma falha real só empilharia
         // a mesma mensagem a cada quarenta segundos.
-        if (resultado.erro || resultado.concluido) break;
+        if (resultado.erro || resultado.concluido) {
+          try {
+            localStorage.removeItem(MARCA_CARGA);
+          } catch {}
+          break;
+        }
         await new Promise((r) => setTimeout(r, 500));
       }
       continuando.current = false;
     });
   }, [router]);
+
+  // Retoma sozinha ao abrir a página, se a carga tinha sido pedida e ainda há
+  // execução em andamento. Sem isto, o recarregamento que a pessoa faz para
+  // conferir o progresso é o que interrompe o progresso.
+  useEffect(() => {
+    let pedida = false;
+    try {
+      pedida = localStorage.getItem(MARCA_CARGA) === "1";
+    } catch {
+      pedida = false;
+    }
+    if (!pedida || !emAndamento || continuando.current) return;
+    continuando.current = true;
+    rodar();
+    // Só na montagem: depois disso quem comanda é o botão.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sem limpeza no desmonte, de propósito.
   //
@@ -101,6 +150,7 @@ export default function SyncButton({
             setConcluido(false);
             setRodadas(0);
             continuando.current = true;
+            marcar(true);
             rodar();
           }}
         >
@@ -114,6 +164,7 @@ export default function SyncButton({
             className={secondaryButtonClass}
             onClick={() => {
               continuando.current = false;
+              marcar(false);
             }}
           >
             Parar depois desta rodada
@@ -148,7 +199,8 @@ export default function SyncButton({
 
       {!processando && emAndamento && (
         <p className="mt-3 text-xs text-slate-500">
-          Carga em andamento em segundo plano — esta página se atualiza sozinha a cada 15 segundos. Pode fechar a aba.
+          Há execução em andamento — esta página se atualiza sozinha a cada 15 segundos. Se a barra não avançar, use
+          Sincronizar agora: a aba passa a conduzir a carga e continua mesmo que você recarregue a página.
         </p>
       )}
 
