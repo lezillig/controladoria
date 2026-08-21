@@ -18,8 +18,12 @@ import { registrarEvento } from "../auditoria/actions";
 // caminho seria a primeira coisa a divergir do agendado e a última a ser
 // percebida.
 
-// Server Action na Vercel tem o mesmo teto de execução das funções de rota.
-// 40s deixa margem para a resposta e o revalidate.
+// Orçamento de trabalho por rodada, dentro do teto de 60s da página.
+//
+// Os números são 40/48 e não menos porque o log de produção mostrou que eles
+// cabem: sete rodadas seguidas duraram entre 40,2s e 42,1s e todas
+// responderam 200. A suspeita de que a função estava sendo morta no meio era
+// falsa — encurtar o orçamento só faria cada rodada render menos.
 const ORCAMENTO_MS = 40_000;
 const DEADLINE_MS = 48_000;
 

@@ -65,6 +65,15 @@ export async function GET(req: NextRequest) {
   const iniciado = Date.now();
   const ciclo = Number(req.nextUrl.searchParams.get("ciclo") ?? "0");
   const dataParam = req.nextUrl.searchParams.get("data");
+
+  // `encadear=0` desliga a autochamada porque alguém já está conduzindo o
+  // ciclo de fora — hoje o workflow do GitHub Actions.
+  //
+  // Não é preferência de estilo: dois condutores sobre a mesma execução
+  // duplicam invocação e tornam impossível saber qual dos dois avançou o quê,
+  // que foi exatamente o que atrapalhou o diagnóstico durante dias. Quem
+  // conduz de fora assume também a responsabilidade de chamar de novo.
+  const conduzidoDeFora = req.nextUrl.searchParams.get("encadear") === "0";
   const dataReferencia = dataParam ? parseLocalDate(dataParam) : dataReferenciaPadrao();
 
   if (Number.isNaN(dataReferencia.getTime())) {
@@ -145,7 +154,8 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  if (continua && ciclo < MAX_CICLOS) {
+  const encadeou = continua && ciclo < MAX_CICLOS && !conduzidoDeFora;
+  if (encadeou) {
     dispararProximaInvocacao({ ciclo: ciclo + 1, data: dataParam });
   }
 
@@ -153,7 +163,13 @@ export async function GET(req: NextRequest) {
     dataReferencia: dataReferencia.toISOString().slice(0, 10),
     ciclo,
     duracaoMs: Date.now() - iniciado,
-    encadeou: continua && ciclo < MAX_CICLOS,
+    // `continua` responde à única pergunta que um condutor externo faz: sobrou
+    // trabalho? É diferente de `encadeou`, que diz se ESTA invocação chamou a
+    // próxima. Sem os dois separados, quem conduz de fora não distingue
+    // "acabou" de "não me encadeei porque você mandou não encadear".
+    continua,
+    encadeou,
+    conduzidoDeFora,
     limiteDeCiclosAtingido: continua && ciclo >= MAX_CICLOS,
     resultados,
   });

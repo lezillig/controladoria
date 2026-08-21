@@ -11,6 +11,16 @@ import { sessaoControladoria } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
 
+// Teto de duração das Server Actions desta tela, declarado por precaução e não
+// por diagnóstico.
+//
+// A ação de sincronizar orça 40s de trabalho e 48s de prazo. O log de produção
+// mostra que isso já acontecia sem a declaração — as rodadas duram ~41s e
+// respondem 200 —, então o padrão da hospedagem hoje é suficiente. A linha
+// existe para o orçamento não ficar dependendo de um padrão que pode mudar sem
+// aviso, e para o teto ficar escrito onde a rota do cron já escreve o dela.
+export const maxDuration = 60;
+
 // SINCRONIZAÇÃO — o estado de saúde do módulo.
 //
 // A tela mais importante do módulo depois da auditoria, e por um motivo

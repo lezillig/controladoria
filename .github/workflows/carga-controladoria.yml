@@ -1,0 +1,159 @@
+# CONDUTOR DO CICLO DA CONTROLADORIA — fora da Vercel, de propósito.
+#
+# O ciclo trabalha em rodadas de ~40 segundos e precisa de alguém que chame a
+# próxima. Até aqui esse alguém era a própria função da Vercel, chamando a si
+# mesma por HTTP, porque o plano Hobby só permite UM agendamento por dia — e
+# essa autochamada virou o ponto único de falha: quando ela não acontece, a
+# carga simplesmente para, sem erro, sem log e sem ninguém saber. O contorno
+# era pior ainda: uma aba de navegador aberta apertando o botão.
+#
+# Aqui o condutor é externo e visível. Um job do GitHub Actions chama a rota
+# em laço, imprime o que cada rodada fez e só termina quando a rota responde
+# que não sobrou trabalho. Se parar, o motivo está no log deste workflow — que
+# é um lugar onde se pode olhar, diferente de uma requisição que morreu no ar.
+#
+# O runner do GitHub aceita até 6 horas por job, folga suficiente para a carga
+# histórica inteira (38 janelas mensais, duas empresas) numa tacada só.
+#
+# ---------------------------------------------------------------------------
+# ANTES DA PRIMEIRA EXECUÇÃO, cadastrar em Settings → Secrets and variables →
+# Actions → New repository secret:
+#
+#   APP_URL      — a URL de produção, com https e sem barra no fim.
+#   CRON_SECRET  — o MESMO valor que está nas variáveis de ambiente da Vercel.
+#
+# E, só se a proteção de deploy da Vercel estiver ligada para Production:
+#   VERCEL_AUTOMATION_BYPASS_SECRET — gerado em Settings → Deployment
+#   Protection → Protection Bypass for Automation.
+#
+# São segredos do repositório, não do código: nada disso é versionado, e o log
+# do Actions mascara o valor caso ele apareça por acidente.
+# ---------------------------------------------------------------------------
+
+name: Carga da Controladoria
+
+on:
+  # Botão manual, em Actions → Carga da Controladoria → Run workflow. É por
+  # aqui que se toca a carga histórica.
+  workflow_dispatch:
+    inputs:
+      data:
+        description: "Data de referência (AAAA-MM-DD). Em branco, usa o padrão do ciclo (D-1)."
+        required: false
+        default: ""
+  # Ciclo diário. 06:10 UTC = 03:10 de Brasília, mesmo horário do agendamento
+  # da Vercel: depois do fechamento bancário do dia anterior, antes do
+  # expediente. O agendamento da Vercel continua existindo como rede de
+  # segurança — os dois chegam à mesma máquina de estados e o segundo a rodar
+  # encontra o dia já concluído e não faz nada.
+  schedule:
+    - cron: "10 6 * * *"
+
+# Uma carga por vez. Duas correndo juntas não corrompem nada (toda escrita é
+# upsert por chave natural), mas gastam invocação em dobro e embaralham o log.
+concurrency:
+  group: carga-controladoria
+  cancel-in-progress: false
+
+jobs:
+  carga:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Conduzir o ciclo até não sobrar trabalho
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          DATA: ${{ inputs.data }}
+        shell: bash
+        run: |
+          # Sem `-e`: este script trata os próprios erros e decide quando
+          # desistir. Morrer no primeiro `curl` que falha seria trocar uma
+          # carga que se recupera de um soluço de rede por uma que não.
+          set +e
+          set -uo pipefail
+
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "::error::Faltam os segredos APP_URL e/ou CRON_SECRET no repositório (Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+          base="${APP_URL%/}"
+          rota="$base/api/cron/controladoria"
+
+          # Teto de rodadas. A rota já tem o seu (MAX_CICLOS), mas ele só vale
+          # para o auto-encadeamento; conduzindo de fora, o teto é aqui.
+          MAX_RODADAS=400
+          # Quantas respostas ruins seguidas antes de desistir. Uma sozinha é
+          # soluço de rede ou instância fria; três seguidas é problema real.
+          MAX_FALHAS=3
+
+          rodada=0
+          falhas=0
+          inicio=$(date +%s)
+
+          while [ "$rodada" -lt "$MAX_RODADAS" ]; do
+            url="$rota?encadear=0&ciclo=$rodada"
+            if [ -n "${DATA:-}" ]; then
+              url="$url&data=$DATA"
+            fi
+
+            args=(-sS --max-time 120 -H "Authorization: Bearer $CRON_SECRET" -w '\n%{http_code}')
+            if [ -n "${BYPASS:-}" ]; then
+              args+=(-H "x-vercel-protection-bypass: $BYPASS")
+            fi
+
+            resposta=$(curl "${args[@]}" "$url")
+            if [ $? -ne 0 ]; then
+              resposta=$'\n000'
+            fi
+
+            http=$(printf '%s' "$resposta" | tail -n 1)
+            corpo=$(printf '%s' "$resposta" | sed '$d')
+
+            if [ "$http" != "200" ]; then
+              falhas=$((falhas + 1))
+              echo "::warning::Rodada $rodada respondeu HTTP $http (falha $falhas de $MAX_FALHAS): $corpo"
+              if [ "$falhas" -ge "$MAX_FALHAS" ]; then
+                echo "::error::$MAX_FALHAS respostas seguidas fora do esperado. Última: HTTP $http — $corpo"
+                {
+                  echo "## Carga interrompida"
+                  echo ""
+                  echo "Parou na rodada **$rodada** com HTTP \`$http\`."
+                  echo ""
+                  echo '```'
+                  echo "$corpo"
+                  echo '```'
+                } >> "$GITHUB_STEP_SUMMARY"
+                exit 1
+              fi
+              # Espera antes de insistir: se foi instância fria ou limite de
+              # conexão do banco, insistir na hora só repete a mesma recusa.
+              sleep 20
+              continue
+            fi
+
+            falhas=0
+            decorrido=$(( $(date +%s) - inicio ))
+            duracao=$(printf '%s' "$corpo" | jq -r '.duracaoMs // 0')
+            resumo=$(printf '%s' "$corpo" | jq -c '.resultados // []')
+            echo "rodada $rodada · ${duracao}ms · ${decorrido}s acumulados · $resumo"
+
+            continua=$(printf '%s' "$corpo" | jq -r '.continua // false')
+            if [ "$continua" != "true" ]; then
+              echo "Ciclo concluído: a rota respondeu que não sobrou trabalho."
+              {
+                echo "## Carga concluída"
+                echo ""
+                echo "**$((rodada + 1))** rodadas em **$((decorrido / 60))** min."
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            rodada=$((rodada + 1))
+          done
+
+          echo "::error::Teto de $MAX_RODADAS rodadas atingido sem o ciclo terminar. Rode de novo para continuar de onde parou, ou investigue se alguma fase deixou de avançar."
+          exit 1
