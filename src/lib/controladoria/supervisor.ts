@@ -154,7 +154,20 @@ export function avaliarQualidadeDaBase(ctx: ContextoAuditoria): QualidadeDaBase 
   }
   if (!temNotas) {
     score -= 10;
-    limitacoes.push("Notas fiscais não sincronizadas: as análises fiscais ficam suspensas nesta rodada.");
+    // "Nesta leitura", e não "não sincronizadas".
+    //
+    // Esta função só enxerga o contexto JÁ RECORTADO por empresa e por
+    // competência. Anunciar ausência de sincronização a partir disso foi o que
+    // aconteceu com 4.665 notas gravadas no banco: o aviso mandou procurar
+    // defeito na integração da Omie, que estava funcionando, quando o fato era
+    // apenas que aquele recorte não continha nota nenhuma.
+    //
+    // Um sistema de auditoria não pode errar a natureza do que aponta. A
+    // diferença entre "o dado não existe" e "o dado não está neste recorte" é
+    // a diferença entre um problema e um filtro.
+    limitacoes.push(
+      "Nenhuma nota fiscal nesta leitura — confira a empresa e a competência selecionadas. As análises fiscais ficam suspensas."
+    );
   }
   if (syncAtrasadoDias === null) {
     score -= 10;

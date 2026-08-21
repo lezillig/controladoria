@@ -7,8 +7,9 @@ import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/form
 import { avaliarQualidadeDaBase } from "@/lib/controladoria/supervisor";
 import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { rotuloCompetencia } from "@/lib/conformidade/tipos";
-import { contextoDaPagina } from "./_dados";
-import { AvisoVazio, BadgeSeveridade, Barra, Farol, Kpi, Secao, SeletorEmpresa, Tabela, Variacao } from "./_componentes";
+import { competenciasDisponiveis, contextoDaPagina } from "./_dados";
+import { AvisoVazio, BadgeSeveridade, Barra, Farol, Kpi, Secao, Tabela, Variacao } from "./_componentes";
+import Filtros from "./Filtros";
 
 // DASHBOARD FINANCEIRO — a tela de abertura do módulo.
 //
@@ -17,8 +18,14 @@ import { AvisoVazio, BadgeSeveridade, Barra, Farol, Kpi, Secao, SeletorEmpresa, 
 // 3) o que vem pela frente (projeção), 4) como estamos indo (BSC).
 // Sem gráfico decorativo: cada elemento aqui responde a uma pergunta.
 
-export default async function ControladoriaPage({ searchParams }: { searchParams: Promise<{ empresa?: string }> }) {
-  const { ctx, escopo } = await contextoDaPagina((await searchParams).empresa);
+export default async function ControladoriaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+}) {
+  const params = await searchParams;
+  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  const competencias = competenciasDisponiveis(ctx.config.dataInicioBase);
 
   const panorama = montarPanorama(ctx);
   const c = panorama.comparativo;
@@ -42,7 +49,7 @@ export default async function ControladoriaPage({ searchParams }: { searchParams
   if (!qualidade.temTitulos) {
     return (
       <div className="max-w-6xl">
-        <Cabecalho dataReferencia={ctx.dataReferencia} />
+        <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} />
         <AvisoVazio
           titulo="Nenhum dado da Omie ainda"
           descricao="O sistema espelha o ERP para poder auditar. Cadastre as conexões das empresas do grupo e rode a primeira sincronização — a carga histórica roda em segundo plano, mês a mês, e o relatório diário passa a sair sozinho a partir do dia seguinte."
@@ -66,9 +73,15 @@ export default async function ControladoriaPage({ searchParams }: { searchParams
 
   return (
     <div className="max-w-6xl space-y-6">
-      <Cabecalho dataReferencia={ctx.dataReferencia} />
+      <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} />
 
-      <SeletorEmpresa conexoes={ctx.conexoes} ativa={escopo.conexaoId} rota="/" />
+      <Filtros
+        conexoes={ctx.conexoes}
+        empresaAtiva={escopo.conexaoId}
+        competencias={competencias}
+        competenciaAtiva={periodo.competencia}
+        rota="/"
+      />
 
       {qualidade.limitacoes.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
@@ -391,12 +404,20 @@ function NumeroConformidade({
   );
 }
 
-function Cabecalho({ dataReferencia }: { dataReferencia: Date }) {
+// O subtítulo muda conforme a leitura, e isso não é cosmético.
+//
+// Um painel de competência passada exibindo "(D-1)" convidaria alguém a ler os
+// números de março como se fossem de hoje. A data de referência precisa dizer
+// em voz alta que recorte está na tela.
+function Cabecalho({ dataReferencia, competencia }: { dataReferencia: Date; competencia: string | null }) {
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-900">Controladoria</h1>
       <p className="mt-1 text-sm text-slate-500">
-        Painel financeiro consolidado a partir da Omie e da operação — dados de {fmtData(dataReferencia)} (D-1).
+        Painel financeiro consolidado a partir da Omie e da operação —{" "}
+        {competencia
+          ? `competência ${rotuloCompetencia(dataReferencia)}, fechada em ${fmtData(dataReferencia)}.`
+          : `dados de ${fmtData(dataReferencia)} (D-1).`}
       </p>
     </div>
   );
