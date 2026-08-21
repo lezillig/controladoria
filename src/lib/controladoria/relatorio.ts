@@ -1,5 +1,6 @@
 import type { OmieConexao, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { urlDoSistema } from "@/lib/appUrl";
 import { buscarEmpresa } from "@/lib/gestao/leitura";
 import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { enviarEmail, isEnvioDisponivel } from "@/lib/email/send";
@@ -212,13 +213,4 @@ export async function gerarEEnviarRelatorio(
   };
 }
 
-// URL publica do sistema, para o botao "abrir o painel" do e-mail. Na Vercel,
-// VERCEL_PROJECT_PRODUCTION_URL aponta sempre para o dominio de producao —
-// diferente de VERCEL_URL, que muda a cada deploy de preview e faria o link do
-// e-mail apontar para um deploy antigo (ou morto).
-function urlDoSistema(): string | null {
-  const explicita = process.env.APP_URL;
-  if (explicita) return explicita.replace(/\/$/, "");
-  const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
-  return vercel ? `https://${vercel}` : null;
-}
+
