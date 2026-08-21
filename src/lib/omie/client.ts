@@ -94,7 +94,9 @@ export const OMIE_ENDPOINTS = {
 // a tela inicial distinguir "nada configurado ainda" de "configurado, mas sem
 // dado" — a checagem que importa e a por conexao (credencialConfigurada).
 export function existeAlgumaCredencialOmie(): boolean {
-  return Object.keys(process.env).some((k) => k.startsWith("OMIE_APP_KEY_"));
+  // Exige valor, nao so a existencia do nome: variavel criada em branco
+  // faria a tela inicial dizer "configurado" sobre um ambiente que nao esta.
+  return Object.entries(process.env).some(([k, v]) => k.startsWith("OMIE_APP_KEY_") && (v ?? "").trim() !== "");
 }
 
 // Normaliza o sufixo para o formato de variavel de ambiente: maiusculas, sem
@@ -170,12 +172,21 @@ export function conferirFormatoCredencial(credencialRef: string): ProblemaCreden
   ];
 
   for (const [nome, bruto, formato, esperado] of pares) {
-    if (bruto === "") {
-      problemas.push({ variavel: nome, problema: "não existe neste ambiente ou está vazia." });
+    const valor = bruto.trim();
+
+    // Vazia e "só espaço em branco" são o mesmo defeito para quem lê: o campo
+    // não tem valor. Reportar as duas coisas (branco nas pontas + formato
+    // inválido) sobre um campo em branco seria ruído em cima da causa.
+    if (valor === "") {
+      problemas.push({
+        variavel: nome,
+        problema:
+          bruto === ""
+            ? "não existe neste ambiente ou foi criada sem valor. Confira se o campo Value está preenchido — o painel aceita salvar em branco."
+            : "só tem espaço em branco, sem valor.",
+      });
       continue;
     }
-
-    const valor = bruto.trim();
 
     if (valor !== bruto) {
       // Aparado em tempo de execucao, mas vale avisar: espaco invisivel no
@@ -233,12 +244,20 @@ export function conferirFormatoCredencial(credencialRef: string): ProblemaCreden
   return problemas;
 }
 
-// Uma conexao so e utilizavel quando o par de variaveis existe no ambiente.
+// Uma conexao so e utilizavel quando o par de variaveis existe E TEM VALOR.
 // A tela de conexoes usa isto para mostrar "credencial ausente" em vez de
 // deixar o usuario descobrir no erro do primeiro sync.
+//
+// Compara depois de aparar de proposito. Variavel CRIADA COM VALOR VAZIO e um
+// estado real e comum — o painel da hospedagem aceita salvar assim, e colar um
+// bloco `NOME=valor` no campo de nome cria a variavel sem valor nenhum. Uma
+// checagem que so testasse a existencia da chave deixaria esse caso passar
+// direto para a Omie, que responde "a chave de acesso nao esta preenchida ou
+// nao e valida" — a mesma frase que ela usa para chave errada. O resultado
+// seria procurar credencial invalida quando o problema e campo em branco.
 export function credencialConfigurada(credencialRef: string): boolean {
-  const { chave, segredo } = nomesDasVariaveis(credencialRef);
-  return Boolean(process.env[chave] && process.env[segredo]);
+  const { app_key, app_secret } = lerCru(credencialRef);
+  return app_key !== "" && app_secret !== "";
 }
 
 // Espacamento minimo entre chamadas. A Omie limita o consumo por app_key e
