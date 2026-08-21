@@ -27,12 +27,17 @@ export default function Filtros({
   competencias,
   competenciaAtiva,
   rota,
+  extras,
 }: {
   conexoes: { id: string; apelido: string; nome: string }[];
   empresaAtiva: string | null;
   competencias: OpcaoCompetencia[];
   competenciaAtiva: string | null;
   rota: string;
+  // Parâmetros da própria tela que precisam sobreviver à troca de filtro —
+  // a aba "a pagar / a receber" dos títulos, por exemplo. Sem isso, escolher
+  // uma competência em "a receber" devolveria a pessoa para "a pagar".
+  extras?: Record<string, string | undefined>;
 }) {
   const router = useRouter();
   const [navegando, iniciar] = useTransition();
@@ -42,6 +47,9 @@ export default function Filtros({
   // março de AZUL com março de MCZ perderia o mês a cada clique.
   const ir = (empresa: string | null, competencia: string | null) => {
     const q = new URLSearchParams();
+    for (const [chave, valor] of Object.entries(extras ?? {})) {
+      if (valor) q.set(chave, valor);
+    }
     if (empresa) q.set("empresa", empresa);
     if (competencia) q.set("competencia", competencia);
     const busca = q.toString();

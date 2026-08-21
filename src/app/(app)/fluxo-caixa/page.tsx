@@ -3,13 +3,19 @@ import { saldoAtualCents } from "@/lib/controladoria/agents/conciliacao";
 import { calcularCiclo, projetarFluxoCaixa } from "@/lib/controladoria/agents/fluxoCaixa";
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { somarDias } from "@/lib/controladoria/periodos";
-import { contextoDaPagina } from "../_dados";
-import { Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
+import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
+import { Kpi, Secao, Tabela } from "../_componentes";
+import Filtros from "../Filtros";
 
 // FLUXO DE CAIXA — a única tela do módulo que olha para frente.
 
-export default async function FluxoCaixaPage({ searchParams }: { searchParams: Promise<{ empresa?: string }> }) {
-  const { ctx, escopo } = await contextoDaPagina((await searchParams).empresa);
+export default async function FluxoCaixaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+}) {
+  const params = await searchParams;
+  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
 
   const saldo = saldoAtualCents(ctx);
   const projecao = projetarFluxoCaixa(ctx);
@@ -50,7 +56,13 @@ export default async function FluxoCaixaPage({ searchParams }: { searchParams: P
         </p>
       </div>
 
-      <SeletorEmpresa conexoes={ctx.conexoes} ativa={escopo.conexaoId} rota="/fluxo-caixa" />
+      <Filtros
+        conexoes={ctx.conexoes}
+        empresaAtiva={escopo.conexaoId}
+        competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
+        competenciaAtiva={periodo.competencia}
+        rota="/fluxo-caixa"
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi rotulo="Saldo atual" valor={fmtBRL(saldo)} apoio="Soma das contas correntes ativas" tom={saldo >= 0 ? "neutro" : "ruim"} />

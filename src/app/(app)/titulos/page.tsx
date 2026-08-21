@@ -2,8 +2,9 @@ import Link from "next/link";
 import { fmtBRL, fmtData, fmtDocumento, fmtNumero } from "@/lib/controladoria/format";
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { resumoAging } from "@/lib/controladoria/agents/contasReceber";
-import { contextoDaPagina } from "../_dados";
-import { AvisoVazio, Barra, Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
+import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
+import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
+import Filtros from "../Filtros";
 
 // CONTAS A PAGAR E A RECEBER numa tela só, alternada por querystring.
 //
@@ -13,11 +14,11 @@ import { AvisoVazio, Barra, Kpi, Secao, SeletorEmpresa, Tabela } from "../_compo
 // diferentes — foi por isso que os títulos também moram numa tabela só no
 // banco (ver OmieTitulo no schema).
 
-type Params = { natureza?: string; filtro?: string; empresa?: string };
+type Params = { natureza?: string; filtro?: string; empresa?: string; competencia?: string };
 
 export default async function TitulosPage({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
-  const { ctx, escopo } = await contextoDaPagina(params.empresa);
+  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
   const natureza = params.natureza === "RECEBER" ? "RECEBER" : "PAGAR";
   const filtro = params.filtro ?? "ABERTOS";
 
@@ -60,7 +61,14 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
           <Aba href={`/titulos?natureza=PAGAR${escopoNaUrl}`} rotulo="A pagar" ativo={natureza === "PAGAR"} />
           <Aba href={`/titulos?natureza=RECEBER${escopoNaUrl}`} rotulo="A receber" ativo={natureza === "RECEBER"} />
         </div>
-        <SeletorEmpresa conexoes={ctx.conexoes} ativa={escopo.conexaoId} rota={`/titulos?natureza=${natureza}`} />
+        <Filtros
+          conexoes={ctx.conexoes}
+          empresaAtiva={escopo.conexaoId}
+          competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
+          competenciaAtiva={periodo.competencia}
+          rota="/titulos"
+          extras={{ natureza }}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

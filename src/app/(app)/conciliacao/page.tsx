@@ -2,14 +2,20 @@ import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/form
 import { saldoAtualCents } from "@/lib/controladoria/agents/conciliacao";
 import { agrupar, somar } from "@/lib/controladoria/agents/comum";
 import { inicioDoMes } from "@/lib/controladoria/periodos";
-import { contextoDaPagina } from "../_dados";
-import { AvisoVazio, Barra, Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
+import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
+import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
+import Filtros from "../Filtros";
 
 // CONCILIAÇÃO BANCÁRIA — o controle que fecha o circuito do dinheiro.
 // Sem ele, todo número do módulo é uma declaração de intenção.
 
-export default async function ConciliacaoPage({ searchParams }: { searchParams: Promise<{ empresa?: string }> }) {
-  const { ctx, escopo } = await contextoDaPagina((await searchParams).empresa);
+export default async function ConciliacaoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+}) {
+  const params = await searchParams;
+  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
 
   const inicio = inicioDoMes(new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth() - 1, 1));
   const movimentos = ctx.movimentos.filter((m) => m.data >= inicio && m.data <= ctx.dataReferencia);
@@ -21,7 +27,13 @@ export default async function ConciliacaoPage({ searchParams }: { searchParams: 
       <div className="max-w-5xl space-y-6">
         <Cabecalho />
 
-      <SeletorEmpresa conexoes={ctx.conexoes} ativa={escopo.conexaoId} rota="/conciliacao" />
+      <Filtros
+        conexoes={ctx.conexoes}
+        empresaAtiva={escopo.conexaoId}
+        competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
+        competenciaAtiva={periodo.competencia}
+        rota="/conciliacao"
+      />
         <AvisoVazio
           titulo="Nenhuma conta corrente espelhada"
           descricao="As contas correntes vêm da Omie na primeira sincronização. Sem elas, não há extrato para conciliar."
@@ -46,7 +58,13 @@ export default async function ConciliacaoPage({ searchParams }: { searchParams: 
     <div className="max-w-5xl space-y-6">
       <Cabecalho />
 
-      <SeletorEmpresa conexoes={ctx.conexoes} ativa={escopo.conexaoId} rota="/conciliacao" />
+      <Filtros
+        conexoes={ctx.conexoes}
+        empresaAtiva={escopo.conexaoId}
+        competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
+        competenciaAtiva={periodo.competencia}
+        rota="/conciliacao"
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi rotulo="Saldo consolidado" valor={fmtBRL(saldoAtualCents(ctx))} apoio="Saldo inicial + movimentos espelhados" />

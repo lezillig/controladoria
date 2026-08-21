@@ -1,33 +1,41 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { fmtBRL, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { serieMensal } from "@/lib/controladoria/serieMensal";
+import { composicaoDoPeriodo, maioresTitulosDoPeriodo } from "@/lib/controladoria/composicao";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
-import { inicioDoDia } from "@/lib/controladoria/periodos";
+import { inicioDoDia, montarJanelas } from "@/lib/controladoria/periodos";
 import PageHeader from "@/components/ui/PageHeader";
-import { resolverEscopo, sessaoControladoria } from "../_dados";
+import { competenciasDisponiveis, resolverEscopo, resolverPeriodo, sessaoControladoria } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 
-// RESULTADO MÊS A MÊS — a tela que responde "como estamos indo ao longo do ano".
+// RESULTADO MÊS A MÊS E COMPOSIÇÃO DO MÊS.
 //
-// O painel responde "como está hoje" e a competência escolhida responde "como
-// foi naquele mês". Faltava a pergunta que fica entre as duas: a evolução, e o
-// acumulado que ela produz. Sem isso, comparar março com abril exigia abrir o
-// painel duas vezes e anotar num papel.
+// Duas perguntas na mesma tela, porque uma sempre puxa a outra:
 //
-// Esta tela NÃO carrega o contexto de auditoria. Ela soma no banco e recebe uma
-// linha por mês — alguns kilobytes contra os mais de trinta megabytes que o
-// painel move a cada abertura. É o mesmo remédio já aplicado na tela de
-// sincronização, e o motivo é o mesmo: foi esse padrão que esgotou a franquia
-// de transferência do banco e derrubou os dois sistemas.
+//   "como viemos até aqui" — a série mensal com acumulado;
+//   "de onde vem esse número" — a composição por categoria, tipo e conta.
+//
+// A segunda existe porque o painel mostrava R$ 9,2 milhões de receita e não
+// sabia dizer de quê. Um total sem composição é uma afirmação que a pessoa
+// precisa aceitar ou rejeitar em bloco — e quando ele não bate com o que o
+// contador diz, não há por onde começar a investigar.
+//
+// Nada aqui carrega o contexto de auditoria: tudo é somado no Postgres. É o
+// mesmo remédio já aplicado na sincronização e na auditoria, pelo mesmo
+// motivo — foi carregar linha a linha que esgotou a franquia do banco e fez o
+// ciclo diário estourar o tempo da função.
 
 export default async function ResultadosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ empresa?: string }>;
+  searchParams: Promise<{ empresa?: string; competencia?: string }>;
 }) {
   const session = await sessaoControladoria();
-  const escopo = await resolverEscopo(session.companyId, (await searchParams).empresa);
+  const params = await searchParams;
+  const escopo = await resolverEscopo(session.companyId, params.empresa);
+  const periodo = resolverPeriodo(params.competencia);
 
   const [config, conexoes] = await Promise.all([
     prisma.controladoriaConfig.findUnique({
@@ -43,19 +51,57 @@ export default async function ResultadosPage({
 
   const ate = dataReferenciaPadrao();
   const desde = inicioDoDia(config?.dataInicioBase ?? new Date(ate.getFullYear() - 1, 0, 1));
+  const janelas = montarJanelas(periodo.dataReferencia);
+  const mes = janelas.mesAtual;
 
-  const serie = await serieMensal({
-    companyId: session.companyId,
-    conexaoId: escopo.conexaoId,
-    desde,
-    ate,
-  });
+  const escopoConsulta = { companyId: session.companyId, conexaoId: escopo.conexaoId };
+
+  const [serie, receita, despesa, topReceber, topPagar] = await Promise.all([
+    serieMensal({ ...escopoConsulta, desde, ate }),
+    composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" }),
+    composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" }),
+    maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" }),
+    maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" }),
+  ]);
 
   // Do mais recente para o mais antigo: quem abre esta tela quer o mês passado,
   // não janeiro do ano retrasado.
   const linhas = [...serie].reverse();
   const ultimoAno = linhas[0]?.competencia.slice(0, 4) ?? "";
   const fechamentoDoAno = linhas.find((m) => m.competencia.startsWith(ultimoAno));
+
+  const tabelaComposicao = (dados: typeof receita) => (
+    <Tabela
+      colunas={["Categoria", "Tipo", "Conta", "Títulos", "Valor", "%"]}
+      alinharDireita={[3, 4, 5]}
+      vazio="Nenhum título com vencimento neste mês."
+      linhas={dados.linhas.map((l) => [
+        l.categoria,
+        l.tipo,
+        l.conta,
+        fmtNumero(l.quantidade),
+        fmtBRL(l.valorCents),
+        fmtPercent(l.participacaoPercent),
+      ])}
+    />
+  );
+
+  const tabelaTitulos = (titulos: typeof topReceber) => (
+    <Tabela
+      colunas={["Vencimento", "Empresa", "Documento", "Parceiro", "Categoria", "Situação", "Valor"]}
+      alinharDireita={[6]}
+      vazio="Nenhum título com vencimento neste mês."
+      linhas={titulos.map((t) => [
+        fmtData(t.dataVencimento),
+        t.conexaoApelido,
+        t.numeroDocumento ?? "—",
+        t.parceiroNome ?? "—",
+        t.categoriaDescricao ?? "Sem categoria",
+        t.liquidado ? "Liquidado" : "Em aberto",
+        fmtBRL(t.valorDocumentoCents),
+      ])}
+    />
+  );
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -67,8 +113,8 @@ export default async function ResultadosPage({
       <Filtros
         conexoes={conexoes}
         empresaAtiva={escopo.conexaoId}
-        competencias={[]}
-        competenciaAtiva={null}
+        competencias={competenciasDisponiveis(config?.dataInicioBase ?? desde)}
+        competenciaAtiva={periodo.competencia}
         rota="/resultados"
       />
 
@@ -93,12 +139,83 @@ export default async function ResultadosPage({
         </div>
       )}
 
+      {/* AVISO QUE PRECISA ESTAR AQUI, e não numa documentação que ninguém lê.
+          O painel chama de "receita" a soma dos títulos a receber, e é comum
+          essa soma não bater com o faturamento que a contabilidade enxerga —
+          por três motivos concretos que a pessoa precisa saber ANTES de
+          concluir que o sistema está errado, ou de concluir que está certo. */}
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+        <p className="text-sm font-medium text-slate-800">Como estes números são formados</p>
+        <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs leading-relaxed text-slate-600">
+          <li>
+            <strong>Por vencimento, não por nota fiscal.</strong> Serviço prestado em junho e faturado com vencimento
+            em julho conta em julho. O faturamento que a contabilidade apura sai da nota emitida, e por isso pode
+            divergir.
+          </li>
+          <li>
+            <strong>Todo título a receber entra, de qualquer categoria.</strong> Aporte de sócio, empréstimo,
+            reembolso, estorno e transferência entre contas também são &quot;a receber&quot; — a tabela abaixo mostra em
+            qual categoria cada real está.
+          </li>
+          <li>
+            <strong>Parcela conta no mês do seu vencimento.</strong> Um contrato em três vezes aparece em três meses.
+          </li>
+        </ul>
+      </div>
+
+      <Secao
+        titulo={`Composição da receita — ${mes.rotulo}`}
+        descricao={`${fmtBRL(receita.totalCents)} em ${fmtNumero(receita.quantidade)} título(s) a receber com vencimento no mês.`}
+        acao={
+          <Link href="/titulos" className="text-xs font-medium text-blue-700 hover:underline">
+            Ver todos os títulos
+          </Link>
+        }
+      >
+        {tabelaComposicao(receita)}
+      </Secao>
+
+      <Secao
+        titulo={`Maiores títulos a receber — ${mes.rotulo}`}
+        descricao="A composição diz de onde vem; estes dizem qual documento é."
+      >
+        {tabelaTitulos(topReceber)}
+      </Secao>
+
+      <Secao
+        titulo={`Composição da despesa — ${mes.rotulo}`}
+        descricao={`${fmtBRL(despesa.totalCents)} em ${fmtNumero(despesa.quantidade)} título(s) a pagar com vencimento no mês.`}
+        acao={
+          <Link href="/titulos" className="text-xs font-medium text-blue-700 hover:underline">
+            Ver todos os títulos
+          </Link>
+        }
+      >
+        {tabelaComposicao(despesa)}
+      </Secao>
+
+      <Secao
+        titulo={`Maiores títulos a pagar — ${mes.rotulo}`}
+        descricao="A composição diz de onde vem; estes dizem qual documento é."
+      >
+        {tabelaTitulos(topPagar)}
+      </Secao>
+
       <Secao
         titulo="Competência — o mês em que o resultado foi gerado"
         descricao="Receita e despesa pelo vencimento dos títulos, independentemente de terem sido pagos. Responde 'a operação deu lucro no mês?'."
       >
         <Tabela
-          colunas={["Mês", "Receita", "Despesa", "Resultado", "Margem", "Acum. receita", "Acum. despesa", "Acum. resultado"]}
+          colunas={[
+            "Mês",
+            "Receita",
+            "Despesa",
+            "Resultado",
+            "Margem",
+            "Acum. receita",
+            "Acum. despesa",
+            "Acum. resultado",
+          ]}
           alinharDireita={[1, 2, 3, 4, 5, 6, 7]}
           linhas={linhas.map((m) => [
             m.rotulo,

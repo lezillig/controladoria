@@ -2,8 +2,9 @@ import { canManageControladoria } from "@/lib/permissions";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { montarComparativo } from "@/lib/controladoria/analytics";
 import { custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
-import { contextoDaPagina } from "../_dados";
-import { AvisoVazio, Barra, Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
+import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
+import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
+import Filtros from "../Filtros";
 import VinculoForm, { type OpcaoDestino, type OpcaoOrigem } from "./VinculoForm";
 import { removerVinculo } from "./actions";
 
@@ -14,8 +15,16 @@ import { removerVinculo } from "./actions";
 // sobre a minoria dos números com toda a aparência de rigor. Enquanto a
 // cobertura for baixa, o topo da tela diz isso em vez de esconder.
 
-export default async function RentabilidadePage({ searchParams }: { searchParams: Promise<{ empresa?: string }> }) {
-  const { session, ctx, escopo } = await contextoDaPagina((await searchParams).empresa);
+export default async function RentabilidadePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+}) {
+  const params = await searchParams;
+  const { session, ctx, escopo, periodo: competenciaEscolhida } = await contextoDaPagina(
+    params.empresa,
+    params.competencia
+  );
   const podeEditar = canManageControladoria(session.role);
 
   const comparativo = await montarComparativo(ctx);
@@ -71,7 +80,13 @@ export default async function RentabilidadePage({ searchParams }: { searchParams
         </p>
       </div>
 
-      <SeletorEmpresa conexoes={ctx.conexoes} ativa={escopo.conexaoId} rota="/rentabilidade" />
+      <Filtros
+        conexoes={ctx.conexoes}
+        empresaAtiva={escopo.conexaoId}
+        competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
+        competenciaAtiva={competenciaEscolhida.competencia}
+        rota="/rentabilidade"
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Kpi

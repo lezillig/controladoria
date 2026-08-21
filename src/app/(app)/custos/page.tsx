@@ -1,8 +1,9 @@
 import { dreGerencial, montarComparativo, ranking } from "@/lib/controladoria/analytics";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
-import { contextoDaPagina } from "../_dados";
-import { Barra, Kpi, Secao, SeletorEmpresa, Tabela, Variacao } from "../_componentes";
+import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
+import { Barra, Kpi, Secao, Tabela, Variacao } from "../_componentes";
+import Filtros from "../Filtros";
 
 // CUSTOS E DRE GERENCIAL.
 //
@@ -11,8 +12,13 @@ import { Barra, Kpi, Secao, SeletorEmpresa, Tabela, Variacao } from "../_compone
 // linha própria e visível ("Sem categoria") em vez de ser diluída nas outras:
 // dinheiro não classificado precisa incomodar, é o que faz alguém classificar.
 
-export default async function CustosPage({ searchParams }: { searchParams: Promise<{ empresa?: string }> }) {
-  const { ctx, escopo } = await contextoDaPagina((await searchParams).empresa);
+export default async function CustosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+}) {
+  const params = await searchParams;
+  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
 
   const comparativo = await montarComparativo(ctx);
   const dre = dreGerencial(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior);
@@ -36,7 +42,13 @@ export default async function CustosPage({ searchParams }: { searchParams: Promi
         </p>
       </div>
 
-      <SeletorEmpresa conexoes={ctx.conexoes} ativa={escopo.conexaoId} rota="/custos" />
+      <Filtros
+        conexoes={ctx.conexoes}
+        empresaAtiva={escopo.conexaoId}
+        competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
+        competenciaAtiva={periodo.competencia}
+        rota="/custos"
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi rotulo="Receita do mês" valor={fmtBRL(totalReceita)} apoio={`${fmtNumero(receitas.length)} categoria(s)`} />
