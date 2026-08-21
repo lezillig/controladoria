@@ -9,6 +9,7 @@ import {
   sleep,
   conferirFormatoCredencial,
   descreverParam,
+  paramsLancamentos,
   paramsNfse,
   type OmieEndpoint,
   type ProblemaCredencial,
@@ -240,6 +241,32 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
       )
     );
   }
+
+  // LANÇAMENTOS de conta corrente — a outra metade do movimento bancário.
+  //
+  // Entra no diagnóstico antes de entrar no sync, de propósito. O extrato veio
+  // vazio em todas as contas e eu concluí que a empresa não importava extrato.
+  // A tela da Omie mostrou 21.551 lançamentos, todos com marcador "Conciliado",
+  // em seis contas, e um saldo atual de R$ 2,99 milhões contra os R$ 131 mil
+  // que o nosso painel exibia. A conclusão estava errada, e o jeito de não
+  // errar de novo é ver os nomes reais dos campos ANTES de mapear — foi assim
+  // que as notas fiscais foram resolvidas.
+  //
+  // Sem normalizador ainda: `() => null` faz cada registro aparecer como
+  // "descartado", que aqui é o comportamento certo. O que se quer desta
+  // execução é a lista de campos que a conta devolve, não gravar nada.
+  endpoints.push(
+    await testar(
+      {
+        chave: "lancamentos",
+        rotulo: "Lançamentos de conta corrente",
+        endpoint: OMIE_ENDPOINTS.lancamentos,
+        param: paramsLancamentos(1, REGISTROS_DE_AMOSTRA, de, ate),
+        normalizar: () => null,
+      },
+      conexao.credencialRef
+    )
+  );
 
   return {
     conexao: { id: conexao.id, nome: conexao.nome, apelido: conexao.apelido },

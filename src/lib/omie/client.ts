@@ -73,10 +73,34 @@ export const OMIE_ENDPOINTS = {
     call: "PesquisarLancamentos",
     listKey: ["titulosEncontrados", "titulos_encontrados"],
   },
-  // Extrato por conta corrente e por periodo — base da conciliacao bancaria
-  // (traz o marcador de conciliado, que a listagem de lancamentos nao traz).
-  // Nao e paginado: a janela de datas e o que limita o volume.
+  // Extrato por conta corrente e por periodo: as linhas IMPORTADAS DO BANCO
+  // (OFX, CNAB ou Open Finance). Nao e paginado — a janela de datas limita o
+  // volume. Vem vazio quando a empresa nao importa extrato, e vazio aqui NAO
+  // significa que nao ha movimento bancario (ver `lancamentos` abaixo).
   extrato: { path: "financas/extrato/", call: "ListarExtrato", listKey: ["listaExtrato", "extrato"] },
+  // LANCAMENTOS DE CONTA CORRENTE — a outra metade do movimento bancario.
+  //
+  // A Omie tem dois conceitos que parecem o mesmo e nao sao: o EXTRATO, acima,
+  // e os LANCAMENTOS, que sao o que a propria Omie registrou a partir das
+  // baixas e das movimentacoes feitas la dentro.
+  //
+  // Eu usava so o extrato, e a justificativa escrita aqui era que a listagem
+  // de lancamentos nao trazia o marcador de conciliado. Era falso: a tela de
+  // Movimentacao de Contas Correntes mostra a coluna "Situacao" com
+  // "Conciliado (bloqueado)" em cada linha. A premissa errada custou o modulo
+  // de conciliacao inteiro — o extrato voltou vazio em todas as contas e o
+  // sistema concluiu "a empresa nao importa extrato", quando o certo era "eu
+  // perguntei no lugar errado".
+  //
+  // O sintoma que denunciou: a Omie mostra saldo em contas de R$ 2,96 milhoes
+  // e o nosso painel mostrava R$ 131 mil — porque o nosso saldo e saldo
+  // inicial mais movimentos, e movimentos estava zerado.
+  lancamentos: {
+    path: "financas/contacorrentelancamentos/",
+    call: "ListarMovimentos",
+    callsAlternativos: ["ListarLancamentos", "ListarMovimentacoes", "ListarContaCorrenteLancamentos"],
+    listKey: ["listaLancamento", "movimentos", "lancamentos", "conta_corrente_lancamentos"],
+  },
   nfe: { path: "produtos/nfconsultar/", call: "ListarNF", listKey: ["nfCadastro"] },
   // `ListarNFSEs` — plural e com a sigla em caixa alta. A primeira versao usava
   // `ListarNFSe` e a Omie respondeu `Method "ListarNFSe" not exists`, que e
@@ -114,6 +138,29 @@ export function paramsNfse(
     { ...paginacao, dEmiInicial: de, dEmiFinal: ate },
     { ...paginacao, dDtInicial: de, dDtFinal: ate },
     { ...paginacao, dDtPeriodoInicial: de, dDtPeriodoFinal: ate },
+    paginacao,
+  ];
+}
+
+// Variantes de parametro dos LANCAMENTOS de conta corrente.
+//
+// Mesmo mecanismo dos NFS-e, e pelo mesmo motivo: a documentacao da Omie nao
+// bate com o que cada conta aceita, e descobrir por deploy sucessivo custa uma
+// publicacao por tentativa. As variantes cobrem as grafias plausiveis da
+// janela de datas; a ultima e so paginacao, que sempre responde alguma coisa e
+// serve para provar que o endpoint existe mesmo quando o filtro e recusado.
+export function paramsLancamentos(
+  pagina: number,
+  porPagina: number,
+  de: string,
+  ate: string
+): readonly Record<string, unknown>[] {
+  const paginacao = { nPagina: pagina, nRegPorPagina: porPagina };
+  return [
+    { ...paginacao, dDtPrevisaoDe: de, dDtPrevisaoAte: ate },
+    { ...paginacao, dDtLancamentoDe: de, dDtLancamentoAte: ate },
+    { ...paginacao, dDtPagamentoDe: de, dDtPagamentoAte: ate },
+    { ...paginacao, dDtInicial: de, dDtFinal: ate },
     paginacao,
   ];
 }
