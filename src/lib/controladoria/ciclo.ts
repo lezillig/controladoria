@@ -1,4 +1,4 @@
-import type { OmieConexao, OmieSyncRun } from "@prisma/client";
+import type { OmieConexao, OmieSyncRun, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { credencialConfigurada } from "@/lib/omie/client";
@@ -175,8 +175,58 @@ export async function executarPasso(params: {
 
   // ---- Auditoria (consolidada, grupo inteiro) ----
   if (fase === "auditoria") {
+    // MEDIÇÃO QUE SOBREVIVE AO ESTOURO.
+    //
+    // Esta fase vem estourando os 60 segundos da função, e função que estoura
+    // não grava nada — o diagnóstico morre junto com ela, que é o motivo de o
+    // problema ter durado. Já errei duas vezes hoje consertando a hipótese em
+    // vez do fato, então o tempo do carregamento é gravado ASSIM QUE ELE
+    // TERMINA, antes de os agentes começarem. Se a invocação morrer depois
+    // disso, a leitura seguinte já diz se o gargalo é o banco ou o
+    // processamento — sem precisar de outra rodada de adivinhação.
+    const inicioContexto = Date.now();
     const ctx = await carregarContexto(companyId, run.janelaFim, undefined, { desde: janelaDeAuditoria(run.janelaFim) });
+    const msContexto = Date.now() - inicioContexto;
+
+    const medicao = {
+      em: new Date().toISOString(),
+      msContexto,
+      janelaDesde: ctx.janelaDesde.toISOString().slice(0, 10),
+      titulos: ctx.titulos.length,
+      baixas: ctx.baixas.length,
+      movimentos: ctx.movimentos.length,
+      notas: ctx.notas.length,
+      parceiros: ctx.parceiros.length,
+    };
+    console.log(`[auditoria] contexto em ${msContexto}ms — ${JSON.stringify(medicao)}`);
+    await prisma.omieSyncRun
+      .update({ where: { id: run.id }, data: { detalhes: { medicaoContexto: medicao } as Prisma.InputJsonValue } })
+      .catch(() => undefined);
+
+    // O orçamento vale aqui também.
+    //
+    // Se o carregamento sozinho já comeu o tempo, entrar nos agentes é
+    // garantia de estouro — e estouro não grava nem o que já foi feito. Sair
+    // agora deixa a fase pendente com a medição registrada, e a invocação
+    // seguinte tenta de novo. Repetir é barato; morrer em silêncio, não.
+    if (Date.now() > fimDoOrcamento) {
+      return {
+        runId: run.id,
+        fase: "auditoria",
+        conexaoApelido: "GRUPO",
+        backfill: run.backfill,
+        concluido: false,
+        continua: true,
+        detalhes: [
+          `Auditoria adiada: carregar o contexto levou ${(msContexto / 1000).toFixed(1)}s ` +
+            `(${ctx.titulos.length} títulos, ${ctx.baixas.length} baixas), sem tempo hábil para os agentes.`,
+        ],
+      };
+    }
+
+    const inicioAgentes = Date.now();
     const resultado = await executarAuditoria(ctx);
+    console.log(`[auditoria] agentes em ${Date.now() - inicioAgentes}ms`);
 
     // A conciliação com os apontamentos da consultoria roda DEPOIS da
     // auditoria, e não dentro dela: ela liga apontamento a achado, e para isso
