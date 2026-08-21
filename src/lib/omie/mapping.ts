@@ -236,7 +236,10 @@ export function normalizarContaCorrente(bruto: Bruto): ContaCorrenteNormalizada 
     tipo: str(bruto, "tipo", "cTipo"),
     banco: str(bruto, "codigo_banco", "cCodBanco"),
     agencia: str(bruto, "codigo_agencia", "cAgencia"),
-    numeroConta: str(bruto, "conta_corrente", "cConta", "numero_conta"),
+    // `numero_conta_corrente` e o nome que a conta real devolve; os outros
+    // ficam como alternativa. Sem ele a conciliacao bancaria nao consegue
+    // casar o extrato com a conta de origem.
+    numeroConta: str(bruto, "numero_conta_corrente", "conta_corrente", "cConta", "numero_conta"),
     saldoInicialCents: centsOuZero(bruto, "saldo_inicial", "nSaldoInicial"),
     inativa: (bool(bruto, "inativo") ?? false) || str(bruto, "inativo") === "S",
   };
@@ -323,7 +326,8 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
     departamentoCodigo:
       str(cabec, "cCodDepartamento", "codigo_departamento") ??
       str(departamentos[0], "cCodDepartamento", "codigo_departamento", "cCodDepto"),
-    projetoCodigo: str(cabec, "nCodProjeto", "codigo_projeto"),
+    // A receber devolve `cCodProjeto`; a pagar nao devolve projeto nenhum.
+    projetoCodigo: str(cabec, "cCodProjeto", "nCodProjeto", "codigo_projeto"),
     contaCorrenteCodigo: str(cabec, "nCodCC", "id_conta_corrente", "codigo_conta_corrente"),
     dataEmissao: data(cabec, "dDtEmissao", "data_emissao"),
     dataVencimento,
@@ -391,64 +395,102 @@ export function normalizarMovimentoExtrato(
   };
 }
 
+// NF-e — estrutura real de `ListarNF`, conferida pelo diagnostico.
+//
+// A versao anterior procurava numero, serie e data dentro de `compl` e
+// descartava toda nota. `compl` guarda os identificadores internos da Omie
+// (cChaveNFe, nIdNF, cCodCateg); a identificacao FISCAL da nota mora em `ide`,
+// que e o bloco homonimo do layout da NF-e. O destinatario tem bloco proprio,
+// `nfDestInt`.
 export function normalizarNfe(bruto: Bruto): NotaNormalizada | null {
-  const cabec = obj(bruto, "compl", "nfCabecalho", "cabecalho") ?? bruto;
+  const compl = obj(bruto, "compl", "nfCabecalho", "cabecalho") ?? bruto;
+  const ide = obj(bruto, "ide") ?? compl;
+  const dest = obj(bruto, "nfDestInt", "nfDest", "destinatario") ?? bruto;
   const total = obj(bruto, "total", "nfTotal") ?? bruto;
   const icmsTot = obj(total, "ICMSTot", "icmsTot") ?? total;
+  // ISS de NF-e vive em bloco separado do de ICMS — em transporte a nota de
+  // produto raramente tem ISS, mas quando tem e o imposto que importa.
+  const issqnTot = obj(total, "ISSQNtot", "issqnTot") ?? icmsTot;
 
-  const numero = str(cabec, "nNF", "numero_nfe", "nNumero");
-  const dataEmissao = data(cabec, "dEmi", "dhEmi", "data_emissao", "dEmissao");
+  const numero = str(ide, "nNF", "numero_nfe", "nNumero");
+  const dataEmissao = data(ide, "dEmi", "dhEmi", "data_emissao", "dEmissao");
   const valorCents = cents(icmsTot, "vNF", "valor_nota", "vProd");
   if (!numero || !dataEmissao || valorCents === null) return null;
 
-  const serie = str(cabec, "serie", "cSerie");
+  const serie = str(ide, "serie", "cSerie");
   return {
     tipo: "NFE",
     chave: `NFE:${numero}:${serie ?? "-"}`,
     numero,
     serie,
-    chaveAcesso: str(bruto, "cChaveNFe", "chave_nfe") ?? str(cabec, "cChaveNFe"),
+    chaveAcesso: str(compl, "cChaveNFe", "chave_nfe") ?? str(bruto, "cChaveNFe"),
     dataEmissao,
-    parceiroCodigo: str(bruto, "nCodCli", "codigo_cliente") ?? str(cabec, "nCodCli"),
-    parceiroNome: str(bruto, "cRazaoSocial", "nome_cliente") ?? str(cabec, "cRazaoSocial"),
+    parceiroCodigo: str(dest, "nCodCli", "codigo_cliente"),
+    parceiroNome: str(dest, "cRazao", "cRazaoSocial", "nome_cliente"),
     valorCents,
-    valorServicosCents: null,
-    baseIssCents: cents(icmsTot, "vBCISS"),
-    valorIssCents: cents(icmsTot, "vISS"),
-    valorPisCents: cents(icmsTot, "vPIS"),
-    valorCofinsCents: cents(icmsTot, "vCOFINS"),
+    valorServicosCents: cents(issqnTot, "vServ"),
+    baseIssCents: cents(issqnTot, "vBC", "vBCISS"),
+    valorIssCents: cents(issqnTot, "vISS"),
+    valorPisCents: cents(icmsTot, "vPIS") ?? cents(issqnTot, "vPIS"),
+    valorCofinsCents: cents(icmsTot, "vCOFINS") ?? cents(issqnTot, "vCOFINS"),
     valorIcmsCents: cents(icmsTot, "vICMS"),
     valorIpiCents: cents(icmsTot, "vIPI"),
     valorIrCents: null,
     valorCsllCents: null,
     valorInssCents: null,
-    cancelada: /cancelad/i.test(str(bruto, "cStatus", "situacao", "cSituacao") ?? ""),
-    naturezaOperacao: str(cabec, "natOp", "natureza_operacao"),
+    // A Omie nao devolve texto de status aqui: a nota cancelada e a que tem
+    // data de cancelamento (`dCan`), e a denegada tem `cDeneg`. Ler status por
+    // texto, como antes, nunca marcaria nenhuma — e nota cancelada com titulo
+    // vivo e justamente um dos achados do agente fiscal.
+    cancelada: data(ide, "dCan") !== null || (str(ide, "cDeneg") ?? "") !== "",
+    naturezaOperacao: str(ide, "natOp", "natureza_operacao") ?? str(compl, "natOp"),
     cfop: str(bruto, "cfop", "CFOP"),
   };
 }
 
+// NFS-e — a estrutura real de `ListarNFSEs` na conta do grupo, conferida pelo
+// diagnostico contra as duas empresas.
+//
+// A versao anterior descartava TODA nota: procurava data e valor dentro de
+// `Cabecalho`, e nenhum dos dois mora la. A data fica em `Emissao`, num bloco
+// separado; o valor e `nValorNFSe`, nao `nValorTotalNFSe`. Como o normalizador
+// exige numero + data + valor para aceitar o registro, faltar qualquer um
+// derruba a nota inteira — e no fretamento a NFS-e e a receita principal, entao
+// o efeito seria a base nascer sem faturamento.
 export function normalizarNfse(bruto: Bruto): NotaNormalizada | null {
   const cabec = obj(bruto, "Cabecalho", "cabecalho", "NFSeCabecalho") ?? bruto;
-  const impostos = obj(bruto, "ListaImpostosRetidos", "impostos", "Impostos") ?? bruto;
+  const emissao = obj(bruto, "Emissao", "emissao") ?? bruto;
+  const valores = obj(bruto, "Valores", "valores") ?? bruto;
+  const rps = obj(bruto, "RPS", "rps") ?? {};
+  // ListaImpostosRetidos nao vem nesta conta; o que existe e o marcador
+  // `cIssRetido` em Valores. Os nomes antigos ficam como alternativa para
+  // contas que devolvam o bloco detalhado.
+  const impostos = obj(bruto, "ListaImpostosRetidos", "impostos", "Impostos") ?? valores;
 
   const numero = str(cabec, "nNumeroNFSe", "numero_nfse", "cNumero", "nNumero");
-  const dataEmissao = data(cabec, "dDataEmissao", "data_emissao", "dEmissao");
-  const valorCents = cents(cabec, "nValorTotalNFSe", "valor_total", "nValorTotal", "nValorServico");
+  const dataEmissao =
+    data(emissao, "cDataEmissao", "dDataEmissao", "data_emissao") ??
+    data(cabec, "dDataEmissao", "data_emissao", "dEmissao");
+  const valorCents =
+    cents(cabec, "nValorNFSe", "nValorTotalNFSe", "valor_total", "nValorTotal") ??
+    cents(valores, "nValorTotalServicos", "nValorLiquido");
   if (!numero || !dataEmissao || valorCents === null) return null;
 
-  const serie = str(cabec, "cSerie", "serie");
+  const serie = str(rps, "cSerieRPS") ?? str(cabec, "cSerie", "serie");
   return {
     tipo: "NFSE",
     chave: `NFSE:${numero}:${serie ?? "-"}`,
     numero,
     serie,
-    chaveAcesso: str(cabec, "cCodigoVerificacao", "codigo_verificacao"),
+    chaveAcesso: str(cabec, "cCodigoVerifNFSe", "cCodigoVerificacao", "codigo_verificacao"),
     dataEmissao,
-    parceiroCodigo: str(cabec, "nCodCliente", "codigo_cliente"),
-    parceiroNome: str(cabec, "cRazaoSocial", "cNomeCliente", "razao_social"),
+    parceiroCodigo: str(cabec, "nCodigoCliente", "nCodCliente", "codigo_cliente"),
+    // O tomador do servico e o DESTINATARIO. `cRazaoEmissor` tambem vem no
+    // bloco e e a propria empresa — usar o nome errado aqui faria todo o
+    // faturamento aparecer como se fosse para si mesma.
+    parceiroNome: str(cabec, "cRazaoDestinatario", "cRazaoSocial", "cNomeCliente", "razao_social"),
     valorCents,
-    valorServicosCents: cents(cabec, "nValorServico", "valor_servico"),
+    valorServicosCents: cents(valores, "nValorTotalServicos", "nValorServico", "valor_servico"),
     baseIssCents: cents(impostos, "nBaseIss", "nValorBaseIss"),
     valorIssCents: cents(impostos, "nValorIss", "nIss"),
     valorPisCents: cents(impostos, "nValorPis", "nPis"),
@@ -458,7 +500,7 @@ export function normalizarNfse(bruto: Bruto): NotaNormalizada | null {
     valorIrCents: cents(impostos, "nValorIr", "nIr"),
     valorCsllCents: cents(impostos, "nValorCsll", "nCsll"),
     valorInssCents: cents(impostos, "nValorInss", "nInss"),
-    cancelada: /cancelad/i.test(str(cabec, "cStatus", "cSituacao", "situacao") ?? ""),
+    cancelada: /cancelad/i.test(str(cabec, "cStatusNFSe", "cStatus", "cSituacao", "situacao") ?? ""),
     naturezaOperacao: str(cabec, "cNaturezaOperacao", "natureza_operacao"),
     cfop: null,
   };

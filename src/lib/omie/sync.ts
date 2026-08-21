@@ -352,9 +352,37 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
       await sleep(OMIE_PACE_MS);
 
       const itens = extrairItens(resposta, OMIE_ENDPOINTS.titulos);
-      for (const bruto of itens) {
-        const t = normalizarTitulo(bruto, passo.natureza);
-        if (!t) continue;
+
+      // PesquisarLancamentos identifica o parceiro por CODIGO e CNPJ, nunca por
+      // nome — conferido pelo diagnostico nas duas contas. Sem resolver o nome
+      // aqui, toda tela de titulo mostraria "(não identificado)" e o agente
+      // antifraude, que casa fornecedor com funcionario da folha, perderia o
+      // lado legivel do achado.
+      //
+      // Resolvido em LOTE, uma consulta por pagina, contra o cadastro de
+      // parceiros que a fase anterior do proprio ciclo ja espelhou. Fazer por
+      // titulo seriam 500 consultas por pagina — em 20 meses de carga, o
+      // suficiente para nao caber no orcamento de tempo da invocacao.
+      const normalizados = itens
+        .map((bruto) => normalizarTitulo(bruto, passo.natureza))
+        .filter((t): t is NonNullable<typeof t> => t !== null);
+
+      const codigosSemNome = [
+        ...new Set(normalizados.filter((t) => !t.parceiroNome && t.parceiroCodigo).map((t) => t.parceiroCodigo!)),
+      ];
+      const nomePorCodigo = new Map<string, string>();
+      if (codigosSemNome.length > 0) {
+        const parceiros = await prisma.omieParceiro.findMany({
+          where: { conexaoId: ctx.conexaoId, codigoOmie: { in: codigosSemNome } },
+          select: { codigoOmie: true, nome: true },
+        });
+        for (const p of parceiros) nomePorCodigo.set(p.codigoOmie, p.nome);
+      }
+
+      for (const normalizado of normalizados) {
+        const t = normalizado.parceiroNome
+          ? normalizado
+          : { ...normalizado, parceiroNome: nomePorCodigo.get(normalizado.parceiroCodigo ?? "") ?? null };
         const { baixas, ...campos } = t;
 
         const titulo = await prisma.omieTitulo.upsert({
