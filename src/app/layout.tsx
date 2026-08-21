@@ -13,9 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gestão de Motoristas",
+  title: "Controladoria",
   description:
-    "Controle operacional de escalas, ponto, veículos e conformidade de motoristas para empresas de fretamento.",
+    "Controladoria, auditoria e financeiro integrados à Omie: espelho do ERP, agentes de auditoria e conformidade fiscal.",
 };
 
 export const viewport = {

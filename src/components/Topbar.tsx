@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Bus, LogOut, Menu } from "lucide-react";
+import { Landmark, LogOut, Menu } from "lucide-react";
 import { ROLE_LABELS } from "@/lib/permissions";
 
 export default function Topbar({
@@ -34,10 +34,10 @@ export default function Topbar({
           <Menu className="h-5 w-5" />
         </button>
         <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-700 text-white">
-          <Bus className="h-4 w-4" />
+          <Landmark className="h-4 w-4" />
         </div>
         <span className="hidden text-sm font-semibold text-slate-700 sm:inline">
-          {orgName} · Gestão de Motoristas
+          {orgName} · Controladoria
         </span>
       </div>
 
