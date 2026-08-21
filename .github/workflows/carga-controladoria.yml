@@ -141,7 +141,36 @@ jobs:
             resumo=$(printf '%s' "$corpo" | jq -c '.resultados // []')
             echo "rodada $rodada · ${duracao}ms · ${decorrido}s acumulados · $resumo"
 
-            continua=$(printf '%s' "$corpo" | jq -r '.continua // false')
+            # CAMPO AUSENTE NÃO É "ACABOU". É "NÃO SEI".
+            #
+            # A primeira execução deste workflow terminou em 7 segundos
+            # anunciando sucesso, com a carga em 42%. A rodada tinha
+            # funcionado — gravou 140 títulos e 150 baixas — mas a produção
+            # ainda servia um deploy anterior, sem o campo `continua` no nível
+            # de cima. Um `// false` transformou a ausência em "não sobrou
+            # trabalho", e o job saiu com código 0.
+            #
+            # É a mesma falha que engolir exceção e responder 200 com erro no
+            # corpo: o silêncio vira confirmação. Aqui a ausência do campo
+            # precisa PARAR o job, porque a alternativa é declarar concluída
+            # uma carga pela metade — que é o pior desfecho possível num
+            # sistema cujo propósito é ninguém descobrir tarde demais que os
+            # números estavam desatualizados.
+            if ! printf '%s' "$corpo" | jq -e 'has("continua")' > /dev/null 2>&1; then
+              echo "::error::A resposta não traz o campo \`continua\`. A produção está servindo uma versão anterior a esta automação — espere o deploy terminar e rode de novo. Campo ausente não é ciclo concluído."
+              {
+                echo "## Carga interrompida"
+                echo ""
+                echo "A rota respondeu sem o campo \`continua\`, o que indica deploy desatualizado em produção."
+                echo ""
+                echo '```'
+                echo "$corpo"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
+            continua=$(printf '%s' "$corpo" | jq -r '.continua')
             if [ "$continua" != "true" ]; then
               echo "Ciclo concluído: a rota respondeu que não sobrou trabalho."
               {
