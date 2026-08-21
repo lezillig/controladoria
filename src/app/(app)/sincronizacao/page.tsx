@@ -7,6 +7,8 @@ import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controla
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
+import { disponibilidadeGestao } from "@/lib/gestao/leitura";
+import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
 import { sessaoControladoria } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
@@ -76,6 +78,10 @@ export default async function SincronizacaoPage() {
       orderBy: { descricao: "asc" },
     }),
   ]);
+
+  // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
+  // leitura da gestão, então só faz sentido consultá-la quando ela já rodou.
+  const gestao = disponibilidadeGestao();
 
   const ultimoDiario = execucoes.find((e) => e.status === "CONCLUIDO" && !e.backfill);
   const atrasoDias = ultimoDiario ? diasEntre(ultimoDiario.finalizadoEm ?? ultimoDiario.iniciadoEm, new Date()) : null;
@@ -200,6 +206,33 @@ export default async function SincronizacaoPage() {
           )}
         </Secao>
       )}
+
+      {/* De onde vêm os dados da operação.
+          A Controladoria lê seis tabelas do sistema de gestão — duas delas
+          sustentam o login. Quando os bancos são separados, essa leitura vai
+          por uma conexão própria, e se ela estiver mal configurada o sintoma é
+          silencioso: cruzamentos somem, ninguém entra, e nada explica por quê.
+          Dizer aqui qual modo está valendo evita que isso vire suposição. */}
+      <Secao titulo="Origem dos dados da operação">
+        <p className="text-sm text-slate-600">
+          {modoDaConexaoGestao() === "separado" ? (
+            <>
+              Conexão <strong>própria</strong> com o banco do sistema de gestão (
+              <code className="rounded bg-slate-100 px-1 text-xs">GESTAO_DATABASE_URL</code>). Os dois sistemas estão em
+              bancos separados, e esta aplicação só lê o de lá.
+            </>
+          ) : (
+            <>
+              Mesma conexão desta aplicação — os dois sistemas dividem o mesmo banco, em schemas diferentes. Para
+              separá-los, configure <code className="rounded bg-slate-100 px-1 text-xs">GESTAO_DATABASE_URL</code> com um
+              papel somente leitura (ver <code className="rounded bg-slate-100 px-1 text-xs">docs/papel-leitura-gestao.sql</code>).
+            </>
+          )}
+        </p>
+        {!gestao.disponivel && gestao.erro && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{gestao.erro}</p>
+        )}
+      </Secao>
 
       <Secao titulo="Volume espelhado" descricao={`Desde ${fmtData(dataInicioBase)}.`}>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">

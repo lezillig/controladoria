@@ -1,11 +1,17 @@
-import { prisma } from "@/lib/prisma";
+import { prismaGestao } from "./cliente";
 
 // LEITURA DO SISTEMA DE GESTÃO (schema `public`) — SOMENTE LEITURA.
 //
-// Este sistema mora no schema `controladoria` do mesmo banco Postgres que o
-// sistema de gestão de motoristas. As tabelas da operação continuam sendo
-// dele: motoristas, veículos, clientes/contratos, abastecimentos do cartão de
-// frota, ponto.
+// As tabelas da operação são do sistema de gestão: motoristas, veículos,
+// clientes/contratos, abastecimentos do cartão de frota, ponto. A Controladoria
+// só as lê.
+//
+// A conexão usada aqui é a de `./cliente`, que aponta para o banco da gestão —
+// separado do banco desta aplicação quando `GESTAO_DATABASE_URL` está
+// configurada, e o mesmo banco quando não está. Ela deve usar um papel SOMENTE
+// LEITURA, com permissão apenas nas seis tabelas lidas neste arquivo (ver
+// docs/papel-leitura-gestao.sql): assim a fronteira é uma propriedade do
+// banco, e não uma promessa de quem escreve o código.
 //
 // Por que ler por SQL explícito e não por modelo do Prisma:
 //   1. Modelar aqui uma tabela de que este sistema não é dono é convite para o
@@ -86,7 +92,7 @@ async function ler<T>(consulta: () => Promise<T[]>, rotulo: string): Promise<T[]
 
 export async function lerMotoristas(companyId: string): Promise<MotoristaGestao[]> {
   return ler(
-    () => prisma.$queryRaw<MotoristaGestao[]>`
+    () => prismaGestao.$queryRaw<MotoristaGestao[]>`
       SELECT id, name, cpf, active, "valorHoraCents", "clienteId", departamento
       FROM public."Driver"
       WHERE "companyId" = ${companyId}
@@ -97,7 +103,7 @@ export async function lerMotoristas(companyId: string): Promise<MotoristaGestao[
 
 export async function lerVeiculos(companyId: string): Promise<VeiculoGestao[]> {
   return ler(
-    () => prisma.$queryRaw<VeiculoGestao[]>`
+    () => prismaGestao.$queryRaw<VeiculoGestao[]>`
       SELECT id, plate, status::text AS status, "currentMileage"
       FROM public."Vehicle"
       WHERE "companyId" = ${companyId}
@@ -108,7 +114,7 @@ export async function lerVeiculos(companyId: string): Promise<VeiculoGestao[]> {
 
 export async function lerClientes(companyId: string): Promise<ClienteGestao[]> {
   return ler(
-    () => prisma.$queryRaw<ClienteGestao[]>`
+    () => prismaGestao.$queryRaw<ClienteGestao[]>`
       SELECT id, nome, active
       FROM public."Cliente"
       WHERE "companyId" = ${companyId}
@@ -122,7 +128,7 @@ export async function lerClientes(companyId: string): Promise<ClienteGestao[]> {
 // mês, comparativo com o mês anterior, divergência contra a Omie).
 export async function lerAbastecimentos(companyId: string, desde: Date): Promise<AbastecimentoGestao[]> {
   return ler(
-    () => prisma.$queryRaw<AbastecimentoGestao[]>`
+    () => prismaGestao.$queryRaw<AbastecimentoGestao[]>`
       SELECT id, "vehicleId", "driverId", "dataHora", "valorCents", "volumeLitros",
              "kmRodados", "placaOriginal"
       FROM public."FuelTransaction"
@@ -153,10 +159,11 @@ export type UsuarioGestao = {
 //
 // "Não encontrei o usuário" e "não consegui perguntar ao banco" negam o acesso
 // igualmente, mas exigem mensagens opostas para quem está na tela. Colapsar os
-// dois em `null` fazia a Controladoria responder "Credenciais inválidas" a uma
-// falha de banco — e a pessoa ia trocar a senha, abrir chamado e procurar
-// defeito onde não havia. Foi exatamente o que aconteceu quando a gestão mudou
-// de banco: o login parou, e a tela culpou a senha.
+// dois em `null` faz a Controladoria responder "Credenciais inválidas" a uma
+// falha de banco — e a pessoa vai trocar a senha, pedir reset e abrir chamado,
+// enquanto o problema real fica sem ninguém olhando. Com bancos separados isso
+// deixa de ser hipótese: o banco da gestão pode estar fora do ar sem que o
+// desta aplicação esteja.
 export type ResultadoBuscaUsuario =
   | { situacao: "encontrado"; usuario: UsuarioGestao }
   | { situacao: "nao_encontrado" }
@@ -164,7 +171,7 @@ export type ResultadoBuscaUsuario =
 
 export async function buscarUsuarioPorEmail(email: string): Promise<ResultadoBuscaUsuario> {
   try {
-    const linhas = await prisma.$queryRaw<UsuarioGestao[]>`
+    const linhas = await prismaGestao.$queryRaw<UsuarioGestao[]>`
       SELECT id, "companyId", name, email, "passwordHash", role::text AS role, active
       FROM public."User"
       WHERE lower(email) = lower(${email})
@@ -196,7 +203,7 @@ export type AcessoAtual = { situacao: "ativo"; role: string } | { situacao: "rev
 
 export async function conferirAcessoDoUsuario(userId: string): Promise<AcessoAtual> {
   try {
-    const linhas = await prisma.$queryRaw<{ role: string; active: boolean }[]>`
+    const linhas = await prismaGestao.$queryRaw<{ role: string; active: boolean }[]>`
       SELECT role::text AS role, active
       FROM public."User"
       WHERE id = ${userId}
@@ -214,7 +221,7 @@ export async function conferirAcessoDoUsuario(userId: string): Promise<AcessoAtu
 
 export async function buscarEmpresa(companyId: string): Promise<{ id: string; name: string } | null> {
   try {
-    const linhas = await prisma.$queryRaw<{ id: string; name: string }[]>`
+    const linhas = await prismaGestao.$queryRaw<{ id: string; name: string }[]>`
       SELECT id, name FROM public."Company" WHERE id = ${companyId} LIMIT 1
     `;
     return linhas[0] ?? null;
@@ -227,7 +234,7 @@ export async function buscarEmpresa(companyId: string): Promise<{ id: string; na
 // ainda não há sessão (ex.: o cron diário, que roda sem usuário).
 export async function listarEmpresasAtivas(): Promise<{ id: string; name: string }[]> {
   return ler(
-    () => prisma.$queryRaw<{ id: string; name: string }[]>`
+    () => prismaGestao.$queryRaw<{ id: string; name: string }[]>`
       SELECT id, name FROM public."Company" WHERE active = true ORDER BY id ASC
     `,
     "as empresas"
