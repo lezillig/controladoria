@@ -3,11 +3,11 @@ import { canManageControladoria } from "@/lib/permissions";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { isAnalistaDisponivel } from "@/lib/controladoria/aiAnalyst";
 import { isEnvioDisponivel } from "@/lib/email/send";
-import { coberturaDeCampos, volumeEspelhado } from "@/lib/controladoria/agents/administrativo";
+import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controladoria/saudeDaBase";
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
-import { contextoDaPagina } from "../_dados";
+import { sessaoControladoria } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
 
@@ -18,11 +18,28 @@ import SyncButton from "./SyncButton";
 // algo errado, é PARAR DE APONTAR sem ninguém notar. Um sync quebrado há uma
 // semana produz um relatório diário bonito, verde e completamente desatualizado.
 
+// Esta tela NÃO monta o contexto de auditoria, de propósito.
+//
+// O contexto carrega todos os títulos, baixas, notas, parceiros, categorias e
+// contas correntes, com as linhas inteiras — os agentes precisam disso para
+// cruzar registro a registro. Esta tela precisa só de contagens.
+//
+// A diferença ficou cara de um jeito concreto: a página se atualiza sozinha a
+// cada quinze segundos enquanto a carga anda, e cada atualização puxava a base
+// inteira. Foi isso que esgotou a franquia de transferência do banco e derrubou
+// junto o sistema de gestão que divide o mesmo Postgres. Medir o andamento não
+// pode custar mais que o andamento.
 export default async function SincronizacaoPage() {
-  const { session, ctx } = await contextoDaPagina();
+  const session = await sessaoControladoria();
   const podeSincronizar = canManageControladoria(session.role);
 
-  const [execucoes, emAndamento, progresso] = await Promise.all([
+  const config = await prisma.controladoriaConfig.findUnique({
+    where: { companyId: session.companyId },
+    select: { dataInicioBase: true },
+  });
+  const dataInicioBase = config?.dataInicioBase ?? new Date();
+
+  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes] = await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
       orderBy: { iniciadoEm: "desc" },
@@ -32,13 +49,26 @@ export default async function SincronizacaoPage() {
       where: { companyId: session.companyId, status: "EXECUTANDO" },
       orderBy: { iniciadoEm: "asc" },
     }),
-    progressoDaCarga(session.companyId, ctx.config.dataInicioBase),
+    progressoDaCarga(session.companyId, dataInicioBase),
+    volumeEspelhadoNoBanco(session.companyId),
+    coberturaDeCamposNoBanco(session.companyId),
+    prisma.omieContaCorrente.findMany({
+      where: { companyId: session.companyId },
+      select: {
+        conexaoApelido: true,
+        codigo: true,
+        descricao: true,
+        banco: true,
+        agencia: true,
+        saldoInicialCents: true,
+        inativa: true,
+      },
+      orderBy: { descricao: "asc" },
+    }),
   ]);
 
   const ultimoDiario = execucoes.find((e) => e.status === "CONCLUIDO" && !e.backfill);
   const atrasoDias = ultimoDiario ? diasEntre(ultimoDiario.finalizadoEm ?? ultimoDiario.iniciadoEm, new Date()) : null;
-  const volume = volumeEspelhado(ctx);
-  const cobertura = coberturaDeCampos(ctx);
 
   // Execução travada: iniciada há muito tempo e ainda em EXECUTANDO. A máquina
   // de estados sempre retoma a execução em andamento, então uma travada
@@ -85,7 +115,7 @@ export default async function SincronizacaoPage() {
       {progresso.totalJanelas > 0 && (
         <Secao
           titulo="Carga histórica"
-          descricao={`A base é montada mês a mês, por empresa, desde ${fmtData(ctx.config.dataInicioBase)}. Cada janela mensal passa pelas quatro fases de sincronização.`}
+          descricao={`A base é montada mês a mês, por empresa, desde ${fmtData(dataInicioBase)}. Cada janela mensal passa pelas quatro fases de sincronização.`}
         >
           <div className="flex items-baseline justify-between">
             <p className="text-sm font-semibold text-slate-900">
@@ -161,7 +191,7 @@ export default async function SincronizacaoPage() {
         </Secao>
       )}
 
-      <Secao titulo="Volume espelhado" descricao={`Desde ${fmtData(ctx.config.dataInicioBase)}.`}>
+      <Secao titulo="Volume espelhado" descricao={`Desde ${fmtData(dataInicioBase)}.`}>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Kpi rotulo="Títulos a pagar" valor={fmtNumero(volume.titulosPagar)} apoio={volume.valorPagar} />
           <Kpi rotulo="Títulos a receber" valor={fmtNumero(volume.titulosReceber)} apoio={volume.valorReceber} />
@@ -241,7 +271,7 @@ export default async function SincronizacaoPage() {
           colunas={["Conta", "Banco", "Agência", "Saldo inicial", "Situação"]}
           alinharDireita={[3]}
           vazio="Nenhuma conta corrente sincronizada."
-          linhas={ctx.contasCorrentes.map((c) => [
+          linhas={contasCorrentes.map((c) => [
             c.descricao,
             c.banco ?? "—",
             c.agencia ?? "—",
