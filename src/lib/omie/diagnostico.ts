@@ -346,16 +346,29 @@ async function primeiraContaCorrente(credencialRef: string): Promise<string | nu
 // esconde metade do que interessa dentro de objetos (`recomendacoes`,
 // `resumo`), e listar só o primeiro nível daria a falsa impressão de que o
 // registro é pobre.
-function nomesDeCampos(registro: Record<string, unknown>): string[] {
+// Nomes de campo do registro cru, descendo DOIS níveis.
+//
+// Um nível não bastava: os totais de imposto da NF-e moram em
+// `total.ICMSTot.vICMS` e `total.retTrib.vIRRF`, e a lista parava em
+// `total.ICMSTot`. O diagnóstico mostrava o galho e escondia a folha —
+// justamente onde estavam os campos que faltavam mapear.
+//
+// Dois níveis alcançam tudo que os normalizadores leem. Descer mais entraria
+// em item de nota e devolveria centenas de nomes repetidos.
+function nomesDeCampos(registro: Record<string, unknown>, profundidade = 2): string[] {
   const nomes: string[] = [];
-  for (const [chave, valor] of Object.entries(registro)) {
-    nomes.push(chave);
-    if (valor && typeof valor === "object" && !Array.isArray(valor)) {
-      for (const filho of Object.keys(valor as Record<string, unknown>)) {
-        nomes.push(`${chave}.${filho}`);
+
+  const visitar = (obj: Record<string, unknown>, prefixo: string, resta: number) => {
+    for (const [chave, valor] of Object.entries(obj)) {
+      const caminho = prefixo ? `${prefixo}.${chave}` : chave;
+      nomes.push(caminho);
+      if (resta > 0 && valor && typeof valor === "object" && !Array.isArray(valor)) {
+        visitar(valor as Record<string, unknown>, caminho, resta - 1);
       }
     }
-  }
+  };
+
+  visitar(registro, "", profundidade);
   return nomes.sort();
 }
 

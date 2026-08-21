@@ -411,6 +411,11 @@ export function normalizarNfe(bruto: Bruto): NotaNormalizada | null {
   // ISS de NF-e vive em bloco separado do de ICMS — em transporte a nota de
   // produto raramente tem ISS, mas quando tem e o imposto que importa.
   const issqnTot = obj(total, "ISSQNtot", "issqnTot") ?? icmsTot;
+  // Retencoes na fonte — bloco `retTrib` do layout da NF-e. E onde ficam IRRF,
+  // CSLL e INSS (previdenciaria), que nao aparecem em ICMSTot. Importa para a
+  // conferencia da DCTFWeb: retencao lancada na nota e nao recolhida e uma das
+  // divergencias que a consultoria aponta todo mes.
+  const retTrib = obj(total, "retTrib", "retTribTot") ?? {};
 
   const numero = str(ide, "nNF", "numero_nfe", "nNumero");
   const dataEmissao = data(ide, "dEmi", "dhEmi", "data_emissao", "dEmissao");
@@ -431,13 +436,13 @@ export function normalizarNfe(bruto: Bruto): NotaNormalizada | null {
     valorServicosCents: cents(issqnTot, "vServ"),
     baseIssCents: cents(issqnTot, "vBC", "vBCISS"),
     valorIssCents: cents(issqnTot, "vISS"),
-    valorPisCents: cents(icmsTot, "vPIS") ?? cents(issqnTot, "vPIS"),
-    valorCofinsCents: cents(icmsTot, "vCOFINS") ?? cents(issqnTot, "vCOFINS"),
+    valorPisCents: cents(icmsTot, "vPIS") ?? cents(issqnTot, "vPIS") ?? cents(retTrib, "vRetPIS"),
+    valorCofinsCents: cents(icmsTot, "vCOFINS") ?? cents(issqnTot, "vCOFINS") ?? cents(retTrib, "vRetCOFINS"),
     valorIcmsCents: cents(icmsTot, "vICMS"),
     valorIpiCents: cents(icmsTot, "vIPI"),
-    valorIrCents: null,
-    valorCsllCents: null,
-    valorInssCents: null,
+    valorIrCents: cents(retTrib, "vIRRF", "vRetIRRF"),
+    valorCsllCents: cents(retTrib, "vRetCSLL", "vCSLL"),
+    valorInssCents: cents(retTrib, "vRetPrev", "vRetINSS", "vINSS"),
     // A Omie nao devolve texto de status aqui: a nota cancelada e a que tem
     // data de cancelamento (`dCan`), e a denegada tem `cDeneg`. Ler status por
     // texto, como antes, nunca marcaria nenhuma — e nota cancelada com titulo
