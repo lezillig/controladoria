@@ -89,7 +89,7 @@ export default async function SincronizacaoPage() {
         >
           <div className="flex items-baseline justify-between">
             <p className="text-sm font-semibold text-slate-900">
-              {progresso.concluida ? "Concluída" : `${fmtPercent(progresso.percentual / 100)} carregado`}
+              {progresso.concluida ? "Concluída" : `${fmtPercent(progresso.percentual)} carregado`}
             </p>
             <p className="text-xs text-slate-500">
               {fmtNumero(progresso.janelasConcluidas)} de {fmtNumero(progresso.totalJanelas)} janelas mensais
@@ -111,6 +111,12 @@ export default async function SincronizacaoPage() {
                   é o sinal de que a função morreu sem marcar a execução como
                   encerrada — o único estado em que o ciclo seguinte não começa
                   sozinho e alguém precisa agir. */}
+              {progresso.emAndamento.encadeamentoRecusado && (
+                <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-800">
+                  <strong>A carga não consegue continuar sozinha.</strong>{" "}
+                  {progresso.emAndamento.encadeamentoRecusado}
+                </p>
+              )}
               {progresso.emAndamento.segundosDesdeUltimoAvanco <= 120 ? (
                 <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-700">
                   <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />

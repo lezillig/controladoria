@@ -38,6 +38,10 @@ export type ProgressoCarga = {
     // Cada passo é uma invocação de função; o número subindo é movimento
     // visível mesmo quando a fase demora a virar.
     invocacoes: number;
+    // Motivo pelo qual a última tentativa de continuar sozinho foi recusada.
+    // É a resposta para "parou, e por quê" — a pergunta nasce nesta tela, e
+    // sem isto ela só teria resposta no log da hospedagem.
+    encadeamentoRecusado: string | null;
   } | null;
   // Quando a carga terminou e o sistema já está no regime diário.
   concluida: boolean;
@@ -50,6 +54,14 @@ function mesesAte(inicio: Date, mesCorrente: Date): number {
   const a = inicioDoMes(inicio);
   const meses = (mesCorrente.getFullYear() - a.getFullYear()) * 12 + (mesCorrente.getMonth() - a.getMonth());
   return Math.max(0, meses);
+}
+
+// `detalhes` é Json livre; só interessa o texto que o disparo do ciclo grava
+// quando é recusado (ver encadear.ts).
+function lerEncadeamento(detalhes: unknown): string | null {
+  if (!detalhes || typeof detalhes !== "object" || Array.isArray(detalhes)) return null;
+  const valor = (detalhes as Record<string, unknown>).encadeamento;
+  return typeof valor === "string" && valor.trim() !== "" ? valor : null;
 }
 
 function competencia(d: Date): string {
@@ -81,6 +93,7 @@ export async function progressoDaCarga(
         backfill: true,
         atualizadoEm: true,
         invocacoes: true,
+        detalhes: true,
       },
     }),
   ]);
@@ -123,6 +136,7 @@ export async function progressoDaCarga(
               Math.round((agora.getTime() - emAndamento.atualizadoEm.getTime()) / 1000)
             ),
             invocacoes: emAndamento.invocacoes,
+            encadeamentoRecusado: lerEncadeamento(emAndamento.detalhes),
           }
         : null,
     concluida: totalJanelas > 0 && janelasConcluidas >= totalJanelas,

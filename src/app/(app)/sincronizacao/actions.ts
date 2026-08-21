@@ -52,7 +52,7 @@ export async function sincronizarAgora(): Promise<ResultadoSync> {
     for (let i = 0; i < 60; i++) {
       if (Date.now() - iniciado > ORCAMENTO_MS) {
         mensagens.push(
-          dispararProximaInvocacao().disparado
+          dispararProximaInvocacao({ companyId: session.companyId }).disparado
             ? "Tempo desta execução esgotado — o restante continua sozinho, em segundo plano. Pode fechar a aba e recarregar esta página daqui a pouco para ver o avanço."
             : "Tempo desta execução esgotado — o restante continua na próxima execução manual (ou no ciclo automático da madrugada)."
         );
