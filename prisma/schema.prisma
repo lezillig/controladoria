@@ -191,12 +191,12 @@ enum ConformidadeStatus {
 // conexão. O `apelido` vai desnormalizado junto, para tela, relatório e chave
 // de achado mostrarem a empresa de origem sem depender de join.
 model OmieConexao {
-  id        String  @id @default(cuid())
-  companyId String
-  nome      String
+  id            String   @id @default(cuid())
+  companyId     String
+  nome          String
   // Rótulo curto usado em filtros, listas e chaves de achado ("AZUL", "MCZ").
-  apelido   String
-  cnpj      String?
+  apelido       String
+  cnpj          String?
   // Nome do SUFIXO das variáveis de ambiente que guardam as credenciais:
   // `AZUL` resolve para OMIE_APP_KEY_AZUL / OMIE_APP_SECRET_AZUL.
   //
@@ -205,10 +205,10 @@ model OmieConexao {
   // leitura de um terceiro) entregaria acesso ao ERP financeiro do grupo. O
   // banco guarda apenas o NOME da variável de ambiente.
   credencialRef String
-  ativa     Boolean  @default(true)
-  ordem     Int      @default(0)
-  criadoEm  DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  ativa         Boolean  @default(true)
+  ordem         Int      @default(0)
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
 
   parceiros       OmieParceiro[]
   categorias      OmieCategoria[]
@@ -250,25 +250,25 @@ model OmieConexao {
 // dígitos e estouram o Int32 do Postgres.
 
 model OmieParceiro {
-  id               String      @id @default(cuid())
-  companyId        String
-  conexaoId        String
-  conexao          OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
-  conexaoApelido   String
-  codigoOmie       String
-  codigoIntegracao String?
-  nome             String
-  nomeFantasia     String?
+  id                      String      @id @default(cuid())
+  companyId               String
+  conexaoId               String
+  conexao                 OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido          String
+  codigoOmie              String
+  codigoIntegracao        String?
+  nome                    String
+  nomeFantasia            String?
   // Somente dígitos — o cruzamento com o CPF do motorista (fornecedor que é
   // funcionário) só funciona com os dois lados normalizados.
-  documento        String?
-  ehCliente        Boolean     @default(false)
-  ehFornecedor     Boolean     @default(false)
-  email            String?
-  cidade           String?
-  estado           String?
-  inativo          Boolean     @default(false)
-  bloqueado        Boolean     @default(false)
+  documento               String?
+  ehCliente               Boolean     @default(false)
+  ehFornecedor            Boolean     @default(false)
+  email                   String?
+  cidade                  String?
+  estado                  String?
+  inativo                 Boolean     @default(false)
+  bloqueado               Boolean     @default(false)
   // Hash SHA-256 de banco+agência+conta, NUNCA os dados em claro. Serve a um
   // propósito único: detectar TROCA de conta bancária de fornecedor entre duas
   // sincronizações — o vetor mais comum de fraude de boleto/PIX no Brasil. O
@@ -276,7 +276,7 @@ model OmieParceiro {
   // bancário de terceiro.
   contaBancariaHash       String?
   contaBancariaAlteradaEm DateTime?
-  sincronizadoEm          DateTime  @default(now())
+  sincronizadoEm          DateTime    @default(now())
 
   @@unique([conexaoId, codigoOmie])
   @@index([companyId, documento])
@@ -394,12 +394,12 @@ model OmieTitulo {
   // porque toda regra de perda financeira ("pagou juros", "pagou acima do
   // documento") filtra por esses valores sobre milhares de títulos — agregar
   // por join a cada regra era o gargalo do relatório diário.
-  valorPagoCents  Int       @default(0)
-  jurosCents      Int       @default(0)
-  multaCents      Int       @default(0)
-  descontoCents   Int       @default(0)
-  tarifaCents     Int       @default(0)
-  dataUltimaBaixa DateTime?
+  valorPagoCents      Int       @default(0)
+  jurosCents          Int       @default(0)
+  multaCents          Int       @default(0)
+  descontoCents       Int       @default(0)
+  tarifaCents         Int       @default(0)
+  dataUltimaBaixa     DateTime?
 
   // Texto cru da Omie ("ATRASADO", "A VENCER", "PAGO", "LIQUIDADO",
   // "CANCELADO"...). Não normalizado para enum de propósito: um status novo do
@@ -425,26 +425,26 @@ model OmieTitulo {
 // desconto e tarifa — os números que respondem "quanto a má gestão de prazo
 // custou este mês", que o título sozinho não conta.
 model OmieBaixa {
-  id        String      @id @default(cuid())
-  companyId String
-  conexaoId String
-  conexao   OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
-  tituloId  String
-  titulo    OmieTitulo  @relation(fields: [tituloId], references: [id], onDelete: Cascade)
+  id                  String      @id @default(cuid())
+  companyId           String
+  conexaoId           String
+  conexao             OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  tituloId            String
+  titulo              OmieTitulo  @relation(fields: [tituloId], references: [id], onDelete: Cascade)
   // Chave natural dentro da conexão. Existe porque nem todo endpoint de baixa
   // da Omie devolve identificador próprio, e sem chave estável a reimportação
   // duplicaria as baixas — inflando o juros do relatório.
   chave               String
   dataBaixa           DateTime
   valorCents          Int
-  jurosCents          Int      @default(0)
-  multaCents          Int      @default(0)
-  descontoCents       Int      @default(0)
-  tarifaCents         Int      @default(0)
+  jurosCents          Int         @default(0)
+  multaCents          Int         @default(0)
+  descontoCents       Int         @default(0)
+  tarifaCents         Int         @default(0)
   contaCorrenteCodigo String?
   observacao          String?
-  liquidaTitulo       Boolean  @default(true)
-  sincronizadoEm      DateTime @default(now())
+  liquidaTitulo       Boolean     @default(true)
+  sincronizadoEm      DateTime    @default(now())
 
   @@unique([conexaoId, chave])
   @@index([companyId, dataBaixa])
@@ -465,18 +465,18 @@ model OmieMovimento {
   data                DateTime
   // Com sinal: negativo = saída. Somar valor absoluto e depois aplicar sinal
   // por natureza é a receita clássica para o erro de sinal invertido.
-  valorCents      Int
-  natureza        String?
-  tipo            String?
-  categoriaCodigo String?
-  parceiroCodigo  String?
-  parceiroNome    String?
-  documento       String?
-  observacao      String?
-  conciliado      Boolean   @default(false)
-  dataConciliacao DateTime?
-  tituloCodigo    String?
-  sincronizadoEm  DateTime  @default(now())
+  valorCents          Int
+  natureza            String?
+  tipo                String?
+  categoriaCodigo     String?
+  parceiroCodigo      String?
+  parceiroNome        String?
+  documento           String?
+  observacao          String?
+  conciliado          Boolean     @default(false)
+  dataConciliacao     DateTime?
+  tituloCodigo        String?
+  sincronizadoEm      DateTime    @default(now())
 
   @@unique([conexaoId, codigoLancamento])
   @@index([companyId, data])
@@ -526,28 +526,36 @@ model OmieNota {
 // agente administrativo audita esta tabela e abre achado quando a última
 // execução concluída ficou para trás.
 model OmieSyncRun {
-  id           String         @id @default(cuid())
-  companyId    String
-  conexaoId    String?
-  conexao      OmieConexao?   @relation(fields: [conexaoId], references: [id], onDelete: SetNull)
-  iniciadoEm   DateTime       @default(now())
-  finalizadoEm DateTime?
-  status       OmieSyncStatus @default(EXECUTANDO)
+  id             String         @id @default(cuid())
+  companyId      String
+  conexaoId      String?
+  conexao        OmieConexao?   @relation(fields: [conexaoId], references: [id], onDelete: SetNull)
+  iniciadoEm     DateTime       @default(now())
+  finalizadoEm   DateTime?
+  status         OmieSyncStatus @default(EXECUTANDO)
   // Fase da máquina de estados. Persistida porque cada invocação encadeada é
   // um processo novo, sem memória da anterior.
-  fase           String   @default("cadastros")
+  fase           String         @default("cadastros")
+  // Batimento da execução. Cada passo da máquina de estados grava algo nesta
+  // linha, então o carimbo avança a cada ~40 segundos enquanto o ciclo vive.
+  //
+  // Existe para responder a única pergunta que quem espera uma carga de horas
+  // realmente faz: está andando ou travou? Sem ele, uma execução morta e uma
+  // execução trabalhando são indistinguíveis na tela — as duas aparecem como
+  // EXECUTANDO, com o mesmo horário de início.
+  atualizadoEm   DateTime       @updatedAt
   cursor         String?
   janelaInicio   DateTime
   janelaFim      DateTime
-  backfill       Boolean  @default(false)
-  invocacoes     Int      @default(1)
-  cadastros      Int      @default(0)
-  titulosPagar   Int      @default(0)
-  titulosReceber Int      @default(0)
-  baixas         Int      @default(0)
-  movimentos     Int      @default(0)
-  notas          Int      @default(0)
-  achados        Int      @default(0)
+  backfill       Boolean        @default(false)
+  invocacoes     Int            @default(1)
+  cadastros      Int            @default(0)
+  titulosPagar   Int            @default(0)
+  titulosReceber Int            @default(0)
+  baixas         Int            @default(0)
+  movimentos     Int            @default(0)
+  notas          Int            @default(0)
+  achados        Int            @default(0)
   erro           String?
   detalhes       Json?
 
@@ -565,50 +573,50 @@ model OmieSyncRun {
 // — o indicador de controle interno) e precisa aparecer no e-mail do dia
 // seguinte mesmo que o dado de origem já tenha mudado.
 model AuditFinding {
-  id        String  @id @default(cuid())
-  companyId String
+  id                  String          @id @default(cuid())
+  companyId           String
   // Conexão a que o achado se refere. Nulo em achados consolidados do grupo
   // (ex.: projeção de caixa somando as duas empresas).
-  conexaoId      String?
-  conexaoApelido String?
-  agente         String
-  regra          String
-  severidade     AuditSeveridade
-  categoria      AuditCategoria
-  titulo         String
-  descricao      String
-  recomendacao   String?
+  conexaoId           String?
+  conexaoApelido      String?
+  agente              String
+  regra               String
+  severidade          AuditSeveridade
+  categoria           AuditCategoria
+  titulo              String
+  descricao           String
+  recomendacao        String?
   // Dinheiro do fato (ex.: valor do título pago em duplicidade).
-  valorCents     Int?
+  valorCents          Int?
   // Economia/recuperação estimada se a recomendação for executada. Separado de
   // valorCents de propósito: num juros de R$ 5.000 pago, valorCents é a perda
   // consumada e impactoCents é o que dá para evitar daqui para frente — somar
   // os dois no mesmo campo inflaria o total do relatório.
-  impactoCents   Int?
-  dataReferencia DateTime?
-  entidadeTipo   String?
-  entidadeId     String?
-  entidadeRef    String?
-  evidencia      Json?
+  impactoCents        Int?
+  dataReferencia      DateTime?
+  entidadeTipo        String?
+  entidadeId          String?
+  entidadeRef         String?
+  evidencia           Json?
   // Chave determinística (agente + regra + conexão + entidade + período). Uma
   // reexecução sobre o mesmo dado reencontra o achado em vez de duplicar — é o
   // que permite rodar a auditoria todo dia sem a lista virar lixo, e o que
   // preserva a tratativa já feita por uma pessoa.
-  chave     String
+  chave               String
   // Confiança atribuída pelo SUPERVISOR (0-100), não pelo agente que emitiu.
   // Um agente determinístico sempre "tem certeza" do que calculou; quem sabe
   // se o dado de base era confiável, se outro agente disse o contrário e se o
   // achado já foi julgado falso-positivo é a camada de revisão.
-  confianca Int     @default(100)
+  confianca           Int             @default(100)
   // O que o supervisor mudou e por quê. Fica visível na UI junto do achado:
   // revisão invisível é indistinguível de censura.
   notaSupervisor      String?
   chaveRelacionada    String?
-  status              AuditStatus @default(ABERTO)
-  detectadoEm         DateTime    @default(now())
-  atualizadoEm        DateTime    @updatedAt
-  ultimaOcorrencia    DateTime    @default(now())
-  ocorrencias         Int         @default(1)
+  status              AuditStatus     @default(ABERTO)
+  detectadoEm         DateTime        @default(now())
+  atualizadoEm        DateTime        @updatedAt
+  ultimaOcorrencia    DateTime        @default(now())
+  ocorrencias         Int             @default(1)
   resolvidoEm         DateTime?
   tratadoPorUserId    String?
   observacaoTratativa String?
@@ -633,9 +641,9 @@ model AuditFinding {
 // dia. Reconstruí-lo depois a partir da base atual daria outro resultado, e
 // perderia justamente o valor de trilha.
 model RelatorioDiario {
-  id             String          @id @default(cuid())
-  companyId      String
-  dataReferencia DateTime
+  id              String          @id @default(cuid())
+  companyId       String
+  dataReferencia  DateTime
   // Nulo = relatório consolidado do grupo. Preenchido = relatório de uma
   // empresa só (ver ControladoriaConfig.relatorioPorConexao).
   conexaoId       String?
@@ -699,10 +707,10 @@ model ControladoriaConfig {
 // medição de cada dia).
 
 model BscMeta {
-  id        String @id @default(cuid())
-  companyId String
-  codigo    String
-  meta      Float
+  id                  String   @id @default(cuid())
+  companyId           String
+  codigo              String
+  meta                Float
   // Faixa amarela: quanto o realizado pode se afastar da meta antes de virar
   // vermelho (em % da meta).
   toleranciaPercent   Float    @default(10)
@@ -748,24 +756,24 @@ model BscSnapshot {
 // alocado", que é o comportamento correto: melhor um custo não alocado e
 // visível do que um número errado com aparência de certo.
 model OmieVinculoCentroCusto {
-  id        String @id @default(cuid())
-  companyId String
+  id                  String    @id @default(cuid())
+  companyId           String
   // "DEPARTAMENTO" | "PROJETO" | "CATEGORIA" | "PARCEIRO" | "TEXTO"
-  tipoOrigem   String
-  valorOrigem  String
-  rotuloOrigem String?
+  tipoOrigem          String
+  valorOrigem         String
+  rotuloOrigem        String?
   // Nulo = vale para todas as conexões (ex.: uma regra por TEXTO). Preenchido
   // = só para aquela empresa, que é o caso comum de departamento e categoria,
   // já que os códigos são independentes entre as contas Omie.
-  conexaoId  String?
-  clienteId  String?
-  vehicleId  String?
-  driverId   String?
+  conexaoId           String?
+  clienteId           String?
+  vehicleId           String?
+  driverId            String?
   // Percentual do valor do título que vai para este destino. Permite ratear um
   // custo compartilhado (ex.: aluguel da garagem) em vez de obrigar tudo ou
   // nada. Quando a soma não fecha 100%, o resto entra em "não alocado" e vira
   // achado — em vez de o sistema inventar um rateio.
-  percentual Float   @default(100)
+  percentual          Float     @default(100)
   // Sugestão automática ainda não confirmada. Sugestão NUNCA entra no cálculo
   // sozinha: a máquina sugere, a pessoa confirma.
   sugerido            Boolean   @default(false)
@@ -978,7 +986,7 @@ model ConformidadeVinculo {
 // auditor externo ("quem desligou este alerta, e quando?") não tem resposta.
 // Nunca atualizada nem apagada.
 model ControladoriaEventLog {
-  id           String  @id @default(cuid())
+  id           String   @id @default(cuid())
   companyId    String
   userId       String?
   userNome     String?

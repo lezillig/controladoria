@@ -4,6 +4,7 @@ import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { isAnalistaDisponivel } from "@/lib/controladoria/aiAnalyst";
 import { isEnvioDisponivel } from "@/lib/email/send";
 import { coberturaDeCampos, volumeEspelhado } from "@/lib/controladoria/agents/administrativo";
+import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
 import { contextoDaPagina } from "../_dados";
@@ -21,7 +22,7 @@ export default async function SincronizacaoPage() {
   const { session, ctx } = await contextoDaPagina();
   const podeSincronizar = canManageControladoria(session.role);
 
-  const [execucoes, emAndamento] = await Promise.all([
+  const [execucoes, emAndamento, progresso] = await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
       orderBy: { iniciadoEm: "desc" },
@@ -31,6 +32,7 @@ export default async function SincronizacaoPage() {
       where: { companyId: session.companyId, status: "EXECUTANDO" },
       orderBy: { iniciadoEm: "asc" },
     }),
+    progressoDaCarga(session.companyId, ctx.config.dataInicioBase),
   ]);
 
   const ultimoDiario = execucoes.find((e) => e.status === "CONCLUIDO" && !e.backfill);
@@ -80,12 +82,68 @@ export default async function SincronizacaoPage() {
         />
       </div>
 
+      {progresso.totalJanelas > 0 && (
+        <Secao
+          titulo="Carga histórica"
+          descricao={`A base é montada mês a mês, por empresa, desde ${fmtData(ctx.config.dataInicioBase)}. Cada janela mensal passa pelas quatro fases de sincronização.`}
+        >
+          <div className="flex items-baseline justify-between">
+            <p className="text-sm font-semibold text-slate-900">
+              {progresso.concluida ? "Concluída" : `${fmtPercent(progresso.percentual / 100)} carregado`}
+            </p>
+            <p className="text-xs text-slate-500">
+              {fmtNumero(progresso.janelasConcluidas)} de {fmtNumero(progresso.totalJanelas)} janelas mensais
+            </p>
+          </div>
+          <div className="mt-2">
+            <Barra percentual={progresso.percentual} tom={progresso.concluida ? "verde" : "azul"} />
+          </div>
+          {progresso.emAndamento ? (
+            <>
+              <p className="mt-2 text-xs text-slate-500">
+                Agora em <strong>{progresso.emAndamento.conexaoApelido}</strong>, competência{" "}
+                {progresso.emAndamento.competencia} — fase {progresso.emAndamento.fase} (
+                {progresso.emAndamento.faseNumero} de {progresso.emAndamento.totalFases}), na{" "}
+                {fmtNumero(progresso.emAndamento.invocacoes)}ª invocação.
+              </p>
+              {/* Batimento. Cada passo do ciclo carimba a execução, e o carimbo
+                  avança a cada ~40 segundos enquanto ela vive. Parado há muito
+                  é o sinal de que a função morreu sem marcar a execução como
+                  encerrada — o único estado em que o ciclo seguinte não começa
+                  sozinho e alguém precisa agir. */}
+              {progresso.emAndamento.segundosDesdeUltimoAvanco <= 120 ? (
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-700">
+                  <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
+                  Trabalhando — último avanço há {progresso.emAndamento.segundosDesdeUltimoAvanco}s.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-amber-800">
+                  Sem avanço há {Math.round(progresso.emAndamento.segundosDesdeUltimoAvanco / 60)} min. O ciclo
+                  carimba a execução a cada ~40 segundos, então esta parou. Use{" "}
+                  <strong>Sincronizar agora</strong> para retomar da janela onde ficou; se o aviso persistir, encerre a
+                  execução travada.
+                </p>
+              )}
+            </>
+          ) : progresso.concluida ? (
+            <p className="mt-2 text-xs text-slate-500">
+              A base histórica está completa. A partir daqui o ciclo diário só traz o movimento novo.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-slate-500">
+              Parada no momento. Use <strong>Sincronizar agora</strong> para retomar — ela continua da janela onde
+              ficou, sem refazer o que já entrou.
+            </p>
+          )}
+        </Secao>
+      )}
+
       {podeSincronizar && (
         <Secao
           titulo="Executar agora"
           descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → auditoria → relatório."
         >
-          <SyncButton temExecucaoTravada={travada} />
+          <SyncButton temExecucaoTravada={travada} emAndamento={Boolean(emAndamento) && !travada} />
           {travada && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Existe uma execução iniciada em {fmtData(emAndamento!.iniciadoEm)} ainda marcada como em andamento. Enquanto

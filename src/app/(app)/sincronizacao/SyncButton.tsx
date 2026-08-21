@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
@@ -10,12 +10,35 @@ import { encerrarExecucaoTravada, sincronizarAgora } from "./actions";
 // "pronto!" genérico: quem aperta este botão normalmente está diagnosticando
 // alguma coisa, e a lista de fases com contagens é a resposta que ele procura.
 
-export default function SyncButton({ temExecucaoTravada }: { temExecucaoTravada: boolean }) {
+const INTERVALO_ATUALIZACAO_MS = 15_000;
+
+export default function SyncButton({
+  temExecucaoTravada,
+  emAndamento,
+}: {
+  temExecucaoTravada: boolean;
+  emAndamento: boolean;
+}) {
   const [mensagens, setMensagens] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [concluido, setConcluido] = useState(false);
   const [processando, iniciar] = useTransition();
   const router = useRouter();
+
+  // Enquanto a carga anda em segundo plano, a página se atualiza sozinha.
+  //
+  // O trabalho continua no servidor depois que esta Server Action responde
+  // (ela encadeia a rota agendada), então sem isto a barra congelaria no valor
+  // do último carregamento e quem está olhando concluiria que travou —
+  // exatamente a dúvida que a barra existe para responder.
+  //
+  // Só roda quando há execução em andamento: fora disso seria uma consulta a
+  // cada quinze segundos sem nada novo para mostrar.
+  useEffect(() => {
+    if (!emAndamento || processando) return;
+    const id = setInterval(() => router.refresh(), INTERVALO_ATUALIZACAO_MS);
+    return () => clearInterval(id);
+  }, [emAndamento, processando, router]);
 
   return (
     <div>
@@ -62,7 +85,13 @@ export default function SyncButton({ temExecucaoTravada }: { temExecucaoTravada:
       {processando && (
         <p className="mt-3 text-xs text-slate-500">
           A primeira carga histórica é longa (uma janela por mês desde o início da base). Esta execução processa o que
-          couber no tempo; o restante continua automaticamente na próxima rodada.
+          couber no tempo; o restante continua automaticamente em segundo plano.
+        </p>
+      )}
+
+      {!processando && emAndamento && (
+        <p className="mt-3 text-xs text-slate-500">
+          Carga em andamento em segundo plano — esta página se atualiza sozinha a cada 15 segundos. Pode fechar a aba.
         </p>
       )}
 
