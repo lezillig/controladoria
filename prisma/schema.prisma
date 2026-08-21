@@ -1007,3 +1007,42 @@ model ControladoriaEventLog {
   @@index([companyId, criadoEm])
   @@index([companyId, entidadeTipo, entidadeId])
 }
+
+// TENTATIVAS DE LOGIN — freio de força bruta e trilha de autenticação.
+//
+// Duas necessidades que a mesma tabela resolve, e que separadas ficariam
+// incoerentes entre si:
+//
+//   1) Freio. O login aceitava tentativas ilimitadas. O bcrypt encarece cada
+//      uma, mas encarecer não é impedir: com uma lista de senhas comuns e
+//      tempo, dá para chegar lá. Contar as falhas recentes por e-mail e por
+//      origem é o que transforma "caro" em "bloqueado".
+//
+//   2) Trilha. Não havia registro de quem entrou, de onde, nem de quem tentou
+//      e falhou. Num sistema sob fiscalização trabalhista e fiscal, isso é
+//      lacuna de conformidade antes de ser lacuna de segurança — e a pergunta
+//      "alguém andou tentando entrar na conta do financeiro?" não tinha onde
+//      ser respondida.
+//
+// Fica FORA do ControladoriaEventLog de propósito: aquele exige companyId, e
+// uma tentativa com e-mail desconhecido — que é justamente a mais suspeita —
+// não tem empresa a que pertencer.
+//
+// Não guarda senha, nem hash de senha, nem nada derivado dela. O que se quer
+// saber é a frequência e a origem, nunca o conteúdo.
+model TentativaLogin {
+  id        String   @id @default(cuid())
+  // Normalizado em minúsculas na gravação: senão "Fulano@x.com" e
+  // "fulano@x.com" seriam dois contadores, e o freio contaria pela metade.
+  email     String
+  ip        String?
+  sucesso   Boolean
+  // Por que falhou: "senha", "desconhecido", "inativo", "sem_permissao",
+  // "bloqueado". Distingue ataque de gente que esqueceu a senha.
+  motivo    String?
+  userAgent String?
+  criadoEm  DateTime @default(now())
+
+  @@index([email, criadoEm])
+  @@index([ip, criadoEm])
+}

@@ -6,6 +6,7 @@ import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { parseLocalDate } from "@/lib/date";
+import { limparTentativasAntigas } from "@/lib/seguranca/freioDeLogin";
 
 // Ciclo diário da Controladoria: sincroniza a Omie, roda os agentes de
 // auditoria, mede o BSC e envia o relatório gerencial por e-mail.
@@ -102,6 +103,16 @@ export async function GET(req: NextRequest) {
       { error: "Nenhuma empresa ativa no sistema de gestão — o ciclo não tem sobre o que rodar." },
       { status: 503 }
     );
+  }
+
+  // Poda da trilha de autenticação, só na primeira invocação do ciclo.
+  //
+  // Nas encadeadas seria trabalho repetido dentro do orçamento de tempo que
+  // pertence à sincronização. E `catch` porque expurgo que falha não pode
+  // impedir o ciclo: a trilha crescer um dia a mais é irrelevante perto de a
+  // carga do dia não rodar.
+  if (ciclo === 0) {
+    await limparTentativasAntigas().catch(() => 0);
   }
 
   const resultados: unknown[] = [];
