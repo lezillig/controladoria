@@ -101,6 +101,46 @@ export async function sincronizarAgora(opts?: { encadear?: boolean }): Promise<R
   return { mensagens, concluido };
 }
 
+// Entrega a carga ao ciclo em segundo plano e devolve na hora se o disparo
+// saiu ou não.
+//
+// Existe porque "precisar ficar clicando" nunca foi o desenho: o ciclo sempre
+// teve de andar sozinho. A condução pela aba entrou como remendo enquanto o
+// encadeamento do servidor falhava em silêncio — e, agora que ele relata o
+// motivo da recusa, esta ação é o teste limpo que faltava: só o servidor
+// conduzindo, com o resultado visível na tela em vez de no log.
+export async function continuarEmSegundoPlano(): Promise<ResultadoSync> {
+  const session = await requireRole("ADMIN", "CONTROLADORIA");
+
+  if (!existeAlgumaCredencialOmie()) {
+    return { erro: "Nenhuma credencial da Omie encontrada no ambiente." };
+  }
+
+  const { disparado, motivo } = dispararProximaInvocacao({ companyId: session.companyId });
+
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SYNC_SEGUNDO_PLANO",
+    descricao: disparado
+      ? "Carga entregue ao ciclo em segundo plano."
+      : `Não foi possível disparar o ciclo em segundo plano: ${motivo ?? "motivo desconhecido"}`,
+  });
+
+  revalidatePath("/sincronizacao");
+
+  return disparado
+    ? {
+        mensagens: [
+          "Ciclo disparado em segundo plano. Pode fechar esta aba.",
+          "Recarregue esta página daqui a alguns minutos: se a barra avançar, ele está andando sozinho. Se parar, o motivo aparece aqui — não mais só no log da hospedagem.",
+        ],
+      }
+    : { erro: `Não foi possível disparar o ciclo: ${motivo ?? "motivo desconhecido"}` };
+}
+
 // Encerra uma execução travada em EXECUTANDO. Necessário porque a máquina de
 // estados retoma sempre a execução em andamento: se uma delas parar no meio
 // (deploy no meio do ciclo, erro não capturado), toda invocação seguinte

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
-import { encerrarExecucaoTravada, sincronizarAgora } from "./actions";
+import { continuarEmSegundoPlano, encerrarExecucaoTravada, sincronizarAgora } from "./actions";
 
 // Botão de sincronização manual. Mostra o retorno passo a passo em vez de um
 // "pronto!" genérico: quem aperta este botão normalmente está diagnosticando
@@ -196,6 +196,27 @@ export default function SyncButton({
           </button>
         )}
 
+        {!processando && (
+          <button
+            type="button"
+            className={secondaryButtonClass}
+            onClick={() => {
+              setErro(null);
+              setMensagens([]);
+              setConcluido(false);
+              marcar(false);
+              iniciar(async () => {
+                const r = await continuarEmSegundoPlano();
+                setErro(r.erro ?? null);
+                setMensagens(r.mensagens ?? []);
+                router.refresh();
+              });
+            }}
+          >
+            Deixar rodando sozinho
+          </button>
+        )}
+
         {temExecucaoTravada && (
           <button
             type="button"
@@ -219,6 +240,14 @@ export default function SyncButton({
           A primeira carga histórica é longa — uma janela por mês, por empresa, desde o início da base. Enquanto esta
           aba ficar aberta a página continua puxando a carga, rodada após rodada, e a barra acima avança junto. Se você
           fechar, o ciclo em segundo plano assume; nada se perde nem se duplica.
+        </p>
+      )}
+
+      {!processando && !emAndamento && (
+        <p className="mt-3 text-xs leading-relaxed text-slate-500">
+          <strong>Sincronizar agora</strong> conduz a carga por esta aba, rodada a rodada, e você acompanha a barra
+          avançar. <strong>Deixar rodando sozinho</strong> entrega ao ciclo em segundo plano e libera a aba — é como o
+          agendamento da madrugada trabalha. Se ele parar, o motivo passa a aparecer aqui na tela.
         </p>
       )}
 
