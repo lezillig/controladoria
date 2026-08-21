@@ -36,6 +36,12 @@ const ROTULOS: Record<ResultadoEndpoint["estado"], string> = {
   PULADO: "não testado",
 };
 
+// Registro que o normalizador recusou por inteiro. É uma falha de outra ordem
+// que campo vazio: campo vazio grava a linha sem uma coluna, registro
+// descartado não grava linha nenhuma — o endpoint aparece "com dados" e a
+// tabela termina vazia.
+const descartado = (e: ResultadoEndpoint) => e.camposVazios.includes("registro descartado pelo mapeamento");
+
 export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
   const [resultado, setResultado] = useState<ResultadoDiagnostico | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -115,14 +121,26 @@ export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
 
                 {e.erro && <p className="mt-1.5 text-xs leading-relaxed text-red-800">{e.erro}</p>}
 
-                {e.camposVazios.length > 0 && (
-                  <p className="mt-1.5 text-xs leading-relaxed text-amber-800">
-                    <strong>Não preenchidos pelo mapeamento:</strong> {e.camposVazios.join(", ")}
+                {descartado(e) ? (
+                  <p className="mt-1.5 text-xs leading-relaxed text-red-800">
+                    <strong>Nenhum registro seria importado.</strong> O mapeamento não achou os campos obrigatórios
+                    (número, data de emissão e valor) e descartaria a nota inteira — não é coluna vazia, é ausência de
+                    linha. Os nomes que a conta devolveu estão abaixo.
                   </p>
+                ) : (
+                  e.camposVazios.length > 0 && (
+                    <p className="mt-1.5 text-xs leading-relaxed text-amber-800">
+                      <strong>Não preenchidos pelo mapeamento:</strong> {e.camposVazios.join(", ")}
+                    </p>
+                  )
                 )}
 
                 {e.camposRecebidos.length > 0 && (
-                  <details className="mt-1.5">
+                  // Aberto de saída quando o registro foi descartado: nesse caso a
+                  // lista crua não é detalhe de apoio, é a única informação que
+                  // permite corrigir — esconder atrás de um clique seria esconder
+                  // a resposta.
+                  <details className="mt-1.5" open={descartado(e)}>
                     <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">
                       campos que a conta devolveu ({e.camposRecebidos.length})
                     </summary>
