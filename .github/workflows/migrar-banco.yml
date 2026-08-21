@@ -200,6 +200,44 @@ jobs:
             exit 1
           fi
 
+          # ---- 7. As empresas ainda existem no destino? ----
+          #
+          # Cada título, baixa e nota da Controladoria é amarrado a um
+          # `companyId` que vem do cadastro de empresas da GESTÃO, no schema
+          # `public`. Se o banco novo for cópia do antigo, os ids batem. Se ele
+          # foi recriado do zero, as empresas ganharam ids novos — e os 46 mil
+          # títulos ficam órfãos, apontando para uma empresa que não existe.
+          #
+          # O sistema abriria VAZIO, sem erro nenhum. É o pior desfecho
+          # possível: nada quebra, nada avisa, e a conclusão natural de quem
+          # olha é que a carga se perdeu. Conferir aqui custa uma consulta e
+          # evita descobrir isso depois de apagar o banco antigo.
+          echo "--- empresas referenciadas ---"
+          orfaos=$(psql "$DB_DESTINO" -tAc "
+            SELECT COALESCE(string_agg(DISTINCT t.\"companyId\", ', '), '')
+              FROM controladoria.\"OmieTitulo\" t
+             WHERE NOT EXISTS (
+               SELECT 1 FROM public.\"Company\" c WHERE c.id = t.\"companyId\"
+             )" 2>/dev/null)
+
+          if [ $? -ne 0 ]; then
+            echo "::warning::Não consegui ler public.\"Company\" no destino para conferir os ids de empresa. Confira à mão antes de trocar as variáveis da Vercel."
+            echo "> Aviso: não foi possível conferir os ids de empresa contra \`public.\"Company\"\` no destino." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$orfaos" ]; then
+            echo "::error::Os dados da Controladoria apontam para empresa(s) que não existem no banco de destino: $orfaos"
+            {
+              echo ""
+              echo "**PARE.** Os títulos migrados apontam para \`companyId\` que não existe em \`public.\"Company\"\` do banco novo: \`$orfaos\`."
+              echo ""
+              echo "Isso acontece quando o banco da gestão foi recriado do zero em vez de copiado — as empresas ganharam ids novos."
+              echo "Trocar as variáveis da Vercel agora faria o sistema abrir vazio, sem erro. Não troque."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          else
+            echo "ok: toda empresa referenciada existe no destino."
+            echo "Ids de empresa conferem com \`public.\"Company\"\` do banco novo." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
           echo "Todas as tabelas conferem."
           {
             echo "Todas as tabelas conferem. Próximo passo: trocar \`DATABASE_URL\` e \`DIRECT_URL\`"
