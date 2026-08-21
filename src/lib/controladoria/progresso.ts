@@ -42,6 +42,10 @@ export type ProgressoCarga = {
     // É a resposta para "parou, e por quê" — a pergunta nasce nesta tela, e
     // sem isto ela só teria resposta no log da hospedagem.
     encadeamentoRecusado: string | null;
+    // Quando o sistema tentou continuar sozinho pela última vez. Nulo significa
+    // que nunca tentou — que é uma causa de parada diferente de ter tentado e
+    // sido recusado, e exige conduta diferente.
+    ultimoDisparo: Date | null;
   } | null;
   // Quando a carga terminou e o sistema já está no regime diário.
   concluida: boolean;
@@ -58,10 +62,16 @@ function mesesAte(inicio: Date, mesCorrente: Date): number {
 
 // `detalhes` é Json livre; só interessa o texto que o disparo do ciclo grava
 // quando é recusado (ver encadear.ts).
-function lerEncadeamento(detalhes: unknown): string | null {
-  if (!detalhes || typeof detalhes !== "object" || Array.isArray(detalhes)) return null;
-  const valor = (detalhes as Record<string, unknown>).encadeamento;
-  return typeof valor === "string" && valor.trim() !== "" ? valor : null;
+function lerEncadeamento(detalhes: unknown): { recusa: string | null; ultimoDisparo: Date | null } {
+  const vazio = { recusa: null, ultimoDisparo: null };
+  if (!detalhes || typeof detalhes !== "object" || Array.isArray(detalhes)) return vazio;
+  const d = detalhes as Record<string, unknown>;
+  const texto = d.encadeamento;
+  const em = typeof d.em === "string" ? new Date(d.em) : null;
+  return {
+    recusa: typeof texto === "string" && texto.trim() !== "" ? texto : null,
+    ultimoDisparo: em && !Number.isNaN(em.getTime()) ? em : null,
+  };
 }
 
 function competencia(d: Date): string {
@@ -136,7 +146,8 @@ export async function progressoDaCarga(
               Math.round((agora.getTime() - emAndamento.atualizadoEm.getTime()) / 1000)
             ),
             invocacoes: emAndamento.invocacoes,
-            encadeamentoRecusado: lerEncadeamento(emAndamento.detalhes),
+            encadeamentoRecusado: lerEncadeamento(emAndamento.detalhes).recusa,
+            ultimoDisparo: lerEncadeamento(emAndamento.detalhes).ultimoDisparo,
           }
         : null,
     concluida: totalJanelas > 0 && janelasConcluidas >= totalJanelas,

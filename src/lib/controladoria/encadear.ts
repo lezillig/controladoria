@@ -31,11 +31,17 @@ export type ResultadoDisparo = { disparado: boolean; motivo?: string };
 // campo `erro` para o que ele significa (a execução falhou), já que um
 // encadeamento recusado não invalida o trabalho que a invocação acabou de
 // fazer: ele só impede o próximo passo.
-async function registrarDesfecho(companyId: string | undefined, texto: string): Promise<void> {
+async function registrarDesfecho(companyId: string | undefined, texto: string | null): Promise<void> {
   try {
     await prisma.omieSyncRun.updateMany({
       where: { status: "EXECUTANDO", ...(companyId ? { companyId } : {}) },
-      data: { detalhes: { encadeamento: texto, em: new Date().toISOString() } },
+      data: {
+        detalhes: {
+          encadeamento: texto,
+          encadeamentoOk: texto === null,
+          em: new Date().toISOString(),
+        },
+      },
     });
   } catch {
     // Falha ao registrar não pode derrubar o ciclo: o objetivo aqui é
@@ -72,7 +78,13 @@ export function dispararProximaInvocacao(params?: {
   waitUntil(
     fetch(alvo.toString(), { headers: cabecalhos })
       .then(async (r) => {
-        if (r.ok) return;
+        if (r.ok) {
+          // Registrar o sucesso também é o que separa "tentou e foi recusado"
+          // de "nem chegou a tentar". Sem os dois lados, um encadeamento que
+          // simplesmente não acontece fica idêntico a um que deu errado.
+          await registrarDesfecho(params?.companyId, null);
+          return;
+        }
         const causa =
           r.status === 401
             ? "A proteção de deploy da Vercel está barrando a chamada que o sistema faz a si mesmo. Em Settings → Deployment Protection, gere o Protection Bypass for Automation e cadastre o valor como VERCEL_AUTOMATION_BYPASS_SECRET — ou desligue a proteção para Production. (Se o bypass já existe, o CRON_SECRET é que está divergente.)"

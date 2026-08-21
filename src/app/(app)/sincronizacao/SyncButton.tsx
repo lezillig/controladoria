@@ -60,9 +60,18 @@ export default function SyncButton({
     });
   }, [router]);
 
-  // Interrompe a corrente se a pessoa sair da página, em vez de deixar uma
-  // chamada órfã em andamento.
-  useEffect(() => () => { continuando.current = false; }, []);
+  // Sem limpeza no desmonte, de propósito.
+  //
+  // A versão anterior zerava a corrente ao desmontar, e isso a matava sozinha:
+  // cada rodada chama `router.refresh()` para a barra avançar, e qualquer
+  // remontagem que o refresh provoque disparava a limpeza. A carga parava sem
+  // erro, sem recusa de encadeamento e sem ninguém ter pedido — exatamente o
+  // sintoma observado.
+  //
+  // Não há chamada órfã a evitar: quem sai da página leva o JavaScript junto,
+  // e a Server Action que estiver no ar termina do lado do servidor, gravando
+  // o que já processou. Toda escrita é upsert por chave natural, então nada
+  // fica pela metade.
 
   // Enquanto a carga anda em segundo plano, a página se atualiza sozinha.
   //

@@ -126,8 +126,10 @@ export default async function SincronizacaoPage() {
                 <p className="mt-1 text-xs text-amber-800">
                   Sem avanço há {Math.round(progresso.emAndamento.segundosDesdeUltimoAvanco / 60)} min. O ciclo
                   carimba a execução a cada ~40 segundos, então esta parou. Use{" "}
-                  <strong>Sincronizar agora</strong> para retomar da janela onde ficou; se o aviso persistir, encerre a
-                  execução travada.
+                  <strong>Sincronizar agora</strong> e deixe esta aba aberta — a página conduz a carga rodada a rodada.
+                  {progresso.emAndamento.ultimoDisparo
+                    ? " A última tentativa de continuar sozinho foi aceita, então o ciclo em segundo plano é quem se perdeu."
+                    : " O sistema não chegou a tentar continuar sozinho nesta execução."}
                 </p>
               )}
             </>
