@@ -92,6 +92,31 @@ export default function SyncButton({
     });
   }, [router]);
 
+  // Passa o bastão ao servidor quando a aba se fecha.
+  //
+  // Enquanto a aba conduz, ela não encadeia o ciclo do servidor — dois motores
+  // sobre a mesma execução gastam invocação à toa. Mas isso deixa um buraco no
+  // instante em que a aba se fecha: sem ninguém para chamar a rodada seguinte,
+  // a carga para até a madrugada.
+  //
+  // `pagehide` cobre fechar a aba, navegar para fora e o celular mandar a
+  // página para segundo plano — situações em que `beforeunload` não dispara de
+  // forma confiável. E `sendBeacon` é o que sobrevive ao descarregamento: um
+  // fetch comum nesse momento costuma ser cancelado junto com a página.
+  useEffect(() => {
+    const aoSair = () => {
+      if (!continuando.current) return;
+      try {
+        navigator.sendBeacon("/api/ciclo/continuar");
+      } catch {
+        // Sem beacon disponível, resta o ciclo da madrugada. Falhar aqui não
+        // pode atrapalhar quem está saindo da página.
+      }
+    };
+    window.addEventListener("pagehide", aoSair);
+    return () => window.removeEventListener("pagehide", aoSair);
+  }, []);
+
   // Retoma sozinha ao abrir a página, se a carga tinha sido pedida e ainda há
   // execução em andamento. Sem isto, o recarregamento que a pessoa faz para
   // conferir o progresso é o que interrompe o progresso.

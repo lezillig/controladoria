@@ -159,7 +159,7 @@ export default async function SincronizacaoPage() {
                   <strong>Sincronizar agora</strong> e deixe esta aba aberta — a página conduz a carga rodada a rodada.
                   {progresso.emAndamento.ultimoDisparo
                     ? " A última tentativa de continuar sozinho foi aceita, então o ciclo em segundo plano é quem se perdeu."
-                    : " O sistema não chegou a tentar continuar sozinho nesta execução."}
+                    : " Enquanto a aba conduz a carga, o ciclo em segundo plano fica de fora para não haver dois motores na mesma execução — então esta mensagem costuma significar apenas que a aba foi fechada ou parada."}
                 </p>
               )}
             </>
