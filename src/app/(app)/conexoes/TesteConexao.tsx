@@ -42,9 +42,47 @@ const ROTULOS: Record<ResultadoEndpoint["estado"], string> = {
 // tabela termina vazia.
 const descartado = (e: ResultadoEndpoint) => e.camposVazios.includes("registro descartado pelo mapeamento");
 
+// Diagnóstico inteiro em texto puro, INCLUINDO os nomes crus de campo.
+//
+// Existe porque a informação que resolve o problema — a lista de campos que a
+// conta devolveu — mora dentro de um <details>, e conteúdo de <details>
+// fechado não vai junto quando se copia a página. Na prática isso significava
+// que o relatório chegava até quem pode corrigir o mapeamento sempre sem a
+// única parte que permite corrigi-lo.
+//
+// Sem credencial e sem valor de registro: só nomes de campo, contagens e
+// estado. É seguro colar em qualquer lugar.
+function relatorioEmTexto(r: ResultadoDiagnostico): string {
+  const linhas: string[] = [
+    `DIAGNÓSTICO OMIE — ${r.conexao.apelido} (${r.conexao.nome})`,
+    `${r.ok} com dados · ${r.vazios} sem registro · ${r.erros} com erro`,
+    "",
+  ];
+
+  for (const p of r.problemasDeCredencial) linhas.push(`[CREDENCIAL] ${p.variavel} ${p.problema}`);
+  if (r.problemasDeCredencial.length > 0) linhas.push("");
+
+  for (const e of r.endpoints) {
+    linhas.push(`## ${e.rotulo} — ${e.call} — ${ROTULOS[e.estado]}`);
+    if (e.estado === "OK") {
+      linhas.push(`   ${e.registros} de amostra, ${e.totalNaConta} no período, lista em "${e.listaEncontradaEm}"`);
+      if (e.filtroAceito) linhas.push(`   filtro aceito: ${e.filtroAceito}`);
+    }
+    if (e.erro) linhas.push(`   ERRO: ${e.erro}`);
+    if (e.camposVazios.length > 0) linhas.push(`   NÃO PREENCHIDOS: ${e.camposVazios.join(", ")}`);
+    if (e.camposRecebidos.length > 0) {
+      linhas.push(`   CAMPOS CRUS (${e.camposRecebidos.length}): ${e.camposRecebidos.join(" · ")}`);
+    }
+    linhas.push("");
+  }
+
+  return linhas.join("\n");
+}
+
 export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
   const [resultado, setResultado] = useState<ResultadoDiagnostico | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [copiado, setCopiado] = useState(false);
   const [processando, iniciar] = useTransition();
 
   return (
@@ -152,6 +190,40 @@ export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
               </li>
             ))}
           </ul>
+
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <button
+              type="button"
+              onClick={async () => {
+                const texto = relatorioEmTexto(resultado);
+                try {
+                  await navigator.clipboard.writeText(texto);
+                  setCopiado(true);
+                  setTimeout(() => setCopiado(false), 3000);
+                } catch {
+                  // Área de transferência bloqueada (contexto inseguro, permissão
+                  // negada): o <details> abaixo mostra o mesmo texto para seleção
+                  // manual, então não há beco sem saída.
+                  setCopiado(false);
+                }
+              }}
+              className={`${secondaryButtonClass} text-xs`}
+            >
+              {copiado ? "Copiado" : "Copiar diagnóstico completo"}
+            </button>
+            <span className="ml-2 text-xs text-slate-400">
+              inclui os nomes de campo — é o que permite corrigir o mapeamento
+            </span>
+
+            <details className="mt-2">
+              <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">
+                ou selecione o texto aqui
+              </summary>
+              <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-slate-50 p-2 font-mono text-[11px] leading-relaxed text-slate-600">
+                {relatorioEmTexto(resultado)}
+              </pre>
+            </details>
+          </div>
 
           <p className="mt-4 text-xs leading-relaxed text-slate-500">
             <strong>Sem registro no período</strong> é sucesso de integração, não falha: a Omie responde com erro
