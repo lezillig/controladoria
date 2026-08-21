@@ -226,17 +226,26 @@ export function conferirFormatoCredencial(credencialRef: string): ProblemaCreden
     }
   }
 
-  // Par trocado entre empresas: cada um passa no formato isoladamente, e a
-  // Omie recusa os dois. So da pra ver comparando as conexoes entre si.
-  const { app_key } = lerCru(credencialRef);
-  if (FORMATO_APP_KEY.test(app_key)) {
+  // Valor repetido entre empresas. Cada metade passa em qualquer checagem
+  // isolada — sao valores bem formados — e a Omie recusa as duas contas com a
+  // mesma frase generica. So aparece comparando as conexoes entre si, e vale
+  // para as DUAS metades: copiar o App Secret da outra empresa e tao facil
+  // quanto copiar o App Key, e da no mesmo 403.
+  const { app_key, app_secret } = lerCru(credencialRef);
+  const repetidos: [string, string, string, string][] = [
+    [chave, app_key, "OMIE_APP_KEY_", "App Key"],
+    [segredo, app_secret, "OMIE_APP_SECRET_", "App Secret"],
+  ];
+
+  for (const [nome, valor, prefixo, rotulo] of repetidos) {
+    if (valor === "") continue;
     const gemeas = Object.entries(process.env)
-      .filter(([k, v]) => k.startsWith("OMIE_APP_KEY_") && k !== chave && (v ?? "").trim() === app_key)
+      .filter(([k, v]) => k.startsWith(prefixo) && k !== nome && (v ?? "").trim() === valor)
       .map(([k]) => k);
     if (gemeas.length > 0) {
       problemas.push({
-        variavel: chave,
-        problema: `tem o mesmo valor de ${gemeas.join(", ")}. Duas empresas não compartilham App Key — uma das duas está com a chave da outra.`,
+        variavel: nome,
+        problema: `tem o mesmo valor de ${gemeas.join(", ")}. Duas empresas não compartilham ${rotulo} — uma das duas está com a credencial da outra.`,
       });
     }
   }
