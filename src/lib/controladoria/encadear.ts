@@ -1,4 +1,5 @@
 import { waitUntil } from "@vercel/functions";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { urlDoSistema } from "@/lib/appUrl";
 
@@ -31,22 +32,43 @@ export type ResultadoDisparo = { disparado: boolean; motivo?: string };
 // campo `erro` para o que ele significa (a execução falhou), já que um
 // encadeamento recusado não invalida o trabalho que a invocação acabou de
 // fazer: ele só impede o próximo passo.
-async function registrarDesfecho(companyId: string | undefined, texto: string | null): Promise<void> {
+export async function anotarNaExecucao(
+  companyId: string | undefined,
+  anotacao: Record<string, unknown>
+): Promise<void> {
   try {
-    await prisma.omieSyncRun.updateMany({
+    const run = await prisma.omieSyncRun.findFirst({
       where: { status: "EXECUTANDO", ...(companyId ? { companyId } : {}) },
-      data: {
-        detalhes: {
-          encadeamento: texto,
-          encadeamentoOk: texto === null,
-          em: new Date().toISOString(),
-        },
-      },
+      orderBy: { iniciadoEm: "asc" },
+      select: { id: true, detalhes: true },
+    });
+    if (!run) return;
+
+    // Mescla em vez de sobrescrever: `detalhes` guarda anotações de origens
+    // diferentes — o desfecho do disparo e o que a invocação automática de
+    // fato fez — e substituir o objeto inteiro faria uma apagar a outra
+    // justamente quando as duas juntas contam a história.
+    const anterior =
+      run.detalhes && typeof run.detalhes === "object" && !Array.isArray(run.detalhes)
+        ? (run.detalhes as Record<string, unknown>)
+        : {};
+
+    await prisma.omieSyncRun.update({
+      where: { id: run.id },
+      data: { detalhes: { ...anterior, ...anotacao } as Prisma.InputJsonValue },
     });
   } catch {
-    // Falha ao registrar não pode derrubar o ciclo: o objetivo aqui é
+    // Falha ao anotar não pode derrubar o ciclo: o objetivo aqui é
     // diagnóstico, e um diagnóstico que quebra a operação é pior que nenhum.
   }
+}
+
+async function registrarDesfecho(companyId: string | undefined, texto: string | null): Promise<void> {
+  await anotarNaExecucao(companyId, {
+    encadeamento: texto,
+    encadeamentoOk: texto === null,
+    em: new Date().toISOString(),
+  });
 }
 
 export function dispararProximaInvocacao(params?: {

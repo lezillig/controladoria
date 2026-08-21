@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { disponibilidadeGestao, listarEmpresasAtivas } from "@/lib/gestao/leitura";
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
-import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
+import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { parseLocalDate } from "@/lib/date";
 
 // Ciclo diário da Controladoria: sincroniza a Omie, roda os agentes de
@@ -123,6 +123,27 @@ export async function GET(req: NextRequest) {
       });
     }
   }
+
+  // O que ESTA invocação fez, gravado na própria execução.
+  //
+  // Até aqui o sistema registrava apenas se a chamada de encadeamento foi
+  // aceita. Aceita e sem trabalho é indistinguível de aceita e trabalhando —
+  // e foi exatamente esse o estado que travou a carga por horas, respondendo
+  // 200 sem avançar nada. Aceitar um "OK" sem olhar o que veio dentro é o
+  // mesmo erro de engolir exceção, repetido numa camada acima.
+  //
+  // Fica em `detalhes`, mesclado, para conviver com a anotação do disparo: uma
+  // conta se a chamada saiu, a outra conta o que aconteceu do outro lado.
+  await anotarNaExecucao(undefined, {
+    invocacaoAutomatica: {
+      em: new Date().toISOString(),
+      ciclo,
+      empresas: empresas.length,
+      duracaoMs: Date.now() - iniciado,
+      continua,
+      resultados,
+    },
+  });
 
   if (continua && ciclo < MAX_CICLOS) {
     dispararProximaInvocacao({ ciclo: ciclo + 1, data: dataParam });
