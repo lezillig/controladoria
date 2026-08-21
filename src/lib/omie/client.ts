@@ -35,6 +35,16 @@ export type OmieEndpoint = {
   // `clientes_cadastro`, `conta_pagar_cadastro`, `departamentos`,
   // `ListarContasCorrentes` (igual ao nome da call), `listaExtrato`...
   listKey: string[];
+  // Grafias alternativas do nome da operacao, tentadas em ordem quando a Omie
+  // responde `Method "X" not exists`.
+  //
+  // Existe porque os nomes de `call` da Omie nao seguem convencao unica e sao
+  // sensiveis a caixa: o mesmo produto tem `ListarClientes` e `ListarNFSEs`
+  // (plural, sigla em caixa alta). Errar a grafia devolve um erro que nao e de
+  // credencial nem de dado, e sem esta lista o unico jeito de acertar seria um
+  // deploy por tentativa — contra uma conta a que este repositorio nao tem
+  // acesso para conferir.
+  callsAlternativos?: readonly string[];
 };
 
 // Registro unico dos endpoints usados. Centralizado para que a lista do que
@@ -68,7 +78,16 @@ export const OMIE_ENDPOINTS = {
   // Nao e paginado: a janela de datas e o que limita o volume.
   extrato: { path: "financas/extrato/", call: "ListarExtrato", listKey: ["listaExtrato", "extrato"] },
   nfe: { path: "produtos/nfconsultar/", call: "ListarNF", listKey: ["nfCadastro"] },
-  nfse: { path: "servicos/nfse/", call: "ListarNFSe", listKey: ["nfseEncontradas", "nfseCadastro"] },
+  // `ListarNFSEs` — plural e com a sigla em caixa alta. A primeira versao usava
+  // `ListarNFSe` e a Omie respondeu `Method "ListarNFSe" not exists`, que e
+  // erro de grafia, nao de credencial nem de permissao. As alternativas cobrem
+  // as outras capitalizacoes plausiveis sem exigir um deploy por tentativa.
+  nfse: {
+    path: "servicos/nfse/",
+    call: "ListarNFSEs",
+    callsAlternativos: ["ListarNFSes", "ListarNfse", "ListarNFSe"],
+    listKey: ["nfseEncontradas", "nfseCadastro", "nfseLista"],
+  },
 } as const satisfies Record<string, OmieEndpoint>;
 
 // Existe alguma credencial de conexao configurada no ambiente? Serve so para
@@ -95,16 +114,123 @@ export function nomesDasVariaveis(credencialRef: string): { chave: string; segre
   return { chave: `OMIE_APP_KEY_${ref}`, segredo: `OMIE_APP_SECRET_${ref}` };
 }
 
+// APARA a credencial antes de usar. Quebra de linha e espaco no fim sao o
+// jeito mais comum de uma chave valida virar "chave invalida": o valor e
+// copiado de um bloco de texto e colado no painel da hospedagem, que preserva
+// o branco fielmente. A Omie compara byte a byte e recusa — com uma mensagem
+// que aponta pra chave, e nao pro espaco.
+function lerCru(credencialRef: string): { app_key: string; app_secret: string } {
+  const { chave, segredo } = nomesDasVariaveis(credencialRef);
+  return { app_key: (process.env[chave] ?? "").trim(), app_secret: (process.env[segredo] ?? "").trim() };
+}
+
 function credenciais(credencialRef: string): { app_key: string; app_secret: string } {
   const { chave, segredo } = nomesDasVariaveis(credencialRef);
-  const app_key = process.env[chave];
-  const app_secret = process.env[segredo];
+  const { app_key, app_secret } = lerCru(credencialRef);
   if (!app_key || !app_secret) {
     throw new Error(
       `${chave}/${segredo} não configuradas — a conexão Omie correspondente está indisponível.`
     );
   }
   return { app_key, app_secret };
+}
+
+// Formato esperado das credenciais da Omie: app_key so digitos, app_secret
+// hexadecimal de 32 caracteres.
+const FORMATO_APP_KEY = /^\d{6,20}$/;
+const FORMATO_APP_SECRET = /^[0-9a-f]{32}$/i;
+
+// Confere o FORMATO da credencial sem sair da maquina — e, principalmente,
+// sem revelar o valor.
+//
+// Por que existe: "A chave de acesso não está preenchida ou não é válida" e a
+// unica coisa que a Omie devolve para qualquer defeito de credencial. Ela nao
+// distingue chave trocada de chave com espaco colado no fim, de nome da
+// variavel colado junto com o valor, de segredo copiado ainda mascarado. Sem
+// esta checagem local, o unico caminho seria tentativa e erro contra a API —
+// e cada tentativa custa um deploy.
+//
+// Cada problema descrito aqui e derivavel do valor sem expor o valor: contagem
+// de caracteres e classe de caractere. Nenhum trecho do segredo entra no
+// texto, porque este texto vai pra tela e pra trilha de auditoria.
+export type ProblemaCredencial = { variavel: string; problema: string };
+
+export function conferirFormatoCredencial(credencialRef: string): ProblemaCredencial[] {
+  const { chave, segredo } = nomesDasVariaveis(credencialRef);
+  const problemas: ProblemaCredencial[] = [];
+
+  const pares: [string, string, RegExp, string][] = [
+    [chave, process.env[chave] ?? "", FORMATO_APP_KEY, "o App Key da Omie é uma sequência só de dígitos"],
+    [
+      segredo,
+      process.env[segredo] ?? "",
+      FORMATO_APP_SECRET,
+      "o App Secret da Omie tem 32 caracteres hexadecimais (0-9 e a-f)",
+    ],
+  ];
+
+  for (const [nome, bruto, formato, esperado] of pares) {
+    if (bruto === "") {
+      problemas.push({ variavel: nome, problema: "não existe neste ambiente ou está vazia." });
+      continue;
+    }
+
+    const valor = bruto.trim();
+
+    if (valor !== bruto) {
+      // Aparado em tempo de execucao, mas vale avisar: espaco invisivel no
+      // painel e o defeito que mais custa tempo pra achar.
+      problemas.push({
+        variavel: nome,
+        problema: "tem espaço ou quebra de linha nas pontas. O sistema apara antes de enviar, mas convém limpar no painel.",
+      });
+    }
+
+    if (valor.includes("=")) {
+      problemas.push({
+        variavel: nome,
+        problema: `contém "=". Provavelmente o nome da variável foi colado junto com o valor — o campo deve conter só o que vem depois do "=".`,
+      });
+      continue;
+    }
+
+    if (/[•*]/.test(valor)) {
+      problemas.push({
+        variavel: nome,
+        problema: "contém • ou *, ou seja, foi copiada ainda mascarada. Clique em exibir na Omie antes de copiar.",
+      });
+      continue;
+    }
+
+    if (/\s/.test(valor)) {
+      problemas.push({ variavel: nome, problema: "contém espaço no meio do valor." });
+      continue;
+    }
+
+    if (!formato.test(valor)) {
+      problemas.push({
+        variavel: nome,
+        problema: `tem ${valor.length} caractere(s) e não confere com o formato esperado — ${esperado}.`,
+      });
+    }
+  }
+
+  // Par trocado entre empresas: cada um passa no formato isoladamente, e a
+  // Omie recusa os dois. So da pra ver comparando as conexoes entre si.
+  const { app_key } = lerCru(credencialRef);
+  if (FORMATO_APP_KEY.test(app_key)) {
+    const gemeas = Object.entries(process.env)
+      .filter(([k, v]) => k.startsWith("OMIE_APP_KEY_") && k !== chave && (v ?? "").trim() === app_key)
+      .map(([k]) => k);
+    if (gemeas.length > 0) {
+      problemas.push({
+        variavel: chave,
+        problema: `tem o mesmo valor de ${gemeas.join(", ")}. Duas empresas não compartilham App Key — uma das duas está com a chave da outra.`,
+      });
+    }
+  }
+
+  return problemas;
 }
 
 // Uma conexao so e utilizavel quando o par de variaveis existe no ambiente.
@@ -177,14 +303,30 @@ export type OmieCallOptions = {
   toleraVazio?: boolean;
 };
 
+// Nomes de operacao a tentar, na ordem: o principal e depois as grafias
+// alternativas do endpoint.
+function nomesDaCall(endpoint: OmieEndpoint): readonly string[] {
+  return [endpoint.call, ...(endpoint.callsAlternativos ?? [])];
+}
+
+// A Omie devolve isto quando o nome da operacao nao existe naquele dominio.
+// Nao e erro de credencial, nao e erro de dado: e grafia.
+const METODO_INEXISTENTE = /Method\s+"?[^"]*"?\s+not\s+exists/i;
+
 export async function omieCall(
   endpoint: OmieEndpoint,
   param: Record<string, unknown>,
   opts: OmieCallOptions,
-  tentativa = 0
+  tentativa = 0,
+  // Indice dentro de nomesDaCall(). Avanca apenas quando a Omie responde
+  // "method not exists" — nunca por erro de credencial ou de parametro, que
+  // dariam a mesma resposta em qualquer grafia.
+  grafia = 0
 ): Promise<Record<string, unknown> | null> {
   const { app_key, app_secret } = credenciais(opts.credencialRef);
-  const body = JSON.stringify({ call: endpoint.call, app_key, app_secret, param: [param] });
+  const grafias = nomesDaCall(endpoint);
+  const call = grafias[grafia] ?? endpoint.call;
+  const body = JSON.stringify({ call, app_key, app_secret, param: [param] });
 
   let res: Response;
   try {
@@ -198,11 +340,9 @@ export async function omieCall(
     // erro de negocio devolvido pela Omie.
     if (tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
-      return omieCall(endpoint, param, opts, tentativa + 1);
+      return omieCall(endpoint, param, opts, tentativa + 1, grafia);
     }
-    throw new Error(
-      `Falha de rede ao chamar ${endpoint.call}: ${e instanceof Error ? e.message : "erro desconhecido"}`
-    );
+    throw new Error(`Falha de rede ao chamar ${call}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
   }
 
   const texto = await res.text();
@@ -212,11 +352,18 @@ export async function omieCall(
   } catch {
     if (res.status === 429 && tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
-      return omieCall(endpoint, param, opts, tentativa + 1);
+      return omieCall(endpoint, param, opts, tentativa + 1, grafia);
     }
     throw new Error(
-      `Omie respondeu ${res.status} em ${endpoint.call} com conteúdo não-JSON: ${sanitizeErro(texto, opts.credencialRef)}`
+      `Omie respondeu ${res.status} em ${call} com conteúdo não-JSON: ${sanitizeErro(texto, opts.credencialRef)}`
     );
+  }
+
+  // Grafia errada do nome da operacao: tenta a proxima da lista, sem gastar
+  // retentativa (nao e falha transitoria) e sem backoff (nao e limite).
+  const mensagem = typeof json.message === "string" ? json.message : "";
+  if (METODO_INEXISTENTE.test(mensagem) && grafia + 1 < grafias.length) {
+    return omieCall(endpoint, param, opts, tentativa, grafia + 1);
   }
 
   const fault = typeof json.faultstring === "string" ? json.faultstring : null;
@@ -230,23 +377,39 @@ export async function omieCall(
   if (limitado) {
     if (tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
-      return omieCall(endpoint, param, opts, tentativa + 1);
+      return omieCall(endpoint, param, opts, tentativa + 1, grafia);
     }
-    throw new Error(
-      `Omie recusou por limite de consumo em ${endpoint.call} e não há orçamento de tempo para retentativa.`
-    );
+    throw new Error(`Omie recusou por limite de consumo em ${call} e não há orçamento de tempo para retentativa.`);
   }
 
   if (fault) {
     const code = typeof json.faultcode === "string" ? ` (${json.faultcode})` : "";
-    throw new Error(`Omie recusou ${endpoint.call}${code}: ${sanitizeErro(fault, opts.credencialRef)}`);
+    throw new Error(
+      `Omie recusou ${call}${code}: ${sanitizeErro(fault, opts.credencialRef)}${dicaDeCredencial(fault, opts.credencialRef)}`
+    );
   }
 
   if (!res.ok) {
-    throw new Error(`Omie respondeu ${res.status} em ${endpoint.call}: ${sanitizeErro(texto, opts.credencialRef)}`);
+    throw new Error(`Omie respondeu ${res.status} em ${call}: ${sanitizeErro(texto, opts.credencialRef)}`);
   }
 
   return json;
+}
+
+// A faultstring de credencial da Omie e sempre a mesma frase, para qualquer
+// defeito: chave trocada, espaco colado no fim, segredo copiado mascarado,
+// par de outra empresa. Anexa o que a checagem local de formato ja sabe, para
+// que a pessoa leia a causa provavel junto do erro em vez de ir por eliminacao.
+const FAULT_DE_CREDENCIAL = /chave de acesso|app_key|app_secret|n[aã]o (est[aá] preenchid|é v[aá]lid)/i;
+
+function dicaDeCredencial(fault: string, credencialRef: string): string {
+  if (!FAULT_DE_CREDENCIAL.test(fault)) return "";
+  const { chave, segredo } = nomesDasVariaveis(credencialRef);
+  const problemas = conferirFormatoCredencial(credencialRef);
+  if (problemas.length === 0) {
+    return ` — ${chave} e ${segredo} existem e têm o formato esperado, então o par foi recusado pela própria Omie: confira se as duas vieram do mesmo app (⚙️ → Resumo do App da empresa certa) e se a chave não foi regenerada depois de cadastrada aqui.`;
+  }
+  return ` — ${problemas.map((p) => `${p.variavel} ${p.problema}`).join(" ")}`;
 }
 
 function backoffMs(tentativa: number): number {

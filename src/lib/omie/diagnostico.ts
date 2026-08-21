@@ -7,7 +7,9 @@ import {
   extrairTotalRegistros,
   omieCall,
   sleep,
+  conferirFormatoCredencial,
   type OmieEndpoint,
+  type ProblemaCredencial,
 } from "./client";
 import {
   formatarDataOmie,
@@ -80,6 +82,10 @@ export type ResultadoEndpoint = {
 export type ResultadoDiagnostico = {
   conexao: { id: string; nome: string; apelido: string };
   executadoEm: Date;
+  // Defeitos de FORMATO da credencial, achados sem sair da máquina. Vêm antes
+  // da lista de endpoints porque, quando há algum, os dez endpoints falham
+  // pelo mesmo motivo e a lista não acrescenta nada.
+  problemasDeCredencial: ProblemaCredencial[];
   endpoints: ResultadoEndpoint[];
   // Resumo pronto para leitura rápida — é o que a pessoa olha antes de ler a
   // tabela inteira.
@@ -236,6 +242,7 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
   return {
     conexao: { id: conexao.id, nome: conexao.nome, apelido: conexao.apelido },
     executadoEm: new Date(),
+    problemasDeCredencial: conferirFormatoCredencial(conexao.credencialRef),
     endpoints,
     ok: endpoints.filter((e) => e.estado === "OK").length,
     vazios: endpoints.filter((e) => e.estado === "VAZIO").length,
