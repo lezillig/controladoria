@@ -1,4 +1,5 @@
 import { variacaoPercent } from "./format";
+import { resumoDoPeriodoNoBanco } from "./resumoNoBanco";
 import { dentro, montarJanelas, type JanelasRelatorio, type Periodo } from "./periodos";
 import { agrupar, emAberto, saldoAberto, somar, titulosAtivos } from "./agents/comum";
 import { saldoAtualCents } from "./agents/conciliacao";
@@ -101,15 +102,32 @@ export type ComparativoRelatorio = {
   semBaseAnoAnterior: boolean;
 };
 
-export function montarComparativo(ctx: ContextoAuditoria): ComparativoRelatorio {
+// O comparativo é a ÚNICA parte que olha para além da janela do contexto.
+//
+// "Acumulado do ano anterior" pode estar a vinte meses da data de referência,
+// e era só por causa dele que o contexto precisava carregar a base inteira —
+// 46 mil títulos e 45 mil baixas, mais de trinta megabytes por chamada, o
+// suficiente para a fase de auditoria estourar os 60 segundos da função.
+//
+// Somando no banco, as seis janelas custam algumas dezenas de linhas de
+// resultado. E o contexto pôde encolher para o que os agentes de fato leem
+// (ver `janelaDeAuditoria`), que é onde estava o ganho.
+//
+// `resumoDoPeriodoNoBanco` é gêmeo verificado de `resumoDoPeriodo`: há um
+// teste diferencial que roda as duas sobre os mesmos dados e exige resultado
+// idêntico, campo a campo.
+export async function montarComparativo(ctx: ContextoAuditoria): Promise<ComparativoRelatorio> {
   const janelas = montarJanelas(ctx.dataReferencia);
+  const escopo = { companyId: ctx.companyId, conexaoId: ctx.conexaoId };
 
-  const dia = resumoDoPeriodo(ctx, janelas.dia);
-  const mesAtual = resumoDoPeriodo(ctx, janelas.mesAtual);
-  const mesAnterior = resumoDoPeriodo(ctx, janelas.mesAnterior);
-  const ano = resumoDoPeriodo(ctx, janelas.ano);
-  const anoAnterior = resumoDoPeriodo(ctx, janelas.anoAnterior);
-  const mesmoMesAnoAnterior = resumoDoPeriodo(ctx, janelas.mesmoMesAnoAnterior);
+  const [dia, mesAtual, mesAnterior, ano, anoAnterior, mesmoMesAnoAnterior] = await Promise.all([
+    resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.dia }),
+    resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesAtual }),
+    resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesAnterior }),
+    resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.ano }),
+    resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.anoAnterior }),
+    resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesmoMesAnoAnterior }),
+  ]);
 
   const semBaseAnoAnterior = ctx.config.dataInicioBase > janelas.anoAnterior.inicio;
 
@@ -240,8 +258,8 @@ export type PanoramaFinanceiro = {
   topClientes: LinhaRanking[];
 };
 
-export function montarPanorama(ctx: ContextoAuditoria): PanoramaFinanceiro {
-  const comparativo = montarComparativo(ctx);
+export async function montarPanorama(ctx: ContextoAuditoria): Promise<PanoramaFinanceiro> {
+  const comparativo = await montarComparativo(ctx);
   const pagarAberto = titulosAtivos(ctx, "PAGAR").filter(emAberto);
   const receberAberto = titulosAtivos(ctx, "RECEBER").filter(emAberto);
 

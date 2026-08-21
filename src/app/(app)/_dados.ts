@@ -2,7 +2,7 @@ import { requireRole } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/auth";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { fimDoMes, inicioDoDia, rotuloMes } from "@/lib/controladoria/periodos";
-import { carregarContexto } from "@/lib/controladoria/contexto";
+import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import type { ContextoAuditoria } from "@/lib/controladoria/types";
 import { prisma } from "@/lib/prisma";
 
@@ -96,7 +96,9 @@ export async function contextoDaPagina(
   const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
   const escopo = await resolverEscopo(session.companyId, empresaParam);
   const periodo = resolverPeriodo(competenciaParam);
-  const ctx = await carregarContexto(session.companyId, periodo.dataReferencia, escopo.conexaoId ?? undefined);
+  const ctx = await carregarContexto(session.companyId, periodo.dataReferencia, escopo.conexaoId ?? undefined, {
+    desde: janelaDeAuditoria(periodo.dataReferencia),
+  });
   return { session, ctx, escopo, periodo };
 }
 

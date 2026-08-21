@@ -41,7 +41,7 @@ export async function gerarEEnviarRelatorio(
   // cadastro da gestão quando é o consolidado do grupo.
   const empresa = conexao ? { name: conexao.nome } : await buscarEmpresa(ctx.companyId);
 
-  const panorama = montarPanorama(ctx);
+  const panorama = await montarPanorama(ctx);
 
   // Somente achados EM ABERTO entram no relatorio: o que ja foi tratado,
   // ignorado ou fechado automaticamente cumpriu o seu papel e reaparecer todo

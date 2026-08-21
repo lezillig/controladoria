@@ -81,6 +81,15 @@ export async function serieMensal(params: {
        GROUP BY 1, 2
        ORDER BY 1
     `,
+    // Sem `t.cancelado = false` aqui, ao contrário da competência acima, e
+    // isso não é descuido: é o que o painel e o relatório fazem.
+    //
+    // Competência pergunta "este título gerou resultado no mês?" — cancelado
+    // não gerou. Caixa pergunta "este dinheiro entrou ou saiu da conta?" — e
+    // se houve baixa, houve movimento, independentemente de o título ter sido
+    // cancelado depois. Alinhar os dois critérios "por coerência" faria esta
+    // tela discordar do painel sobre quanto entrou no mês, que é a
+    // divergência que mata a confiança no sistema.
     prisma.$queryRaw<LinhaCaixa[]>`
       SELECT date_trunc('month', b."dataBaixa") AS mes,
              t.natureza::text AS natureza,
@@ -88,7 +97,6 @@ export async function serieMensal(params: {
         FROM "OmieBaixa" b
         JOIN "OmieTitulo" t ON t.id = b."tituloId"
        WHERE b."companyId" = ${companyId}
-         AND t.cancelado = false
          AND b."dataBaixa" >= ${desde}
          AND b."dataBaixa" <= ${ate}
          ${filtroConexaoBaixa}

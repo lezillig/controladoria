@@ -18,7 +18,7 @@ export default async function RentabilidadePage({ searchParams }: { searchParams
   const { session, ctx, escopo } = await contextoDaPagina((await searchParams).empresa);
   const podeEditar = canManageControladoria(session.role);
 
-  const comparativo = montarComparativo(ctx);
+  const comparativo = await montarComparativo(ctx);
   const periodo = comparativo.janelas.mesAtual;
 
   const nomesCliente = new Map(ctx.clientes.map((c) => [c.id, c.nome]));

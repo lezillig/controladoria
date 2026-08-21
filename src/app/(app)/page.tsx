@@ -27,7 +27,7 @@ export default async function ControladoriaPage({
   const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
   const competencias = competenciasDisponiveis(ctx.config.dataInicioBase);
 
-  const panorama = montarPanorama(ctx);
+  const panorama = await montarPanorama(ctx);
   const c = panorama.comparativo;
   const qualidade = avaliarQualidadeDaBase(ctx);
   const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);

@@ -14,7 +14,7 @@ import { Barra, Kpi, Secao, SeletorEmpresa, Tabela, Variacao } from "../_compone
 export default async function CustosPage({ searchParams }: { searchParams: Promise<{ empresa?: string }> }) {
   const { ctx, escopo } = await contextoDaPagina((await searchParams).empresa);
 
-  const comparativo = montarComparativo(ctx);
+  const comparativo = await montarComparativo(ctx);
   const dre = dreGerencial(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior);
   const despesas = dre.filter((l) => l.natureza === "DESPESA");
   const receitas = dre.filter((l) => l.natureza === "RECEITA");

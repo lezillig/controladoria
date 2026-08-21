@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { carregarConformidade } from "@/lib/conformidade/panorama";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
-import { carregarContexto } from "@/lib/controladoria/contexto";
+import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import { executarAuditoria } from "@/lib/controladoria/engine";
 import { gerarEEnviarRelatorio } from "@/lib/controladoria/relatorio";
 import { parseLocalDate } from "@/lib/date";
@@ -36,7 +36,9 @@ export async function gerarRelatorioAgora(formData: FormData): Promise<Resultado
   if (dataReferencia > new Date()) return { erro: "Não é possível gerar relatório de uma data futura." };
 
   try {
-    const ctx = await carregarContexto(session.companyId, dataReferencia);
+    const ctx = await carregarContexto(session.companyId, dataReferencia, undefined, {
+      desde: janelaDeAuditoria(dataReferencia),
+    });
 
     // Roda a auditoria antes de montar o relatório: gerar o relatório sobre
     // achados de ontem, com dados de hoje, produziria um documento que não

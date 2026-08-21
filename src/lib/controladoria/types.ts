@@ -47,6 +47,24 @@ export type ContextoAuditoria = {
   // duplicidade pelas duas, caixa total do grupo, concentracao real.
   conexoes: OmieConexao[];
 
+  // A conexão a que ESTA leitura está restrita, ou null para o grupo inteiro.
+  //
+  // Sem isso, quem recebe o contexto não sabe qual recorte está vendo — e as
+  // somas agregadas, que não passam pelas linhas, precisam reproduzir
+  // exatamente o mesmo recorte. Sem essa informação, o painel filtrado por uma
+  // empresa mostraria o comparativo do grupo inteiro.
+  conexaoId: string | null;
+
+  // A partir de quando títulos, baixas e notas foram carregados.
+  //
+  // A leitura deixou de ser sempre "desde o início da base". Com 46 mil
+  // títulos e 45 mil baixas, carregar tudo passou de trinta megabytes por
+  // chamada e fez a fase de auditoria do ciclo diário estourar os 60 segundos
+  // da função — o ciclo parou de fechar. A janela existe para isso, e fica
+  // registrada aqui para que ninguém conclua "não há título em 2025" quando o
+  // correto é "2025 não foi carregado nesta leitura".
+  janelaDesde: Date;
+
   titulos: OmieTitulo[];
   baixas: OmieBaixa[];
   movimentos: OmieMovimento[];

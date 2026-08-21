@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { credencialConfigurada } from "@/lib/omie/client";
 import { executarFase, FASES, proximaFase, type FaseSync } from "@/lib/omie/sync";
-import { carregarContexto, garantirConfig } from "./contexto";
+import { carregarContexto, garantirConfig, janelaDeAuditoria } from "./contexto";
 import { executarAuditoria } from "./engine";
 import { gerarEEnviarRelatorio } from "./relatorio";
 import { fimDoDia, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
@@ -175,7 +175,7 @@ export async function executarPasso(params: {
 
   // ---- Auditoria (consolidada, grupo inteiro) ----
   if (fase === "auditoria") {
-    const ctx = await carregarContexto(companyId, run.janelaFim);
+    const ctx = await carregarContexto(companyId, run.janelaFim, undefined, { desde: janelaDeAuditoria(run.janelaFim) });
     const resultado = await executarAuditoria(ctx);
 
     // A conciliação com os apontamentos da consultoria roda DEPOIS da
@@ -244,7 +244,7 @@ export async function executarPasso(params: {
 
   // ---- Relatório ----
   if (fase === "relatorio") {
-    const ctx = await carregarContexto(companyId, run.janelaFim);
+    const ctx = await carregarContexto(companyId, run.janelaFim, undefined, { desde: janelaDeAuditoria(run.janelaFim) });
     const enviados: string[] = [];
 
     if (config.relatorioPorConexao && conexoes.length > 1) {
@@ -252,7 +252,7 @@ export async function executarPasso(params: {
       // conexão, então cada e-mail traz os números daquela empresa — e não uma
       // fatia do consolidado, que seria outra coisa.
       for (const c of conexoes) {
-        const ctxConexao = await carregarContexto(companyId, run.janelaFim, c.id);
+        const ctxConexao = await carregarContexto(companyId, run.janelaFim, c.id, { desde: janelaDeAuditoria(run.janelaFim) });
         const r = await gerarEEnviarRelatorio(ctxConexao, { enviar: true, conexao: c });
         enviados.push(
           r.enviado ? `[${c.apelido}] enviado para ${r.destinatarios.join(", ")}.` : `[${c.apelido}] não enviado: ${r.erro}`

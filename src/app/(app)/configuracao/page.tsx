@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
-import { carregarContexto } from "@/lib/controladoria/contexto";
+import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import { sugerirAlcadas } from "@/lib/controladoria/agents/oportunidades";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
 import { Secao, Tabela } from "../_componentes";
@@ -15,7 +15,9 @@ export default async function ConfiguracaoPage() {
   // mudar o parâmetro que define o que é "crítico" é mexer no próprio critério
   // de auditoria.
   const session = await requireRole("ADMIN", "CONTROLADORIA");
-  const ctx = await carregarContexto(session.companyId, dataReferenciaPadrao());
+  const ctx = await carregarContexto(session.companyId, dataReferenciaPadrao(), undefined, {
+    desde: janelaDeAuditoria(dataReferenciaPadrao()),
+  });
   const config = ctx.config;
 
   const sugestao = sugerirAlcadas(ctx);
