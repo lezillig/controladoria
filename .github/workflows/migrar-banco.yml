@@ -1,0 +1,210 @@
+# MIGRAÇÃO DO SCHEMA `controladoria` DE UM BANCO PARA OUTRO.
+#
+# Existe por um motivo específico: a gestão de motoristas passou a usar um
+# banco novo, e a Controladoria lê o schema `public` DAQUELE banco para três
+# coisas que não são acessórias — o login, a reconferência de sessão a cada
+# requisição, e os cruzamentos que dão valor à auditoria (fornecedor cujo CPF é
+# de motorista da folha, custo por veículo, combustível do cartão contra o
+# título do posto).
+#
+# Enquanto os dois estiverem em bancos diferentes, a Controladoria autentica
+# contra uma cópia congelada: quem for desativado na gestão continua entrando
+# aqui. Mover o schema é o que fecha isso.
+#
+# POR QUE UM WORKFLOW, e não um comando no terminal: `pg_dump` exige cliente da
+# mesma versão do servidor, e quem opera este sistema trabalha pelo navegador.
+# Aqui o runner instala a versão certa, e as duas strings de conexão ficam como
+# segredo do repositório — nunca passam por conversa, e-mail ou área de
+# transferência.
+#
+# ---------------------------------------------------------------------------
+# ANTES DE RODAR
+#
+# 1. Cadastrar em Settings → Secrets and variables → Actions:
+#
+#      DB_ORIGEM   — conexão DIRETA (unpooled) do banco ATUAL da Controladoria
+#      DB_DESTINO  — conexão DIRETA (unpooled) do banco NOVO, o da gestão
+#
+#    DIRETA, e não pooled: o pooler do Neon derruba conexões longas e sessões
+#    com estado, que é exatamente o que um dump e um restore são. A string
+#    direta é a que NÃO tem `-pooler` no host.
+#
+# 2. Parar o que grava: Vercel → controladoria → Settings → Cron Jobs →
+#    desabilitar. E não disparar o workflow da carga durante a migração.
+#
+# 3. O banco de destino NÃO pode já ter o schema `controladoria`. Se tiver, o
+#    workflow para e explica — restaurar por cima de dado existente é como se
+#    perde dado sem perceber.
+#
+# DEPOIS DE RODAR, e só depois de conferir as contagens que ele imprime:
+# trocar DATABASE_URL e DIRECT_URL do projeto controladoria na Vercel para o
+# banco novo (com `?sslmode=require&schema=controladoria`) e republicar.
+# ---------------------------------------------------------------------------
+
+name: Migrar banco da Controladoria
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmacao:
+        description: 'Digite MIGRAR para confirmar. Qualquer outra coisa cancela.'
+        required: true
+        default: ""
+
+concurrency:
+  group: migrar-banco-controladoria
+  cancel-in-progress: false
+
+jobs:
+  migrar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Conferir a confirmação
+        # Porta de entrada deliberadamente chata. Este workflow escreve num
+        # banco de produção; um clique acidental em "Run workflow" não pode ser
+        # suficiente para disparar isso.
+        run: |
+          if [ "${{ inputs.confirmacao }}" != "MIGRAR" ]; then
+            echo "::error::Confirmação ausente ou diferente de MIGRAR. Nada foi feito."
+            exit 1
+          fi
+
+      - name: Instalar cliente Postgres compatível
+        # O cliente precisa ser da mesma versão do servidor, ou mais novo. O
+        # Ubuntu do runner traz o 16; o repositório oficial traz o 17, que lê
+        # servidor 15, 16 e 17. Sem isso, `pg_dump` recusa com "server version
+        # mismatch" — erro que parece de credencial e não é.
+        run: |
+          set -euo pipefail
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          pg_dump --version
+
+      - name: Migrar
+        env:
+          DB_ORIGEM: ${{ secrets.DB_ORIGEM }}
+          DB_DESTINO: ${{ secrets.DB_DESTINO }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          set +e
+
+          if [ -z "${DB_ORIGEM:-}" ] || [ -z "${DB_DESTINO:-}" ]; then
+            echo "::error::Faltam os segredos DB_ORIGEM e/ou DB_DESTINO."
+            exit 1
+          fi
+
+          export PATH=/usr/lib/postgresql/17/bin:$PATH
+
+          # ---- 1. Alcançar os dois lados antes de mexer em qualquer coisa ----
+          for lado in ORIGEM DESTINO; do
+            url=$([ "$lado" = "ORIGEM" ] && echo "$DB_ORIGEM" || echo "$DB_DESTINO")
+            versao=$(psql "$url" -tAc "SELECT version()" 2>&1)
+            if [ $? -ne 0 ]; then
+              echo "::error::Não consegui conectar no banco de $lado: $versao"
+              exit 1
+            fi
+            echo "$lado: $(echo "$versao" | cut -d, -f1)"
+          done
+
+          # ---- 2. O destino não pode já ter o schema ----
+          # Restaurar por cima de dado existente é como se perde dado sem
+          # perceber: algumas tabelas ficam com o conteúdo antigo, outras com o
+          # novo, e nada avisa.
+          existe=$(psql "$DB_DESTINO" -tAc \
+            "SELECT count(*) FROM information_schema.schemata WHERE schema_name='controladoria'")
+          if [ "$existe" != "0" ]; then
+            echo "::error::O banco de destino JÁ tem o schema 'controladoria'. Este workflow não sobrescreve nada. Se ele estiver vazio e puder ser descartado, apague-o no destino (DROP SCHEMA controladoria CASCADE) e rode de novo — conferindo antes que é mesmo o banco certo."
+            exit 1
+          fi
+
+          # ---- 3. Retrato da origem, ANTES ----
+          echo "--- contagens na ORIGEM ---"
+          psql "$DB_ORIGEM" -tAc "
+            SELECT relname || '=' || n_live_tup
+              FROM pg_stat_user_tables
+             WHERE schemaname='controladoria'
+             ORDER BY relname" | tee /tmp/antes.txt
+
+          # ---- 4. Dump ----
+          # Schema inteiro: estrutura, dados e a tabela _prisma_migrations, que
+          # mora dentro dele. Levar o histórico de migrações junto é o que faz o
+          # `prisma migrate deploy` do próximo build encontrar tudo aplicado e
+          # não tentar recriar nada.
+          #
+          # --no-owner e --no-acl porque o nome do papel dono difere entre
+          # projetos do Neon, e sem isso o restore falha em toda linha de
+          # ownership por um motivo que não tem nada a ver com os dados.
+          echo "--- dump ---"
+          pg_dump "$DB_ORIGEM" --schema=controladoria --no-owner --no-acl \
+            --format=plain --file=/tmp/dump.sql 2>/tmp/dump.err
+          if [ $? -ne 0 ]; then
+            echo "::error::pg_dump falhou: $(tail -5 /tmp/dump.err)"
+            exit 1
+          fi
+          echo "dump: $(du -h /tmp/dump.sql | cut -f1), $(wc -l < /tmp/dump.sql) linhas"
+
+          # ---- 5. Restore ----
+          # ON_ERROR_STOP=1: sem isso o psql segue adiante depois de um erro e
+          # termina com sucesso tendo restaurado metade — o pior desfecho
+          # possível, porque parece que deu certo.
+          echo "--- restore ---"
+          psql "$DB_DESTINO" -v ON_ERROR_STOP=1 -q -o /dev/null -f /tmp/dump.sql 2>/tmp/restore.err
+          if [ $? -ne 0 ]; then
+            echo "::error::Restore falhou: $(tail -10 /tmp/restore.err)"
+            echo "O destino pode ter ficado pela metade. Antes de tentar de novo: DROP SCHEMA controladoria CASCADE no destino."
+            exit 1
+          fi
+
+          # ---- 6. Conferência: contagem real dos dois lados ----
+          # `pg_stat_user_tables` é estimativa e não serve para conferir. Aqui a
+          # contagem é COUNT(*) de verdade, tabela a tabela, nos dois bancos.
+          echo "--- conferência ---"
+          tabelas=$(psql "$DB_ORIGEM" -tAc \
+            "SELECT tablename FROM pg_tables WHERE schemaname='controladoria' ORDER BY tablename")
+
+          divergentes=0
+          {
+            echo "## Migração do schema controladoria"
+            echo ""
+            echo "| Tabela | Origem | Destino | |"
+            echo "|---|---:|---:|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for t in $tabelas; do
+            a=$(psql "$DB_ORIGEM"  -tAc "SELECT count(*) FROM controladoria.\"$t\"")
+            b=$(psql "$DB_DESTINO" -tAc "SELECT count(*) FROM controladoria.\"$t\"")
+            if [ "$a" = "$b" ]; then
+              marca="ok"
+            else
+              marca="**DIVERGE**"
+              divergentes=$((divergentes + 1))
+              echo "::warning::$t: origem=$a destino=$b"
+            fi
+            echo "$t: origem=$a destino=$b $marca"
+            echo "| $t | $a | $b | $marca |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$divergentes" -ne 0 ]; then
+            echo "::error::$divergentes tabela(s) com contagem diferente. NÃO troque as variáveis da Vercel."
+            echo "**$divergentes tabela(s) divergente(s) — não troque as variáveis da Vercel.**" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "Todas as tabelas conferem."
+          {
+            echo "Todas as tabelas conferem. Próximo passo: trocar \`DATABASE_URL\` e \`DIRECT_URL\`"
+            echo "do projeto controladoria na Vercel para o banco novo, com"
+            echo "\`?sslmode=require&schema=controladoria\`, e republicar."
+            echo ""
+            echo "O banco antigo NÃO deve ser apagado hoje — ele é a única volta se algo passar despercebido."
+          } >> "$GITHUB_STEP_SUMMARY"
