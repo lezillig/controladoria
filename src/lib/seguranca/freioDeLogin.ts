@@ -31,7 +31,17 @@ const LIMITE_POR_EMAIL = 8;
 // de senha, produz um punhado de erros legítimos ao mesmo tempo.
 const LIMITE_POR_ORIGEM = 25;
 
-export type MotivoTentativa = "ok" | "senha" | "desconhecido" | "inativo" | "sem_permissao" | "bloqueado";
+export type MotivoTentativa =
+  | "ok"
+  | "senha"
+  | "desconhecido"
+  | "inativo"
+  | "sem_permissao"
+  | "bloqueado"
+  // Banco de usuários fora do ar. Distinto de "senha": um é tentativa de
+  // acesso, o outro é falha de infraestrutura, e contá-los juntos faria uma
+  // queda de banco parecer um ataque em curso na trilha.
+  | "indisponivel";
 
 export type Veredicto = { bloqueado: false } | { bloqueado: true; segundosParaLiberar: number };
 

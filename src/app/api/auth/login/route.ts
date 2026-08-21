@@ -65,7 +65,26 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const user = await buscarUsuarioPorEmail(email);
+  const busca = await buscarUsuarioPorEmail(email);
+
+  // Banco fora do ar não é senha errada, e dizer que é manda a pessoa para o
+  // caminho errado: ela troca a senha, pede reset, abre chamado — enquanto o
+  // problema é outro e ninguém está olhando para ele. 503 com a causa nomeada.
+  //
+  // Não vaza nada: a resposta é idêntica para qualquer e-mail, exista ou não,
+  // porque nem chegou a consultar.
+  if (busca.situacao === "indisponivel") {
+    await anotar(false, "indisponivel");
+    return NextResponse.json(
+      {
+        error:
+          "O banco de dados não respondeu. Não é a sua senha — tente de novo em alguns minutos. Se persistir, avise quem cuida do sistema: pode ser configuração de conexão.",
+      },
+      { status: 503 }
+    );
+  }
+
+  const user = busca.situacao === "encontrado" ? busca.usuario : null;
 
   // A comparação roda SEMPRE, inclusive sem usuário, para o tempo de resposta
   // não revelar quais e-mails existem.

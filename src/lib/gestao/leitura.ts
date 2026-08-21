@@ -149,7 +149,20 @@ export type UsuarioGestao = {
   active: boolean;
 };
 
-export async function buscarUsuarioPorEmail(email: string): Promise<UsuarioGestao | null> {
+// Três resultados, não dois — pelo mesmo motivo de `conferirAcessoDoUsuario`.
+//
+// "Não encontrei o usuário" e "não consegui perguntar ao banco" negam o acesso
+// igualmente, mas exigem mensagens opostas para quem está na tela. Colapsar os
+// dois em `null` fazia a Controladoria responder "Credenciais inválidas" a uma
+// falha de banco — e a pessoa ia trocar a senha, abrir chamado e procurar
+// defeito onde não havia. Foi exatamente o que aconteceu quando a gestão mudou
+// de banco: o login parou, e a tela culpou a senha.
+export type ResultadoBuscaUsuario =
+  | { situacao: "encontrado"; usuario: UsuarioGestao }
+  | { situacao: "nao_encontrado" }
+  | { situacao: "indisponivel"; erro: string };
+
+export async function buscarUsuarioPorEmail(email: string): Promise<ResultadoBuscaUsuario> {
   try {
     const linhas = await prisma.$queryRaw<UsuarioGestao[]>`
       SELECT id, "companyId", name, email, "passwordHash", role::text AS role, active
@@ -157,12 +170,12 @@ export async function buscarUsuarioPorEmail(email: string): Promise<UsuarioGesta
       WHERE lower(email) = lower(${email})
       LIMIT 1
     `;
-    return linhas[0] ?? null;
-  } catch {
-    // Falha de leitura aqui é falha de login — e login que "falha aberto"
-    // seria a pior falha possível neste sistema. Devolve null (nega o acesso)
-    // em vez de qualquer tratamento tolerante.
-    return null;
+    const usuario = linhas[0];
+    return usuario ? { situacao: "encontrado", usuario } : { situacao: "nao_encontrado" };
+  } catch (e) {
+    // O acesso continua NEGADO — login que "falha aberto" seria a pior falha
+    // possível neste sistema. O que muda é só o que se diz a quem tentou.
+    return { situacao: "indisponivel", erro: e instanceof Error ? e.message : "erro desconhecido" };
   }
 }
 
