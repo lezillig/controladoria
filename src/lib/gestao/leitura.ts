@@ -166,6 +166,39 @@ export async function buscarUsuarioPorEmail(email: string): Promise<UsuarioGesta
   }
 }
 
+// Estado ATUAL do acesso de um usuário, para reconferir uma sessão já aberta.
+//
+// "indisponivel" é um terceiro estado de propósito, e não um `null`. As três
+// situações pedem decisões opostas de quem chama:
+//   - revogado  → derrubar a sessão agora;
+//   - ativo     → seguir, com o papel que está no banco AGORA;
+//   - indisponível → não dá para afirmar nada, e derrubar todo mundo porque o
+//     banco piscou seria transformar uma instabilidade em apagão de acesso.
+//
+// Colapsar os três em dois é o erro clássico aqui: `null` para "erro" faria
+// uma queda de banco expulsar a empresa inteira do sistema, e `null` para
+// "revogado" faria um erro de leitura manter o demitido dentro. Os dois são
+// inaceitáveis, por motivos diferentes.
+export type AcessoAtual = { situacao: "ativo"; role: string } | { situacao: "revogado" } | { situacao: "indisponivel" };
+
+export async function conferirAcessoDoUsuario(userId: string): Promise<AcessoAtual> {
+  try {
+    const linhas = await prisma.$queryRaw<{ role: string; active: boolean }[]>`
+      SELECT role::text AS role, active
+      FROM public."User"
+      WHERE id = ${userId}
+      LIMIT 1
+    `;
+    const usuario = linhas[0];
+    // Usuário apagado do cadastro também é acesso revogado — a consulta não
+    // encontrar a linha é uma resposta, não uma falha.
+    if (!usuario || !usuario.active) return { situacao: "revogado" };
+    return { situacao: "ativo", role: usuario.role };
+  } catch {
+    return { situacao: "indisponivel" };
+  }
+}
+
 export async function buscarEmpresa(companyId: string): Promise<{ id: string; name: string } | null> {
   try {
     const linhas = await prisma.$queryRaw<{ id: string; name: string }[]>`
