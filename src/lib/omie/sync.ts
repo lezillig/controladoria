@@ -70,6 +70,28 @@ function vazio(): ResultadoFase {
 
 const REGISTROS_POR_PAGINA = 200;
 
+// Tamanho do lote de escrita, deliberadamente menor que a página.
+//
+// Uma transação com duzentas operações segura uma conexão do começo ao fim, e
+// várias invocações simultâneas multiplicam isso — foi o que derrubou o banco
+// compartilhado com o sistema de gestão no meio da primeira carga. Lotes de
+// vinte e cinco mantêm quase todo o ganho de latência (vinte idas de rede por
+// página em vez de quinhentas) sem prender conexão por transação longa.
+//
+// O limite existe porque o banco é COMPARTILHADO: carregar histórico
+// financeiro não pode derrubar a operação de frota que roda no mesmo Postgres.
+const OPERACOES_POR_LOTE = 25;
+
+// Executa as operações em transações menores, em sequência.
+//
+// Sequencial de propósito: paralelizar os lotes devolveria a mesma pressão de
+// conexões que este limite existe para evitar.
+async function gravarEmLotes<T>(operacoes: T[], executar: (lote: T[]) => Promise<unknown>): Promise<void> {
+  for (let i = 0; i < operacoes.length; i += OPERACOES_POR_LOTE) {
+    await executar(operacoes.slice(i, i + OPERACOES_POR_LOTE));
+  }
+}
+
 // As baixas são gravadas em tabela própria, então saem do objeto do título
 // antes do upsert.
 function semBaixas<T extends { baixas: unknown }>(t: T): Omit<T, "baixas"> {
@@ -204,33 +226,37 @@ async function gravarCadastros(
     });
     const hashAnterior = new Map(anteriores.map((a) => [a.codigoOmie, a.contaBancariaHash]));
 
-    await prisma.$transaction(
-      parceiros.map((p) => {
-        const antes = hashAnterior.get(p.codigoOmie) ?? null;
-        const trocou = antes !== null && p.contaBancariaHash !== null && antes !== p.contaBancariaHash;
-        return prisma.omieParceiro.upsert({
-          where: { conexaoId_codigoOmie: { conexaoId, codigoOmie: p.codigoOmie } },
-          create: { ...comuns, ...p, sincronizadoEm: agora },
-          update: {
-            ...p,
-            ...(trocou ? { contaBancariaAlteradaEm: agora } : {}),
-            sincronizadoEm: agora,
-          },
-        });
-      })
+    await gravarEmLotes(parceiros, (lote) =>
+      prisma.$transaction(
+        lote.map((p) => {
+          const antes = hashAnterior.get(p.codigoOmie) ?? null;
+          const trocou = antes !== null && p.contaBancariaHash !== null && antes !== p.contaBancariaHash;
+          return prisma.omieParceiro.upsert({
+            where: { conexaoId_codigoOmie: { conexaoId, codigoOmie: p.codigoOmie } },
+            create: { ...comuns, ...p, sincronizadoEm: agora },
+            update: {
+              ...p,
+              ...(trocou ? { contaBancariaAlteradaEm: agora } : {}),
+              sincronizadoEm: agora,
+            },
+          });
+        })
+      )
     );
     return parceiros.length;
   }
 
   if (entidade === "categorias") {
     const registros = itens.map(normalizarCategoria).filter((c): c is NonNullable<typeof c> => c !== null);
-    await prisma.$transaction(
-      registros.map((c) =>
-        prisma.omieCategoria.upsert({
-          where: { conexaoId_codigo: { conexaoId, codigo: c.codigo } },
-          create: { ...comuns, ...c },
-          update: { ...c, sincronizadoEm: agora },
-        })
+    await gravarEmLotes(registros, (lote) =>
+      prisma.$transaction(
+        lote.map((c) =>
+          prisma.omieCategoria.upsert({
+            where: { conexaoId_codigo: { conexaoId, codigo: c.codigo } },
+            create: { ...comuns, ...c },
+            update: { ...c, sincronizadoEm: agora },
+          })
+        )
       )
     );
     return registros.length;
@@ -238,13 +264,15 @@ async function gravarCadastros(
 
   if (entidade === "departamentos") {
     const registros = itens.map(normalizarDepartamento).filter((d): d is NonNullable<typeof d> => d !== null);
-    await prisma.$transaction(
-      registros.map((d) =>
-        prisma.omieDepartamento.upsert({
-          where: { conexaoId_codigo: { conexaoId, codigo: d.codigo } },
-          create: { ...comuns, ...d },
-          update: { ...d, sincronizadoEm: agora },
-        })
+    await gravarEmLotes(registros, (lote) =>
+      prisma.$transaction(
+        lote.map((d) =>
+          prisma.omieDepartamento.upsert({
+            where: { conexaoId_codigo: { conexaoId, codigo: d.codigo } },
+            create: { ...comuns, ...d },
+            update: { ...d, sincronizadoEm: agora },
+          })
+        )
       )
     );
     return registros.length;
@@ -252,26 +280,30 @@ async function gravarCadastros(
 
   if (entidade === "projetos") {
     const registros = itens.map(normalizarProjeto).filter((p): p is NonNullable<typeof p> => p !== null);
-    await prisma.$transaction(
-      registros.map((p) =>
-        prisma.omieProjeto.upsert({
-          where: { conexaoId_codigo: { conexaoId, codigo: p.codigo } },
-          create: { ...comuns, ...p },
-          update: { ...p, sincronizadoEm: agora },
-        })
+    await gravarEmLotes(registros, (lote) =>
+      prisma.$transaction(
+        lote.map((p) =>
+          prisma.omieProjeto.upsert({
+            where: { conexaoId_codigo: { conexaoId, codigo: p.codigo } },
+            create: { ...comuns, ...p },
+            update: { ...p, sincronizadoEm: agora },
+          })
+        )
       )
     );
     return registros.length;
   }
 
   const contas = itens.map(normalizarContaCorrente).filter((c): c is NonNullable<typeof c> => c !== null);
-  await prisma.$transaction(
-    contas.map((cc) =>
-      prisma.omieContaCorrente.upsert({
-        where: { conexaoId_codigo: { conexaoId, codigo: cc.codigo } },
-        create: { ...comuns, ...cc },
-        update: { ...cc, sincronizadoEm: agora },
-      })
+  await gravarEmLotes(contas, (lote) =>
+    prisma.$transaction(
+      lote.map((cc) =>
+        prisma.omieContaCorrente.upsert({
+          where: { conexaoId_codigo: { conexaoId, codigo: cc.codigo } },
+          create: { ...comuns, ...cc },
+          update: { ...cc, sincronizadoEm: agora },
+        })
+      )
     )
   );
   return contas.length;
@@ -423,27 +455,35 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         n.parceiroNome ? n : { ...n, parceiroNome: nomePorCodigo.get(n.parceiroCodigo ?? "") ?? null }
       );
 
-      const gravados = await prisma.$transaction(
-        comNome.map((t) =>
-          prisma.omieTitulo.upsert({
-            where: {
-              conexaoId_natureza_codigoLancamento: {
-                conexaoId: ctx.conexaoId,
-                natureza: passo.natureza,
-                codigoLancamento: t.codigoLancamento,
+      // Os ids voltam na ordem em que as operações entraram, e é assim que
+      // cada baixa encontra o seu título. Acumular lote a lote preserva essa
+      // ordem — o que a versão de transação única dava de graça e passa a ser
+      // responsabilidade daqui.
+      const gravados: { id: string }[] = [];
+      await gravarEmLotes(comNome, async (lote) => {
+        const parcial = await prisma.$transaction(
+          lote.map((t) =>
+            prisma.omieTitulo.upsert({
+              where: {
+                conexaoId_natureza_codigoLancamento: {
+                  conexaoId: ctx.conexaoId,
+                  natureza: passo.natureza,
+                  codigoLancamento: t.codigoLancamento,
+                },
               },
-            },
-            create: {
-              companyId: ctx.companyId,
-              conexaoId: ctx.conexaoId,
-              conexaoApelido: ctx.conexaoApelido,
-              ...semBaixas(t),
-            },
-            update: { ...semBaixas(t), sincronizadoEm: new Date() },
-            select: { id: true },
-          })
-        )
-      );
+              create: {
+                companyId: ctx.companyId,
+                conexaoId: ctx.conexaoId,
+                conexaoApelido: ctx.conexaoApelido,
+                ...semBaixas(t),
+              },
+              update: { ...semBaixas(t), sincronizadoEm: new Date() },
+              select: { id: true },
+            })
+          )
+        );
+        gravados.push(...parcial);
+      });
 
       const baixasDaPagina = comNome.flatMap((t, i) =>
         t.baixas.map((b) =>
@@ -454,7 +494,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
           })
         )
       );
-      if (baixasDaPagina.length > 0) await prisma.$transaction(baixasDaPagina);
+      await gravarEmLotes(baixasDaPagina, (lote) => prisma.$transaction(lote));
 
       res.baixas += baixasDaPagina.length;
       if (passo.natureza === "PAGAR") res.titulosPagar += comNome.length;
