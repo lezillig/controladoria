@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
-import { waitUntil } from "@vercel/functions";
 import { prisma } from "@/lib/prisma";
 import { listarEmpresasAtivas } from "@/lib/gestao/leitura";
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
+import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { parseLocalDate } from "@/lib/date";
 
 // Ciclo diário da Controladoria: sincroniza a Omie, roda os agentes de
@@ -21,7 +21,7 @@ import { parseLocalDate } from "@/lib/date";
 // relatório nunca sai antes da sincronização terminar.
 //
 // Auto-encadeamento: cada invocação trabalha dentro de um orçamento seguro e,
-// se sobrar trabalho, dispara uma nova invocação de si mesma via waitUntil
+// se sobrar trabalho, dispara uma nova invocação de si mesma (ver encadear.ts)
 // (que garante o disparo antes de a instância congelar). Mesmo desenho já
 // validado em produção pelo import do TiqueTaque.
 export const maxDuration = 60;
@@ -101,14 +101,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (continua && ciclo < MAX_CICLOS) {
-    const proxima = new URL(req.nextUrl.pathname, req.nextUrl.origin);
-    proxima.searchParams.set("ciclo", String(ciclo + 1));
-    if (dataParam) proxima.searchParams.set("data", dataParam);
-    waitUntil(
-      fetch(proxima.toString(), {
-        headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
-      }).catch(() => {})
-    );
+    dispararProximaInvocacao({ ciclo: ciclo + 1, data: dataParam });
   }
 
   return NextResponse.json({

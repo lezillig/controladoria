@@ -70,6 +70,14 @@ function vazio(): ResultadoFase {
 
 const REGISTROS_POR_PAGINA = 200;
 
+// As baixas são gravadas em tabela própria, então saem do objeto do título
+// antes do upsert.
+function semBaixas<T extends { baixas: unknown }>(t: T): Omit<T, "baixas"> {
+  const { baixas, ...resto } = t;
+  void baixas;
+  return resto;
+}
+
 export type ContextoFase = {
   companyId: string;
   // Conexao Omie desta execucao. O sync roda SEMPRE no escopo de uma conexao:
@@ -163,93 +171,110 @@ async function sincronizarCadastros(ctx: ContextoFase): Promise<ResultadoFase> {
   return { ...res, faseConcluida: true };
 }
 
+// Grava uma página de cadastros em UM lote.
+//
+// Antes era um upsert por registro — e, no caso de cliente, duas idas ao banco
+// por registro, porque o hash bancário anterior era consultado um a um. Com
+// 8.572 clientes numa conta, isso passa de dezessete mil viagens de rede entre
+// a função na Vercel e o banco no Neon. A latência dessas viagens, e não o
+// volume de dados, é o que consumia as invocações de 40 segundos.
+//
+// `$transaction` com array despacha o lote de uma vez. A leitura dos hashes
+// vira uma consulta por página, em vez de uma por cliente.
 async function gravarCadastros(
   ctx: ContextoFase,
   entidade: (typeof ENTIDADES_CADASTRO)[number],
   itens: Record<string, unknown>[]
 ): Promise<number> {
   const { companyId, conexaoId, conexaoApelido } = ctx;
-  let gravados = 0;
+  const comuns = { companyId, conexaoId, conexaoApelido };
+  const agora = new Date();
 
-  for (const bruto of itens) {
-    if (entidade === "clientes") {
-      const p = normalizarParceiro(bruto);
-      if (!p) continue;
-      const { contaBancariaHash, ...resto } = p;
-      // Troca de dados bancarios de fornecedor e o vetor classico de fraude
-      // de boleto. O carimbo de "alterada em" so muda quando o hash MUDA
-      // (nunca quando ele aparece pela primeira vez, que e so o cadastro
-      // sendo espelhado) — ver o agente antifraude, regra FR-CONTA-ALTERADA.
-      const atual = await prisma.omieParceiro.findUnique({
-        where: { conexaoId_codigoOmie: { conexaoId, codigoOmie: p.codigoOmie } },
-        select: { contaBancariaHash: true },
-      });
-      const trocou =
-        atual?.contaBancariaHash != null &&
-        contaBancariaHash != null &&
-        atual.contaBancariaHash !== contaBancariaHash;
+  if (entidade === "clientes") {
+    const parceiros = itens.map(normalizarParceiro).filter((p): p is NonNullable<typeof p> => p !== null);
+    if (parceiros.length === 0) return 0;
 
-      await prisma.omieParceiro.upsert({
-        where: { conexaoId_codigoOmie: { conexaoId, codigoOmie: p.codigoOmie } },
-        create: { companyId, conexaoId, conexaoApelido, ...resto, contaBancariaHash, sincronizadoEm: new Date() },
-        update: {
-          ...resto,
-          contaBancariaHash,
-          ...(trocou ? { contaBancariaAlteradaEm: new Date() } : {}),
-          sincronizadoEm: new Date(),
-        },
-      });
-      gravados++;
-      continue;
-    }
-
-    if (entidade === "categorias") {
-      const c = normalizarCategoria(bruto);
-      if (!c) continue;
-      await prisma.omieCategoria.upsert({
-        where: { conexaoId_codigo: { conexaoId, codigo: c.codigo } },
-        create: { companyId, conexaoId, conexaoApelido, ...c },
-        update: { ...c, sincronizadoEm: new Date() },
-      });
-      gravados++;
-      continue;
-    }
-
-    if (entidade === "departamentos") {
-      const d = normalizarDepartamento(bruto);
-      if (!d) continue;
-      await prisma.omieDepartamento.upsert({
-        where: { conexaoId_codigo: { conexaoId, codigo: d.codigo } },
-        create: { companyId, conexaoId, conexaoApelido, ...d },
-        update: { ...d, sincronizadoEm: new Date() },
-      });
-      gravados++;
-      continue;
-    }
-
-    if (entidade === "projetos") {
-      const p = normalizarProjeto(bruto);
-      if (!p) continue;
-      await prisma.omieProjeto.upsert({
-        where: { conexaoId_codigo: { conexaoId, codigo: p.codigo } },
-        create: { companyId, conexaoId, conexaoApelido, ...p },
-        update: { ...p, sincronizadoEm: new Date() },
-      });
-      gravados++;
-      continue;
-    }
-
-    const cc = normalizarContaCorrente(bruto);
-    if (!cc) continue;
-    await prisma.omieContaCorrente.upsert({
-      where: { conexaoId_codigo: { conexaoId, codigo: cc.codigo } },
-      create: { companyId, conexaoId, conexaoApelido, ...cc },
-      update: { ...cc, sincronizadoEm: new Date() },
+    // Troca de dados bancários de fornecedor é o vetor clássico de fraude de
+    // boleto. O carimbo de "alterada em" só muda quando o hash MUDA — nunca
+    // quando ele aparece pela primeira vez, que é só o cadastro sendo
+    // espelhado. Ver o agente antifraude, regra FR-CONTA-ALTERADA.
+    const anteriores = await prisma.omieParceiro.findMany({
+      where: { conexaoId, codigoOmie: { in: parceiros.map((p) => p.codigoOmie) } },
+      select: { codigoOmie: true, contaBancariaHash: true },
     });
-    gravados++;
+    const hashAnterior = new Map(anteriores.map((a) => [a.codigoOmie, a.contaBancariaHash]));
+
+    await prisma.$transaction(
+      parceiros.map((p) => {
+        const antes = hashAnterior.get(p.codigoOmie) ?? null;
+        const trocou = antes !== null && p.contaBancariaHash !== null && antes !== p.contaBancariaHash;
+        return prisma.omieParceiro.upsert({
+          where: { conexaoId_codigoOmie: { conexaoId, codigoOmie: p.codigoOmie } },
+          create: { ...comuns, ...p, sincronizadoEm: agora },
+          update: {
+            ...p,
+            ...(trocou ? { contaBancariaAlteradaEm: agora } : {}),
+            sincronizadoEm: agora,
+          },
+        });
+      })
+    );
+    return parceiros.length;
   }
 
-  return gravados;
+  if (entidade === "categorias") {
+    const registros = itens.map(normalizarCategoria).filter((c): c is NonNullable<typeof c> => c !== null);
+    await prisma.$transaction(
+      registros.map((c) =>
+        prisma.omieCategoria.upsert({
+          where: { conexaoId_codigo: { conexaoId, codigo: c.codigo } },
+          create: { ...comuns, ...c },
+          update: { ...c, sincronizadoEm: agora },
+        })
+      )
+    );
+    return registros.length;
+  }
+
+  if (entidade === "departamentos") {
+    const registros = itens.map(normalizarDepartamento).filter((d): d is NonNullable<typeof d> => d !== null);
+    await prisma.$transaction(
+      registros.map((d) =>
+        prisma.omieDepartamento.upsert({
+          where: { conexaoId_codigo: { conexaoId, codigo: d.codigo } },
+          create: { ...comuns, ...d },
+          update: { ...d, sincronizadoEm: agora },
+        })
+      )
+    );
+    return registros.length;
+  }
+
+  if (entidade === "projetos") {
+    const registros = itens.map(normalizarProjeto).filter((p): p is NonNullable<typeof p> => p !== null);
+    await prisma.$transaction(
+      registros.map((p) =>
+        prisma.omieProjeto.upsert({
+          where: { conexaoId_codigo: { conexaoId, codigo: p.codigo } },
+          create: { ...comuns, ...p },
+          update: { ...p, sincronizadoEm: agora },
+        })
+      )
+    );
+    return registros.length;
+  }
+
+  const contas = itens.map(normalizarContaCorrente).filter((c): c is NonNullable<typeof c> => c !== null);
+  await prisma.$transaction(
+    contas.map((cc) =>
+      prisma.omieContaCorrente.upsert({
+        where: { conexaoId_codigo: { conexaoId, codigo: cc.codigo } },
+        create: { ...comuns, ...cc },
+        update: { ...cc, sincronizadoEm: agora },
+      })
+    )
+  );
+  return contas.length;
 }
 
 // ---------- Fase 2: titulos ----------
@@ -379,42 +404,61 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         for (const p of parceiros) nomePorCodigo.set(p.codigoOmie, p.nome);
       }
 
-      for (const normalizado of normalizados) {
-        const t = normalizado.parceiroNome
-          ? normalizado
-          : { ...normalizado, parceiroNome: nomePorCodigo.get(normalizado.parceiroCodigo ?? "") ?? null };
-        const { baixas, ...campos } = t;
+      // Gravação em DOIS lotes, e não um upsert por registro.
+      //
+      // A versão anterior fazia uma ida ao banco por título e outra por baixa:
+      // com 200 registros por página, umas 500 idas e voltas. A função roda na
+      // Vercel e o banco é o Neon; cada ida paga latência de rede, e o efeito
+      // medido foi uma janela mensal não terminar em nove invocações de 40
+      // segundos — o que, em 38 janelas, nunca fecharia a carga.
+      //
+      // `$transaction` com um ARRAY de operações despacha o lote de uma vez, e
+      // devolve os resultados na ordem em que entraram — que é como os ids dos
+      // títulos chegam para as baixas. Dois lotes por página, em vez de
+      // quinhentas viagens.
+      //
+      // Baixa depende do id do seu título, então os lotes não podem virar um
+      // só. A ordem entre eles importa e está garantida pelo await.
+      const comNome = normalizados.map((n) =>
+        n.parceiroNome ? n : { ...n, parceiroNome: nomePorCodigo.get(n.parceiroCodigo ?? "") ?? null }
+      );
 
-        const titulo = await prisma.omieTitulo.upsert({
-          where: {
-            conexaoId_natureza_codigoLancamento: {
-              conexaoId: ctx.conexaoId,
-              natureza: passo.natureza,
-              codigoLancamento: t.codigoLancamento,
+      const gravados = await prisma.$transaction(
+        comNome.map((t) =>
+          prisma.omieTitulo.upsert({
+            where: {
+              conexaoId_natureza_codigoLancamento: {
+                conexaoId: ctx.conexaoId,
+                natureza: passo.natureza,
+                codigoLancamento: t.codigoLancamento,
+              },
             },
-          },
-          create: {
-            companyId: ctx.companyId,
-            conexaoId: ctx.conexaoId,
-            conexaoApelido: ctx.conexaoApelido,
-            ...campos,
-          },
-          update: { ...campos, sincronizadoEm: new Date() },
-          select: { id: true },
-        });
+            create: {
+              companyId: ctx.companyId,
+              conexaoId: ctx.conexaoId,
+              conexaoApelido: ctx.conexaoApelido,
+              ...semBaixas(t),
+            },
+            update: { ...semBaixas(t), sincronizadoEm: new Date() },
+            select: { id: true },
+          })
+        )
+      );
 
-        for (const b of baixas) {
-          await prisma.omieBaixa.upsert({
+      const baixasDaPagina = comNome.flatMap((t, i) =>
+        t.baixas.map((b) =>
+          prisma.omieBaixa.upsert({
             where: { conexaoId_chave: { conexaoId: ctx.conexaoId, chave: b.chave } },
-            create: { companyId: ctx.companyId, conexaoId: ctx.conexaoId, tituloId: titulo.id, ...b },
-            update: { ...b, tituloId: titulo.id, sincronizadoEm: new Date() },
-          });
-          res.baixas++;
-        }
+            create: { companyId: ctx.companyId, conexaoId: ctx.conexaoId, tituloId: gravados[i].id, ...b },
+            update: { ...b, tituloId: gravados[i].id, sincronizadoEm: new Date() },
+          })
+        )
+      );
+      if (baixasDaPagina.length > 0) await prisma.$transaction(baixasDaPagina);
 
-        if (passo.natureza === "PAGAR") res.titulosPagar++;
-        else res.titulosReceber++;
-      }
+      res.baixas += baixasDaPagina.length;
+      if (passo.natureza === "PAGAR") res.titulosPagar += comNome.length;
+      else res.titulosReceber += comNome.length;
 
       const totalPaginas = extrairTotalPaginas(resposta);
       if (itens.length === 0 || pagina >= totalPaginas) break;
