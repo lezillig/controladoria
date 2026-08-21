@@ -8,6 +8,7 @@ import {
   omieCall,
   sleep,
   type OmieEndpoint,
+  paramsNfse,
 } from "./client";
 import {
   formatarDataOmie,
@@ -486,6 +487,10 @@ async function sincronizarNotas(ctx: ContextoFase): Promise<ResultadoFase> {
         return { ...res, proximoCursor: JSON.stringify({ tipo, pagina } satisfies CursorNotas) };
       }
 
+      // NFS-e vai com a lista de variantes de filtro: o vocabulario dessa
+      // operacao difere do da NF-e e a conta e quem diz qual aceita (ver
+      // paramsNfse no client). A ultima variante nao filtra por data, entao a
+      // nota de servico entra na base de qualquer jeito.
       const param =
         tipo === "NFE"
           ? {
@@ -495,12 +500,12 @@ async function sincronizarNotas(ctx: ContextoFase): Promise<ResultadoFase> {
               dEmiInicial: formatarDataOmie(ctx.janelaInicio),
               dEmiFinal: formatarDataOmie(ctx.janelaFim),
             }
-          : {
-              nPagina: pagina,
-              nRegPorPagina: REGISTROS_POR_PAGINA,
-              dDtEmissaoInicial: formatarDataOmie(ctx.janelaInicio),
-              dDtEmissaoFinal: formatarDataOmie(ctx.janelaFim),
-            };
+          : paramsNfse(
+              pagina,
+              REGISTROS_POR_PAGINA,
+              formatarDataOmie(ctx.janelaInicio),
+              formatarDataOmie(ctx.janelaFim)
+            );
 
       let resposta;
       try {

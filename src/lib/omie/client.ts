@@ -90,6 +90,41 @@ export const OMIE_ENDPOINTS = {
   },
 } as const satisfies Record<string, OmieEndpoint>;
 
+// Variantes de filtro da listagem de NFS-e, em ordem de preferencia.
+//
+// A conta real recusou `dDtEmissaoInicial`/`dDtEmissaoFinal` com
+// "Tag [DDTEMISSAOFINAL] não faz parte da estrutura do tipo complexo
+// [nfseListarRequest]". Como a documentacao publica nao cobre o vocabulario
+// de filtro desta operacao, a lista deixa a propria conta escolher: o cliente
+// desce a lista a cada recusa de tag e o diagnostico relata qual passou.
+//
+// A ULTIMA e so paginacao, sem filtro de data. Ela sempre passa, e e o que
+// garante que a receita de servico — que no fretamento e a receita principal —
+// entre na base mesmo se nenhum nome de filtro for reconhecido. O custo de
+// cair nela e varrer mais paginas, nao perder nota.
+export function paramsNfse(
+  pagina: number,
+  porPagina: number,
+  de: string,
+  ate: string
+): readonly Record<string, unknown>[] {
+  const paginacao = { nPagina: pagina, nRegPorPagina: porPagina };
+  return [
+    { ...paginacao, dDtEmissaoDe: de, dDtEmissaoAte: ate },
+    { ...paginacao, dEmiInicial: de, dEmiFinal: ate },
+    { ...paginacao, dDtInicial: de, dDtFinal: ate },
+    { ...paginacao, dDtPeriodoInicial: de, dDtPeriodoFinal: ate },
+    paginacao,
+  ];
+}
+
+// Descricao curta da variante aceita, para a tela de diagnostico. Sem isto a
+// descoberta morreria no cliente e o proximo ajuste voltaria a ser chute.
+export function descreverParam(param: Record<string, unknown>): string {
+  const filtros = Object.keys(param).filter((k) => !/^nPagina$|^nRegPorPagina$/.test(k));
+  return filtros.length === 0 ? "sem filtro de data (só paginação)" : filtros.join(", ");
+}
+
 // Existe alguma credencial de conexao configurada no ambiente? Serve so para
 // a tela inicial distinguir "nada configurado ainda" de "configurado, mas sem
 // dado" — a checagem que importa e a por conexao (credencialConfigurada).
@@ -329,6 +364,10 @@ export type OmieCallOptions = {
   deadline?: number;
   // Silencia o erro de "sem registros" devolvendo null em vez de lancar.
   toleraVazio?: boolean;
+  // Chamado com o indice da variante de parametro que a conta aceitou, quando
+  // `param` e uma lista. Serve ao diagnostico, que precisa RELATAR qual filtro
+  // vingou — sem isso a descoberta morreria dentro da chamada.
+  aoAceitarVariante?: (indice: number) => void;
 };
 
 // Nomes de operacao a tentar, na ordem: o principal e depois as grafias
@@ -341,20 +380,37 @@ function nomesDaCall(endpoint: OmieEndpoint): readonly string[] {
 // Nao e erro de credencial, nao e erro de dado: e grafia.
 const METODO_INEXISTENTE = /Method\s+"?[^"]*"?\s+not\s+exists/i;
 
+// A Omie valida a estrutura do param e recusa tag desconhecida, nomeando-a:
+//   Tag [DDTEMISSAOFINAL] não faz parte da estrutura do tipo complexo [...]
+// Cada operacao tem seu proprio vocabulario de filtro e a documentacao publica
+// nao cobre todas — o mesmo conceito de "data de emissao" aparece como
+// dEmiInicial num endpoint e com outro nome noutro. Reconhecer esta resposta
+// permite oferecer variantes de param e deixar a CONTA dizer qual aceita, em
+// vez de descobrir por um deploy de cada vez.
+const TAG_INVALIDA = /Tag\s*\[[^\]]+\]\s*n[ãa]o faz parte da estrutura/i;
+
 export async function omieCall(
   endpoint: OmieEndpoint,
-  param: Record<string, unknown>,
+  // Uma lista significa "tente estas formas de param, nesta ordem, até uma ser
+  // aceita". A última deve ser a mais conservadora (tipicamente só paginação),
+  // para que o endpoint funcione mesmo quando nenhum filtro é reconhecido.
+  param: Record<string, unknown> | readonly Record<string, unknown>[],
   opts: OmieCallOptions,
   tentativa = 0,
   // Indice dentro de nomesDaCall(). Avanca apenas quando a Omie responde
   // "method not exists" — nunca por erro de credencial ou de parametro, que
   // dariam a mesma resposta em qualquer grafia.
-  grafia = 0
+  grafia = 0,
+  // Indice dentro das variantes de param. Avanca apenas quando a Omie recusa
+  // uma TAG da estrutura.
+  variante = 0
 ): Promise<Record<string, unknown> | null> {
   const { app_key, app_secret } = credenciais(opts.credencialRef);
   const grafias = nomesDaCall(endpoint);
   const call = grafias[grafia] ?? endpoint.call;
-  const body = JSON.stringify({ call, app_key, app_secret, param: [param] });
+  const variantes = Array.isArray(param) ? (param as readonly Record<string, unknown>[]) : [param as Record<string, unknown>];
+  const paramAtual = variantes[variante] ?? variantes[variantes.length - 1];
+  const body = JSON.stringify({ call, app_key, app_secret, param: [paramAtual] });
 
   let res: Response;
   try {
@@ -368,7 +424,7 @@ export async function omieCall(
     // erro de negocio devolvido pela Omie.
     if (tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
-      return omieCall(endpoint, param, opts, tentativa + 1, grafia);
+      return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
     throw new Error(`Falha de rede ao chamar ${call}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
   }
@@ -380,7 +436,7 @@ export async function omieCall(
   } catch {
     if (res.status === 429 && tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
-      return omieCall(endpoint, param, opts, tentativa + 1, grafia);
+      return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
     throw new Error(
       `Omie respondeu ${res.status} em ${call} com conteúdo não-JSON: ${sanitizeErro(texto, opts.credencialRef)}`
@@ -391,10 +447,23 @@ export async function omieCall(
   // retentativa (nao e falha transitoria) e sem backoff (nao e limite).
   const mensagem = typeof json.message === "string" ? json.message : "";
   if (METODO_INEXISTENTE.test(mensagem) && grafia + 1 < grafias.length) {
-    return omieCall(endpoint, param, opts, tentativa, grafia + 1);
+    return omieCall(endpoint, param, opts, tentativa, grafia + 1, variante);
   }
 
   const fault = typeof json.faultstring === "string" ? json.faultstring : null;
+
+  // Tag de filtro que esta operacao nao conhece: tenta a proxima variante de
+  // param. Como a ultima variante e sempre a conservadora (so paginacao),
+  // esgotar a lista significa que nem sem filtro a chamada passa — e ai o
+  // problema e outro, que o erro final vai descrever.
+  if (fault && TAG_INVALIDA.test(fault) && variante + 1 < variantes.length) {
+    return omieCall(endpoint, param, opts, tentativa, grafia, variante + 1);
+  }
+
+  // Aceita: avisa quem chamou qual variante vingou. Vem depois das recusas de
+  // estrutura e antes de qualquer retorno, para valer tambem quando a resposta
+  // e "sem registros" — que e sucesso de integracao.
+  opts.aoAceitarVariante?.(variante);
 
   if (fault && EMPTY_FAULT_PATTERNS.some((p) => p.test(fault))) {
     if (opts.toleraVazio) return null;
@@ -405,7 +474,7 @@ export async function omieCall(
   if (limitado) {
     if (tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
-      return omieCall(endpoint, param, opts, tentativa + 1, grafia);
+      return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
     throw new Error(`Omie recusou por limite de consumo em ${call} e não há orçamento de tempo para retentativa.`);
   }

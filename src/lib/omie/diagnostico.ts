@@ -8,6 +8,8 @@ import {
   omieCall,
   sleep,
   conferirFormatoCredencial,
+  descreverParam,
+  paramsNfse,
   type OmieEndpoint,
   type ProblemaCredencial,
 } from "./client";
@@ -69,6 +71,9 @@ export type ResultadoEndpoint = {
   // Sob qual nome o array veio. A Omie não padroniza, e saber qual dos
   // candidatos respondeu é o que permite corrigir o mapeamento numa linha.
   listaEncontradaEm: string | null;
+  // Quando o endpoint tem variantes de filtro, qual delas a conta aceitou.
+  // Null nos endpoints de param único — só polui a tela sem informar nada.
+  filtroAceito: string | null;
   // Nomes crus dos campos do primeiro registro, como a conta devolveu.
   camposRecebidos: string[];
   // O que o normalizador conseguiu preencher a partir desse registro, e o que
@@ -98,7 +103,8 @@ type Alvo = {
   chave: string;
   rotulo: string;
   endpoint: OmieEndpoint;
-  param: Record<string, unknown> | null;
+  // Lista = variantes de filtro a tentar, na ordem; a conta escolhe.
+  param: Record<string, unknown> | readonly Record<string, unknown>[] | null;
   // Passa o registro cru pelo normalizador do sync e devolve o objeto gravado,
   // ou null quando o registro é descartado. Devolver null é informação: quer
   // dizer que o mapeamento não reconheceu o registro.
@@ -187,12 +193,7 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
       chave: "nfse",
       rotulo: "Notas fiscais de serviço (NFS-e)",
       endpoint: OMIE_ENDPOINTS.nfse,
-      param: {
-        nPagina: 1,
-        nRegPorPagina: REGISTROS_DE_AMOSTRA,
-        dDtEmissaoInicial: de,
-        dDtEmissaoFinal: ate,
-      },
+      param: paramsNfse(1, REGISTROS_DE_AMOSTRA, de, ate),
       normalizar: normalizarNfse,
     },
   ];
@@ -218,6 +219,7 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
       registros: 0,
       totalNaConta: 0,
       listaEncontradaEm: null,
+      filtroAceito: null,
       camposRecebidos: [],
       camposMapeados: [],
       camposVazios: [],
@@ -259,14 +261,25 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
     registros: 0,
     totalNaConta: 0,
     listaEncontradaEm: null as string | null,
+    filtroAceito: null as string | null,
     camposRecebidos: [] as string[],
     camposMapeados: [] as string[],
     camposVazios: [] as string[],
     erro: null as string | null,
   };
 
+  // Só reporta o filtro quando havia escolha a fazer: em endpoint de param
+  // único a informação seria ruído.
+  const variantes = Array.isArray(alvo.param) ? (alvo.param as readonly Record<string, unknown>[]) : null;
+  let filtroAceito: string | null = null;
+
   try {
-    const resposta = await omieCall(alvo.endpoint, alvo.param ?? {}, { credencialRef });
+    const resposta = await omieCall(alvo.endpoint, alvo.param ?? {}, {
+      credencialRef,
+      aoAceitarVariante: (i) => {
+        if (variantes) filtroAceito = descreverParam(variantes[i] ?? {});
+      },
+    });
     const itens = extrairItens(resposta, alvo.endpoint);
     const listaEncontradaEm = alvo.endpoint.listKey.find((k) => Array.isArray(resposta?.[k])) ?? null;
 
@@ -275,6 +288,7 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
         ...base,
         estado: "VAZIO",
         listaEncontradaEm,
+        filtroAceito,
         totalNaConta: extrairTotalRegistros(resposta),
         duracaoMs: Date.now() - inicio,
       };
@@ -289,6 +303,7 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
       registros: itens.length,
       totalNaConta: extrairTotalRegistros(resposta),
       listaEncontradaEm,
+      filtroAceito,
       camposRecebidos: nomesDeCampos(primeiro),
       camposMapeados: mapeado ? preenchidos(mapeado) : [],
       camposVazios: mapeado ? ausentes(mapeado) : ["registro descartado pelo mapeamento"],

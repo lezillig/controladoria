@@ -107,6 +107,7 @@ export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
                       {e.registros} de amostra
                       {e.totalNaConta > 0 && ` · ${e.totalNaConta.toLocaleString("pt-BR")} no período`}
                       {e.listaEncontradaEm && ` · lista em "${e.listaEncontradaEm}"`}
+                      {e.filtroAceito && ` · filtro aceito: ${e.filtroAceito}`}
                     </span>
                   )}
                   <span className="text-xs text-slate-400">{e.duracaoMs} ms</span>
