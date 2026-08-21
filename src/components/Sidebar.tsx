@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Banknote,
   Building2,
+  CalendarRange,
   Landmark,
   LayoutDashboard,
   Mail,
@@ -38,6 +39,10 @@ const NAV: NavItem[] = [
   // — a que o sistema faz nos dados e a que a consultoria faz na empresa — e
   // quem abre uma quase sempre quer conferir a outra.
   { href: "/conformidade", label: "Conformidade", icon: ScrollText },
+  // Entre o painel e as contas: o painel responde "como está hoje", esta
+  // responde "como viemos até aqui". É a pergunta que se faz logo depois de
+  // olhar o mês, e antes de descer ao título individual.
+  { href: "/resultados", label: "Resultado mês a mês", icon: CalendarRange },
   { href: "/titulos", label: "Contas a pagar e receber", icon: Receipt },
   { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote },
   { href: "/conciliacao", label: "Conciliação bancária", icon: Landmark },
