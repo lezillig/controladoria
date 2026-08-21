@@ -78,19 +78,26 @@ export function dispararProximaInvocacao(params?: {
   waitUntil(
     fetch(alvo.toString(), { headers: cabecalhos })
       .then(async (r) => {
-        if (r.ok) {
+        // O CORPO também é lido, não só o código. Uma rota pode responder 200
+        // e dizer no corpo que não fez nada — e foi exatamente assim que a
+        // carga ficou parada parecendo saudável. Aceitar o 200 sem olhar
+        // dentro é o mesmo erro de engolir a exceção, com outra roupa.
+        const corpo = (await r.json().catch(() => null)) as { error?: string } | null;
+
+        if (r.ok && !corpo?.error) {
           // Registrar o sucesso também é o que separa "tentou e foi recusado"
           // de "nem chegou a tentar". Sem os dois lados, um encadeamento que
           // simplesmente não acontece fica idêntico a um que deu errado.
           await registrarDesfecho(params?.companyId, null);
           return;
         }
+
         const causa =
           r.status === 401
             ? "A proteção de deploy da Vercel está barrando a chamada que o sistema faz a si mesmo. Em Settings → Deployment Protection, gere o Protection Bypass for Automation e cadastre o valor como VERCEL_AUTOMATION_BYPASS_SECRET — ou desligue a proteção para Production. (Se o bypass já existe, o CRON_SECRET é que está divergente.)"
             : r.status === 404
               ? "A URL do próprio sistema não respondeu à rota do ciclo. Confira se APP_URL aponta para o domínio de produção."
-              : "";
+              : (corpo?.error ?? "");
         const texto = `Encadeamento recusado com HTTP ${r.status}. ${causa}`.trim();
         console.error(`[ciclo] ${texto}`);
         await registrarDesfecho(params?.companyId, texto);

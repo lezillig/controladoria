@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
-import { listarEmpresasAtivas } from "@/lib/gestao/leitura";
+import { disponibilidadeGestao, listarEmpresasAtivas } from "@/lib/gestao/leitura";
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
@@ -51,10 +51,14 @@ export async function GET(req: NextRequest) {
   if (!autorizado(req)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  // 503, não 200. Quem chama esta rota é o próprio ciclo, e ele decide se
+  // continua olhando o código HTTP. Responder 200 com um erro no corpo faz uma
+  // parada por falta de configuração parecer um ciclo que terminou bem — foi
+  // assim que a carga ficou parada sem ninguém entender por quê.
   if (!existeAlgumaCredencialOmie()) {
     return NextResponse.json(
       { error: "Nenhuma credencial da Omie configurada no ambiente." },
-      { status: 200 }
+      { status: 503 }
     );
   }
 
@@ -70,6 +74,26 @@ export async function GET(req: NextRequest) {
   // Multiempresa: o ciclo roda para cada tenant ativo. Uma empresa que falhe
   // não pode impedir as demais — cada uma tem o seu próprio OmieSyncRun.
   const empresas = await listarEmpresasAtivas();
+
+  // Lista vazia tem DUAS causas com consequências opostas: ou não há empresa
+  // ativa (nada a fazer, ciclo termina), ou a leitura do banco da gestão
+  // falhou e a lista veio vazia por engano — porque `ler()` degrada para lista
+  // vazia de propósito, para que uma tela continue abrindo sem a gestão.
+  //
+  // Aqui isso não serve: sem distinguir as duas, uma falha de leitura vira um
+  // ciclo silenciosamente encerrado, com HTTP 200, no meio de uma carga de 38
+  // janelas. É preciso responder erro para quem encadeou saber que não
+  // terminou.
+  if (empresas.length === 0) {
+    const gestao = disponibilidadeGestao();
+    if (!gestao.disponivel) {
+      return NextResponse.json({ error: gestao.erro ?? "Sistema de gestão indisponível." }, { status: 503 });
+    }
+    return NextResponse.json(
+      { error: "Nenhuma empresa ativa no sistema de gestão — o ciclo não tem sobre o que rodar." },
+      { status: 503 }
+    );
+  }
 
   const resultados: unknown[] = [];
   let continua = false;
