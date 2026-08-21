@@ -149,8 +149,32 @@ const ENTIDADES_CADASTRO = [
   "clientes",
 ] as const;
 
-async function sincronizarCadastros(ctx: ContextoFase): Promise<ResultadoFase> {
+async function sincronizarCadastros(ctx: ContextoFase, backfill: boolean): Promise<ResultadoFase> {
   const res = vazio();
+
+  // Cadastro NÃO tem janela: cliente, categoria, projeto e conta corrente são
+  // o estado atual da conta Omie, não o movimento de um mês. A carga histórica
+  // percorre 38 janelas mensais, e sem esta guarda cada uma delas rebaixava os
+  // mesmos 8.572 clientes, 6.767 projetos e 430 categorias de novo — mais de
+  // seiscentos mil registros redundantes trafegando entre a Omie, a função e o
+  // banco.
+  //
+  // Foi isso que estourou a franquia de transferência do Neon e derrubou, com
+  // ela, o sistema de gestão de motoristas que divide o mesmo banco. O custo
+  // não era do dado: era de buscar o mesmo dado 38 vezes.
+  //
+  // A primeira janela ainda sincroniza (sem cadastro, título fica sem nome
+  // legível e a auditoria perde os cruzamentos). Da segunda em diante, a carga
+  // histórica pula — e o ciclo DIÁRIO, que não é backfill, continua atualizando
+  // todo dia, que é onde a mudança de cadastro precisa mesmo chegar.
+  if (backfill) {
+    const jaTemCadastro = await prisma.omieParceiro.findFirst({
+      where: { conexaoId: ctx.conexaoId },
+      select: { id: true },
+    });
+    if (jaTemCadastro) return { ...res, faseConcluida: true };
+  }
+
   const cursor = lerCursor<CursorCadastros>(ctx.cursor, { entidade: ENTIDADES_CADASTRO[0], pagina: 1 });
 
   let indice = ENTIDADES_CADASTRO.indexOf(cursor.entidade as (typeof ENTIDADES_CADASTRO)[number]);
@@ -239,6 +263,10 @@ async function gravarCadastros(
               ...(trocou ? { contaBancariaAlteradaEm: agora } : {}),
               sincronizadoEm: agora,
             },
+            // Só o id volta. O padrão do Prisma é devolver a linha inteira, e
+            // multiplicado por milhares de registros isso é tráfego puro sem
+            // uso — ninguém lê o retorno destes upserts.
+            select: { id: true },
           });
         })
       )
@@ -255,6 +283,7 @@ async function gravarCadastros(
             where: { conexaoId_codigo: { conexaoId, codigo: c.codigo } },
             create: { ...comuns, ...c },
             update: { ...c, sincronizadoEm: agora },
+            select: { id: true },
           })
         )
       )
@@ -271,6 +300,7 @@ async function gravarCadastros(
             where: { conexaoId_codigo: { conexaoId, codigo: d.codigo } },
             create: { ...comuns, ...d },
             update: { ...d, sincronizadoEm: agora },
+            select: { id: true },
           })
         )
       )
@@ -287,6 +317,7 @@ async function gravarCadastros(
             where: { conexaoId_codigo: { conexaoId, codigo: p.codigo } },
             create: { ...comuns, ...p },
             update: { ...p, sincronizadoEm: agora },
+            select: { id: true },
           })
         )
       )
@@ -302,6 +333,7 @@ async function gravarCadastros(
           where: { conexaoId_codigo: { conexaoId, codigo: cc.codigo } },
           create: { ...comuns, ...cc },
           update: { ...cc, sincronizadoEm: agora },
+          select: { id: true },
         })
       )
     )
@@ -491,6 +523,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
             where: { conexaoId_chave: { conexaoId: ctx.conexaoId, chave: b.chave } },
             create: { companyId: ctx.companyId, conexaoId: ctx.conexaoId, tituloId: gravados[i].id, ...b },
             update: { ...b, tituloId: gravados[i].id, sincronizadoEm: new Date() },
+            select: { id: true },
           })
         )
       );
@@ -668,7 +701,7 @@ export async function executarFase(
 ): Promise<ResultadoFase> {
   switch (fase) {
     case "cadastros":
-      return sincronizarCadastros(ctx);
+      return sincronizarCadastros(ctx, backfill);
     case "titulos":
       return sincronizarTitulos(ctx, backfill);
     case "movimentos":
