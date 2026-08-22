@@ -468,6 +468,32 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         for (const p of parceiros) nomePorCodigo.set(p.codigoOmie, p.nome);
       }
 
+      // A DESCRICAO DA CATEGORIA tem exatamente o mesmo problema, e a mesma
+      // solucao.
+      //
+      // O titulo traz `cCodCateg` e nunca a descricao — confirmado pelo
+      // diagnostico nas duas contas, nas duas naturezas. O efeito era visivel e
+      // ninguem tinha nomeado: a composicao de receita e despesa por categoria,
+      // que existe para responder "de onde vem esse numero", listava codigos.
+      // "1.01.03" nao responde nada; "Prestacao de servicos" responde.
+      //
+      // Em lote, contra o plano de categorias que a fase de cadastros do
+      // proprio ciclo ja espelhou — mesma consulta unica por pagina, pelo mesmo
+      // motivo de orcamento de tempo.
+      const codigosSemDescricao = [
+        ...new Set(
+          normalizados.filter((t) => !t.categoriaDescricao && t.categoriaCodigo).map((t) => t.categoriaCodigo!)
+        ),
+      ];
+      const descricaoPorCodigo = new Map<string, string>();
+      if (codigosSemDescricao.length > 0) {
+        const categorias = await prisma.omieCategoria.findMany({
+          where: { conexaoId: ctx.conexaoId, codigo: { in: codigosSemDescricao } },
+          select: { codigo: true, descricao: true },
+        });
+        for (const c of categorias) descricaoPorCodigo.set(c.codigo, c.descricao);
+      }
+
       // Gravação em DOIS lotes, e não um upsert por registro.
       //
       // A versão anterior fazia uma ida ao banco por título e outra por baixa:
@@ -483,9 +509,11 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
       //
       // Baixa depende do id do seu título, então os lotes não podem virar um
       // só. A ordem entre eles importa e está garantida pelo await.
-      const comNome = normalizados.map((n) =>
-        n.parceiroNome ? n : { ...n, parceiroNome: nomePorCodigo.get(n.parceiroCodigo ?? "") ?? null }
-      );
+      const comNome = normalizados.map((n) => ({
+        ...n,
+        parceiroNome: n.parceiroNome ?? nomePorCodigo.get(n.parceiroCodigo ?? "") ?? null,
+        categoriaDescricao: n.categoriaDescricao ?? descricaoPorCodigo.get(n.categoriaCodigo ?? "") ?? null,
+      }));
 
       // Os ids voltam na ordem em que as operações entraram, e é assim que
       // cada baixa encontra o seu título. Acumular lote a lote preserva essa

@@ -62,13 +62,29 @@ export async function composicaoDoPeriodo(params: {
   // Fragmento parametrizado, nunca interpolação: o id vem da querystring.
   const filtro = conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
 
+  // A descrição da categoria vem do PLANO DE CATEGORIAS quando o título não a
+  // traz — e ele nunca traz: a Omie devolve só `cCodCateg` em
+  // `PesquisarLancamentos`, confirmado no diagnóstico das duas contas.
+  //
+  // A gravação passou a resolver isso, mas só para registro novo. Sem este
+  // join, os 46 mil títulos já espelhados continuariam aparecendo como
+  // "1.01.03" até alguém recarregar a base inteira — e "1.01.03" não responde
+  // à pergunta que esta tela existe para responder.
   const linhas = await prisma.$queryRaw<LinhaBruta[]>`
-    SELECT COALESCE(NULLIF(TRIM(t."categoriaDescricao"), ''), t."categoriaCodigo") AS categoria,
+    SELECT COALESCE(
+             NULLIF(TRIM(t."categoriaDescricao"), ''),
+             NULLIF(TRIM(cat.descricao), ''),
+             t."categoriaCodigo"
+           ) AS categoria,
            t."tipoDocumento" AS tipo,
            COALESCE(NULLIF(TRIM(cc.descricao), ''), cc."numeroConta", t."contaCorrenteCodigo") AS conta,
            SUM(t."valorDocumentoCents")::bigint AS valor,
            COUNT(*)::bigint AS quantidade
       FROM "OmieTitulo" t
+      LEFT JOIN "OmieCategoria" cat
+        ON cat."companyId" = t."companyId"
+       AND cat."conexaoId" = t."conexaoId"
+       AND cat.codigo = t."categoriaCodigo"
       LEFT JOIN "OmieContaCorrente" cc
         ON cc."companyId" = t."companyId"
        AND cc."conexaoId" = t."conexaoId"
