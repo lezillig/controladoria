@@ -95,11 +95,19 @@ export const OMIE_ENDPOINTS = {
   // O sintoma que denunciou: a Omie mostra saldo em contas de R$ 2,96 milhoes
   // e o nosso painel mostrava R$ 131 mil — porque o nosso saldo e saldo
   // inicial mais movimentos, e movimentos estava zerado.
+  //
+  // `ListarLancCC` — abreviado. As quatro grafias que eu havia chutado
+  // (ListarMovimentos, ListarLancamentos, ListarMovimentacoes,
+  // ListarContaCorrenteLancamentos) foram todas recusadas com
+  // `Method "..." not exists`, que e erro de NOME, nao de credencial nem de
+  // permissao. O nome real veio da documentacao da Omie, nao de mais um
+  // palpite: a conta so responde ao que ela conhece, e cada tentativa errada
+  // custa uma publicacao.
   lancamentos: {
     path: "financas/contacorrentelancamentos/",
-    call: "ListarMovimentos",
-    callsAlternativos: ["ListarLancamentos", "ListarMovimentacoes", "ListarContaCorrenteLancamentos"],
-    listKey: ["listaLancamento", "movimentos", "lancamentos", "conta_corrente_lancamentos"],
+    call: "ListarLancCC",
+    callsAlternativos: ["ListarLancamentosCC", "ListarMovimentos", "ListarLancamentos"],
+    listKey: ["lancamentoCCCadastro", "listaLancamento", "lancamentos", "movimentos"],
   },
   nfe: { path: "produtos/nfconsultar/", call: "ListarNF", listKey: ["nfCadastro"] },
   // `ListarNFSEs` — plural e com a sigla em caixa alta. A primeira versao usava
@@ -157,10 +165,15 @@ export function paramsLancamentos(
 ): readonly Record<string, unknown>[] {
   const paginacao = { nPagina: pagina, nRegPorPagina: porPagina };
   return [
-    { ...paginacao, dDtPrevisaoDe: de, dDtPrevisaoAte: ate },
+    // Documentados para este metodo: data de INCLUSAO e data de ALTERACAO.
+    // Nenhum dos dois e a data do lancamento em si — o filtro por competencia
+    // fica por conta de quem chama, depois de receber.
+    { ...paginacao, dDtIncDe: de, dDtIncAte: ate },
+    { ...paginacao, dDtAltDe: de, dDtAltAte: ate },
     { ...paginacao, dDtLancamentoDe: de, dDtLancamentoAte: ate },
-    { ...paginacao, dDtPagamentoDe: de, dDtPagamentoAte: ate },
     { ...paginacao, dDtInicial: de, dDtFinal: ate },
+    // So paginacao: sempre responde, e prova que o metodo existe mesmo quando
+    // todo filtro e recusado.
     paginacao,
   ];
 }
