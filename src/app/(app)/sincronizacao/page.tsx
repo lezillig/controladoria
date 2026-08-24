@@ -7,7 +7,7 @@ import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controla
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { ultimasFalhas } from "@/lib/controladoria/falhas";
-import { driftDoEsquema } from "@/lib/controladoria/esquema";
+import { driftDoEsquema, ondeOBancoOlha } from "@/lib/controladoria/esquema";
 import { versaoPublicada } from "@/lib/controladoria/versao";
 import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
@@ -55,7 +55,7 @@ export default async function SincronizacaoPage() {
   });
   const dataInicioBase = config?.dataInicioBase ?? new Date();
 
-  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift] = await Promise.all([
+  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde] = await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
       orderBy: { iniciadoEm: "desc" },
@@ -75,6 +75,7 @@ export default async function SincronizacaoPage() {
     saldosPorConta(session.companyId).catch(() => null),
     ultimasFalhas(10),
     driftDoEsquema(),
+    ondeOBancoOlha(),
   ]);
 
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
@@ -148,6 +149,40 @@ export default async function SincronizacaoPage() {
             <p className="mt-1 text-xs text-red-800">
               …e mais {fmtNumero(drift.colunasFaltantes.length - 40)} coluna(s).
             </p>
+          )}
+          {/* ONDE CADA CONSULTA OLHA. Vem ANTES da lista de colunas porque,
+              se os dois caminhos discordarem, a lista acima está descrevendo
+              uma tabela que o sistema nem usa — e consertar por ela seria
+              consertar a cópia errada. */}
+          {onde.disponivel && (
+            <div className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2">
+              <p className="text-xs font-semibold text-red-900">Onde o banco está olhando</p>
+              <p className="mt-1 font-mono text-[11px] text-slate-700">
+                banco: {onde.banco ?? "?"} · schema atual: {onde.esquemaAtual ?? "(nenhum)"} · search_path:{" "}
+                {onde.caminhoDeBusca ?? "?"}
+              </p>
+              <p className="mt-1 font-mono text-[11px] text-slate-700">
+                OmieTitulo pelo Prisma: {onde.titulosPeloPrisma ?? "erro"} · pelo mesmo nome em SQL cru:{" "}
+                {onde.titulosPorSqlCru ?? "erro"}
+              </p>
+              {onde.titulosPeloPrisma !== null &&
+                onde.titulosPorSqlCru !== null &&
+                onde.titulosPeloPrisma !== onde.titulosPorSqlCru && (
+                  <p className="mt-1 text-[11px] font-semibold text-red-900">
+                    Os dois caminhos leem tabelas DIFERENTES. Metade das telas está somando uma cópia que não é a que a
+                    sincronização grava.
+                  </p>
+                )}
+              <ul className="mt-2 space-y-0.5 font-mono text-[11px] text-slate-700">
+                {onde.esquemas.map((e) => (
+                  <li key={e.esquema}>
+                    {e.esquema}: {e.tabelas} tabela(s) · OmieConexao {e.temOmieConexao ? "sim" : "não"} ·
+                    OmieTitulo.conexaoId {e.tituloTemConexaoId ? "sim" : "não"} · FalhaDeServidor{" "}
+                    {e.temFalhaDeServidor ? "sim" : "não"}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {drift.colunasOpcionaisDemais.length > 0 && (
             <>

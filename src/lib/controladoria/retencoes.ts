@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
 import type { Periodo } from "./periodos";
 
 // RETENÇÕES NA FONTE — o dinheiro que não passa pela conta.
@@ -78,7 +79,7 @@ export async function retencoesDoPeriodo(params: {
     SELECT ${Prisma.join(somas, ", ")},
            COUNT(*) FILTER (WHERE t.natureza::text = 'RECEBER' AND ${algumaRetencao})::bigint AS q_receber,
            COUNT(*) FILTER (WHERE t.natureza::text = 'PAGAR'   AND ${algumaRetencao})::bigint AS q_pagar
-      FROM "OmieTitulo" t
+      FROM ${tabela("OmieTitulo")} t
      WHERE t."companyId" = ${companyId}
        AND t.cancelado = false
        AND t."dataVencimento" >= ${periodo.inicio}

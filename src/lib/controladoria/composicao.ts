@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
 import { temColuna } from "./esquema";
 import type { Periodo } from "./periodos";
 
@@ -85,7 +86,7 @@ export async function composicaoDoPeriodo(params: {
   const podeJuntarCategoria = await temColuna("OmieCategoria", "conexaoId");
   const juncaoCategoria = podeJuntarCategoria
     ? Prisma.sql`
-      LEFT JOIN "OmieCategoria" cat
+      LEFT JOIN ${tabela("OmieCategoria")} cat
         ON cat."companyId" = t."companyId"
        AND cat."conexaoId" = t."conexaoId"
        AND cat.codigo = t."categoriaCodigo"`
@@ -102,9 +103,9 @@ export async function composicaoDoPeriodo(params: {
            COALESCE(NULLIF(TRIM(cc.descricao), ''), cc."numeroConta", t."contaCorrenteCodigo") AS conta,
            SUM(t."valorDocumentoCents")::bigint AS valor,
            COUNT(*)::bigint AS quantidade
-      FROM "OmieTitulo" t
+      FROM ${tabela("OmieTitulo")} t
       ${juncaoCategoria}
-      LEFT JOIN "OmieContaCorrente" cc
+      LEFT JOIN ${tabela("OmieContaCorrente")} cc
         ON cc."companyId" = t."companyId"
        AND cc."conexaoId" = t."conexaoId"
        AND cc.codigo = t."contaCorrenteCodigo"

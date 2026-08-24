@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
 import { rotuloMes } from "./periodos";
 
 // RESULTADO MÊS A MÊS — somado no banco, não na memória da função.
@@ -72,7 +73,7 @@ export async function serieMensal(params: {
              t.natureza::text AS natureza,
              SUM(t."valorDocumentoCents")::bigint AS valor,
              COUNT(*)::bigint AS quantidade
-        FROM "OmieTitulo" t
+        FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
          AND t."dataVencimento" >= ${desde}
@@ -94,8 +95,8 @@ export async function serieMensal(params: {
       SELECT date_trunc('month', b."dataBaixa") AS mes,
              t.natureza::text AS natureza,
              SUM(ABS(b."valorCents"))::bigint AS valor
-        FROM "OmieBaixa" b
-        JOIN "OmieTitulo" t ON t.id = b."tituloId"
+        FROM ${tabela("OmieBaixa")} b
+        JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
        WHERE b."companyId" = ${companyId}
          AND b."dataBaixa" >= ${desde}
          AND b."dataBaixa" <= ${ate}

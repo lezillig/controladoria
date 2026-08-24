@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
 import type { ResumoPeriodo } from "./analytics";
 import type { Periodo } from "./periodos";
 
@@ -55,7 +56,7 @@ export async function resumoDoPeriodoNoBanco(params: {
       SELECT t.natureza::text AS natureza,
              COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS valor,
              COUNT(*)::bigint AS quantidade
-        FROM "OmieTitulo" t
+        FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
          AND t."dataVencimento" >= ${periodo.inicio}
@@ -74,8 +75,8 @@ export async function resumoDoPeriodoNoBanco(params: {
              COALESCE(SUM(b."multaCents"), 0)::bigint AS multa,
              COALESCE(SUM(b."tarifaCents"), 0)::bigint AS tarifa,
              COALESCE(SUM(b."descontoCents"), 0)::bigint AS desconto
-        FROM "OmieBaixa" b
-        LEFT JOIN "OmieTitulo" t ON t.id = b."tituloId"
+        FROM ${tabela("OmieBaixa")} b
+        LEFT JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
        WHERE b."companyId" = ${companyId}
          AND b."dataBaixa" >= ${periodo.inicio}
          AND b."dataBaixa" <= ${periodo.fim}

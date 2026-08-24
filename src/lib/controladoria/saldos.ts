@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
 
 // SALDO POR CONTA CORRENTE — onde está a diferença.
 //
@@ -80,7 +81,7 @@ export async function saldosPorConta(companyId: string): Promise<SaldoDaConta[]>
            m.ultimo                             AS ultimo,
            COALESCE(b.qtd, 0)::bigint           AS baixas,
            COALESCE(b.soma, 0)::bigint          AS soma_baixas
-      FROM "OmieContaCorrente" cc
+      FROM ${tabela("OmieContaCorrente")} cc
       LEFT JOIN (
         SELECT "conexaoId",
                "contaCorrenteCodigo",
@@ -88,7 +89,7 @@ export async function saldosPorConta(companyId: string): Promise<SaldoDaConta[]>
                SUM("valorCents")  AS soma,
                MIN(data)          AS primeiro,
                MAX(data)          AS ultimo
-          FROM "OmieMovimento"
+          FROM ${tabela("OmieMovimento")}
          WHERE "companyId" = ${companyId}
          GROUP BY 1, 2
       ) m ON m."conexaoId" = cc."conexaoId" AND m."contaCorrenteCodigo" = cc.codigo
@@ -100,8 +101,8 @@ export async function saldosPorConta(companyId: string): Promise<SaldoDaConta[]>
                bx."contaCorrenteCodigo",
                COUNT(*) AS qtd,
                SUM(CASE WHEN t.natureza::text = 'PAGAR' THEN -bx."valorCents" ELSE bx."valorCents" END) AS soma
-          FROM "OmieBaixa" bx
-          JOIN "OmieTitulo" t ON t.id = bx."tituloId"
+          FROM ${tabela("OmieBaixa")} bx
+          JOIN ${tabela("OmieTitulo")} t ON t.id = bx."tituloId"
          WHERE bx."companyId" = ${companyId}
          GROUP BY 1, 2
       ) b ON b."conexaoId" = cc."conexaoId" AND b."contaCorrenteCodigo" = cc.codigo

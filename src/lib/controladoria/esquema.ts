@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { esquemaDaControladoria } from "@/lib/esquemaDoBanco";
 
 // O BANCO REALMENTE TEM AS COLUNAS QUE O CÓDIGO ESPERA?
 //
@@ -22,6 +23,120 @@ import { prisma } from "@/lib/prisma";
 // O que ele NÃO faz: consertar. Acrescentar coluna sozinho, em produção, a
 // partir de uma comparação automática, é como se apaga um banco sem querer. A
 // tela mostra; a correção é uma migração escrita, revisada e aplicada.
+
+// ONDE, EXATAMENTE, CADA TIPO DE CONSULTA ESTÁ OLHANDO.
+//
+// O relatório de diferenças acusou `OmieConexao` como TABELA AUSENTE — e ao
+// mesmo tempo o filtro de empresa funciona na tela e o ciclo diz "concluído
+// para todas as conexões". As duas coisas não podem ser verdade sobre a mesma
+// tabela.
+//
+// A explicação possível é que as duas metades do sistema não estejam olhando
+// para o mesmo lugar. O cliente do Prisma qualifica a tabela com o schema da
+// URL de conexão; SQL cru resolve o nome pelo `search_path`. Se os dois
+// divergirem — e uma mudança de banco ou de schema é exatamente o que faz
+// divergir —, as telas em SQL cru leem uma cópia antiga enquanto as telas
+// típicas leem a boa. Cada uma dá um número, os dois parecem plausíveis, e
+// nada acusa.
+//
+// Este bloco não teoriza: pergunta ao banco onde ele está, e compara a
+// contagem da MESMA tabela pelos dois caminhos. Se os números divergirem, está
+// provado.
+export type OndeOBancoOlha = {
+  disponivel: boolean;
+  banco: string | null;
+  esquemaAtual: string | null;
+  caminhoDeBusca: string | null;
+  // Uma linha por schema do banco, com o que interessa para o diagnóstico.
+  esquemas: {
+    esquema: string;
+    tabelas: number;
+    temOmieConexao: boolean;
+    tituloTemConexaoId: boolean;
+    temFalhaDeServidor: boolean;
+  }[];
+  // A prova: mesma tabela, dois caminhos.
+  titulosPeloPrisma: number | null;
+  titulosPorSqlCru: number | null;
+};
+
+type LinhaEsquema = {
+  esquema: string;
+  tabelas: number;
+  tem_omie_conexao: boolean;
+  titulo_tem_conexaoid: boolean;
+  tem_falha: boolean;
+};
+
+export async function ondeOBancoOlha(): Promise<OndeOBancoOlha> {
+  const vazio: OndeOBancoOlha = {
+    disponivel: false,
+    banco: null,
+    esquemaAtual: null,
+    caminhoDeBusca: null,
+    esquemas: [],
+    titulosPeloPrisma: null,
+    titulosPorSqlCru: null,
+  };
+
+  try {
+    const [contexto] = await prisma.$queryRaw<{ banco: string; esquema: string | null; caminho: string }[]>`
+      SELECT current_database() AS banco,
+             current_schema()   AS esquema,
+             current_setting('search_path') AS caminho
+    `;
+
+    const esquemas = await prisma.$queryRaw<LinhaEsquema[]>`
+      SELECT table_schema AS esquema,
+             COUNT(DISTINCT table_name)::int AS tabelas,
+             bool_or(table_name = 'OmieConexao')                                AS tem_omie_conexao,
+             bool_or(table_name = 'OmieTitulo' AND column_name = 'conexaoId')   AS titulo_tem_conexaoid,
+             bool_or(table_name = 'FalhaDeServidor')                            AS tem_falha
+        FROM information_schema.columns
+       WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+         AND table_schema NOT LIKE 'pg_%'
+       GROUP BY 1
+       ORDER BY 1
+    `;
+
+    // A PROVA. `prisma.omieTitulo.count()` passa pelo cliente, que qualifica a
+    // tabela com o schema da URL. O `$queryRaw` abaixo usa o nome sem
+    // qualificar, resolvido pelo `search_path`. Se os dois discordarem, estão
+    // lendo tabelas diferentes — e metade das telas do sistema está somando a
+    // cópia errada.
+    let titulosPeloPrisma: number | null = null;
+    let titulosPorSqlCru: number | null = null;
+    try {
+      titulosPeloPrisma = await prisma.omieTitulo.count();
+    } catch {
+      titulosPeloPrisma = null;
+    }
+    try {
+      const [cru] = await prisma.$queryRaw<{ n: bigint }[]>`SELECT COUNT(*)::bigint AS n FROM "OmieTitulo"`;
+      titulosPorSqlCru = Number(cru?.n ?? 0);
+    } catch {
+      titulosPorSqlCru = null;
+    }
+
+    return {
+      disponivel: true,
+      banco: contexto?.banco ?? null,
+      esquemaAtual: contexto?.esquema ?? null,
+      caminhoDeBusca: contexto?.caminho ?? null,
+      esquemas: esquemas.map((e) => ({
+        esquema: e.esquema,
+        tabelas: Number(e.tabelas),
+        temOmieConexao: e.tem_omie_conexao,
+        tituloTemConexaoId: e.titulo_tem_conexaoid,
+        temFalhaDeServidor: e.tem_falha,
+      })),
+      titulosPeloPrisma,
+      titulosPorSqlCru,
+    };
+  } catch {
+    return vazio;
+  }
+}
 
 export type ColunaFaltante = { tabela: string; coluna: string; tipo: string; obrigatoria: boolean };
 // Coluna que EXISTE mas aceita nulo onde o modelo exige valor. Merece linha
@@ -52,7 +167,7 @@ export async function driftDoEsquema(): Promise<DriftDoEsquema> {
     catalogo = await prisma.$queryRaw<LinhaCatalogo[]>`
       SELECT table_name AS tabela, column_name AS coluna, is_nullable AS anulavel
         FROM information_schema.columns
-       WHERE table_schema = current_schema()
+       WHERE table_schema = ${esquemaDaControladoria()}
     `;
   } catch {
     return { disponivel: false, tabelasFaltantes: [], colunasFaltantes: [], colunasOpcionaisDemais: [] };
@@ -131,7 +246,7 @@ export async function temColuna(tabela: string, coluna: string): Promise<boolean
     const linhas = await prisma.$queryRaw<{ existe: boolean }[]>`
       SELECT EXISTS (
         SELECT 1 FROM information_schema.columns
-         WHERE table_schema = current_schema()
+         WHERE table_schema = ${esquemaDaControladoria()}
            AND table_name = ${tabela}
            AND column_name = ${coluna}
       ) AS existe
