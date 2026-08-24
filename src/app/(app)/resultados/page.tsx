@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtNumero, fmtPercent, fmtVariacao, variacaoPercent } from "@/lib/controladoria/format";
 import { serieMensal } from "@/lib/controladoria/serieMensal";
 import { composicaoDoPeriodo, maioresTitulosDoPeriodo } from "@/lib/controladoria/composicao";
 import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
@@ -96,8 +96,17 @@ export default async function ResultadosPage({
   // a pergunta que faz alguém escolher um mês fechado em vez de olhar o
   // corrente.
   const competenciaDoMes = `${mes.inicio.getFullYear()}-${String(mes.inicio.getMonth() + 1).padStart(2, "0")}`;
-  const fechamentoDoAno = serie.find((m) => m.competencia === competenciaDoMes) ?? linhas[0];
+  const indiceDoMes = serie.findIndex((m) => m.competencia === competenciaDoMes);
+  const fechamentoDoAno = (indiceDoMes >= 0 ? serie[indiceDoMes] : linhas[0]) ?? null;
   const ultimoAno = fechamentoDoAno?.competencia.slice(0, 4) ?? "";
+
+  // O mês ANTERIOR ao escolhido, para a variação. Vem da série, que já está
+  // ordenada e sem buracos — mês sem movimento entra zerado em vez de sumir, e
+  // por isso `indice - 1` é sempre o mês de calendário anterior, e não "o
+  // anterior que teve título".
+  const mesAnteriorDaSerie = indiceDoMes > 0 ? serie[indiceDoMes - 1] : null;
+  const variacao = (atual: number, anterior: number | undefined) =>
+    anterior === undefined ? null : variacaoPercent(atual, anterior);
 
   // Link da planilha carrega o MESMO recorte da tela — empresa e competência.
   // Baixar um arquivo que ignora os filtros visíveis é a forma mais rápida de
@@ -154,6 +163,56 @@ export default async function ResultadosPage({
         competenciaAtiva={periodo.competencia}
         rota="/resultados"
       />
+
+      {/* O MÊS ESCOLHIDO, antes do acumulado.
+          A tela existe para responder "como foi o mês"; o acumulado responde
+          "como está o ano". Só o segundo estava em cartão, e o primeiro
+          obrigava a caçar a linha certa na tabela lá embaixo — que é o
+          movimento que ninguém faz quando está com pressa.
+
+          A variação ao lado é contra o mês de calendário anterior, e não
+          contra "o último mês que teve movimento": a série não tem buracos, e
+          mês zerado comparando como zero é informação, não erro. */}
+      {fechamentoDoAno && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Kpi
+            rotulo={`Receita — ${mes.rotulo}`}
+            valor={fmtBRL(fechamentoDoAno.receitaCents)}
+            apoio={
+              mesAnteriorDaSerie
+                ? `${fmtVariacao(variacao(fechamentoDoAno.receitaCents, mesAnteriorDaSerie.receitaCents))} vs ${mesAnteriorDaSerie.rotulo}`
+                : "sem mês anterior na base"
+            }
+          />
+          <Kpi
+            rotulo={`Despesa — ${mes.rotulo}`}
+            valor={fmtBRL(fechamentoDoAno.despesaCents)}
+            apoio={
+              mesAnteriorDaSerie
+                ? `${fmtVariacao(variacao(fechamentoDoAno.despesaCents, mesAnteriorDaSerie.despesaCents))} vs ${mesAnteriorDaSerie.rotulo}`
+                : "sem mês anterior na base"
+            }
+          />
+          <Kpi
+            rotulo={`Resultado — ${mes.rotulo}`}
+            valor={fmtBRL(fechamentoDoAno.resultadoCents)}
+            apoio={
+              mesAnteriorDaSerie ? `${fmtBRL(mesAnteriorDaSerie.resultadoCents)} em ${mesAnteriorDaSerie.rotulo}` : undefined
+            }
+            tom={fechamentoDoAno.resultadoCents >= 0 ? "bom" : "ruim"}
+          />
+          <Kpi
+            rotulo={`Margem — ${mes.rotulo}`}
+            valor={fechamentoDoAno.margemPercent === null ? "—" : fmtPercent(fechamentoDoAno.margemPercent)}
+            apoio={
+              mesAnteriorDaSerie?.margemPercent !== null && mesAnteriorDaSerie
+                ? `${fmtPercent(mesAnteriorDaSerie.margemPercent)} em ${mesAnteriorDaSerie.rotulo}`
+                : undefined
+            }
+            tom={fechamentoDoAno.resultadoCents >= 0 ? "bom" : "ruim"}
+          />
+        </div>
+      )}
 
       {fechamentoDoAno && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
