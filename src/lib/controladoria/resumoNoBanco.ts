@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import type { ResumoPeriodo } from "./analytics";
 import type { Periodo } from "./periodos";
+import { competenciaSql } from "./competencia";
 
 // RESUMO DE UM PERÍODO, SOMADO NO BANCO.
 //
@@ -59,8 +60,8 @@ export async function resumoDoPeriodoNoBanco(params: {
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
-         AND t."dataVencimento" >= ${periodo.inicio}
-         AND t."dataVencimento" <= ${periodo.fim}
+         AND ${competenciaSql("t")} >= ${periodo.inicio}
+         AND ${competenciaSql("t")} <= ${periodo.fim}
          ${filtroTitulo}
        GROUP BY 1
     `,

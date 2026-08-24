@@ -6,6 +6,7 @@ import { saldoAtualCents } from "./agents/conciliacao";
 import { calcularCiclo, projetarFluxoCaixa } from "./agents/fluxoCaixa";
 import { resumoAging } from "./agents/contasReceber";
 import type { ContextoAuditoria } from "./types";
+import { dataDeCompetencia } from "./competencia";
 
 // ANÁLISE FINANCEIRA — os numeros do painel e do relatorio.
 //
@@ -39,8 +40,13 @@ export type ResumoPeriodo = {
 };
 
 export function resumoDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo): ResumoPeriodo {
-  const pagar = titulosAtivos(ctx, "PAGAR").filter((t) => dentro(t.dataVencimento, periodo));
-  const receber = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(t.dataVencimento, periodo));
+  // Competência pela data de EMISSÃO — ver competencia.ts. O painel e o
+  // relatório diário usam esta função, e deixá-los por vencimento enquanto a
+  // tela de resultado usa emissão faria duas telas do mesmo sistema discordarem
+  // sobre a receita do mês. Isso não é inconsistência de exibição: é o fim da
+  // confiança no sistema inteiro.
+  const pagar = titulosAtivos(ctx, "PAGAR").filter((t) => dentro(dataDeCompetencia(t), periodo));
+  const receber = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo));
 
   const receita = somar(receber, (t) => t.valorDocumentoCents);
   const despesa = somar(pagar, (t) => t.valorDocumentoCents);
@@ -176,7 +182,7 @@ export function dreGerencial(ctx: ContextoAuditoria, periodo: Periodo, periodoAn
 
   const montar = (p: Periodo, natureza: "PAGAR" | "RECEBER") =>
     agrupar(
-      titulosAtivos(ctx, natureza).filter((t) => dentro(t.dataVencimento, p)),
+      titulosAtivos(ctx, natureza).filter((t) => dentro(dataDeCompetencia(t), p)),
       (t) => t.categoriaCodigo ?? "SEM_CATEGORIA"
     );
 
@@ -221,7 +227,7 @@ export function ranking(
   natureza: "PAGAR" | "RECEBER",
   limite = 10
 ): LinhaRanking[] {
-  const titulos = titulosAtivos(ctx, natureza).filter((t) => dentro(t.dataVencimento, periodo));
+  const titulos = titulosAtivos(ctx, natureza).filter((t) => dentro(dataDeCompetencia(t), periodo));
   const nomePorCodigo = new Map(ctx.parceiros.map((p) => [p.codigoOmie, p.nome]));
 
   return [...agrupar(titulos, (t) => t.parceiroCodigo ?? t.parceiroNome ?? "?")]

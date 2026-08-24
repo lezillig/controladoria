@@ -3,6 +3,7 @@ import type { ContextoAuditoria } from "./types";
 import type { Periodo } from "./periodos";
 import { dentro } from "./periodos";
 import { somar } from "./agents/comum";
+import { dataDeCompetencia } from "./competencia";
 
 // UNIT ECONOMICS — custo por contrato, por veiculo e por funcionario.
 //
@@ -116,9 +117,14 @@ export function resolverDestinos(ctx: ContextoAuditoria, titulo: OmieTitulo): De
   return [];
 }
 
+// Custo e receita por contrato, veículo e funcionário são leitura de
+// COMPETÊNCIA: o gasto pertence ao mês em que foi incorrido. Por vencimento, um
+// contrato faturado em junho e vencido em julho apareceria com custo em junho e
+// receita em julho — e a margem do contrato sairia errada nos dois meses.
+// Ver competencia.ts.
 function titulosDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo, natureza: "PAGAR" | "RECEBER"): OmieTitulo[] {
   return ctx.titulos.filter(
-    (t) => t.natureza === natureza && !t.cancelado && dentro(t.dataVencimento, periodo)
+    (t) => t.natureza === natureza && !t.cancelado && dentro(dataDeCompetencia(t), periodo)
   );
 }
 

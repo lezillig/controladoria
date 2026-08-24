@@ -7,6 +7,10 @@ import { calcularCiclo } from "./agents/fluxoCaixa";
 import { saldoAtualCents } from "./agents/conciliacao";
 import { custoTotalPeriodo, rentabilidadePorContrato } from "./unitEconomics";
 import type { ContextoAuditoria } from "./types";
+// Competência pela data de EMISSÃO — ver competencia.ts. Só o resultado DO MÊS
+// muda de critério; atraso, "vence em 30 dias" e pontualidade de pagamento
+// continuam pelo vencimento, que é a pergunta que eles fazem.
+import { dataDeCompetencia } from "./competencia";
 
 // BALANCED SCORECARD
 //
@@ -58,11 +62,11 @@ export const INDICADORES_BSC: IndicadorBsc[] = [
     calcular: (ctx) => {
       const janelas = montarJanelas(ctx.dataReferencia);
       const receita = somar(
-        titulosAtivos(ctx, "RECEBER").filter((t) => dentro(t.dataVencimento, janelas.mesAtual)),
+        titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), janelas.mesAtual)),
         (t) => t.valorDocumentoCents
       );
       const despesa = somar(
-        titulosAtivos(ctx, "PAGAR").filter((t) => dentro(t.dataVencimento, janelas.mesAtual)),
+        titulosAtivos(ctx, "PAGAR").filter((t) => dentro(dataDeCompetencia(t), janelas.mesAtual)),
         (t) => t.valorDocumentoCents
       );
       return { valor: pct(receita - despesa, receita), detalhes: { receita, despesa } };
@@ -143,7 +147,7 @@ export const INDICADORES_BSC: IndicadorBsc[] = [
     metaSugerida: 30,
     calcular: (ctx) => {
       const janelas = montarJanelas(ctx.dataReferencia);
-      const titulos = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(t.dataVencimento, janelas.mesAtual));
+      const titulos = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), janelas.mesAtual));
       const total = somar(titulos, (t) => t.valorDocumentoCents);
       if (total <= 0) return { valor: null };
       const porCliente = new Map<string, number>();
@@ -206,7 +210,7 @@ export const INDICADORES_BSC: IndicadorBsc[] = [
     metaSugerida: 100,
     calcular: (ctx) => {
       const janelas = montarJanelas(ctx.dataReferencia);
-      const titulos = ctx.titulos.filter((t) => !t.cancelado && dentro(t.dataVencimento, janelas.mesAtual));
+      const titulos = ctx.titulos.filter((t) => !t.cancelado && dentro(dataDeCompetencia(t), janelas.mesAtual));
       if (titulos.length === 0) return { valor: null };
       return { valor: pct(titulos.filter((t) => t.categoriaCodigo).length, titulos.length) };
     },
@@ -306,7 +310,7 @@ export const INDICADORES_BSC: IndicadorBsc[] = [
     calcular: (ctx) => {
       const janelas = montarJanelas(ctx.dataReferencia);
       const receita = somar(
-        titulosAtivos(ctx, "RECEBER").filter((t) => dentro(t.dataVencimento, janelas.mesAtual)),
+        titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), janelas.mesAtual)),
         (t) => t.valorDocumentoCents
       );
       const ativos = ctx.motoristas.filter((m) => m.active).length;
@@ -345,7 +349,7 @@ export const INDICADORES_BSC: IndicadorBsc[] = [
         (a) => a.valorCents
       );
       const receita = somar(
-        titulosAtivos(ctx, "RECEBER").filter((t) => dentro(t.dataVencimento, janelas.mesAtual)),
+        titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), janelas.mesAtual)),
         (t) => t.valorDocumentoCents
       );
       return { valor: pct(combustivel, receita), detalhes: { combustivel, receita } };

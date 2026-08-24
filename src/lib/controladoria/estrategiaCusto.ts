@@ -2,6 +2,9 @@ import { fmtBRL, fmtPercent } from "./format";
 import { inicioDoMes } from "./periodos";
 import { somar, titulosAtivos } from "./agents/comum";
 import type { ContextoAuditoria } from "./types";
+// Custo POR MÊS é competência: a despesa pertence ao mês em que foi incorrida,
+// não ao mês em que a fatura vence. Ver competencia.ts.
+import { dataDeCompetencia } from "./competencia";
 
 // ESTRATÉGIA DE REDUÇÃO DE CUSTO — onde cortar, e por quê.
 //
@@ -100,9 +103,10 @@ function seriesMensais(ctx: ContextoAuditoria): { meses: string[]; porCategoria:
 
   const porCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "PAGAR")) {
-    if (t.dataVencimento < primeiroMes || t.dataVencimento > ctx.dataReferencia) continue;
+    const competencia = dataDeCompetencia(t);
+    if (competencia < primeiroMes || competencia > ctx.dataReferencia) continue;
     const categoria = t.categoriaCodigo ?? "SEM_CATEGORIA";
-    const mes = chaveMes(t.dataVencimento);
+    const mes = chaveMes(competencia);
     const serie = porCategoria.get(categoria) ?? new Map<string, number>();
     serie.set(mes, (serie.get(mes) ?? 0) + t.valorDocumentoCents);
     porCategoria.set(categoria, serie);
@@ -110,8 +114,9 @@ function seriesMensais(ctx: ContextoAuditoria): { meses: string[]; porCategoria:
 
   const receitaPorMes = new Map<string, number>();
   for (const t of titulosAtivos(ctx, "RECEBER")) {
-    if (t.dataVencimento < primeiroMes || t.dataVencimento > ctx.dataReferencia) continue;
-    const mes = chaveMes(t.dataVencimento);
+    const competencia = dataDeCompetencia(t);
+    if (competencia < primeiroMes || competencia > ctx.dataReferencia) continue;
+    const mes = chaveMes(competencia);
     receitaPorMes.set(mes, (receitaPorMes.get(mes) ?? 0) + t.valorDocumentoCents);
   }
 
