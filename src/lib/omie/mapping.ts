@@ -30,10 +30,59 @@ import type {
 
 type Bruto = Record<string, unknown>;
 
+// BUSCA TOLERANTE A CAIXA E A ESPACO NO NOME DO CAMPO.
+//
+// O diagnostico das duas contas reais mostrou duas armadilhas na resposta da
+// Omie, e as duas produzem o mesmo estrago silencioso: campo lido como nulo,
+// registro gravado vazio, e o problema so aparece semanas depois como "por que
+// a coluna de imposto esta zerada".
+//
+//   CAIXA. A sigla do imposto vem em maiuscula — `nValorIR`, `nValorINSS`,
+//   `nValorCOFINS` — enquanto o codigo procurava `nValorIr`. Uma letra.
+//
+//   ESPACO NO FIM DO NOME. A NF-e devolve, literalmente, `vRetPrev ` e
+//   `vBCIbs ` com espaco no fim da CHAVE. Nao e erro de transcricao do
+//   diagnostico: a lista de campos crus veio assim da conta. E
+//   `obj["vRetPrev"]` nunca encontra `obj["vRetPrev "]`.
+//
+// Consertar campo a campo trataria os casos de hoje e deixaria os de amanha. A
+// busca abaixo tenta primeiro o nome EXATO — quem escreveu o alias continua
+// mandando — e so entao cai para a comparacao normalizada (sem espaco nas
+// pontas, sem diferenca de caixa) sobre as chaves que o registro realmente tem.
+//
+// O indice normalizado e montado uma vez por objeto e guardado num WeakMap:
+// cada registro tem dezenas de campos lidos em sequencia, e refazer o indice a
+// cada leitura seria varrer o objeto inteiro dezenas de vezes por linha
+// espelhada.
+const indiceNormalizado = new WeakMap<Bruto, Map<string, unknown>>();
+
+function normalizarChave(chave: string): string {
+  return chave.trim().toLowerCase();
+}
+
+function buscar(obj: Bruto, key: string): unknown {
+  const direto = obj[key];
+  if (direto !== undefined) return direto;
+
+  let indice = indiceNormalizado.get(obj);
+  if (!indice) {
+    indice = new Map<string, unknown>();
+    for (const [k, v] of Object.entries(obj)) {
+      const normal = normalizarChave(k);
+      // A PRIMEIRA ocorrencia vence. Se um registro trouxesse `nValorIR` e
+      // `nValorIr` ao mesmo tempo, a ordem de declaracao decide — e a busca
+      // exata acima ja teria resolvido o caso de quem pediu o nome certo.
+      if (!indice.has(normal)) indice.set(normal, v);
+    }
+    indiceNormalizado.set(obj, indice);
+  }
+  return indice.get(normalizarChave(key));
+}
+
 export function str(obj: Bruto | null | undefined, ...keys: string[]): string | null {
   if (!obj) return null;
   for (const key of keys) {
-    const v = obj[key];
+    const v = buscar(obj, key);
     if (typeof v === "string" && v.trim() !== "") return v.trim();
     if (typeof v === "number" && Number.isFinite(v)) return String(v);
   }
@@ -43,7 +92,7 @@ export function str(obj: Bruto | null | undefined, ...keys: string[]): string | 
 export function num(obj: Bruto | null | undefined, ...keys: string[]): number | null {
   if (!obj) return null;
   for (const key of keys) {
-    const v = obj[key];
+    const v = buscar(obj, key);
     if (typeof v === "number" && Number.isFinite(v)) return v;
     if (typeof v === "string" && v.trim() !== "") {
       // A Omie devolve numero como number na maioria dos casos, mas alguns
@@ -72,7 +121,7 @@ export function centsOuZero(obj: Bruto | null | undefined, ...keys: string[]): n
 export function bool(obj: Bruto | null | undefined, ...keys: string[]): boolean | null {
   if (!obj) return null;
   for (const key of keys) {
-    const v = obj[key];
+    const v = buscar(obj, key);
     if (typeof v === "boolean") return v;
     if (typeof v === "string") {
       const t = v.trim().toUpperCase();
@@ -133,7 +182,7 @@ export function hashContaBancaria(banco: string | null, agencia: string | null, 
 
 export function obj(bruto: Bruto, ...keys: string[]): Bruto | null {
   for (const key of keys) {
-    const v = bruto[key];
+    const v = buscar(bruto, key);
     if (v && typeof v === "object" && !Array.isArray(v)) return v as Bruto;
   }
   return null;
@@ -142,7 +191,7 @@ export function obj(bruto: Bruto, ...keys: string[]): Bruto | null {
 export function arr(bruto: Bruto | null | undefined, ...keys: string[]): Bruto[] {
   if (!bruto) return [];
   for (const key of keys) {
-    const v = bruto[key];
+    const v = buscar(bruto, key);
     if (Array.isArray(v)) return v as Bruto[];
   }
   return [];
