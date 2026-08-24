@@ -9,7 +9,7 @@ import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { ultimasFalhas } from "@/lib/controladoria/falhas";
 import { apenasNotas, janelasComFalha } from "@/lib/controladoria/janelasComFalha";
 import { ultimaMedicaoDaAuditoria } from "@/lib/controladoria/medicaoAuditoria";
-import { driftDoEsquema, ondeOBancoOlha } from "@/lib/controladoria/esquema";
+import { driftDoEsquema, ondeOBancoOlha, sobrasEmOutrosEsquemas } from "@/lib/controladoria/esquema";
 import { esquemaDaControladoria } from "@/lib/esquemaDoBanco";
 import { versaoPublicada } from "@/lib/controladoria/versao";
 import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
@@ -59,7 +59,7 @@ export default async function SincronizacaoPage() {
   });
   const dataInicioBase = config?.dataInicioBase ?? new Date();
 
-  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde, janelasRuins, medicao] =
+  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde, janelasRuins, medicao, sobras] =
     await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
@@ -83,6 +83,7 @@ export default async function SincronizacaoPage() {
     ondeOBancoOlha(),
     janelasComFalha(session.companyId),
     ultimaMedicaoDaAuditoria(session.companyId),
+    sobrasEmOutrosEsquemas(),
   ]);
 
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
@@ -489,6 +490,27 @@ export default async function SincronizacaoPage() {
               </li>
             ))}
           </ul>
+          {sobras.length > 0 && (
+            <>
+              <p className="mt-3 text-xs font-medium text-slate-800">
+                Cópias antigas da Controladoria em outros schemas — candidatas a limpeza:
+              </p>
+              <ul className="mt-1 space-y-0.5 font-mono text-[11px] text-slate-600">
+                {sobras.map((t) => (
+                  <li key={`${t.esquema}.${t.tabela}`}>
+                    {t.esquema}.{t.tabela} —{" "}
+                    {t.linhasEstimadas < 0 ? "nunca analisada" : `~${fmtNumero(Math.round(t.linhasEstimadas))} linha(s)`}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-xs text-slate-500">
+                Estimativa do planejador, não contagem exata — basta para decidir. O sistema não as usa mais, mas quem
+                abrir um console no banco e consultar sem qualificar o schema vai encontrar a tabela errada.{" "}
+                <strong>Nada é apagado automaticamente:</strong> o schema <code>public</code> é onde vive a gestão de
+                motoristas, e um DROP no lugar errado ali não é um susto.
+              </p>
+            </>
+          )}
           {onde.titulosPeloPrisma !== null &&
           onde.titulosPorSqlCru !== null &&
           onde.titulosPeloPrisma !== onde.titulosPorSqlCru ? (

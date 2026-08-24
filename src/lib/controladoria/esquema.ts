@@ -261,3 +261,59 @@ export async function temColuna(tabela: string, coluna: string): Promise<boolean
     return false;
   }
 }
+
+
+// SOBRAS DA MUDANÇA DE SCHEMA.
+//
+// O diagnóstico de produção mostrou o retrato: o banco `neondb` tem o schema
+// `controladoria` com as 24 tabelas boas, e o schema `public` com 38 tabelas —
+// as do sistema de gestão MAIS uma cópia antiga da Controladoria, deixada para
+// trás quando o schema foi movido. `SELECT COUNT(*) FROM "OmieTitulo"` sem
+// qualificar devolvia 0: a tabela existe em `public`, vazia, na forma anterior
+// às conexões.
+//
+// Ela não atrapalha mais o sistema — todo SQL cru é qualificado. Atrapalha
+// gente: quem abrir um console no banco e consultar `OmieTitulo` vai encontrar
+// a tabela errada, vazia, e concluir que a base foi perdida.
+//
+// Esta função lista as candidatas a limpeza e diz quantas linhas cada uma tem,
+// para a decisão ser tomada olhando o dado. Ela NÃO apaga nada: o schema
+// `public` é onde vive o sistema de gestão de motoristas, e um DROP no lugar
+// errado ali não é um susto — é a frota inteira.
+export type SobraDeTabela = {
+  esquema: string;
+  tabela: string;
+  // Estimativa do planejador (`reltuples`), não contagem exata: contar linha de
+  // tabela arbitrária exigiria SQL dinâmico, e montar SQL a partir de nome
+  // vindo do catálogo é como se escreve uma injeção com as próprias mãos.
+  // Para "dá para apagar?" a estimativa basta — e -1 significa que a tabela
+  // nunca foi analisada, o que a tela diz em vez de mostrar como zero.
+  linhasEstimadas: number;
+};
+
+export async function sobrasEmOutrosEsquemas(): Promise<SobraDeTabela[]> {
+  const meu = esquemaDaControladoria();
+  const modelos = Prisma.dmmf.datamodel.models.map((m) => nomeFisico(m));
+
+  try {
+    const linhas = await prisma.$queryRaw<{ esquema: string; tabela: string; linhas: number }[]>`
+      SELECT n.nspname AS esquema,
+             c.relname AS tabela,
+             c.reltuples::double precision AS linhas
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE c.relkind = 'r'
+         AND n.nspname <> ${meu}
+         AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+         AND c.relname = ANY(${modelos})
+       ORDER BY 1, 2
+    `;
+    return linhas.map((l) => ({
+      esquema: l.esquema,
+      tabela: l.tabela,
+      linhasEstimadas: Number(l.linhas),
+    }));
+  } catch {
+    return [];
+  }
+}
