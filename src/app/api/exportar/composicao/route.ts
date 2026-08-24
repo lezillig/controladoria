@@ -5,7 +5,7 @@ import { composicaoDoPeriodo } from "@/lib/controladoria/composicao";
 import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { mesCompleto, rotuloMes } from "@/lib/controladoria/periodos";
-import { resolverEscopo, resolverPeriodo } from "@/app/(app)/_dados";
+import { resolverEscopo, resolverPeriodo, resolverRegime } from "@/app/(app)/_dados";
 
 // EXPORTAÇÃO DA COMPOSIÇÃO DE RECEITA E DESPESA.
 //
@@ -29,6 +29,8 @@ export async function GET(req: NextRequest) {
 
   const empresaParam = req.nextUrl.searchParams.get("empresa") ?? undefined;
   const competenciaParam = req.nextUrl.searchParams.get("competencia") ?? undefined;
+  const regime = resolverRegime(req.nextUrl.searchParams.get("regime") ?? undefined);
+  const noCaixa = regime === "caixa";
 
   const escopo = await resolverEscopo(session.companyId, empresaParam);
   const periodo = resolverPeriodo(competenciaParam);
@@ -42,8 +44,8 @@ export async function GET(req: NextRequest) {
   // Em sequência, não em paralelo: o pooler do Neon tem teto de conexões, e
   // uma rota de exportação não pode competir com quem está navegando.
   const escopoConsulta = { companyId: session.companyId, conexaoId: escopo.conexaoId };
-  const receita = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
-  const despesa = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
+  const receita = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER", regime });
+  const despesa = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR", regime });
   const retencoes = await retencoesDoPeriodo({ ...escopoConsulta, periodo: mes });
 
   const empresa = escopo.apelido
@@ -54,14 +56,29 @@ export async function GET(req: NextRequest) {
 
   const linhas: (string | number | null)[][] = [
     ...cabecalhoDeContexto({
-      titulo: "Composição de receita e despesa por categoria",
+      titulo: noCaixa
+        ? "Composição do recebido e do pago por categoria (regime de CAIXA)"
+        : "Composição de receita e despesa por categoria (regime de COMPETÊNCIA)",
       empresa,
       competencia: competencia,
-      criterio:
-      "Competência — títulos não cancelados, pela data de vencimento no mês inteiro, no valor do documento",
+      // O critério viaja com o arquivo. Ele circula por e-mail e é aberto por
+    // quem não escolheu o regime — sem esta linha, dois arquivos do mesmo mês
+    // com números diferentes parecem contradição, e são só perguntas
+    // diferentes.
+    criterio: noCaixa
+      ? "Caixa — baixas registradas no mês inteiro, pela data da baixa, no valor baixado"
+      : "Competência — títulos não cancelados, pela data de EMISSÃO no mês inteiro, no valor do documento",
       geradoEm: new Date(),
     }),
-    ["Natureza", "Categoria", "Tipo de documento", "Conta corrente", "Títulos", "Valor (R$)", "% da natureza"],
+    [
+      "Natureza",
+      "Categoria",
+      "Tipo de documento",
+      "Conta corrente",
+      noCaixa ? "Baixas" : "Títulos",
+      "Valor (R$)",
+      "% da natureza",
+    ],
   ];
 
   const bloco = (rotulo: string, dados: typeof receita) => {
@@ -74,11 +91,19 @@ export async function GET(req: NextRequest) {
     linhas.push([rotulo, "TOTAL", "", "", dados.quantidade, dados.totalCents / 100, 100]);
   };
 
-  bloco("Receita", receita);
+  bloco(noCaixa ? "Recebido" : "Receita", receita);
   linhas.push([]);
-  bloco("Despesa", despesa);
+  bloco(noCaixa ? "Pago" : "Despesa", despesa);
   linhas.push([]);
-  linhas.push(["Resultado", "RECEITA - DESPESA", "", "", "", (receita.totalCents - despesa.totalCents) / 100, ""]);
+  linhas.push([
+    noCaixa ? "Fluxo líquido" : "Resultado",
+    noCaixa ? "RECEBIDO - PAGO" : "RECEITA - DESPESA",
+    "",
+    "",
+    "",
+    (receita.totalCents - despesa.totalCents) / 100,
+    "",
+  ]);
 
   // RETENÇÕES, no mesmo arquivo e depois do resultado.
   //
@@ -108,7 +133,7 @@ export async function GET(req: NextRequest) {
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="${nomeDoArquivo("composicao", empresa, competencia)}"`,
+      "Content-Disposition": `attachment; filename="${nomeDoArquivo(noCaixa ? "composicao-caixa" : "composicao-competencia", empresa, competencia)}"`,
       // Sem cache: os números mudam a cada sincronização, e uma planilha
       // servida de cache traria o retrato de ontem sem avisar.
       "Cache-Control": "no-store",

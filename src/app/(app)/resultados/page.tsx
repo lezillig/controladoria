@@ -8,7 +8,7 @@ import { receitaFiscalDoPeriodo, receitaNaoOperacional } from "@/lib/controlador
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { fimDoMes, inicioDoDia, inicioDoMes, mesCompleto } from "@/lib/controladoria/periodos";
 import PageHeader from "@/components/ui/PageHeader";
-import { competenciasDisponiveis, resolverEscopo, resolverPeriodo, sessaoControladoria } from "../_dados";
+import { competenciasDisponiveis, resolverEscopo, resolverPeriodo, resolverRegime, sessaoControladoria } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 
@@ -32,12 +32,14 @@ import Filtros from "../Filtros";
 export default async function ResultadosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+  searchParams: Promise<{ empresa?: string; competencia?: string; regime?: string }>;
 }) {
   const session = await sessaoControladoria();
   const params = await searchParams;
   const escopo = await resolverEscopo(session.companyId, params.empresa);
   const periodo = resolverPeriodo(params.competencia);
+  const regime = resolverRegime(params.regime);
+  const noCaixa = regime === "caixa";
 
   const [config, conexoes] = await Promise.all([
     prisma.controladoriaConfig.findUnique({
@@ -75,10 +77,10 @@ export default async function ResultadosPage({
   // abrir. O painel escapou por disparar três; esta foi a primeira a passar do
   // limite, e não seria a última.
   const serie = await serieMensal({ ...escopoConsulta, desde, ate });
-  const receita = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
-  const despesa = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
-  const topReceber = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
-  const topPagar = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
+  const receita = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER", regime });
+  const despesa = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR", regime });
+  const topReceber = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER", regime });
+  const topPagar = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR", regime });
   const retencoes = await retencoesDoPeriodo({ ...escopoConsulta, periodo: mes });
   const fiscal = await receitaFiscalDoPeriodo({ ...escopoConsulta, periodo: mes });
   const naoOperacional = await receitaNaoOperacional({ ...escopoConsulta, periodo: mes });
@@ -108,6 +110,28 @@ export default async function ResultadosPage({
   // por isso `indice - 1` é sempre o mês de calendário anterior, e não "o
   // anterior que teve título".
   const mesAnteriorDaSerie = indiceDoMes > 0 ? serie[indiceDoMes - 1] : null;
+
+  // ACUMULADO DO ANO NO REGIME DE CAIXA.
+  //
+  // A série já traz o acumulado de competência pronto, zerando em janeiro. Para
+  // caixa não havia equivalente, e mostrar o acumulado de competência ao lado
+  // de cartões de caixa seria a mistura que o seletor existe para acabar.
+  //
+  // Somado aqui, sobre a mesma série e com a mesma regra de zerar na virada do
+  // ano: são doze linhas na memória, não vale uma consulta a mais.
+  const acumuladoDeCaixa = (() => {
+    if (!fechamentoDoAno) return { recebido: 0, pago: 0, liquido: 0 };
+    const ano = fechamentoDoAno.competencia.slice(0, 4);
+    const ate = fechamentoDoAno.competencia;
+    let recebido = 0;
+    let pago = 0;
+    for (const m of serie) {
+      if (!m.competencia.startsWith(ano) || m.competencia > ate) continue;
+      recebido += m.recebidoCents;
+      pago += m.pagoCents;
+    }
+    return { recebido, pago, liquido: recebido - pago };
+  })();
   const variacao = (atual: number, anterior: number | undefined) =>
     anterior === undefined ? null : variacaoPercent(atual, anterior);
 
@@ -117,6 +141,7 @@ export default async function ResultadosPage({
   const filtros = new URLSearchParams();
   if (escopo.conexaoId) filtros.set("empresa", escopo.conexaoId);
   if (periodo.competencia) filtros.set("competencia", periodo.competencia);
+  if (noCaixa) filtros.set("regime", "caixa");
   const urlDaPlanilha = `/api/exportar/composicao${filtros.toString() ? `?${filtros}` : ""}`;
   // Mesma querystring: a lista de notas serve para conferir contra o que a
   // Omie exporta, e conferir o mês errado é o jeito mais rápido de concluir
@@ -127,7 +152,7 @@ export default async function ResultadosPage({
     <Tabela
       colunas={["Categoria", "Tipo", "Conta", "Títulos", "Valor", "%"]}
       alinharDireita={[3, 4, 5]}
-      vazio="Nenhum título com vencimento neste mês."
+      vazio={noCaixa ? "Nenhuma baixa registrada neste mês." : "Nenhum título emitido neste mês."}
       linhas={dados.linhas.map((l) => [
         l.categoria,
         l.tipo,
@@ -143,7 +168,7 @@ export default async function ResultadosPage({
     <Tabela
       colunas={["Vencimento", "Empresa", "Documento", "Parceiro", "Categoria", "Situação", "Valor"]}
       alinharDireita={[6]}
-      vazio="Nenhum título com vencimento neste mês."
+      vazio={noCaixa ? "Nenhuma baixa registrada neste mês." : "Nenhum título emitido neste mês."}
       linhas={titulos.map((t) => [
         fmtData(t.dataVencimento),
         t.conexaoApelido,
@@ -160,7 +185,11 @@ export default async function ResultadosPage({
     <div className="max-w-6xl space-y-6">
       <PageHeader
         title="Resultado mês a mês"
-        subtitle="Competência pela data de vencimento do título, como no painel e no relatório. O acumulado zera em janeiro, como em qualquer DRE gerencial."
+        subtitle={
+          noCaixa
+            ? "Regime de CAIXA: pelo dinheiro que entrou e saiu, na data da baixa. Responde \u201Csobrou dinheiro no mês?\u201D."
+            : "Regime de COMPETÊNCIA: pela data de emissão do documento — o critério que bate com a declaração de faturamento da contabilidade. Responde \u201Ca operação deu lucro no mês?\u201D. O acumulado zera em janeiro."
+        }
       />
 
       <Filtros
@@ -168,6 +197,7 @@ export default async function ResultadosPage({
         empresaAtiva={escopo.conexaoId}
         competencias={competenciasDisponiveis(config?.dataInicioBase ?? desde)}
         competenciaAtiva={periodo.competencia}
+        regimeAtivo={regime}
         rota="/resultados"
       />
 
@@ -183,40 +213,63 @@ export default async function ResultadosPage({
       {fechamentoDoAno && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Kpi
-            rotulo={`Receita — ${mes.rotulo}`}
-            valor={fmtBRL(fechamentoDoAno.receitaCents)}
+            rotulo={`${noCaixa ? "Recebido" : "Receita"} — ${mes.rotulo}`}
+            valor={fmtBRL(noCaixa ? fechamentoDoAno.recebidoCents : fechamentoDoAno.receitaCents)}
             apoio={
               mesAnteriorDaSerie
-                ? `${fmtVariacao(variacao(fechamentoDoAno.receitaCents, mesAnteriorDaSerie.receitaCents))} vs ${mesAnteriorDaSerie.rotulo}`
+                ? `${fmtVariacao(
+                    noCaixa
+                      ? variacao(fechamentoDoAno.recebidoCents, mesAnteriorDaSerie.recebidoCents)
+                      : variacao(fechamentoDoAno.receitaCents, mesAnteriorDaSerie.receitaCents)
+                  )} vs ${mesAnteriorDaSerie.rotulo}`
                 : "sem mês anterior na base"
             }
           />
           <Kpi
-            rotulo={`Despesa — ${mes.rotulo}`}
-            valor={fmtBRL(fechamentoDoAno.despesaCents)}
+            rotulo={`${noCaixa ? "Pago" : "Despesa"} — ${mes.rotulo}`}
+            valor={fmtBRL(noCaixa ? fechamentoDoAno.pagoCents : fechamentoDoAno.despesaCents)}
             apoio={
               mesAnteriorDaSerie
-                ? `${fmtVariacao(variacao(fechamentoDoAno.despesaCents, mesAnteriorDaSerie.despesaCents))} vs ${mesAnteriorDaSerie.rotulo}`
+                ? `${fmtVariacao(
+                    noCaixa
+                      ? variacao(fechamentoDoAno.pagoCents, mesAnteriorDaSerie.pagoCents)
+                      : variacao(fechamentoDoAno.despesaCents, mesAnteriorDaSerie.despesaCents)
+                  )} vs ${mesAnteriorDaSerie.rotulo}`
                 : "sem mês anterior na base"
             }
           />
           <Kpi
-            rotulo={`Resultado — ${mes.rotulo}`}
-            valor={fmtBRL(fechamentoDoAno.resultadoCents)}
+            rotulo={`${noCaixa ? "Fluxo líquido" : "Resultado"} — ${mes.rotulo}`}
+            valor={fmtBRL(noCaixa ? fechamentoDoAno.fluxoLiquidoCents : fechamentoDoAno.resultadoCents)}
             apoio={
-              mesAnteriorDaSerie ? `${fmtBRL(mesAnteriorDaSerie.resultadoCents)} em ${mesAnteriorDaSerie.rotulo}` : undefined
+              mesAnteriorDaSerie
+                ? `${fmtBRL(
+                    noCaixa ? mesAnteriorDaSerie.fluxoLiquidoCents : mesAnteriorDaSerie.resultadoCents
+                  )} em ${mesAnteriorDaSerie.rotulo}`
+                : undefined
             }
-            tom={fechamentoDoAno.resultadoCents >= 0 ? "bom" : "ruim"}
+            tom={(noCaixa ? fechamentoDoAno.fluxoLiquidoCents : fechamentoDoAno.resultadoCents) >= 0 ? "bom" : "ruim"}
           />
+          {/* Margem é razão entre resultado e receita — conceito de
+              competência. No caixa a leitura equivalente é a conversão: quanto
+              do que entrou sobrou depois do que saiu. */}
           <Kpi
-            rotulo={`Margem — ${mes.rotulo}`}
-            valor={fechamentoDoAno.margemPercent === null ? "—" : fmtPercent(fechamentoDoAno.margemPercent)}
+            rotulo={`${noCaixa ? "Conversão de caixa" : "Margem"} — ${mes.rotulo}`}
+            valor={
+              noCaixa
+                ? fechamentoDoAno.recebidoCents > 0
+                  ? fmtPercent((fechamentoDoAno.fluxoLiquidoCents / fechamentoDoAno.recebidoCents) * 100)
+                  : "—"
+                : fechamentoDoAno.margemPercent === null
+                  ? "—"
+                  : fmtPercent(fechamentoDoAno.margemPercent)
+            }
             apoio={
-              mesAnteriorDaSerie?.margemPercent !== null && mesAnteriorDaSerie
+              !noCaixa && mesAnteriorDaSerie && mesAnteriorDaSerie.margemPercent !== null
                 ? `${fmtPercent(mesAnteriorDaSerie.margemPercent)} em ${mesAnteriorDaSerie.rotulo}`
                 : undefined
             }
-            tom={fechamentoDoAno.resultadoCents >= 0 ? "bom" : "ruim"}
+            tom={(noCaixa ? fechamentoDoAno.fluxoLiquidoCents : fechamentoDoAno.resultadoCents) >= 0 ? "bom" : "ruim"}
           />
         </div>
       )}
@@ -227,30 +280,34 @@ export default async function ResultadosPage({
               e um cartão que muda de valor sem mudar de rótulo é a forma mais
               rápida de alguém comparar dois períodos achando que é um só. */}
           <Kpi
-            rotulo={`Receita acumulada ${ultimoAno}`}
+            rotulo={`${noCaixa ? "Recebido acumulado" : "Receita acumulada"} ${ultimoAno}`}
             apoio={`Até ${mes.rotulo}`}
-            valor={fmtBRL(fechamentoDoAno.receitaAcumuladaCents)}
+            valor={fmtBRL(noCaixa ? acumuladoDeCaixa.recebido : fechamentoDoAno.receitaAcumuladaCents)}
           />
           <Kpi
-            rotulo={`Despesa acumulada ${ultimoAno}`}
+            rotulo={`${noCaixa ? "Pago acumulado" : "Despesa acumulada"} ${ultimoAno}`}
             apoio={`Até ${mes.rotulo}`}
-            valor={fmtBRL(fechamentoDoAno.despesaAcumuladaCents)}
+            valor={fmtBRL(noCaixa ? acumuladoDeCaixa.pago : fechamentoDoAno.despesaAcumuladaCents)}
           />
           <Kpi
             apoio={`Até ${mes.rotulo}`}
-            rotulo={`Resultado acumulado ${ultimoAno}`}
-            valor={fmtBRL(fechamentoDoAno.resultadoAcumuladoCents)}
-            tom={fechamentoDoAno.resultadoAcumuladoCents >= 0 ? "bom" : "ruim"}
+            rotulo={`${noCaixa ? "Fluxo acumulado" : "Resultado acumulado"} ${ultimoAno}`}
+            valor={fmtBRL(noCaixa ? acumuladoDeCaixa.liquido : fechamentoDoAno.resultadoAcumuladoCents)}
+            tom={(noCaixa ? acumuladoDeCaixa.liquido : fechamentoDoAno.resultadoAcumuladoCents) >= 0 ? "bom" : "ruim"}
           />
           <Kpi
-            rotulo="Margem acumulada"
+            rotulo={noCaixa ? "Conversão acumulada" : "Margem acumulada"}
             apoio={`Até ${mes.rotulo}`}
             valor={fmtPercent(
-              fechamentoDoAno.receitaAcumuladaCents > 0
-                ? (fechamentoDoAno.resultadoAcumuladoCents / fechamentoDoAno.receitaAcumuladaCents) * 100
-                : 0
+              noCaixa
+                ? acumuladoDeCaixa.recebido > 0
+                  ? (acumuladoDeCaixa.liquido / acumuladoDeCaixa.recebido) * 100
+                  : 0
+                : fechamentoDoAno.receitaAcumuladaCents > 0
+                  ? (fechamentoDoAno.resultadoAcumuladoCents / fechamentoDoAno.receitaAcumuladaCents) * 100
+                  : 0
             )}
-            tom={fechamentoDoAno.resultadoAcumuladoCents >= 0 ? "bom" : "ruim"}
+            tom={(noCaixa ? acumuladoDeCaixa.liquido : fechamentoDoAno.resultadoAcumuladoCents) >= 0 ? "bom" : "ruim"}
           />
         </div>
       )}
@@ -376,8 +433,8 @@ export default async function ResultadosPage({
       </Secao>
 
       <Secao
-        titulo={`Composição da receita — ${mes.rotulo}`}
-        descricao={`${fmtBRL(receita.totalCents)} em ${fmtNumero(receita.quantidade)} título(s) a receber com vencimento no mês.`}
+        titulo={`Composição ${noCaixa ? "do recebido" : "da receita"} — ${mes.rotulo}`}
+        descricao={`${fmtBRL(receita.totalCents)} em ${fmtNumero(receita.quantidade)} ${noCaixa ? "baixa(s) registrada(s)" : "título(s) a receber emitido(s)"} no mês.`}
         acao={
           <div className="flex gap-3">
             {/* A planilha traz receita E despesa no mesmo arquivo — corrigir
@@ -402,8 +459,8 @@ export default async function ResultadosPage({
       </Secao>
 
       <Secao
-        titulo={`Composição da despesa — ${mes.rotulo}`}
-        descricao={`${fmtBRL(despesa.totalCents)} em ${fmtNumero(despesa.quantidade)} título(s) a pagar com vencimento no mês.`}
+        titulo={`Composição ${noCaixa ? "do pago" : "da despesa"} — ${mes.rotulo}`}
+        descricao={`${fmtBRL(despesa.totalCents)} em ${fmtNumero(despesa.quantidade)} ${noCaixa ? "baixa(s) registrada(s)" : "título(s) a pagar emitido(s)"} no mês.`}
         acao={
           <Link href="/titulos" className="text-xs font-medium text-blue-700 hover:underline">
             Ver todos os títulos

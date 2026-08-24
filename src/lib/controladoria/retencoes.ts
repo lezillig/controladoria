@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
+import { competenciaSql } from "./competencia";
 import type { Periodo } from "./periodos";
 
 // RETENÇÕES NA FONTE — o dinheiro que não passa pela conta.
@@ -82,8 +83,8 @@ export async function retencoesDoPeriodo(params: {
       FROM ${tabela("OmieTitulo")} t
      WHERE t."companyId" = ${companyId}
        AND t.cancelado = false
-       AND t."dataVencimento" >= ${periodo.inicio}
-       AND t."dataVencimento" <= ${periodo.fim}
+       AND ${competenciaSql("t")} >= ${periodo.inicio}
+       AND ${competenciaSql("t")} <= ${periodo.fim}
        ${filtro}
   `;
 

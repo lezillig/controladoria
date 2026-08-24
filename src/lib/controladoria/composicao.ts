@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { temColuna } from "./esquema";
+import { competenciaSql } from "./competencia";
+import type { Regime } from "@/app/(app)/Filtros";
 import type { Periodo } from "./periodos";
 
 // COMPOSIÇÃO DO MÊS — de onde vem cada real da receita e da despesa.
@@ -58,11 +60,38 @@ export async function composicaoDoPeriodo(params: {
   conexaoId?: string | null;
   periodo: Periodo;
   natureza: "PAGAR" | "RECEBER";
+  regime?: Regime;
 }): Promise<ComposicaoDoPeriodo> {
-  const { companyId, conexaoId, periodo, natureza } = params;
+  const { companyId, conexaoId, periodo, natureza, regime = "competencia" } = params;
 
   // Fragmento parametrizado, nunca interpolação: o id vem da querystring.
   const filtro = conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
+
+  // OS DOIS REGIMES, NA MESMA CONSULTA.
+  //
+  // Competência: o valor do DOCUMENTO, na data de EMISSÃO. Pergunta "quanto
+  // faturei / quanto gastei neste mês", tenha ou não sido pago.
+  //
+  // Caixa: o valor das BAIXAS, na data da baixa. Pergunta "quanto entrou /
+  // quanto saiu da conta neste mês". Um título de janeiro pago em julho conta
+  // em janeiro na competência e em julho no caixa — e é justamente esse
+  // descasamento que faz um mês fechar no azul num regime e no vermelho no
+  // outro.
+  //
+  // A categoria, o tipo e a conta continuam vindo do TÍTULO nos dois casos: a
+  // baixa não carrega classificação própria, e agrupar caixa por outra coisa
+  // faria as duas tabelas deixarem de ser comparáveis — que é o motivo de
+  // existir o seletor.
+  const daBaixa = regime === "caixa";
+  const juncaoBaixa = daBaixa
+    ? Prisma.sql`JOIN ${tabela("OmieBaixa")} bx ON bx."tituloId" = t.id`
+    : Prisma.empty;
+  const valorDaLinha = daBaixa ? Prisma.sql`bx."valorCents"` : Prisma.sql`t."valorDocumentoCents"`;
+  const dataDoFiltro = daBaixa ? Prisma.sql`bx."dataBaixa"` : competenciaSql("t");
+  // No caixa, o cancelamento do título não apaga o movimento: se houve baixa,
+  // o dinheiro passou pela conta. É a mesma regra que a série mensal já usa,
+  // e alinhar os dois "por coerência" faria esta tela discordar do painel.
+  const filtroCancelado = daBaixa ? Prisma.empty : Prisma.sql`AND t.cancelado = false`;
 
   // A descrição da categoria vem do PLANO DE CATEGORIAS quando o título não a
   // traz — e ele nunca traz: a Omie devolve só `cCodCateg` em
@@ -101,22 +130,23 @@ export async function composicaoDoPeriodo(params: {
            ) AS categoria,
            t."tipoDocumento" AS tipo,
            COALESCE(NULLIF(TRIM(cc.descricao), ''), cc."numeroConta", t."contaCorrenteCodigo") AS conta,
-           SUM(t."valorDocumentoCents")::bigint AS valor,
+           SUM(${valorDaLinha})::bigint AS valor,
            COUNT(*)::bigint AS quantidade
       FROM ${tabela("OmieTitulo")} t
+      ${juncaoBaixa}
       ${juncaoCategoria}
       LEFT JOIN ${tabela("OmieContaCorrente")} cc
         ON cc."companyId" = t."companyId"
        AND cc."conexaoId" = t."conexaoId"
        AND cc.codigo = t."contaCorrenteCodigo"
      WHERE t."companyId" = ${companyId}
-       AND t.cancelado = false
+       ${filtroCancelado}
        AND t.natureza::text = ${natureza}
-       AND t."dataVencimento" >= ${periodo.inicio}
-       AND t."dataVencimento" <= ${periodo.fim}
+       AND ${dataDoFiltro} >= ${periodo.inicio}
+       AND ${dataDoFiltro} <= ${periodo.fim}
        ${filtro}
      GROUP BY 1, 2, 3
-     ORDER BY SUM(t."valorDocumentoCents") DESC
+     ORDER BY SUM(${valorDaLinha}) DESC
   `;
 
   const totalCents = linhas.reduce((acc, l) => acc + Number(l.valor), 0);
@@ -160,16 +190,26 @@ export async function maioresTitulosDoPeriodo(params: {
   periodo: Periodo;
   natureza: "PAGAR" | "RECEBER";
   limite?: number;
+  regime?: Regime;
 }): Promise<TituloDoPeriodo[]> {
-  const { companyId, conexaoId, periodo, natureza, limite = 15 } = params;
+  const { companyId, conexaoId, periodo, natureza, limite = 15, regime = "competencia" } = params;
+
+  // No caixa, "os maiores do mês" são os que tiveram BAIXA no mês — e a data
+  // que os põe no período é a da última baixa. Filtrar por emissão aqui
+  // mostraria títulos que ainda não movimentaram a conta, ao lado de uma tabela
+  // que só soma o que movimentou.
+  const janela =
+    regime === "caixa"
+      ? { dataUltimaBaixa: { gte: periodo.inicio, lte: periodo.fim } }
+      : { dataEmissao: { gte: periodo.inicio, lte: periodo.fim } };
 
   return prisma.omieTitulo.findMany({
     where: {
       companyId,
       ...(conexaoId ? { conexaoId } : {}),
-      cancelado: false,
+      ...(regime === "caixa" ? {} : { cancelado: false }),
       natureza,
-      dataVencimento: { gte: periodo.inicio, lte: periodo.fim },
+      ...janela,
     },
     orderBy: { valorDocumentoCents: "desc" },
     take: limite,

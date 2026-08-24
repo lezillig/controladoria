@@ -21,11 +21,27 @@ import { Loader2 } from "lucide-react";
 
 export type OpcaoCompetencia = { valor: string; rotulo: string };
 
+// REGIME — a pergunta que a tela responde.
+//
+// Competência: quando o fato aconteceu. O serviço foi prestado e o documento
+// emitido em julho, o resultado é de julho, tenha o cliente pago ou não.
+// Responde "a operação deu lucro no mês?".
+//
+// Caixa: quando o dinheiro entrou ou saiu da conta, pela baixa. Responde
+// "sobrou dinheiro no mês?".
+//
+// Os dois são certos, e um mês pode fechar no azul num e no vermelho no outro
+// — é o descasamento entre faturar e receber. Misturar os dois é o erro mais
+// comum de relatório gerencial em PME; por isso a tela responde um de cada
+// vez, com o regime escolhido escrito em todo rótulo.
+export type Regime = "competencia" | "caixa";
+
 export default function Filtros({
   conexoes,
   empresaAtiva,
   competencias,
   competenciaAtiva,
+  regimeAtivo,
   rota,
   extras,
 }: {
@@ -33,6 +49,9 @@ export default function Filtros({
   empresaAtiva: string | null;
   competencias: OpcaoCompetencia[];
   competenciaAtiva: string | null;
+  // Ausente quando a tela não tem os dois regimes — o seletor some em vez de
+  // aparecer desabilitado, que só levantaria a pergunta "por que não posso".
+  regimeAtivo?: Regime;
   rota: string;
   // Parâmetros da própria tela que precisam sobreviver à troca de filtro —
   // a aba "a pagar / a receber" dos títulos, por exemplo. Sem isso, escolher
@@ -45,13 +64,16 @@ export default function Filtros({
   // Monta o destino preservando o OUTRO filtro. Trocar de empresa não pode
   // jogar a competência escolhida fora, e vice-versa: quem está comparando
   // março de AZUL com março de MCZ perderia o mês a cada clique.
-  const ir = (empresa: string | null, competencia: string | null) => {
+  const ir = (empresa: string | null, competencia: string | null, regime?: Regime) => {
     const q = new URLSearchParams();
     for (const [chave, valor] of Object.entries(extras ?? {})) {
       if (valor) q.set(chave, valor);
     }
     if (empresa) q.set("empresa", empresa);
     if (competencia) q.set("competencia", competencia);
+    // Só viaja na URL quando é o não-padrão: link limpo para o caso comum, e
+    // a ausência do parâmetro significando competência em todo lugar.
+    if (regime === "caixa") q.set("regime", "caixa");
     const busca = q.toString();
     iniciar(() => router.push(busca ? `${rota}?${busca}` : rota));
   };
@@ -101,6 +123,24 @@ export default function Filtros({
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {regimeAtivo && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-slate-500">Regime:</span>
+          {chip(
+            "Competência",
+            regimeAtivo === "competencia",
+            () => ir(empresaAtiva, competenciaAtiva, "competencia"),
+            "Pelo fato gerador — data de emissão do documento. Responde: a operação deu lucro no mês?"
+          )}
+          {chip(
+            "Caixa",
+            regimeAtivo === "caixa",
+            () => ir(empresaAtiva, competenciaAtiva, "caixa"),
+            "Pelo dinheiro que entrou e saiu — data da baixa. Responde: sobrou dinheiro no mês?"
+          )}
         </div>
       )}
 

@@ -108,3 +108,17 @@ export async function contextoDaPagina(
 export async function sessaoControladoria(): Promise<SessionPayload> {
   return requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
 }
+
+// REGIME DA LEITURA — competência ou caixa.
+//
+// Competência é o padrão: é a pergunta "a operação deu lucro no mês?", que é a
+// razão de existir de um módulo de controladoria. Caixa responde "sobrou
+// dinheiro?" — igualmente legítima, e é por isso que existe o seletor em vez de
+// uma escolha embutida.
+//
+// Qualquer valor diferente de "caixa" cai em competência, inclusive lixo na
+// querystring: um parâmetro digitado errado não pode virar uma terceira
+// leitura silenciosa.
+export function resolverRegime(param?: string): "competencia" | "caixa" {
+  return param === "caixa" ? "caixa" : "competencia";
+}

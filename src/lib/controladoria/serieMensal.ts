@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { rotuloMes } from "./periodos";
+import { competenciaSql } from "./competencia";
 
 // RESULTADO MÊS A MÊS — somado no banco, não na memória da função.
 //
@@ -15,8 +16,10 @@ import { rotuloMes } from "./periodos";
 // o Postgres agrupa e devolve uma linha por mês, alguns kilobytes no total.
 //
 // A REGRA DE CÁLCULO É A MESMA do painel e do relatório, deliberadamente:
-// regime de COMPETÊNCIA pela data de vencimento, sobre títulos não cancelados,
-// pelo valor do documento. Duas telas do mesmo sistema discordando sobre
+// regime de COMPETÊNCIA pela data de EMISSÃO, sobre títulos não cancelados,
+// pelo valor do documento. Era pela data de vencimento até a conferência com a
+// declaração de faturamento da contabilidade mostrar 32% de diferença — ver
+// competencia.ts. Duas telas do mesmo sistema discordando sobre
 // "receita do mês" não é uma inconsistência de exibição — é o fim da confiança
 // no sistema inteiro, e ninguém volta a usar um painel que já mentiu uma vez.
 
@@ -85,15 +88,15 @@ export async function serieMensal(params: {
 
   const [competencia, caixa, fiscal] = await Promise.all([
     prisma.$queryRaw<LinhaCompetencia[]>`
-      SELECT date_trunc('month', t."dataVencimento") AS mes,
+      SELECT date_trunc('month', ${competenciaSql("t")}) AS mes,
              t.natureza::text AS natureza,
              SUM(t."valorDocumentoCents")::bigint AS valor,
              COUNT(*)::bigint AS quantidade
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
-         AND t."dataVencimento" >= ${desde}
-         AND t."dataVencimento" <= ${ate}
+         AND ${competenciaSql("t")} >= ${desde}
+         AND ${competenciaSql("t")} <= ${ate}
          ${filtroConexao}
        GROUP BY 1, 2
        ORDER BY 1

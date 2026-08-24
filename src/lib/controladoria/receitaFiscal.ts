@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
+import { competenciaSql } from "./competencia";
 import type { Periodo } from "./periodos";
 
 // RECEITA PELO DOCUMENTO FISCAL EMITIDO — não pelo título a receber.
@@ -113,8 +114,8 @@ export async function receitaFiscalDoPeriodo(params: {
        AND t.cancelado = false
        AND t.natureza::text = 'RECEBER'
        AND UPPER(COALESCE(t."tipoDocumento", '')) IN ('CTE', 'CT-E', 'CTRC')
-       AND t."dataVencimento" >= ${periodo.inicio}
-       AND t."dataVencimento" <= ${periodo.fim}
+       AND ${competenciaSql("t")} >= ${periodo.inicio}
+       AND ${competenciaSql("t")} <= ${periodo.fim}
        ${filtroTitulo}
   `;
 
