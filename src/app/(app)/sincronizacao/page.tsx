@@ -8,6 +8,7 @@ import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { ultimasFalhas } from "@/lib/controladoria/falhas";
 import { driftDoEsquema } from "@/lib/controladoria/esquema";
+import { versaoPublicada } from "@/lib/controladoria/versao";
 import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
 import { disponibilidadeGestao } from "@/lib/gestao/leitura";
@@ -77,6 +78,7 @@ export default async function SincronizacaoPage() {
   ]);
 
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
+  const versao = versaoPublicada();
 
   // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
   // leitura da gestão, então só faz sentido consultá-la quando ela já rodou.
@@ -97,6 +99,16 @@ export default async function SincronizacaoPage() {
         <p className="mt-1 text-sm text-slate-500">
           O módulo mantém um espelho local somente-leitura do ERP. A Omie continua sendo a fonte de verdade contábil; o
           espelho existe para dar histórico estável, cruzamento entre domínios e velocidade de consulta à auditoria.
+        </p>
+        {/* VERSÃO NO AR — a resposta para "o deploy já rodou?".
+            Sem ela, a única forma de saber qual versão está atendendo é abrir
+            o painel da hospedagem, e a dúvida volta a cada correção: é o erro
+            de antes ou a versão nova falhando de novo? */}
+        <p className="mt-2 text-xs text-slate-400">
+          {versao.publicado
+            ? `Versão no ar: ${versao.commitCurto}${versao.buildEm ? ` · publicada em ${fmtDataHora(versao.buildEm)}` : ""}`
+            : "Ambiente local — sem publicação associada."}
+          {versao.mensagem ? ` · ${versao.mensagem}` : ""}
         </p>
       </div>
 

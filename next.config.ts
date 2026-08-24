@@ -34,7 +34,21 @@ const CABECALHOS_DE_SEGURANCA = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
+// Carimbo do build, gravado no momento em que ele acontece.
+//
+// Existe para responder "o deploy já rodou?" dentro do próprio sistema. Sem
+// isso, a única forma de saber qual versão está no ar é abrir o painel da
+// hospedagem — e a pergunta aparece toda vez que uma correção sobe: a tela
+// mostra o mesmo erro de antes ou já é a versão nova falhando de novo?
+//
+// `VERCEL_GIT_COMMIT_SHA` é variável de sistema da hospedagem e só existe lá;
+// em desenvolvimento fica vazia, e a tela diz isso em vez de inventar.
 const nextConfig: NextConfig = {
+  env: {
+    HORA_DO_BUILD: new Date().toISOString(),
+    COMMIT_DO_BUILD: process.env.VERCEL_GIT_COMMIT_SHA ?? "",
+    MENSAGEM_DO_BUILD: (process.env.VERCEL_GIT_COMMIT_MESSAGE ?? "").split("\n")[0].slice(0, 120),
+  },
   experimental: {
     // Extrato real de combustivel (RFCV) pode passar de 2MB (8mil+ linhas);
     // o limite padrao de Server Actions e 1MB.
