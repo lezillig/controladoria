@@ -8,6 +8,7 @@ import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { ultimasFalhas } from "@/lib/controladoria/falhas";
 import { driftDoEsquema, ondeOBancoOlha } from "@/lib/controladoria/esquema";
+import { esquemaDaControladoria } from "@/lib/esquemaDoBanco";
 import { versaoPublicada } from "@/lib/controladoria/versao";
 import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
@@ -149,40 +150,6 @@ export default async function SincronizacaoPage() {
             <p className="mt-1 text-xs text-red-800">
               …e mais {fmtNumero(drift.colunasFaltantes.length - 40)} coluna(s).
             </p>
-          )}
-          {/* ONDE CADA CONSULTA OLHA. Vem ANTES da lista de colunas porque,
-              se os dois caminhos discordarem, a lista acima está descrevendo
-              uma tabela que o sistema nem usa — e consertar por ela seria
-              consertar a cópia errada. */}
-          {onde.disponivel && (
-            <div className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-2">
-              <p className="text-xs font-semibold text-red-900">Onde o banco está olhando</p>
-              <p className="mt-1 font-mono text-[11px] text-slate-700">
-                banco: {onde.banco ?? "?"} · schema atual: {onde.esquemaAtual ?? "(nenhum)"} · search_path:{" "}
-                {onde.caminhoDeBusca ?? "?"}
-              </p>
-              <p className="mt-1 font-mono text-[11px] text-slate-700">
-                OmieTitulo pelo Prisma: {onde.titulosPeloPrisma ?? "erro"} · pelo mesmo nome em SQL cru:{" "}
-                {onde.titulosPorSqlCru ?? "erro"}
-              </p>
-              {onde.titulosPeloPrisma !== null &&
-                onde.titulosPorSqlCru !== null &&
-                onde.titulosPeloPrisma !== onde.titulosPorSqlCru && (
-                  <p className="mt-1 text-[11px] font-semibold text-red-900">
-                    Os dois caminhos leem tabelas DIFERENTES. Metade das telas está somando uma cópia que não é a que a
-                    sincronização grava.
-                  </p>
-                )}
-              <ul className="mt-2 space-y-0.5 font-mono text-[11px] text-slate-700">
-                {onde.esquemas.map((e) => (
-                  <li key={e.esquema}>
-                    {e.esquema}: {e.tabelas} tabela(s) · OmieConexao {e.temOmieConexao ? "sim" : "não"} ·
-                    OmieTitulo.conexaoId {e.tituloTemConexaoId ? "sim" : "não"} · FalhaDeServidor{" "}
-                    {e.temFalhaDeServidor ? "sim" : "não"}
-                  </li>
-                ))}
-              </ul>
-            </div>
           )}
           {drift.colunasOpcionaisDemais.length > 0 && (
             <>
@@ -490,6 +457,49 @@ export default async function SincronizacaoPage() {
           informado. Até aqui, responder o que ele significava exigia exportar
           o log da hospedagem: três rodadas disso custaram mais que o conserto
           dos erros. Agora a mensagem mora ao lado do identificador. */}
+      {/* ONDE O BANCO ESTÁ OLHANDO — sempre visível, e não só quando há alarme.
+          Este bloco nasceu dentro do painel vermelho, o que o escondia
+          exatamente quando ele é mais útil: na hora de CONFIRMAR que o
+          problema acabou. O painel sumir prova que não há diferença de
+          esquema; não prova que os dois caminhos de consulta concordam. São
+          perguntas diferentes, e a segunda foi a que custou caro. */}
+      {onde.disponivel && (
+        <Secao titulo="Onde o banco está olhando">
+          <p className="font-mono text-[11px] leading-relaxed text-slate-700">
+            banco: {onde.banco ?? "?"} · schema do cliente: {esquemaDaControladoria()} · schema do SQL cru sem
+            qualificar: {onde.esquemaAtual ?? "(nenhum)"} · search_path: {onde.caminhoDeBusca ?? "?"}
+          </p>
+          <p className="mt-1 font-mono text-[11px] text-slate-700">
+            OmieTitulo — pelo cliente: {onde.titulosPeloPrisma ?? "erro"} · pelo mesmo nome em SQL cru sem qualificar:{" "}
+            {onde.titulosPorSqlCru ?? "erro"}
+          </p>
+          <ul className="mt-2 space-y-0.5 font-mono text-[11px] text-slate-600">
+            {onde.esquemas.map((e) => (
+              <li key={e.esquema}>
+                {e.esquema}: {fmtNumero(e.tabelas)} tabela(s) · OmieConexao {e.temOmieConexao ? "sim" : "não"} ·
+                OmieTitulo.conexaoId {e.tituloTemConexaoId ? "sim" : "não"} · FalhaDeServidor{" "}
+                {e.temFalhaDeServidor ? "sim" : "não"}
+              </li>
+            ))}
+          </ul>
+          {onde.titulosPeloPrisma !== null &&
+          onde.titulosPorSqlCru !== null &&
+          onde.titulosPeloPrisma !== onde.titulosPorSqlCru ? (
+            <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-semibold text-red-900">
+              Os dois caminhos leem tabelas DIFERENTES. Toda consulta em SQL cru deste sistema é qualificada com o
+              schema do cliente, então as telas continuam certas — mas existe uma cópia antiga no caminho, e ela vai
+              confundir a próxima pessoa que abrir um console no banco.
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-slate-500">
+              Os dois caminhos leem a mesma tabela. Foi a divergência entre eles que fez a tela de resultado morrer com
+              &quot;column cat.conexaoId does not exist&quot; enquanto a tela vizinha ia bem — e é por isso que a
+              conferência ficou aqui, em vez de sumir junto com o problema.
+            </p>
+          )}
+        </Secao>
+      )}
+
       <Secao titulo="Falhas de tela registradas">
         <Tabela
           colunas={["Quando", "Tela", "Identificador", "O que aconteceu"]}
