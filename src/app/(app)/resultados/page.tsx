@@ -118,6 +118,10 @@ export default async function ResultadosPage({
   if (escopo.conexaoId) filtros.set("empresa", escopo.conexaoId);
   if (periodo.competencia) filtros.set("competencia", periodo.competencia);
   const urlDaPlanilha = `/api/exportar/composicao${filtros.toString() ? `?${filtros}` : ""}`;
+  // Mesma querystring: a lista de notas serve para conferir contra o que a
+  // Omie exporta, e conferir o mês errado é o jeito mais rápido de concluir
+  // que falta nota quando não falta.
+  const urlDasNotas = `/api/exportar/notas${filtros.toString() ? `?${filtros}` : ""}`;
 
   const tabelaComposicao = (dados: typeof receita) => (
     <Tabela
@@ -288,6 +292,11 @@ export default async function ResultadosPage({
       <Secao
         titulo={`Faturamento x títulos a receber — ${mes.rotulo}`}
         descricao="Faturamento é nota emitida, não cancelada, pela data de emissão — o número que a contabilidade declara. Título a receber é cobrança, pela data de vencimento. Os dois divergem por motivo legítimo, e a diferença é o que esta seção existe para nomear."
+        acao={
+          <a href={urlDasNotas} className="text-xs font-medium text-blue-700 hover:underline">
+            Baixar lista de notas
+          </a>
+        }
       >
         <Tabela
           colunas={["Origem", "Documentos", "Valor"]}
