@@ -70,9 +70,17 @@ código já está escrito.
 ## Antes de começar
 
 - [ ] A carga histórica está **concluída** (Sincronização mostra 38 de 38).
-- [ ] Escolha uma janela **fora do ciclo diário** — ele roda às 6h10.
-- [ ] Ninguém vai clicar em *Sincronizar agora* durante a cópia. Dado gravado
-      depois do dump se perde na virada.
+- [ ] **Congele o ciclo antes da cópia.** Duas fontes o disparam, e as duas
+      precisam parar:
+      1. O cron da Vercel, às 6h10 (`vercel.json`). Faça a operação logo depois
+         dele fechar — a janela útil é o dia inteiro.
+      2. O workflow `carga-controladoria` no GitHub Actions, se alguém o
+         disparar à mão.
+
+      Dado gravado no banco antigo **depois** do dump se perde na virada, e o
+      pior caso não é perder: é o ciclo terminar de escrever no banco antigo
+      enquanto a aplicação já lê o novo, e ninguém notar por dias.
+- [ ] Ninguém vai clicar em *Sincronizar agora* durante a cópia.
 - [ ] Você tem acesso ao console do Neon e às variáveis de ambiente do projeto
       `controladoria` na Vercel.
 - [ ] `pg_dump` e `pg_restore` instalados na máquina que vai rodar (versão 16 ou
@@ -132,30 +140,34 @@ Guarde o arquivo `controladoria.dump` até a fase 7 terminar.
 
 ## Fase 3 — Conferir antes de virar a chave
 
-Rode **nos dois bancos** e compare linha a linha:
+Não confira tabela a tabela na mão: a lista escrita por uma pessoa esquece
+justamente a tabela de que ninguém lembra, e a que some numa migração é
+exatamente essa. Use o script do repositório, que conta **todas** as tabelas do
+schema automaticamente:
 
-```sql
-SELECT 'OmieTitulo'    AS tabela, count(*) FROM controladoria."OmieTitulo"
-UNION ALL SELECT 'OmieBaixa',              count(*) FROM controladoria."OmieBaixa"
-UNION ALL SELECT 'OmieNota',               count(*) FROM controladoria."OmieNota"
-UNION ALL SELECT 'OmieParceiro',           count(*) FROM controladoria."OmieParceiro"
-UNION ALL SELECT 'OmieSyncRun',            count(*) FROM controladoria."OmieSyncRun"
-UNION ALL SELECT 'AuditFinding',           count(*) FROM controladoria."AuditFinding"
-UNION ALL SELECT 'ConformidadeDocumento',  count(*) FROM controladoria."ConformidadeDocumento"
-UNION ALL SELECT 'BscMeta',                count(*) FROM controladoria."BscMeta"
-UNION ALL SELECT 'ControladoriaConfig',    count(*) FROM controladoria."ControladoriaConfig"
-ORDER BY 1;
+```bash
+psql "$ORIGEM"  -f docs/separar-bancos-conferir.sql > antes.txt
+psql "$DESTINO" -f docs/separar-bancos-conferir.sql > depois.txt
+diff antes.txt depois.txt
 ```
 
-E confirme que o histórico de migrações veio junto — sem ele, a próxima
-publicação tenta aplicar tudo de novo:
+**`diff` sem saída = cópia íntegra.** Ele confere quatro coisas:
 
-```sql
-SELECT count(*) FROM controladoria._prisma_migrations WHERE finished_at IS NOT NULL;
-```
+1. Contagem exata de linhas de cada tabela — `COUNT(*)` de verdade, não a
+   estimativa do planejador.
+2. Histórico de migrações do Prisma — sem ele a próxima publicação tenta
+   aplicar tudo de novo e o build quebra.
+3. Índices, chaves estrangeiras e restrições únicas. Contagem de linhas igual
+   com índice faltando é a falha silenciosa desta operação: tudo funciona, tudo
+   fica lento, e ninguém liga uma coisa à outra.
+4. Marcos que você reconhece de olho — títulos, achados abertos, janelas
+   concluídas, receita de julho.
 
-**Se qualquer contagem divergir, pare aqui.** Nada foi trocado ainda; refaça a
-fase 2.
+**Qualquer linha de diferença: pare.** Nada foi trocado ainda; refaça a fase 2.
+
+> Este procedimento foi ensaiado de ponta a ponta contra o schema real: 24
+> tabelas, 16 chaves estrangeiras e 81 índices chegaram íntegros ao destino, e
+> o `diff` saiu vazio.
 
 ---
 
