@@ -56,19 +56,38 @@ export default async function ResultadosPage({
 
   const escopoConsulta = { companyId: session.companyId, conexaoId: escopo.conexaoId };
 
-  const [serie, receita, despesa, topReceber, topPagar] = await Promise.all([
-    serieMensal({ ...escopoConsulta, desde, ate }),
-    composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" }),
-    composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" }),
-    maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" }),
-    maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" }),
-  ]);
+  // EM SEQUÊNCIA, e não em paralelo — de propósito.
+  //
+  // A versão anterior disparava estas cinco com `Promise.all`, e duas delas
+  // disparam mais duas cada por dentro: sete consultas simultâneas. No
+  // Postgres local, por socket, isso é instantâneo; em produção é o pooler do
+  // Neon com latência de rede, e o Prisma tem teto de conexões. Estourado o
+  // teto, ele lança `Timed out fetching a new connection from the connection
+  // pool` — exceção que derruba a página inteira, e foi o que aconteceu.
+  //
+  // O custo de serializar é somar as latências em vez de pegar a maior: umas
+  // poucas centenas de milissegundos. O custo de não serializar é a tela não
+  // abrir. O painel escapou por disparar três; esta foi a primeira a passar do
+  // limite, e não seria a última.
+  const serie = await serieMensal({ ...escopoConsulta, desde, ate });
+  const receita = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
+  const despesa = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
+  const topReceber = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
+  const topPagar = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
 
   // Do mais recente para o mais antigo: quem abre esta tela quer o mês passado,
   // não janeiro do ano retrasado.
   const linhas = [...serie].reverse();
   const ultimoAno = linhas[0]?.competencia.slice(0, 4) ?? "";
   const fechamentoDoAno = linhas.find((m) => m.competencia.startsWith(ultimoAno));
+
+  // Link da planilha carrega o MESMO recorte da tela — empresa e competência.
+  // Baixar um arquivo que ignora os filtros visíveis é a forma mais rápida de
+  // alguém corrigir a categoria do mês errado.
+  const filtros = new URLSearchParams();
+  if (escopo.conexaoId) filtros.set("empresa", escopo.conexaoId);
+  if (periodo.competencia) filtros.set("competencia", periodo.competencia);
+  const urlDaPlanilha = `/api/exportar/composicao${filtros.toString() ? `?${filtros}` : ""}`;
 
   const tabelaComposicao = (dados: typeof receita) => (
     <Tabela
@@ -167,9 +186,16 @@ export default async function ResultadosPage({
         titulo={`Composição da receita — ${mes.rotulo}`}
         descricao={`${fmtBRL(receita.totalCents)} em ${fmtNumero(receita.quantidade)} título(s) a receber com vencimento no mês.`}
         acao={
-          <Link href="/titulos" className="text-xs font-medium text-blue-700 hover:underline">
-            Ver todos os títulos
-          </Link>
+          <div className="flex gap-3">
+            {/* A planilha traz receita E despesa no mesmo arquivo — corrigir
+                categorização exige olhar os dois lados junto. */}
+            <a href={urlDaPlanilha} className="text-xs font-medium text-blue-700 hover:underline">
+              Baixar planilha
+            </a>
+            <Link href="/titulos" className="text-xs font-medium text-blue-700 hover:underline">
+              Ver todos os títulos
+            </Link>
+          </div>
         }
       >
         {tabelaComposicao(receita)}

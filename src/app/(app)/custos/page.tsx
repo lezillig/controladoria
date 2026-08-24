@@ -1,6 +1,7 @@
 import { dreGerencial, montarComparativo, ranking } from "@/lib/controladoria/analytics";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { secondaryButtonClass } from "@/lib/ui";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { Barra, Kpi, Secao, Tabela, Variacao } from "../_componentes";
 import Filtros from "../Filtros";
@@ -32,14 +33,28 @@ export default async function CustosPage({
   const fornecedores = ranking(ctx, comparativo.janelas.mesAtual, "PAGAR", 15);
   const estrategia = analisarEstrategiaDeCusto(ctx);
 
+  const filtros = new URLSearchParams();
+  if (escopo.conexaoId) filtros.set("empresa", escopo.conexaoId);
+  if (periodo.competencia) filtros.set("competencia", periodo.competencia);
+  const urlDaPlanilha = `/api/exportar/composicao${filtros.toString() ? `?${filtros}` : ""}`;
+
   return (
     <div className="max-w-5xl space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          {comparativo.janelas.mesAtual.rotulo} até {fmtData(ctx.dataReferencia)}, comparado ao mês anterior inteiro. Regime
-          de competência (data de vencimento), não de caixa.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {comparativo.janelas.mesAtual.rotulo} até {fmtData(ctx.dataReferencia)}, comparado ao mês anterior inteiro.
+            Regime de competência (data de vencimento), não de caixa.
+          </p>
+        </div>
+        {/* Corrigir categorização é trabalho de lista, não de tela: exige
+            ordenar, filtrar e riscar conforme se resolve. A planilha traz
+            receita e despesa juntas, com o mesmo recorte de empresa e
+            competência que está visível aqui. */}
+        <a href={urlDaPlanilha} className={secondaryButtonClass}>
+          Baixar planilha
+        </a>
       </div>
 
       <Filtros
