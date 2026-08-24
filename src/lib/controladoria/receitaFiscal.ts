@@ -49,6 +49,23 @@ export type ReceitaFiscalDoPeriodo = {
   // como documento fiscal.
   cteEmTitulosCents: number;
   cteEmTitulos: number;
+  // FATURAMENTO PELO TÍTULO, POR DATA DE EMISSÃO — a ponte que faltava.
+  //
+  // Conferido contra a declaração de faturamento assinada pela contabilidade,
+  // doze meses, extraída da própria Omie: os títulos com tipo de documento
+  // FISCAL (NFS-e, NF-e, CT-e), somados pela data de EMISSÃO, ficam a 3,3% da
+  // declaração no acumulado e entre -7,4% e +0,3% mês a mês.
+  //
+  // Os mesmos títulos somados pela data de VENCIMENTO — que é o que a tela
+  // mostrava — ficavam 32% acima em julho. A diferença nunca foi dado faltando:
+  // era a pergunta trocada. Vencimento responde "quanto tenho a receber neste
+  // mês"; emissão responde "quanto faturei neste mês".
+  //
+  // Vale mais que o número vindo de OmieNota enquanto o CT-e não for espelhado:
+  // aqui o CT-e entra, porque o título dele existe mesmo sem a nota.
+  fiscaisPorEmissaoCents: number;
+  fiscaisPorEmissao: number;
+  todosPorEmissaoCents: number;
 };
 
 const ROTULO: Record<string, string> = {
@@ -101,6 +118,23 @@ export async function receitaFiscalDoPeriodo(params: {
        ${filtroTitulo}
   `;
 
+  // Tipos de documento que a Omie marca como fiscais. Os códigos vêm da
+  // própria base — a composição do mês mostrou NFS, CTE, NF ao lado de BOL,
+  // PIX, DEP, REE. Boleto e PIX são instrumento de cobrança, não documento
+  // fiscal, e é justamente essa confusão que inflava a receita.
+  const [emissao] = await prisma.$queryRaw<{ fq: bigint; fv: bigint; tv: bigint }[]>`
+    SELECT COUNT(*) FILTER (WHERE UPPER(COALESCE(t."tipoDocumento", '')) IN ('NFS','NFSE','NF','NFE','CTE','CT-E','CTRC'))::bigint AS fq,
+           COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE UPPER(COALESCE(t."tipoDocumento", '')) IN ('NFS','NFSE','NF','NFE','CTE','CT-E','CTRC')), 0)::bigint AS fv,
+           COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS tv
+      FROM ${tabela("OmieTitulo")} t
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND t.natureza::text = 'RECEBER'
+       AND t."dataEmissao" >= ${periodo.inicio}
+       AND t."dataEmissao" <= ${periodo.fim}
+       ${filtroTitulo}
+  `;
+
   const detalhadas = linhas.map((l) => ({
     tipo: l.tipo,
     rotulo: ROTULO[l.tipo] ?? l.tipo,
@@ -114,6 +148,9 @@ export async function receitaFiscalDoPeriodo(params: {
     linhas: detalhadas,
     cteEmTitulosCents: Number(cte?.valor ?? 0),
     cteEmTitulos: Number(cte?.quantidade ?? 0),
+    fiscaisPorEmissaoCents: Number(emissao?.fv ?? 0),
+    fiscaisPorEmissao: Number(emissao?.fq ?? 0),
+    todosPorEmissaoCents: Number(emissao?.tv ?? 0),
   };
 }
 

@@ -315,17 +315,34 @@ export default async function ResultadosPage({
               fmtBRL(fiscal.cteEmTitulosCents),
             ],
             [
-              <strong key="rf">Receita por título a receber</strong>,
+              <strong key="ef">Faturamento pelo título, por data de EMISSÃO</strong>,
+              <strong key="eq">{fmtNumero(fiscal.fiscaisPorEmissao)}</strong>,
+              <strong key="ev">{fmtBRL(fiscal.fiscaisPorEmissaoCents)}</strong>,
+            ],
+            [
+              "Todos os títulos emitidos no mês (inclui cobrança sem nota)",
+              "",
+              fmtBRL(fiscal.todosPorEmissaoCents),
+            ],
+            [
+              <strong key="rf">Receita por título, por data de VENCIMENTO</strong>,
               <strong key="rq">{fmtNumero(receita.quantidade)}</strong>,
               <strong key="rv">{fmtBRL(receita.totalCents)}</strong>,
             ],
             [
-              "Diferença (título − faturamento espelhado)",
+              "Diferença (vencimento − emissão)",
               "",
-              fmtBRL(receita.totalCents - fiscal.totalCents),
+              fmtBRL(receita.totalCents - fiscal.fiscaisPorEmissaoCents),
             ],
           ]}
         />
+        <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-900">
+          <strong>Para conferir com a contabilidade, use a linha de EMISSÃO.</strong> Conferida contra a declaração de
+          faturamento assinada, doze meses, extraída da própria Omie: os títulos com documento fiscal somados pela data
+          de emissão ficam a 3,3% da declaração no acumulado, e entre −7,4% e +0,3% mês a mês. Os mesmos títulos pela
+          data de vencimento ficavam 32% acima. A diferença nunca foi dado faltando — era a pergunta trocada.
+          Vencimento responde &quot;quanto tenho a receber neste mês&quot;; emissão responde &quot;quanto faturei&quot;.
+        </p>
         <p className="mt-3 text-xs text-slate-500">
           <strong>O faturamento acima está incompleto de propósito.</strong> O espelho guarda NF-e e NFS-e; a operação
           também emite <strong>CT-e</strong>, e esse documento ainda não tem endpoint de leitura configurado. A linha do
