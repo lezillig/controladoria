@@ -120,6 +120,24 @@ export type FalhaRegistrada = {
   criadoEm: Date;
 };
 
+// Busca pelo identificador que a tela de erro mostra.
+//
+// `findFirst` e não `findUnique`: o digest do Next é um hash da mensagem com a
+// pilha, então a mesma falha repetida gera o mesmo identificador em linhas
+// diferentes. A mais recente é a que interessa — é a que a pessoa acabou de
+// ver.
+export async function falhaPorDigest(digest: string): Promise<FalhaRegistrada | null> {
+  try {
+    return await prisma.falhaDeServidor.findFirst({
+      where: { digest },
+      orderBy: { criadoEm: "desc" },
+      select: { id: true, digest: true, origem: true, rota: true, mensagem: true, pilha: true, criadoEm: true },
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function ultimasFalhas(limite = 10): Promise<FalhaRegistrada[]> {
   try {
     return await prisma.falhaDeServidor.findMany({
