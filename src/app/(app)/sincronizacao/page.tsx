@@ -7,6 +7,7 @@ import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controla
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { ultimasFalhas } from "@/lib/controladoria/falhas";
+import { apenasNotas, janelasComFalha } from "@/lib/controladoria/janelasComFalha";
 import { driftDoEsquema, ondeOBancoOlha } from "@/lib/controladoria/esquema";
 import { esquemaDaControladoria } from "@/lib/esquemaDoBanco";
 import { versaoPublicada } from "@/lib/controladoria/versao";
@@ -56,7 +57,8 @@ export default async function SincronizacaoPage() {
   });
   const dataInicioBase = config?.dataInicioBase ?? new Date();
 
-  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde] = await Promise.all([
+  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde, janelasRuins] =
+    await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
       orderBy: { iniciadoEm: "desc" },
@@ -77,9 +79,11 @@ export default async function SincronizacaoPage() {
     ultimasFalhas(10),
     driftDoEsquema(),
     ondeOBancoOlha(),
+    janelasComFalha(session.companyId),
   ]);
 
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
+  const janelasSemNotas = apenasNotas(janelasRuins);
   const versao = versaoPublicada();
 
   // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
@@ -497,6 +501,44 @@ export default async function SincronizacaoPage() {
               conferência ficou aqui, em vez de sumir junto com o problema.
             </p>
           )}
+        </Secao>
+      )}
+
+      {/* JANELAS EM QUE A LEITURA FALHOU.
+          A fase de notas é best-effort de propósito — recusa da Omie em NF-e
+          não pode impedir o relatório do dia. Mas a janela era marcada como
+          concluída de qualquer jeito, o ciclo seguia, e aquele mês ficava para
+          sempre sem nota. O erro era gravado; só não era mostrado.
+
+          É a primeira coisa a olhar quando o faturamento do sistema não bate
+          com a declaração da contabilidade. */}
+      {janelasRuins.length > 0 && (
+        <Secao titulo="Janelas de carga que registraram erro">
+          {janelasSemNotas.length > 0 && (
+            <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+              <strong>
+                {fmtNumero(janelasSemNotas.length)} destas falharam ao ler NOTAS FISCAIS.
+              </strong>{" "}
+              Esses meses podem estar sem faturamento no espelho — e é a explicação mais provável quando o número do
+              sistema não bate com a declaração da contabilidade.
+            </p>
+          )}
+          <Tabela
+            colunas={["Empresa", "Competência", "Fase", "Erro"]}
+            vazio="Nenhuma."
+            linhas={janelasRuins.map((j) => [
+              j.conexaoApelido,
+              j.competencia,
+              j.fase,
+              <span key="e" className="block max-w-2xl whitespace-pre-wrap text-xs text-slate-600">
+                {j.erro}
+              </span>,
+            ])}
+          />
+          <p className="mt-3 text-xs text-slate-500">
+            Mensagem inteira, sem corte. A lista de execuções acima mostra as mesmas falhas cortadas em 160 caracteres —
+            foi esse corte que manteve o motivo invisível.
+          </p>
         </Secao>
       )}
 
