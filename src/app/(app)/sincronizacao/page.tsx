@@ -106,7 +106,10 @@ export default async function SincronizacaoPage() {
           cobertura que despenca, tela que não abre. Ler isso depois de já ter
           tirado conclusões dos outros números é o caminho mais rápido para
           consertar o problema errado. */}
-      {drift.disponivel && (drift.tabelasFaltantes.length > 0 || drift.colunasFaltantes.length > 0) && (
+      {drift.disponivel &&
+        (drift.tabelasFaltantes.length > 0 ||
+          drift.colunasFaltantes.length > 0 ||
+          drift.colunasOpcionaisDemais.length > 0) && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <p className="text-sm font-semibold text-red-900">O banco em uso está atrás do esquema do sistema</p>
           <p className="mt-1 text-xs leading-relaxed text-red-800">
@@ -133,6 +136,20 @@ export default async function SincronizacaoPage() {
             <p className="mt-1 text-xs text-red-800">
               …e mais {fmtNumero(drift.colunasFaltantes.length - 40)} coluna(s).
             </p>
+          )}
+          {drift.colunasOpcionaisDemais.length > 0 && (
+            <>
+              <p className="mt-2 text-xs text-red-900">
+                <strong>Colunas que aceitam vazio onde o sistema exige valor</strong> — existem, mas na forma errada:
+              </p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5 font-mono text-[11px] text-red-900">
+                {drift.colunasOpcionaisDemais.slice(0, 20).map((c) => (
+                  <li key={`nul-${c.tabela}.${c.coluna}`}>
+                    {c.tabela}.{c.coluna}
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
       )}

@@ -24,15 +24,21 @@ import { prisma } from "@/lib/prisma";
 // tela mostra; a correção é uma migração escrita, revisada e aplicada.
 
 export type ColunaFaltante = { tabela: string; coluna: string; tipo: string; obrigatoria: boolean };
+// Coluna que EXISTE mas aceita nulo onde o modelo exige valor. Merece linha
+// própria: depois de um reparo que acrescenta a coluna sem preencher, a
+// checagem de existência fica verde e o problema continua lá — a gravação
+// passa a falhar por violação de restrição em vez de por coluna ausente.
+export type ColunaOpcionalDemais = { tabela: string; coluna: string };
 export type DriftDoEsquema = {
-  // Null quando não foi possível ler o catálogo — que é diferente de "está
+  // Falso quando não foi possível ler o catálogo — que é diferente de "está
   // tudo certo", e a tela precisa saber a diferença.
   disponivel: boolean;
   tabelasFaltantes: string[];
   colunasFaltantes: ColunaFaltante[];
+  colunasOpcionaisDemais: ColunaOpcionalDemais[];
 };
 
-type LinhaCatalogo = { tabela: string; coluna: string };
+type LinhaCatalogo = { tabela: string; coluna: string; anulavel: string };
 
 // Nome físico do modelo/campo: o Prisma permite renomear com `@@map`/`@map`, e
 // comparar pelo nome do modelo daria falso positivo em qualquer campo mapeado.
@@ -44,23 +50,24 @@ export async function driftDoEsquema(): Promise<DriftDoEsquema> {
   let catalogo: LinhaCatalogo[];
   try {
     catalogo = await prisma.$queryRaw<LinhaCatalogo[]>`
-      SELECT table_name AS tabela, column_name AS coluna
+      SELECT table_name AS tabela, column_name AS coluna, is_nullable AS anulavel
         FROM information_schema.columns
        WHERE table_schema = current_schema()
     `;
   } catch {
-    return { disponivel: false, tabelasFaltantes: [], colunasFaltantes: [] };
+    return { disponivel: false, tabelasFaltantes: [], colunasFaltantes: [], colunasOpcionaisDemais: [] };
   }
 
-  const colunasPorTabela = new Map<string, Set<string>>();
+  const colunasPorTabela = new Map<string, Map<string, boolean>>();
   for (const linha of catalogo) {
-    const conjunto = colunasPorTabela.get(linha.tabela) ?? new Set<string>();
-    conjunto.add(linha.coluna);
-    colunasPorTabela.set(linha.tabela, conjunto);
+    const mapa = colunasPorTabela.get(linha.tabela) ?? new Map<string, boolean>();
+    mapa.set(linha.coluna, linha.anulavel === "YES");
+    colunasPorTabela.set(linha.tabela, mapa);
   }
 
   const tabelasFaltantes: string[] = [];
   const colunasFaltantes: ColunaFaltante[] = [];
+  const colunasOpcionaisDemais: ColunaOpcionalDemais[] = [];
 
   for (const modelo of Prisma.dmmf.datamodel.models) {
     const tabela = nomeFisico(modelo);
@@ -75,19 +82,32 @@ export async function driftDoEsquema(): Promise<DriftDoEsquema> {
       // como campo escalar próprio. Listá-las encheria o relatório de ruído.
       if (campo.kind === "object") continue;
       const coluna = nomeFisico(campo);
-      if (existentes.has(coluna)) continue;
-      colunasFaltantes.push({
-        tabela,
-        coluna,
-        tipo: campo.type,
-        // Coluna obrigatória que falta quebra gravação E leitura; opcional que
-        // falta quebra só a leitura que a menciona. A ordem de conserto sai daí.
-        obrigatoria: campo.isRequired && !campo.hasDefaultValue,
-      });
+      const anulavel = existentes.get(coluna);
+
+      if (anulavel === undefined) {
+        colunasFaltantes.push({
+          tabela,
+          coluna,
+          tipo: campo.type,
+          // Coluna obrigatória que falta quebra gravação E leitura; opcional
+          // que falta quebra só a leitura que a menciona. A ordem de conserto
+          // sai daí.
+          obrigatoria: campo.isRequired && !campo.hasDefaultValue,
+        });
+        continue;
+      }
+
+      // Campo obrigatório sobre coluna que aceita nulo. O caminho contrário —
+      // campo opcional sobre coluna NOT NULL — não é checado de propósito: ele
+      // aparece na primeira gravação como erro claro de restrição, enquanto
+      // este aqui só aparece muito depois, como valor faltando sem explicação.
+      if (campo.isRequired && anulavel) {
+        colunasOpcionaisDemais.push({ tabela, coluna });
+      }
     }
   }
 
-  return { disponivel: true, tabelasFaltantes, colunasFaltantes };
+  return { disponivel: true, tabelasFaltantes, colunasFaltantes, colunasOpcionaisDemais };
 }
 
 // Existe esta coluna, agora, neste banco?
