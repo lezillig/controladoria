@@ -4,6 +4,7 @@ import { fmtBRL, fmtData, fmtNumero, fmtPercent, fmtVariacao, variacaoPercent } 
 import { serieMensal } from "@/lib/controladoria/serieMensal";
 import { composicaoDoPeriodo, maioresTitulosDoPeriodo } from "@/lib/controladoria/composicao";
 import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
+import { receitaFiscalDoPeriodo, receitaNaoOperacional } from "@/lib/controladoria/receitaFiscal";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { fimDoMes, inicioDoDia, inicioDoMes, mesCompleto } from "@/lib/controladoria/periodos";
 import PageHeader from "@/components/ui/PageHeader";
@@ -79,6 +80,8 @@ export default async function ResultadosPage({
   const topReceber = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
   const topPagar = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
   const retencoes = await retencoesDoPeriodo({ ...escopoConsulta, periodo: mes });
+  const fiscal = await receitaFiscalDoPeriodo({ ...escopoConsulta, periodo: mes });
+  const naoOperacional = await receitaNaoOperacional({ ...escopoConsulta, periodo: mes });
 
   // Do mais recente para o mais antigo: quem abre esta tela quer o mês passado,
   // não janeiro do ano retrasado.
@@ -272,6 +275,80 @@ export default async function ResultadosPage({
         </ul>
       </div>
 
+      {/* FATURAMENTO x TÍTULOS A RECEBER — a conciliação que faltava.
+          "A receita não pode pegar pelo banco, tem que ser pelas notas fiscais
+          emitidas." Está certo, e a composição do mês prova: dentro dos
+          títulos a receber havia resgate de consórcio, venda de veículo,
+          lucros cessantes e devolução de PIX.
+
+          Os dois números ficam lado a lado em vez de um substituir o outro,
+          porque respondem perguntas diferentes — "quanto faturei" e "quanto
+          tenho a receber" — e porque o faturamento aqui ainda é PARCIAL: o
+          espelho guarda NF-e e NFS-e, não CT-e. */}
+      <Secao
+        titulo={`Faturamento x títulos a receber — ${mes.rotulo}`}
+        descricao="Faturamento é nota emitida, não cancelada, pela data de emissão — o número que a contabilidade declara. Título a receber é cobrança, pela data de vencimento. Os dois divergem por motivo legítimo, e a diferença é o que esta seção existe para nomear."
+      >
+        <Tabela
+          colunas={["Origem", "Documentos", "Valor"]}
+          alinharDireita={[1, 2]}
+          vazio="Sem notas emitidas no mês."
+          linhas={[
+            ...fiscal.linhas.map((l) => [l.rotulo, fmtNumero(l.quantidade), fmtBRL(l.valorCents)]),
+            [
+              <strong key="tf">Faturamento espelhado (parcial)</strong>,
+              <strong key="tq">{fmtNumero(fiscal.quantidade)}</strong>,
+              <strong key="tv">{fmtBRL(fiscal.totalCents)}</strong>,
+            ],
+            [
+              "CT-e — não espelhado, medido pelos títulos",
+              fmtNumero(fiscal.cteEmTitulos),
+              fmtBRL(fiscal.cteEmTitulosCents),
+            ],
+            [
+              <strong key="rf">Receita por título a receber</strong>,
+              <strong key="rq">{fmtNumero(receita.quantidade)}</strong>,
+              <strong key="rv">{fmtBRL(receita.totalCents)}</strong>,
+            ],
+            [
+              "Diferença (título − faturamento espelhado)",
+              "",
+              fmtBRL(receita.totalCents - fiscal.totalCents),
+            ],
+          ]}
+        />
+        <p className="mt-3 text-xs text-slate-500">
+          <strong>O faturamento acima está incompleto de propósito.</strong> O espelho guarda NF-e e NFS-e; a operação
+          também emite <strong>CT-e</strong>, e esse documento ainda não tem endpoint de leitura configurado. A linha do
+          CT-e mede o buraco pelo lado da cobrança — é o valor dos títulos que a Omie marcou com esse tipo de documento,
+          não o valor das notas. Somar as duas linhas dá a melhor estimativa possível hoje.
+        </p>
+        {naoOperacional.linhas.length > 0 && (
+          <>
+            <p className="mt-4 text-sm font-medium text-slate-800">
+              Títulos a receber que não são receita de operação — {fmtBRL(naoOperacional.totalCents)}
+            </p>
+            <div className="mt-2">
+              <Tabela
+                colunas={["Categoria", "Títulos", "Valor"]}
+                alinharDireita={[1, 2]}
+                vazio="Nenhum."
+                linhas={naoOperacional.linhas.map((l) => [
+                  l.categoria,
+                  fmtNumero(l.quantidade),
+                  fmtBRL(l.valorCents),
+                ])}
+              />
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Lista montada por PALAVRA na descrição da categoria — consórcio, venda de veículo, sinistro, reembolso,
+              devolução, estorno, transferência, aporte, empréstimo. É uma heurística para dirigir o olho de quem vai
+              reclassificar na Omie, não uma classificação contábil: confira antes de usar.
+            </p>
+          </>
+        )}
+      </Secao>
+
       <Secao
         titulo={`Composição da receita — ${mes.rotulo}`}
         descricao={`${fmtBRL(receita.totalCents)} em ${fmtNumero(receita.quantidade)} título(s) a receber com vencimento no mês.`}
@@ -354,7 +431,8 @@ export default async function ResultadosPage({
         <Tabela
           colunas={[
             "Mês",
-            "Receita",
+            "Faturamento (notas)",
+            "Receita (títulos)",
             "Despesa",
             "Resultado",
             "Margem",
@@ -362,9 +440,10 @@ export default async function ResultadosPage({
             "Acum. despesa",
             "Acum. resultado",
           ]}
-          alinharDireita={[1, 2, 3, 4, 5, 6, 7]}
+          alinharDireita={[1, 2, 3, 4, 5, 6, 7, 8]}
           linhas={linhas.map((m) => [
             m.rotulo,
+            fmtBRL(m.receitaFiscalCents),
             fmtBRL(m.receitaCents),
             fmtBRL(m.despesaCents),
             fmtBRL(m.resultadoCents),

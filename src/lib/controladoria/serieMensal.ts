@@ -44,10 +44,25 @@ export type MesDaSerie = {
   recebidoCents: number;
   pagoCents: number;
   fluxoLiquidoCents: number;
+  // FATURAMENTO FISCAL: soma das notas emitidas no mês, não canceladas, pela
+  // data de emissão. É o número que a contabilidade declara e o único que dá
+  // para conferir contra a Receita.
+  //
+  // Fica ao lado da receita por título, e não no lugar dela, porque os dois
+  // respondem perguntas diferentes: "quanto eu faturei" e "quanto eu tenho a
+  // receber". A distância entre eles é onde moram transferência entre contas,
+  // resgate de consórcio, venda de veículo e devolução — que a composição do
+  // mês lista por categoria.
+  //
+  // PARCIAL enquanto o CT-e não for espelhado: o espelho guarda NF-e e NFS-e.
+  // Ver receitaFiscal.ts.
+  receitaFiscalCents: number;
+  notasEmitidas: number;
 };
 
 type LinhaCompetencia = { mes: Date; natureza: string; valor: bigint; quantidade: bigint };
 type LinhaCaixa = { mes: Date; natureza: string; valor: bigint };
+type LinhaFiscal = { mes: Date; valor: bigint; quantidade: bigint };
 
 function chave(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
@@ -66,8 +81,9 @@ export async function serieMensal(params: {
   // requisição dentro de SQL é como se escreve uma injeção.
   const filtroConexao = conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
   const filtroConexaoBaixa = conexaoId ? Prisma.sql`AND b."conexaoId" = ${conexaoId}` : Prisma.empty;
+  const filtroConexaoNota = conexaoId ? Prisma.sql`AND n."conexaoId" = ${conexaoId}` : Prisma.empty;
 
-  const [competencia, caixa] = await Promise.all([
+  const [competencia, caixa, fiscal] = await Promise.all([
     prisma.$queryRaw<LinhaCompetencia[]>`
       SELECT date_trunc('month', t."dataVencimento") AS mes,
              t.natureza::text AS natureza,
@@ -104,6 +120,22 @@ export async function serieMensal(params: {
        GROUP BY 1, 2
        ORDER BY 1
     `,
+    // Faturamento fiscal, pela data de EMISSÃO da nota. Nota cancelada fora:
+    // ela fica no espelho porque nota cancelada com título vivo é achado do
+    // agente fiscal, mas não é faturamento.
+    prisma.$queryRaw<LinhaFiscal[]>`
+      SELECT date_trunc('month', n."dataEmissao") AS mes,
+             SUM(n."valorCents")::bigint AS valor,
+             COUNT(*)::bigint AS quantidade
+        FROM ${tabela("OmieNota")} n
+       WHERE n."companyId" = ${companyId}
+         AND n.cancelada = false
+         AND n."dataEmissao" >= ${desde}
+         AND n."dataEmissao" <= ${ate}
+         ${filtroConexaoNota}
+       GROUP BY 1
+       ORDER BY 1
+    `,
   ]);
 
   // Um mês sem título nenhum precisa aparecer com zero, e não sumir.
@@ -129,6 +161,8 @@ export async function serieMensal(params: {
       recebidoCents: 0,
       pagoCents: 0,
       fluxoLiquidoCents: 0,
+      receitaFiscalCents: 0,
+      notasEmitidas: 0,
     });
     cursor.setUTCMonth(cursor.getUTCMonth() + 1);
   }
@@ -150,6 +184,13 @@ export async function serieMensal(params: {
     if (!mes) continue;
     if (linha.natureza === "RECEBER") mes.recebidoCents = Number(linha.valor);
     else mes.pagoCents = Number(linha.valor);
+  }
+
+  for (const linha of fiscal) {
+    const mes = meses.get(chave(linha.mes));
+    if (!mes) continue;
+    mes.receitaFiscalCents = Number(linha.valor);
+    mes.notasEmitidas = Number(linha.quantidade);
   }
 
   let anoCorrente = -1;
