@@ -4,7 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { composicaoDoPeriodo } from "@/lib/controladoria/composicao";
 import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
-import { montarJanelas, rotuloMes } from "@/lib/controladoria/periodos";
+import { mesCompleto, rotuloMes } from "@/lib/controladoria/periodos";
 import { resolverEscopo, resolverPeriodo } from "@/app/(app)/_dados";
 
 // EXPORTAÇÃO DA COMPOSIÇÃO DE RECEITA E DESPESA.
@@ -32,7 +32,9 @@ export async function GET(req: NextRequest) {
 
   const escopo = await resolverEscopo(session.companyId, empresaParam);
   const periodo = resolverPeriodo(competenciaParam);
-  const mes = montarJanelas(periodo.dataReferencia).mesAtual;
+  // Mês inteiro, igual à tela: planilha que diverge da tela é pior que
+  // planilha nenhuma.
+  const mes = mesCompleto(periodo.dataReferencia);
   // "agosto/2026", e nao "Mês atual (agosto/2026)": o rótulo da tela carrega
   // contexto que no nome do arquivo vira ruído.
   const competencia = rotuloMes(periodo.dataReferencia);
@@ -55,7 +57,8 @@ export async function GET(req: NextRequest) {
       titulo: "Composição de receita e despesa por categoria",
       empresa,
       competencia: competencia,
-      criterio: "Competência — títulos não cancelados, pela data de vencimento, no valor do documento",
+      criterio:
+      "Competência — títulos não cancelados, pela data de vencimento no mês inteiro, no valor do documento",
       geradoEm: new Date(),
     }),
     ["Natureza", "Categoria", "Tipo de documento", "Conta corrente", "Títulos", "Valor (R$)", "% da natureza"],

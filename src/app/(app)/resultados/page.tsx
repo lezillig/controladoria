@@ -5,7 +5,7 @@ import { serieMensal } from "@/lib/controladoria/serieMensal";
 import { composicaoDoPeriodo, maioresTitulosDoPeriodo } from "@/lib/controladoria/composicao";
 import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
-import { inicioDoDia, montarJanelas } from "@/lib/controladoria/periodos";
+import { fimDoMes, inicioDoDia, inicioDoMes, mesCompleto } from "@/lib/controladoria/periodos";
 import PageHeader from "@/components/ui/PageHeader";
 import { competenciasDisponiveis, resolverEscopo, resolverPeriodo, sessaoControladoria } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
@@ -50,10 +50,13 @@ export default async function ResultadosPage({
     }),
   ]);
 
-  const ate = dataReferenciaPadrao();
-  const desde = inicioDoDia(config?.dataInicioBase ?? new Date(ate.getFullYear() - 1, 0, 1));
-  const janelas = montarJanelas(periodo.dataReferencia);
-  const mes = janelas.mesAtual;
+  // A série vai até o FIM do mês corrente, não até hoje. Ver `mesCompleto`:
+  // em competência, o mês é o mês — cortar no dia de hoje fazia a última barra
+  // da série parecer uma queda que era só o calendário.
+  const hoje = dataReferenciaPadrao();
+  const ate = fimDoMes(inicioDoMes(hoje));
+  const desde = inicioDoDia(config?.dataInicioBase ?? new Date(hoje.getFullYear() - 1, 0, 1));
+  const mes = mesCompleto(periodo.dataReferencia);
 
   const escopoConsulta = { companyId: session.companyId, conexaoId: escopo.conexaoId };
 

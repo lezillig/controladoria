@@ -31,6 +31,26 @@ export function fimDoMes(d: Date): Date {
   return fimDoDia(new Date(d.getFullYear(), d.getMonth() + 1, 0));
 }
 
+// O MÊS INTEIRO, e não "o mês até hoje".
+//
+// `montarJanelas().mesAtual` corta no dia de hoje, e para o relatório diário
+// isso está certo: ele compara período corrente com período corrente, e somar
+// agosto inteiro contra julho inteiro no dia 5 mostraria uma queda inexistente.
+//
+// Na tela de resultado mês a mês o corte é que está errado. Ali o regime é
+// COMPETÊNCIA pela data de vencimento: um título que vence dia 30 já existe, já
+// está lançado e já pertence ao resultado do mês — esperar o dia 30 chegar para
+// contá-lo não mede nada. E a última linha da série sempre saía menor que as
+// anteriores, com a queda vindo do calendário e não da operação.
+//
+// Concretamente: no dia 24 de agosto a composição mostrava R$ 4,0 milhões
+// rotulados "Mês atual (agosto/2026)", sem dizer que os vencimentos de 24 a 31
+// estavam de fora.
+export function mesCompleto(d: Date): Periodo {
+  const inicio = inicioDoMes(d);
+  return { inicio, fim: fimDoMes(inicio), rotulo: rotuloMes(inicio) };
+}
+
 export function inicioDoAno(d: Date): Date {
   return inicioDoDia(new Date(d.getFullYear(), 0, 1));
 }
