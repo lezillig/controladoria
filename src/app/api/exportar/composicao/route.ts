@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireRole } from "@/lib/auth";
 import { composicaoDoPeriodo } from "@/lib/controladoria/composicao";
+import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { montarJanelas, rotuloMes } from "@/lib/controladoria/periodos";
 import { resolverEscopo, resolverPeriodo } from "@/app/(app)/_dados";
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest) {
   const escopoConsulta = { companyId: session.companyId, conexaoId: escopo.conexaoId };
   const receita = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
   const despesa = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
+  const retencoes = await retencoesDoPeriodo({ ...escopoConsulta, periodo: mes });
 
   const empresa = escopo.apelido
     ? escopo.apelido
@@ -74,6 +76,29 @@ export async function GET(req: NextRequest) {
   bloco("Despesa", despesa);
   linhas.push([]);
   linhas.push(["Resultado", "RECEITA - DESPESA", "", "", "", (receita.totalCents - despesa.totalCents) / 100, ""]);
+
+  // RETENÇÕES, no mesmo arquivo e depois do resultado.
+  //
+  // Quem abre esta planilha está conferindo o mês contra o extrato e contra o
+  // que o contador apurou. A retenção é a primeira coisa que explica os dois
+  // não baterem — e procurá-la numa segunda planilha significa, na prática,
+  // não procurá-la.
+  if (retencoes.linhas.length > 0) {
+    linhas.push([]);
+    linhas.push([
+      "Retenção",
+      "Tributo",
+      "",
+      "",
+      "",
+      "Retido sobre a receber (R$)",
+      "Retido sobre a pagar (R$)",
+    ]);
+    for (const r of retencoes.linhas) {
+      linhas.push(["Retenção", r.tributo, "", "", "", r.receberCents / 100, r.pagarCents / 100]);
+    }
+    linhas.push(["Retenção", "TOTAL", "", "", "", retencoes.totalReceberCents / 100, retencoes.totalPagarCents / 100]);
+  }
 
   const csv = montarCsv(linhas);
 

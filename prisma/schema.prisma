@@ -399,6 +399,33 @@ model OmieTitulo {
   multaCents          Int       @default(0)
   descontoCents       Int       @default(0)
   tarifaCents         Int       @default(0)
+
+  // RETENÇÕES NA FONTE, como a Omie as lança no título.
+  //
+  // O diagnóstico das duas contas mostrou que a resposta traz `nValorIR`,
+  // `nValorISS`, `nValorPIS`, `nValorCOFINS`, `nValorCSLL` e `nValorINSS` em
+  // todo título, e que nada disso estava sendo guardado.
+  //
+  // Para uma controladoria é dinheiro, não detalhe fiscal: a retenção muda o
+  // que de fato entra e sai. Um título a receber de R$ 100 mil com R$ 11 mil
+  // retidos deposita R$ 89 mil, e um relatório que só conhece o valor do
+  // documento erra o caixa exatamente nesse valor. Do lado a pagar, a retenção
+  // é obrigação que a empresa recolhe no lugar do prestador — retenção lançada
+  // e não recolhida é das divergências que a consultoria aponta todo mês.
+  //
+  // SEPARADAS POR IMPOSTO, e não somadas: cada uma tem guia, prazo e alíquota
+  // própria, e conferir contra a DCTFWeb exige o número por tributo. O total
+  // sozinho não conferiria com nada.
+  //
+  // `@default(0)` e não opcional: a Omie omite o campo quando não há valor, e
+  // ausência aqui significa retenção zero — não retenção desconhecida.
+  retencaoIrCents     Int       @default(0)
+  retencaoIssCents    Int       @default(0)
+  retencaoPisCents    Int       @default(0)
+  retencaoCofinsCents Int       @default(0)
+  retencaoCsllCents   Int       @default(0)
+  retencaoInssCents   Int       @default(0)
+
   dataUltimaBaixa     DateTime?
 
   // Texto cru da Omie ("ATRASADO", "A VENCER", "PAGO", "LIQUIDADO",

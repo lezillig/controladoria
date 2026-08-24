@@ -390,6 +390,20 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
     multaCents,
     descontoCents,
     tarifaCents,
+    // Retencoes: lidas do cabecalho do titulo, onde a Omie as devolve com a
+    // sigla em MAIUSCULA. Os aliases em outra caixa ficam de propósito — a
+    // busca ja e tolerante, mas o nome escrito aqui documenta o que a conta
+    // real devolve, que e o que o diagnostico mostrou.
+    //
+    // `centsOuZero` e nao `cents`: a Omie omite o campo quando nao ha
+    // retencao, e gravar nulo faria "sem retencao" e "nao sei" virarem a mesma
+    // coisa na hora de somar.
+    retencaoIrCents: centsOuZero(cabec, "nValorIR", "nValorIr", "nValorIRRF"),
+    retencaoIssCents: centsOuZero(cabec, "nValorISS", "nValorIss"),
+    retencaoPisCents: centsOuZero(cabec, "nValorPIS", "nValorPis"),
+    retencaoCofinsCents: centsOuZero(cabec, "nValorCOFINS", "nValorCofins"),
+    retencaoCsllCents: centsOuZero(cabec, "nValorCSLL", "nValorCsll"),
+    retencaoInssCents: centsOuZero(cabec, "nValorINSS", "nValorInss"),
     dataUltimaBaixa: baixas.length
       ? baixas.reduce((mais, b) => (b.dataBaixa > mais ? b.dataBaixa : mais), baixas[0].dataBaixa)
       : data(cabec, "dDtPagamento", "data_pagamento"),

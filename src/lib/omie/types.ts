@@ -97,6 +97,15 @@ export type TituloNormalizado = {
   multaCents: number;
   descontoCents: number;
   tarifaCents: number;
+  // Retencoes na fonte, por tributo. Ver o comentario em OmieTitulo (schema):
+  // ficam separadas porque cada uma tem guia e prazo proprios, e ausencia do
+  // campo na resposta significa zero, nao desconhecido.
+  retencaoIrCents: number;
+  retencaoIssCents: number;
+  retencaoPisCents: number;
+  retencaoCofinsCents: number;
+  retencaoCsllCents: number;
+  retencaoInssCents: number;
   dataUltimaBaixa: Date | null;
   status: string;
   liquidado: boolean;

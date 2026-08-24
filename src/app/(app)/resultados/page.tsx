@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { serieMensal } from "@/lib/controladoria/serieMensal";
 import { composicaoDoPeriodo, maioresTitulosDoPeriodo } from "@/lib/controladoria/composicao";
+import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { inicioDoDia, montarJanelas } from "@/lib/controladoria/periodos";
 import PageHeader from "@/components/ui/PageHeader";
@@ -74,6 +75,7 @@ export default async function ResultadosPage({
   const despesa = await composicaoDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
   const topReceber = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "RECEBER" });
   const topPagar = await maioresTitulosDoPeriodo({ ...escopoConsulta, periodo: mes, natureza: "PAGAR" });
+  const retencoes = await retencoesDoPeriodo({ ...escopoConsulta, periodo: mes });
 
   // Do mais recente para o mais antigo: quem abre esta tela quer o mês passado,
   // não janeiro do ano retrasado.
@@ -225,6 +227,36 @@ export default async function ResultadosPage({
         descricao="A composição diz de onde vem; estes dizem qual documento é."
       >
         {tabelaTitulos(topPagar)}
+      </Secao>
+
+      {/* RETENÇÕES — a diferença entre o que foi faturado e o que cai na conta.
+          Sem esta tabela, o desconto do imposto retido aparece como conciliação
+          que não fecha, todo mês, sem explicação. */}
+      <Secao
+        titulo={`Retenções na fonte — ${mes.rotulo}`}
+        descricao="Imposto retido pelo tomador (a receber) ou retido pela empresa em nome do prestador (a pagar). Não é receita nem despesa: é a diferença entre o valor do título e o dinheiro que muda de mãos."
+      >
+        <Tabela
+          colunas={["Tributo", "Retido sobre a receber", "Retido sobre a pagar"]}
+          alinharDireita={[1, 2]}
+          vazio="Nenhuma retenção lançada em título com vencimento neste mês."
+          linhas={retencoes.linhas.map((l) => [l.tributo, fmtBRL(l.receberCents), fmtBRL(l.pagarCents)])}
+        />
+        {(retencoes.totalReceberCents !== 0 || retencoes.totalPagarCents !== 0) && (
+          <p className="mt-3 text-xs text-slate-500">
+            Total retido: <strong>{fmtBRL(retencoes.totalReceberCents)}</strong> em{" "}
+            {fmtNumero(retencoes.titulosComRetencaoReceber)} título(s) a receber — este valor{" "}
+            <strong>não entra na conta</strong>, e explica parte da diferença entre a receita do mês e o que foi
+            depositado. E <strong>{fmtBRL(retencoes.totalPagarCents)}</strong> em{" "}
+            {fmtNumero(retencoes.titulosComRetencaoPagar)} título(s) a pagar — obrigação a recolher em nome do
+            prestador, que precisa bater com a guia.
+          </p>
+        )}
+        <p className="mt-2 text-xs text-slate-500">
+          Por tributo, e não somado: cada retenção tem guia, prazo e alíquota própria, e a conferência contra a DCTFWeb
+          exige o número separado. Títulos espelhados antes desta versão aparecem com zero até a sincronização passar
+          de novo pela janela deles.
+        </p>
       </Secao>
 
       <Secao
