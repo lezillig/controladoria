@@ -242,28 +242,29 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
     );
   }
 
-  // LANÇAMENTOS de conta corrente — a outra metade do movimento bancário.
+  // LANÇAMENTOS AVULSOS de conta corrente — sentinela, não fonte.
   //
-  // Entra no diagnóstico antes de entrar no sync, de propósito. O extrato veio
-  // vazio em todas as contas e eu concluí que a empresa não importava extrato.
-  // A tela da Omie mostrou 21.551 lançamentos, todos com marcador "Conciliado",
-  // em seis contas, e um saldo atual de R$ 2,99 milhões contra os R$ 131 mil
-  // que o nosso painel exibia. A conclusão estava errada, e o jeito de não
-  // errar de novo é ver os nomes reais dos campos ANTES de mapear — foi assim
-  // que as notas fiscais foram resolvidas.
+  // Entrou aqui como aposta: o extrato voltava vazio, a tela da Omie mostrava
+  // 21.551 movimentações, e este parecia o endpoint que faltava. As variantes
+  // rodaram nas duas contas e a resposta foi "não existem registros" até sem
+  // filtro nenhum — o que respondeu a pergunta pelo outro lado: a movimentação
+  // da tela vem de BAIXA DE TÍTULO, que já está espelhada, e este endpoint
+  // lista só o crédito ou débito digitado direto na conta.
   //
-  // Sem normalizador ainda: `() => null` faz cada registro aparecer como
+  // Fica no diagnóstico de propósito. Custa uma chamada, e é o que vai avisar
+  // no dia em que a operação passar a usar lançamento avulso — sem isso, esse
+  // dinheiro entraria na conta sem aparecer em lugar nenhum aqui.
+  //
+  // Sem normalizador: `() => null` faz cada registro aparecer como
   // "descartado", que aqui é o comportamento certo. O que se quer desta
   // execução é a lista de campos que a conta devolve, não gravar nada.
   endpoints.push(
     await testar(
       {
         chave: "lancamentos",
-        rotulo: "Lançamentos de conta corrente",
+        rotulo: "Lançamentos avulsos de conta corrente",
         endpoint: OMIE_ENDPOINTS.lancamentos,
-        // Recebe o código da conta que o próprio diagnóstico acabou de obter:
-        // o extrato exige conta, e os lançamentos podem exigir também.
-        param: paramsLancamentos(1, REGISTROS_DE_AMOSTRA, de, ate, codigoConta),
+        param: paramsLancamentos(1, REGISTROS_DE_AMOSTRA, de, ate),
         normalizar: () => null,
       },
       conexao.credencialRef

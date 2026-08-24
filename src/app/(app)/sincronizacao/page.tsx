@@ -5,6 +5,7 @@ import { isAnalistaDisponivel } from "@/lib/controladoria/aiAnalyst";
 import { isEnvioDisponivel } from "@/lib/email/send";
 import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controladoria/saudeDaBase";
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
+import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
 import { disponibilidadeGestao } from "@/lib/gestao/leitura";
@@ -64,20 +65,10 @@ export default async function SincronizacaoPage() {
     progressoDaCarga(session.companyId, dataInicioBase),
     volumeEspelhadoNoBanco(session.companyId),
     coberturaDeCamposNoBanco(session.companyId),
-    prisma.omieContaCorrente.findMany({
-      where: { companyId: session.companyId },
-      select: {
-        conexaoApelido: true,
-        codigo: true,
-        descricao: true,
-        banco: true,
-        agencia: true,
-        saldoInicialCents: true,
-        inativa: true,
-      },
-      orderBy: { descricao: "asc" },
-    }),
+    saldosPorConta(session.companyId),
   ]);
+
+  const resumoSaldos = resumirSaldos(contasCorrentes);
 
   // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
   // leitura da gestão, então só faz sentido consultá-la quando ela já rodou.
@@ -309,22 +300,73 @@ export default async function SincronizacaoPage() {
         />
       </Secao>
 
-      <Secao titulo="Contas correntes espelhadas">
+      {/* SALDO POR CONTA — a tabela que existe para localizar a diferença.
+          A Omie mostra saldo em contas de R$ 2,99 milhões; o módulo mostrava
+          R$ 131 mil. Total contra total só permite discordar. Aberto conta a
+          conta, com quantas linhas de extrato cada uma tem e que período elas
+          cobrem, a diferença deixa de ser um mistério e vira uma linha: conta
+          ativa com zero linha de extrato é o extrato que não chegou. */}
+      <Secao titulo="Saldo por conta corrente">
         <Tabela
-          colunas={["Conta", "Banco", "Agência", "Saldo inicial", "Situação"]}
-          alinharDireita={[3]}
+          colunas={[
+            "Conta",
+            "Saldo inicial",
+            "Extrato (linhas)",
+            "Período do extrato",
+            "Movimento (R$)",
+            "Saldo calculado",
+            "Baixas (R$)",
+            "Situação",
+          ]}
+          alinharDireita={[1, 2, 4, 5, 6]}
           vazio="Nenhuma conta corrente sincronizada."
           linhas={contasCorrentes.map((c) => [
-            c.descricao,
-            c.banco ?? "—",
-            c.agencia ?? "—",
+            <span key="c">
+              {c.descricao}
+              <span className="mt-0.5 block text-xs text-slate-500">
+                {c.conexaoApelido}
+                {c.banco ? ` · banco ${c.banco}` : ""}
+              </span>
+            </span>,
             fmtBRL(c.saldoInicialCents),
+            c.movimentos === 0 ? (
+              <span key="m" className="font-medium text-amber-700">
+                0
+              </span>
+            ) : (
+              fmtNumero(c.movimentos)
+            ),
+            c.primeiroMovimento && c.ultimoMovimento
+              ? `${fmtData(c.primeiroMovimento)} a ${fmtData(c.ultimoMovimento)}`
+              : "—",
+            fmtBRL(c.somaMovimentosCents),
+            fmtBRL(c.saldoCalculadoCents),
+            fmtBRL(c.somaBaixasCents),
             c.inativa ? "Inativa" : "Ativa",
           ])}
         />
         <p className="mt-3 text-xs text-slate-500">
-          O saldo consolidado do módulo é o saldo inicial cadastrado somado aos movimentos espelhados — exato apenas se o
-          extrato foi importado desde a data desse saldo inicial. Conta ativa sem extrato vira achado de conformidade.
+          Saldo calculado = saldo inicial cadastrado + movimento do extrato espelhado. Ele só é comparável ao saldo da
+          Omie quando o extrato cobre todo o período desde a data do saldo inicial — por isso a coluna de período está
+          ao lado. <strong>Conta ativa com zero linha de extrato</strong> significa que a Omie não devolveu extrato para
+          ela: nesse caso o saldo calculado é apenas o saldo inicial, e a diferença para a Omie é justamente o movimento
+          que falta.
+        </p>
+        <p className="mt-2 text-xs text-slate-500">
+          A coluna de baixas é <strong>referência, não parcela do saldo</strong>: baixa de título e linha de extrato são
+          a mesma movimentação vista de dois lugares, e somar as duas contaria cada pagamento duas vezes. Ela está aqui
+          para mostrar que o dinheiro passou pela conta mesmo quando o extrato veio vazio.
+        </p>
+        <p className="mt-2 text-xs text-slate-500">
+          {resumoSaldos.contasAtivasSemMovimento > 0
+            ? `${fmtNumero(resumoSaldos.contasAtivasSemMovimento)} de ${fmtNumero(
+                resumoSaldos.contas
+              )} contas estão ativas e sem nenhuma linha de extrato espelhada. Enquanto isso durar, o saldo consolidado do módulo (${fmtBRL(
+                resumoSaldos.saldoCalculadoCents
+              )}) não é comparável ao da Omie.`
+            : `Saldo consolidado do módulo: ${fmtBRL(resumoSaldos.saldoCalculadoCents)} em ${fmtNumero(
+                resumoSaldos.contas
+              )} contas, todas com extrato espelhado.`}
         </p>
       </Secao>
     </div>

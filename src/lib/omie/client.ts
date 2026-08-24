@@ -78,31 +78,27 @@ export const OMIE_ENDPOINTS = {
   // volume. Vem vazio quando a empresa nao importa extrato, e vazio aqui NAO
   // significa que nao ha movimento bancario (ver `lancamentos` abaixo).
   extrato: { path: "financas/extrato/", call: "ListarExtrato", listKey: ["listaExtrato", "extrato"] },
-  // LANCAMENTOS DE CONTA CORRENTE — a outra metade do movimento bancario.
+  // LANCAMENTOS DE CONTA CORRENTE — os avulsos.
   //
-  // A Omie tem dois conceitos que parecem o mesmo e nao sao: o EXTRATO, acima,
-  // e os LANCAMENTOS, que sao o que a propria Omie registrou a partir das
-  // baixas e das movimentacoes feitas la dentro.
+  // A Omie tem dois conceitos que parecem o mesmo e nao sao: o EXTRATO, acima
+  // (linhas importadas do banco), e os LANCAMENTOS deste endpoint, que sao os
+  // creditos e debitos digitados direto na conta corrente, sem vinculo com
+  // titulo. A movimentacao que a tela "Movimentacao da Conta Corrente" mostra
+  // e maior que os dois: ela inclui, sobretudo, as BAIXAS DE TITULO.
   //
-  // Eu usava so o extrato, e a justificativa escrita aqui era que a listagem
-  // de lancamentos nao trazia o marcador de conciliado. Era falso: a tela de
-  // Movimentacao de Contas Correntes mostra a coluna "Situacao" com
-  // "Conciliado (bloqueado)" em cada linha. A premissa errada custou o modulo
-  // de conciliacao inteiro — o extrato voltou vazio em todas as contas e o
-  // sistema concluiu "a empresa nao importa extrato", quando o certo era "eu
-  // perguntei no lugar errado".
+  // O caminho ate aqui, registrado porque ele se repete: o extrato voltou
+  // vazio, o sistema concluiu "a empresa nao importa extrato", e o painel
+  // passou a mostrar R$ 131 mil de saldo contra os R$ 2,99 milhoes da Omie.
+  // Cinco grafias de metodo foram chutadas e recusadas; a sexta,
+  // `ListarLancCC`, veio da documentacao e foi aceita. Ai o diagnostico rodou
+  // todas as variantes de filtro nas duas contas e a resposta foi "nao existem
+  // registros" ate mesmo SEM filtro — o que fecha a questao: nao ha o que
+  // buscar aqui. O endpoint fica no diagnostico como sentinela; se um dia
+  // aparecer avulso, ele aparece.
   //
-  // O sintoma que denunciou: a Omie mostra saldo em contas de R$ 2,96 milhoes
-  // e o nosso painel mostrava R$ 131 mil — porque o nosso saldo e saldo
-  // inicial mais movimentos, e movimentos estava zerado.
-  //
-  // `ListarLancCC` — abreviado. As quatro grafias que eu havia chutado
-  // (ListarMovimentos, ListarLancamentos, ListarMovimentacoes,
-  // ListarContaCorrenteLancamentos) foram todas recusadas com
-  // `Method "..." not exists`, que e erro de NOME, nao de credencial nem de
-  // permissao. O nome real veio da documentacao da Omie, nao de mais um
-  // palpite: a conta so responde ao que ela conhece, e cada tentativa errada
-  // custa uma publicacao.
+  // A licao concreta: a diferenca de saldo nunca foi um endpoint faltando. Era
+  // um total contra outro total, sem nada no meio que permitisse investigar.
+  // O que resolveu foi abrir o nosso lado conta a conta — ver `saldos.ts`.
   lancamentos: {
     path: "financas/contacorrentelancamentos/",
     call: "ListarLancCC",
@@ -152,41 +148,46 @@ export function paramsNfse(
 
 // Variantes de parametro dos LANCAMENTOS de conta corrente.
 //
-// Mesmo mecanismo dos NFS-e, e pelo mesmo motivo: a documentacao da Omie nao
-// bate com o que cada conta aceita, e descobrir por deploy sucessivo custa uma
-// publicacao por tentativa. As variantes cobrem as grafias plausiveis da
-// janela de datas; a ultima e so paginacao, que sempre responde alguma coisa e
-// serve para provar que o endpoint existe mesmo quando o filtro e recusado.
+// A lista comecou com nove variantes porque a documentacao publica nao cobria
+// o vocabulario de filtro deste metodo. O diagnostico rodou todas nas duas
+// contas reais e o resultado foi conclusivo, entao a lista encolheu para o que
+// a Omie efetivamente aceita:
+//
+//   aceitos   — nPagina, nRegPorPagina, dDtIncDe/dDtIncAte (data de INCLUSAO),
+//               dDtAltDe/dDtAltAte (data de ALTERACAO)
+//   recusados — nCodCC, dDtLancamentoDe/Ate, dDtInicial/Final,
+//               dPeriodoInicial/Final, todos com "Tag [X] nao faz parte da
+//               estrutura do tipo complexo [lanccListarRequest]"
+//
+// `nCodCC` NAO EXISTE aqui: este metodo nao filtra por conta corrente. Manter
+// as variantes recusadas na lista so gastaria chamada da conta para receber a
+// mesma recusa — a descoberta ja aconteceu, e repeti-la em producao e custo
+// sem informacao.
+//
+// E o achado que importa: mesmo SEM filtro nenhum, so paginacao, as duas
+// contas responderam "nao existem registros" — enquanto a tela de Movimentacao
+// da Conta Corrente da Omie mostra 21.551 linhas. A leitura correta disso e
+// que este metodo lista LANCAMENTOS AVULSOS (credito ou debito digitado direto
+// na conta, sem vinculo com titulo), e nao a movimentacao inteira. A
+// movimentacao que a tela mostra vem majoritariamente de BAIXA DE TITULO — que
+// este modulo ja espelha, em OmieBaixa. Ver `saldos.ts`: e la que a diferenca
+// de saldo passou a ser investigavel, conta a conta, em vez de por chute de
+// endpoint.
 export function paramsLancamentos(
   pagina: number,
   porPagina: number,
   de: string,
-  ate: string,
-  // Codigo da conta corrente, quando conhecido. O extrato EXIGE conta; os
-  // lancamentos podem exigir tambem, e sem essa hipotese na lista a descoberta
-  // ficaria presa numa unica forma de perguntar.
-  codigoConta?: string | null
+  ate: string
 ): readonly Record<string, unknown>[] {
   const paginacao = { nPagina: pagina, nRegPorPagina: porPagina };
-  const comConta = codigoConta
-    ? [
-        { ...paginacao, nCodCC: Number(codigoConta), dPeriodoInicial: de, dPeriodoFinal: ate },
-        { ...paginacao, nCodCC: Number(codigoConta), dDtIncDe: de, dDtIncAte: ate },
-        { ...paginacao, nCodCC: Number(codigoConta) },
-      ]
-    : [];
   return [
-    // Documentados para este metodo: data de INCLUSAO e data de ALTERACAO.
-    // Nenhum dos dois e a data do lancamento em si — o filtro por competencia
-    // fica por conta de quem chama, depois de receber.
+    // Data de INCLUSAO e data de ALTERACAO. Nenhuma das duas e a data do
+    // lancamento em si — o filtro por competencia fica por conta de quem
+    // chama, depois de receber.
     { ...paginacao, dDtIncDe: de, dDtIncAte: ate },
     { ...paginacao, dDtAltDe: de, dDtAltAte: ate },
-    { ...paginacao, dDtLancamentoDe: de, dDtLancamentoAte: ate },
-    { ...paginacao, dDtInicial: de, dDtFinal: ate },
-    { ...paginacao, dPeriodoInicial: de, dPeriodoFinal: ate },
-    ...comConta,
-    // So paginacao: sempre responde se o metodo aceitar chamada sem filtro, e
-    // prova que ele existe mesmo quando toda tag de data e recusada.
+    // So paginacao: o metodo aceita chamada sem filtro, e essa e a unica forma
+    // de distinguir "a janela nao tem lancamento" de "a conta nao tem nenhum".
     paginacao,
   ];
 }
