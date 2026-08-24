@@ -83,8 +83,21 @@ export default async function ResultadosPage({
   // Do mais recente para o mais antigo: quem abre esta tela quer o mês passado,
   // não janeiro do ano retrasado.
   const linhas = [...serie].reverse();
-  const ultimoAno = linhas[0]?.competencia.slice(0, 4) ?? "";
-  const fechamentoDoAno = linhas.find((m) => m.competencia.startsWith(ultimoAno));
+
+  // OS ACUMULADOS SEGUEM A COMPETÊNCIA ESCOLHIDA.
+  //
+  // Antes, os quatro cartões vinham sempre do último mês da série — o mês
+  // corrente —, independentemente do que o seletor dizia. Escolher julho
+  // trocava as tabelas de composição e deixava os cartões em agosto, sem nada
+  // avisar: dois períodos diferentes na mesma tela, cada um parecendo o outro.
+  //
+  // Acumulado é do ano, DENTRO do ano, até o mês escolhido. Selecionar julho
+  // tem que responder "como estava o acumulado no fechamento de julho" — que é
+  // a pergunta que faz alguém escolher um mês fechado em vez de olhar o
+  // corrente.
+  const competenciaDoMes = `${mes.inicio.getFullYear()}-${String(mes.inicio.getMonth() + 1).padStart(2, "0")}`;
+  const fechamentoDoAno = serie.find((m) => m.competencia === competenciaDoMes) ?? linhas[0];
+  const ultimoAno = fechamentoDoAno?.competencia.slice(0, 4) ?? "";
 
   // Link da planilha carrega o MESMO recorte da tela — empresa e competência.
   // Baixar um arquivo que ignora os filtros visíveis é a forma mais rápida de
@@ -144,15 +157,28 @@ export default async function ResultadosPage({
 
       {fechamentoDoAno && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Kpi rotulo={`Receita acumulada ${ultimoAno}`} valor={fmtBRL(fechamentoDoAno.receitaAcumuladaCents)} />
-          <Kpi rotulo={`Despesa acumulada ${ultimoAno}`} valor={fmtBRL(fechamentoDoAno.despesaAcumuladaCents)} />
+          {/* "até julho/2026" e não só "2026": o acumulado depende do seletor,
+              e um cartão que muda de valor sem mudar de rótulo é a forma mais
+              rápida de alguém comparar dois períodos achando que é um só. */}
           <Kpi
+            rotulo={`Receita acumulada ${ultimoAno}`}
+            apoio={`Até ${mes.rotulo}`}
+            valor={fmtBRL(fechamentoDoAno.receitaAcumuladaCents)}
+          />
+          <Kpi
+            rotulo={`Despesa acumulada ${ultimoAno}`}
+            apoio={`Até ${mes.rotulo}`}
+            valor={fmtBRL(fechamentoDoAno.despesaAcumuladaCents)}
+          />
+          <Kpi
+            apoio={`Até ${mes.rotulo}`}
             rotulo={`Resultado acumulado ${ultimoAno}`}
             valor={fmtBRL(fechamentoDoAno.resultadoAcumuladoCents)}
             tom={fechamentoDoAno.resultadoAcumuladoCents >= 0 ? "bom" : "ruim"}
           />
           <Kpi
             rotulo="Margem acumulada"
+            apoio={`Até ${mes.rotulo}`}
             valor={fmtPercent(
               fechamentoDoAno.receitaAcumuladaCents > 0
                 ? (fechamentoDoAno.resultadoAcumuladoCents / fechamentoDoAno.receitaAcumuladaCents) * 100
