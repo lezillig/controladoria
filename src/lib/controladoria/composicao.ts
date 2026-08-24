@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { temColuna } from "./esquema";
 import type { Periodo } from "./periodos";
 
 // COMPOSIÇÃO DO MÊS — de onde vem cada real da receita e da despesa.
@@ -70,10 +71,31 @@ export async function composicaoDoPeriodo(params: {
   // join, os 46 mil títulos já espelhados continuariam aparecendo como
   // "1.01.03" até alguém recarregar a base inteira — e "1.01.03" não responde
   // à pergunta que esta tela existe para responder.
+  //
+  // O JOIN É CONDICIONAL, e a condição não é sobre o dado: é sobre o BANCO ter
+  // a coluna. O banco de produção estava com `OmieCategoria` numa versão
+  // anterior à das conexões, sem `conexaoId`, e esta consulta morria com
+  // `column cat.conexaoId does not exist` — derrubando a tela inteira por causa
+  // de um nome de categoria. Uma tela que existe para investigar não pode
+  // deixar de abrir por causa de um enfeite.
+  //
+  // Isto NÃO é o conserto do banco. A diferença entre o schema do repositório e
+  // o banco que está atendendo aparece por extenso na tela de sincronização
+  // (ver esquema.ts); corrige-se com migração, não escondendo.
+  const podeJuntarCategoria = await temColuna("OmieCategoria", "conexaoId");
+  const juncaoCategoria = podeJuntarCategoria
+    ? Prisma.sql`
+      LEFT JOIN "OmieCategoria" cat
+        ON cat."companyId" = t."companyId"
+       AND cat."conexaoId" = t."conexaoId"
+       AND cat.codigo = t."categoriaCodigo"`
+    : Prisma.empty;
+  const descricaoDaCategoria = podeJuntarCategoria ? Prisma.sql`NULLIF(TRIM(cat.descricao), ''),` : Prisma.empty;
+
   const linhas = await prisma.$queryRaw<LinhaBruta[]>`
     SELECT COALESCE(
              NULLIF(TRIM(t."categoriaDescricao"), ''),
-             NULLIF(TRIM(cat.descricao), ''),
+             ${descricaoDaCategoria}
              t."categoriaCodigo"
            ) AS categoria,
            t."tipoDocumento" AS tipo,
@@ -81,10 +103,7 @@ export async function composicaoDoPeriodo(params: {
            SUM(t."valorDocumentoCents")::bigint AS valor,
            COUNT(*)::bigint AS quantidade
       FROM "OmieTitulo" t
-      LEFT JOIN "OmieCategoria" cat
-        ON cat."companyId" = t."companyId"
-       AND cat."conexaoId" = t."conexaoId"
-       AND cat.codigo = t."categoriaCodigo"
+      ${juncaoCategoria}
       LEFT JOIN "OmieContaCorrente" cc
         ON cc."companyId" = t."companyId"
        AND cc."conexaoId" = t."conexaoId"

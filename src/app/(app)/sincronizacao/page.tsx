@@ -7,6 +7,7 @@ import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controla
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { ultimasFalhas } from "@/lib/controladoria/falhas";
+import { driftDoEsquema } from "@/lib/controladoria/esquema";
 import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
 import { disponibilidadeGestao } from "@/lib/gestao/leitura";
@@ -53,7 +54,7 @@ export default async function SincronizacaoPage() {
   });
   const dataInicioBase = config?.dataInicioBase ?? new Date();
 
-  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas] = await Promise.all([
+  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift] = await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
       orderBy: { iniciadoEm: "desc" },
@@ -66,11 +67,16 @@ export default async function SincronizacaoPage() {
     progressoDaCarga(session.companyId, dataInicioBase),
     volumeEspelhadoNoBanco(session.companyId),
     coberturaDeCamposNoBanco(session.companyId),
-    saldosPorConta(session.companyId),
+    // `catch` aqui, e não dentro da função: esta tela é a que mostra o
+    // relatório de diferenças de esquema, e ela não pode morrer justamente
+    // quando o esquema é o problema. Uma consulta que depende de coluna
+    // ausente derrubaria a página antes de o diagnóstico aparecer.
+    saldosPorConta(session.companyId).catch(() => null),
     ultimasFalhas(10),
+    driftDoEsquema(),
   ]);
 
-  const resumoSaldos = resumirSaldos(contasCorrentes);
+  const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
 
   // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
   // leitura da gestão, então só faz sentido consultá-la quando ela já rodou.
@@ -93,6 +99,43 @@ export default async function SincronizacaoPage() {
           espelho existe para dar histórico estável, cruzamento entre domínios e velocidade de consulta à auditoria.
         </p>
       </div>
+
+      {/* DIFERENÇAS DE ESQUEMA — primeiro de tudo, e não no rodapé.
+          Quando o banco que está atendendo não tem as colunas que o código
+          espera, tudo o que vem abaixo fica suspeito: contagem que some,
+          cobertura que despenca, tela que não abre. Ler isso depois de já ter
+          tirado conclusões dos outros números é o caminho mais rápido para
+          consertar o problema errado. */}
+      {drift.disponivel && (drift.tabelasFaltantes.length > 0 || drift.colunasFaltantes.length > 0) && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-sm font-semibold text-red-900">O banco em uso está atrás do esquema do sistema</p>
+          <p className="mt-1 text-xs leading-relaxed text-red-800">
+            As migrações são aplicadas a cada publicação, mas só valem para o que ainda não está marcado como aplicado —
+            um banco cuja tabela veio de outra origem passa por elas em silêncio. Enquanto a diferença existir, consultas
+            que usam estas colunas falham, e a gravação da sincronização pode estar descartando registro sem alarde.
+          </p>
+          {drift.tabelasFaltantes.length > 0 && (
+            <p className="mt-2 text-xs text-red-900">
+              <strong>Tabelas ausentes:</strong> {drift.tabelasFaltantes.join(", ")}
+            </p>
+          )}
+          {drift.colunasFaltantes.length > 0 && (
+            <ul className="mt-2 list-disc space-y-0.5 pl-5 font-mono text-[11px] text-red-900">
+              {drift.colunasFaltantes.slice(0, 40).map((c) => (
+                <li key={`${c.tabela}.${c.coluna}`}>
+                  {c.tabela}.{c.coluna} — {c.tipo}
+                  {c.obrigatoria ? " (obrigatória)" : ""}
+                </li>
+              ))}
+            </ul>
+          )}
+          {drift.colunasFaltantes.length > 40 && (
+            <p className="mt-1 text-xs text-red-800">
+              …e mais {fmtNumero(drift.colunasFaltantes.length - 40)} coluna(s).
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
@@ -321,8 +364,12 @@ export default async function SincronizacaoPage() {
             "Situação",
           ]}
           alinharDireita={[1, 2, 4, 5, 6]}
-          vazio="Nenhuma conta corrente sincronizada."
-          linhas={contasCorrentes.map((c) => [
+          vazio={
+            contasCorrentes
+              ? "Nenhuma conta corrente sincronizada."
+              : "Não foi possível calcular os saldos — veja as diferenças de esquema abaixo."
+          }
+          linhas={(contasCorrentes ?? []).map((c) => [
             <span key="c">
               {c.descricao}
               <span className="mt-0.5 block text-xs text-slate-500">
@@ -360,7 +407,9 @@ export default async function SincronizacaoPage() {
           para mostrar que o dinheiro passou pela conta mesmo quando o extrato veio vazio.
         </p>
         <p className="mt-2 text-xs text-slate-500">
-          {resumoSaldos.contasAtivasSemMovimento > 0
+          {!resumoSaldos
+            ? "O cálculo de saldo não pôde ser feito nesta leitura."
+            : resumoSaldos.contasAtivasSemMovimento > 0
             ? `${fmtNumero(resumoSaldos.contasAtivasSemMovimento)} de ${fmtNumero(
                 resumoSaldos.contas
               )} contas estão ativas e sem nenhuma linha de extrato espelhada. Enquanto isso durar, o saldo consolidado do módulo (${fmtBRL(
