@@ -55,7 +55,11 @@ export function nomeDoArquivo(prefixo: string, escopo: string, competencia: stri
   const limpo = (t: string) =>
     t
       .normalize("NFD")
-      .replace(/[̀-ͯ]/g, "")
+      // \u0300-\u036f: as marcas de acento que o NFD separa da letra.
+      // Escrito por código, e não com os caracteres literais: combinante solto
+      // dentro de classe de caractere depende de como o arquivo foi salvo, e um
+      // intervalo invertido vira SyntaxError em tempo de execução.
+      .replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-zA-Z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .toLowerCase();
@@ -68,6 +72,21 @@ export function nomeDoArquivo(prefixo: string, escopo: string, competencia: stri
 // critério é uma armadilha: ela circula por e-mail, alguém abre semanas depois
 // e conclui o que quiser. As três linhas de contexto custam nada e impedem
 // isso.
+// Data e hora de Brasília sem depender de ICU completo no runtime.
+//
+// `toLocaleString` com `timeZone` lança `RangeError: Invalid time zone` num
+// runtime compilado sem a base de fusos — e uma exportação que quebra por
+// causa do carimbo de data é o tipo de falha que consome uma tarde para achar.
+// O deslocamento é fixo: o Brasil não tem horário de verão desde 2019.
+function momentoLegivel(d: Date): string {
+  const brasilia = new Date(d.getTime() - 3 * 60 * 60 * 1000);
+  const dd = (n: number) => String(n).padStart(2, "0");
+  return (
+    `${dd(brasilia.getUTCDate())}/${dd(brasilia.getUTCMonth() + 1)}/${brasilia.getUTCFullYear()} ` +
+    `${dd(brasilia.getUTCHours())}:${dd(brasilia.getUTCMinutes())}`
+  );
+}
+
 export function cabecalhoDeContexto(params: {
   titulo: string;
   empresa: string;
@@ -80,7 +99,7 @@ export function cabecalhoDeContexto(params: {
     ["Empresa", params.empresa],
     ["Competência", params.competencia],
     ["Critério", params.criterio],
-    ["Gerado em", params.geradoEm.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })],
+    ["Gerado em", momentoLegivel(params.geradoEm)],
     [],
   ];
 }

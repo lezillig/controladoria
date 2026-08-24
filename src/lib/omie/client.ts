@@ -161,9 +161,20 @@ export function paramsLancamentos(
   pagina: number,
   porPagina: number,
   de: string,
-  ate: string
+  ate: string,
+  // Codigo da conta corrente, quando conhecido. O extrato EXIGE conta; os
+  // lancamentos podem exigir tambem, e sem essa hipotese na lista a descoberta
+  // ficaria presa numa unica forma de perguntar.
+  codigoConta?: string | null
 ): readonly Record<string, unknown>[] {
   const paginacao = { nPagina: pagina, nRegPorPagina: porPagina };
+  const comConta = codigoConta
+    ? [
+        { ...paginacao, nCodCC: Number(codigoConta), dPeriodoInicial: de, dPeriodoFinal: ate },
+        { ...paginacao, nCodCC: Number(codigoConta), dDtIncDe: de, dDtIncAte: ate },
+        { ...paginacao, nCodCC: Number(codigoConta) },
+      ]
+    : [];
   return [
     // Documentados para este metodo: data de INCLUSAO e data de ALTERACAO.
     // Nenhum dos dois e a data do lancamento em si — o filtro por competencia
@@ -172,8 +183,10 @@ export function paramsLancamentos(
     { ...paginacao, dDtAltDe: de, dDtAltAte: ate },
     { ...paginacao, dDtLancamentoDe: de, dDtLancamentoAte: ate },
     { ...paginacao, dDtInicial: de, dDtFinal: ate },
-    // So paginacao: sempre responde, e prova que o metodo existe mesmo quando
-    // todo filtro e recusado.
+    { ...paginacao, dPeriodoInicial: de, dPeriodoFinal: ate },
+    ...comConta,
+    // So paginacao: sempre responde se o metodo aceitar chamada sem filtro, e
+    // prova que ele existe mesmo quando toda tag de data e recusada.
     paginacao,
   ];
 }

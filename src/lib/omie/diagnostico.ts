@@ -261,7 +261,9 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
         chave: "lancamentos",
         rotulo: "Lançamentos de conta corrente",
         endpoint: OMIE_ENDPOINTS.lancamentos,
-        param: paramsLancamentos(1, REGISTROS_DE_AMOSTRA, de, ate),
+        // Recebe o código da conta que o próprio diagnóstico acabou de obter:
+        // o extrato exige conta, e os lançamentos podem exigir também.
+        param: paramsLancamentos(1, REGISTROS_DE_AMOSTRA, de, ate, codigoConta),
         normalizar: () => null,
       },
       conexao.credencialRef
@@ -279,6 +281,23 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
   };
 }
 
+// VARIANTE VAZIA NÃO É RESPOSTA FINAL.
+//
+// O cliente HTTP só desce para a próxima variante de filtro quando a Omie
+// RECUSA a tag. Se uma variante é aceita e devolve vazio, ele para ali — e um
+// filtro válido mas errado passa a mascarar o certo. Foi o que aconteceu com
+// os lançamentos de conta corrente: o método respondeu, disse "sem registro",
+// e as outras três variantes nunca foram tentadas, enquanto a tela da Omie
+// mostrava 21.551 lançamentos.
+//
+// Aqui, no diagnóstico, cada variante é tentada por conta própria e a primeira
+// QUE TRAZ LINHA vence. Se todas vierem vazias, o resultado diz quais foram
+// tentadas — que é a informação de que se precisa para escolher a próxima
+// hipótese, em vez de recomeçar do zero.
+//
+// O sync continua com o comportamento antigo de propósito: lá, insistir em
+// quatro variantes a cada página multiplicaria por quatro o consumo da conta.
+// Descobrir é trabalho do diagnóstico; o sync usa o que foi descoberto.
 async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpoint> {
   const inicio = Date.now();
   const base = {
@@ -295,61 +314,79 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
     erro: null as string | null,
   };
 
-  // Só reporta o filtro quando havia escolha a fazer: em endpoint de param
+  const variantes: readonly Record<string, unknown>[] = Array.isArray(alvo.param)
+    ? (alvo.param as readonly Record<string, unknown>[])
+    : [(alvo.param ?? {}) as Record<string, unknown>];
+  // Só faz sentido nomear o filtro quando havia escolha; em endpoint de param
   // único a informação seria ruído.
-  const variantes = Array.isArray(alvo.param) ? (alvo.param as readonly Record<string, unknown>[]) : null;
-  let filtroAceito: string | null = null;
+  const houveEscolha = Array.isArray(alvo.param);
 
-  try {
-    const resposta = await omieCall(alvo.endpoint, alvo.param ?? {}, {
-      credencialRef,
-      aoAceitarVariante: (i) => {
-        if (variantes) filtroAceito = descreverParam(variantes[i] ?? {});
-      },
-    });
-    const itens = extrairItens(resposta, alvo.endpoint);
-    const listaEncontradaEm = alvo.endpoint.listKey.find((k) => Array.isArray(resposta?.[k])) ?? null;
+  const tentadas: string[] = [];
+  let ultimoErro: unknown = null;
 
-    if (itens.length === 0) {
+  for (const [i, variante] of variantes.entries()) {
+    if (i > 0) await sleep(OMIE_PACE_MS);
+    const rotuloVariante = descreverParam(variante);
+
+    try {
+      const resposta = await omieCall(alvo.endpoint, variante, { credencialRef });
+      const itens = extrairItens(resposta, alvo.endpoint);
+      const listaEncontradaEm = alvo.endpoint.listKey.find((k) => Array.isArray(resposta?.[k])) ?? null;
+
+      if (itens.length === 0) {
+        tentadas.push(`${rotuloVariante}: aceito, sem registro`);
+        continue;
+      }
+
+      const primeiro = itens[0];
+      const mapeado = alvo.normalizar(primeiro);
       return {
         ...base,
-        estado: "VAZIO",
-        listaEncontradaEm,
-        filtroAceito,
+        estado: "OK",
+        registros: itens.length,
         totalNaConta: extrairTotalRegistros(resposta),
+        listaEncontradaEm,
+        filtroAceito: houveEscolha ? rotuloVariante : null,
+        camposRecebidos: nomesDeCampos(primeiro),
+        camposMapeados: mapeado ? preenchidos(mapeado) : [],
+        camposVazios: mapeado ? ausentes(mapeado) : ["registro descartado pelo mapeamento"],
         duracaoMs: Date.now() - inicio,
       };
+    } catch (e) {
+      // "Sem registros" chega como EXCEÇÃO: a Omie devolve HTTP 500 nesse caso.
+      // É sucesso de integração, não falha — e aqui significa apenas que esta
+      // variante não serve, não que o endpoint esteja inacessível.
+      if (e instanceof OmieVazioError) {
+        tentadas.push(`${rotuloVariante}: aceito, sem registro`);
+        continue;
+      }
+      ultimoErro = e;
+      tentadas.push(`${rotuloVariante}: ${e instanceof Error ? e.message.slice(0, 120) : "erro"}`);
     }
+  }
 
-    const primeiro = itens[0];
-    const mapeado = alvo.normalizar(primeiro);
-
-    return {
-      ...base,
-      estado: "OK",
-      registros: itens.length,
-      totalNaConta: extrairTotalRegistros(resposta),
-      listaEncontradaEm,
-      filtroAceito,
-      camposRecebidos: nomesDeCampos(primeiro),
-      camposMapeados: mapeado ? preenchidos(mapeado) : [],
-      camposVazios: mapeado ? ausentes(mapeado) : ["registro descartado pelo mapeamento"],
-      duracaoMs: Date.now() - inicio,
-    };
-  } catch (e) {
-    // "Sem registros" chega como exceção (a Omie devolve HTTP 500 nesse caso).
-    // É sucesso de integração, não falha — e distinguir os dois é justamente o
-    // que o diagnóstico precisa mostrar com clareza.
-    if (e instanceof OmieVazioError) {
-      return { ...base, estado: "VAZIO", duracaoMs: Date.now() - inicio };
-    }
+  // Chegou aqui: nenhuma variante trouxe linha. Erro real tem precedência
+  // sobre vazio — dizer "sem registro" quando a conta recusou a chamada
+  // mandaria procurar dado onde o problema é de acesso.
+  if (ultimoErro && !(ultimoErro instanceof OmieVazioError)) {
     return {
       ...base,
       estado: "ERRO",
-      erro: e instanceof Error ? e.message : "erro desconhecido",
+      erro: ultimoErro instanceof Error ? ultimoErro.message : "erro desconhecido",
+      camposVazios: houveEscolha ? tentadas : [],
       duracaoMs: Date.now() - inicio,
     };
   }
+
+  return {
+    ...base,
+    estado: "VAZIO",
+    // As variantes tentadas viajam no campo de campos vazios porque é o único
+    // que a tela já mostra por extenso. Sem elas, "sem registro" não diz se
+    // foram testadas quatro formas de perguntar ou uma só.
+    camposVazios: houveEscolha ? tentadas : [],
+    duracaoMs: Date.now() - inicio,
+  };
 }
 
 async function primeiraContaCorrente(credencialRef: string): Promise<string | null> {
