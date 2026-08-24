@@ -6,7 +6,8 @@ import { isEnvioDisponivel } from "@/lib/email/send";
 import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controladoria/saudeDaBase";
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
-import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { ultimasFalhas } from "@/lib/controladoria/falhas";
+import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
 import { disponibilidadeGestao } from "@/lib/gestao/leitura";
 import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
@@ -52,7 +53,7 @@ export default async function SincronizacaoPage() {
   });
   const dataInicioBase = config?.dataInicioBase ?? new Date();
 
-  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes] = await Promise.all([
+  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas] = await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
       orderBy: { iniciadoEm: "desc" },
@@ -66,6 +67,7 @@ export default async function SincronizacaoPage() {
     volumeEspelhadoNoBanco(session.companyId),
     coberturaDeCamposNoBanco(session.companyId),
     saldosPorConta(session.companyId),
+    ultimasFalhas(10),
   ]);
 
   const resumoSaldos = resumirSaldos(contasCorrentes);
@@ -367,6 +369,38 @@ export default async function SincronizacaoPage() {
             : `Saldo consolidado do módulo: ${fmtBRL(resumoSaldos.saldoCalculadoCents)} em ${fmtNumero(
                 resumoSaldos.contas
               )} contas, todas com extrato espelhado.`}
+        </p>
+      </Secao>
+
+      {/* FALHAS DE TELA — o identificador com a causa ao lado.
+          A tela de erro mostra "erro 2799718439" e pede que o número seja
+          informado. Até aqui, responder o que ele significava exigia exportar
+          o log da hospedagem: três rodadas disso custaram mais que o conserto
+          dos erros. Agora a mensagem mora ao lado do identificador. */}
+      <Secao titulo="Falhas de tela registradas">
+        <Tabela
+          colunas={["Quando", "Tela", "Identificador", "O que aconteceu"]}
+          vazio="Nenhuma falha registrada nos últimos 30 dias."
+          linhas={falhas.map((f) => [
+            fmtDataHora(f.criadoEm),
+            f.rota ?? "—",
+            <span key="d" className="font-mono text-xs">
+              {f.digest ?? "—"}
+            </span>,
+            <span key="m">
+              {f.mensagem}
+              {f.pilha && (
+                <span className="mt-1 block whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-slate-500">
+                  {f.pilha.split("\n").slice(0, 3).join("\n")}
+                </span>
+              )}
+            </span>,
+          ])}
+        />
+        <p className="mt-3 text-xs text-slate-500">
+          Só falhas de servidor, e só dos últimos 30 dias — isto é dado de diagnóstico, não histórico. A mensagem passa
+          por redação antes de ser gravada: string de conexão, chave de API e token são apagados, porque uma exceção de
+          servidor carrega essas coisas e esta tela não é lugar para elas.
         </p>
       </Secao>
     </div>

@@ -1046,3 +1046,43 @@ model TentativaLogin {
   @@index([email, criadoEm])
   @@index([ip, criadoEm])
 }
+
+// FALHA DE SERVIDOR, GRAVADA ONDE DÁ PARA LER.
+//
+// A tela de erro mostra um `digest` e diz "informe esse identificador junto com
+// o nome da tela". A frase pressupõe que alguém tem acesso ao log da
+// hospedagem e sabe procurar nele — e, na prática, não tem: cada falha virava
+// uma rodada de "exporte o CSV do log da Vercel e me mande". Três rodadas
+// assim custaram mais que o conserto de qualquer um dos erros.
+//
+// Aqui o digest deixa de ser um número solto e passa a ter a mensagem ao lado,
+// dentro do próprio sistema, na tela de sincronização, para quem já tem
+// permissão de ver o estado do módulo.
+//
+// O QUE NÃO ENTRA: a mensagem passa por redação antes de ser gravada. Exceção
+// de servidor carrega string de conexão, chave de API e, no pior caso, trecho
+// do dado que causou o erro — e este registro é lido por gente que não precisa
+// ver nada disso. Ver `redigir()` em falhas.ts.
+//
+// Fica FORA do ControladoriaEventLog pelo mesmo motivo do TentativaLogin:
+// aquele exige companyId, e uma falha ao montar a página pode acontecer antes
+// de haver sessão — que é justamente o caso mais difícil de diagnosticar.
+model FalhaDeServidor {
+  id       String   @id @default(cuid())
+  // O mesmo identificador que a tela de erro mostra. É a chave que liga o
+  // relato ("deu erro 2799718439") ao que de fato aconteceu.
+  digest   String?
+  // "render" (montagem de página), "route" (rota de API) ou "action".
+  origem   String?
+  rota     String?
+  // Método e caminho da requisição, quando o Next os informa.
+  metodo   String?
+  mensagem String
+  // Primeiras linhas da pilha, já redigidas. O suficiente para localizar o
+  // arquivo; não o suficiente para virar despejo de código na tela.
+  pilha    String?
+  criadoEm DateTime @default(now())
+
+  @@index([criadoEm])
+  @@index([digest])
+}

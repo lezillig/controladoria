@@ -44,6 +44,21 @@ export function fmtData(d: Date | null | undefined): string {
   return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
 }
 
+// Data COM HORA. Existe para o registro de falhas: duas falhas no mesmo dia
+// são a regra, não a exceção, e sem a hora não dá para dizer qual delas é a
+// que a pessoa acabou de ver na tela.
+export function fmtDataHora(d: Date | null | undefined): string {
+  if (!d) return "—";
+  return d.toLocaleString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // Variacao percentual entre dois periodos. Devolve null quando a base e zero
 // — "aumento de infinito%" nao e informacao, e o relatorio deve dizer "sem
 // base comparativa" em vez de imprimir um numero sem sentido.

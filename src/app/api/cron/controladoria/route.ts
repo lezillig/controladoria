@@ -7,6 +7,7 @@ import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { parseLocalDate } from "@/lib/date";
 import { limparTentativasAntigas } from "@/lib/seguranca/freioDeLogin";
+import { limparFalhasAntigas } from "@/lib/controladoria/falhas";
 
 // Ciclo diário da Controladoria: sincroniza a Omie, roda os agentes de
 // auditoria, mede o BSC e envia o relatório gerencial por e-mail.
@@ -113,6 +114,9 @@ export async function GET(req: NextRequest) {
   // carga do dia não rodar.
   if (ciclo === 0) {
     await limparTentativasAntigas().catch(() => 0);
+    // Mesma regra para o registro de falhas de tela: diagnóstico de trinta
+    // dias, não histórico. Ver limparFalhasAntigas.
+    await limparFalhasAntigas().catch(() => undefined);
   }
 
   const resultados: unknown[] = [];
