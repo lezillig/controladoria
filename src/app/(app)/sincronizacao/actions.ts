@@ -173,3 +173,68 @@ export async function encerrarExecucaoTravada(): Promise<ResultadoSync> {
   revalidatePath("/sincronizacao");
   return { mensagens: [`${resultado.count} execução(ões) encerrada(s).`] };
 }
+
+// RELER UMA JANELA DE CARGA.
+//
+// A fase de notas fiscais é best-effort: uma recusa da Omie não pode impedir o
+// relatório do dia. Mas a janela era marcada como concluída de qualquer jeito,
+// e aquele mês ficava para sempre sem nota — o erro gravado e nada que o
+// desfizesse.
+//
+// Esta ação apaga a EXECUÇÃO daquele mês, não os dados. O ciclo procura a
+// primeira janela que falta (ver `obterOuCriarRun`) e a refaz na próxima
+// rodada, gravando por cima do que já existe: o espelho é upsert, então reler
+// atualiza e completa, nunca duplica nem perde.
+//
+// Uma janela por vez, e não "reler tudo a partir daqui": trinta e oito janelas
+// são horas de sincronização e consumo de API das duas contas. Quem sabe qual
+// mês falhou não precisa pagar por isso.
+export async function relerJanela(formData: FormData): Promise<ResultadoSync> {
+  const session = await requireRole("ADMIN", "CONTROLADORIA");
+
+  const conexaoId = String(formData.get("conexaoId") ?? "");
+  const janela = String(formData.get("janelaInicio") ?? "");
+  const inicio = new Date(janela);
+  if (!conexaoId || Number.isNaN(inicio.getTime())) {
+    return { mensagens: ["Janela inválida — nada foi alterado."] };
+  }
+
+  // O mês inteiro, e não o instante exato: a execução guarda `janelaInicio` na
+  // meia-noite do dia 1, mas comparar por igualdade de instante dependeria do
+  // fuso com que a data chegou do formulário.
+  const mesInicio = new Date(inicio.getFullYear(), inicio.getMonth(), 1, 0, 0, 0, 0);
+  const mesFim = new Date(inicio.getFullYear(), inicio.getMonth() + 1, 1, 0, 0, 0, 0);
+
+  const alvo = await prisma.omieSyncRun.findFirst({
+    where: {
+      companyId: session.companyId,
+      conexaoId,
+      backfill: true,
+      janelaInicio: { gte: mesInicio, lt: mesFim },
+    },
+    select: { id: true, janelaInicio: true, conexao: { select: { apelido: true } } },
+  });
+  if (!alvo) return { mensagens: ["Janela não encontrada — talvez já tenha sido apagada."] };
+
+  await prisma.omieSyncRun.delete({ where: { id: alvo.id } });
+
+  const competencia = `${alvo.janelaInicio.getFullYear()}-${String(alvo.janelaInicio.getMonth() + 1).padStart(2, "0")}`;
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SYNC_JANELA_RELIDA",
+    entidadeTipo: "OmieSyncRun",
+    entidadeId: alvo.id,
+    descricao: `Janela ${competencia} de ${alvo.conexao?.apelido ?? "?"} marcada para releitura.`,
+  });
+
+  revalidatePath("/sincronizacao");
+  return {
+    mensagens: [
+      `Janela ${competencia} (${alvo.conexao?.apelido ?? "?"}) será relida na próxima sincronização. ` +
+        "Clique em Sincronizar agora ou espere o ciclo da madrugada.",
+    ],
+  };
+}

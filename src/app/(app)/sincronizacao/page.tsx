@@ -8,6 +8,7 @@ import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { ultimasFalhas } from "@/lib/controladoria/falhas";
 import { apenasNotas, janelasComFalha } from "@/lib/controladoria/janelasComFalha";
+import { ultimaMedicaoDaAuditoria } from "@/lib/controladoria/medicaoAuditoria";
 import { driftDoEsquema, ondeOBancoOlha } from "@/lib/controladoria/esquema";
 import { esquemaDaControladoria } from "@/lib/esquemaDoBanco";
 import { versaoPublicada } from "@/lib/controladoria/versao";
@@ -18,6 +19,7 @@ import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
 import { sessaoControladoria } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
+import RelerJanelaButton from "./RelerJanelaButton";
 
 // Teto de duração das Server Actions desta tela, declarado por precaução e não
 // por diagnóstico.
@@ -57,7 +59,7 @@ export default async function SincronizacaoPage() {
   });
   const dataInicioBase = config?.dataInicioBase ?? new Date();
 
-  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde, janelasRuins] =
+  const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde, janelasRuins, medicao] =
     await Promise.all([
     prisma.omieSyncRun.findMany({
       where: { companyId: session.companyId },
@@ -80,6 +82,7 @@ export default async function SincronizacaoPage() {
     driftDoEsquema(),
     ondeOBancoOlha(),
     janelasComFalha(session.companyId),
+    ultimaMedicaoDaAuditoria(session.companyId),
   ]);
 
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
@@ -524,21 +527,88 @@ export default async function SincronizacaoPage() {
             </p>
           )}
           <Tabela
-            colunas={["Empresa", "Competência", "Fase", "Erro"]}
+            colunas={["Empresa", "Competência", "Fase", "Erro", "Ação"]}
             vazio="Nenhuma."
             linhas={janelasRuins.map((j) => [
               j.conexaoApelido,
               j.competencia,
               j.fase,
-              <span key="e" className="block max-w-2xl whitespace-pre-wrap text-xs text-slate-600">
+              <span key="e" className="block max-w-xl whitespace-pre-wrap text-xs text-slate-600">
                 {j.erro}
               </span>,
+              // Só janela de CARGA HISTÓRICA de uma conexão pode ser relida: a
+              // execução do ciclo diário não é uma janela mensal, e apagá-la
+              // não faria a Omie ser consultada de novo.
+              podeSincronizar && j.backfill && j.conexaoId ? (
+                <RelerJanelaButton
+                  key="r"
+                  conexaoId={j.conexaoId}
+                  janelaInicio={j.inicio.toISOString()}
+                  rotulo={`${j.conexaoApelido} · ${j.competencia}`}
+                />
+              ) : (
+                "—"
+              ),
             ])}
           />
           <p className="mt-3 text-xs text-slate-500">
             Mensagem inteira, sem corte. A lista de execuções acima mostra as mesmas falhas cortadas em 160 caracteres —
             foi esse corte que manteve o motivo invisível.
           </p>
+          <p className="mt-2 text-xs text-slate-500">
+            <strong>Reler</strong> apaga a execução daquele mês, não os dados: o ciclo procura a primeira janela que
+            falta e a refaz, gravando por cima. O espelho é upsert — reler atualiza e completa, nunca duplica nem perde.
+            Uma janela por vez, porque recarregar as trinta e oito são horas de sincronização e consumo de API das duas
+            contas.
+          </p>
+        </Secao>
+      )}
+
+      {/* CUSTO DA AUDITORIA — a fase que roda perto do teto da função.
+          Função que estoura não grava nada, e o diagnóstico morre junto. A
+          medição já era gravada; faltava mostrá-la, e faltava a metade dos
+          agentes. Sem separar carregar de processar, "roda em 46s de um teto de
+          60" não diz o que apertar: dividir os agentes entre invocações só
+          ajuda se o gargalo for eles — se for o carregamento, cada invocação
+          recarregaria o contexto inteiro e o custo total subiria. */}
+      {medicao && (
+        <Secao titulo="Custo da última auditoria">
+          <Tabela
+            colunas={["Etapa", "Tempo", "O que significa"]}
+            alinharDireita={[1]}
+            vazio="Sem medição."
+            linhas={[
+              [
+                "Carregar o contexto",
+                medicao.msContexto === null ? "—" : `${(medicao.msContexto / 1000).toFixed(1)}s`,
+                "Ler do banco os títulos, baixas, notas e parceiros da janela",
+              ],
+              [
+                "Rodar os agentes",
+                medicao.msAgentes === null ? "—" : `${(medicao.msAgentes / 1000).toFixed(1)}s`,
+                "Cruzar registro a registro e emitir os achados",
+              ],
+              [
+                <strong key="t">Total</strong>,
+                <strong key="tv">
+                  {medicao.msTotal === null ? "—" : `${(medicao.msTotal / 1000).toFixed(1)}s`}
+                </strong>,
+                <strong key="td">Teto da função: 60s</strong>,
+              ],
+            ]}
+          />
+          <p className="mt-3 text-xs text-slate-500">
+            Volume da janela: {fmtNumero(medicao.titulos ?? 0)} títulos, {fmtNumero(medicao.baixas ?? 0)} baixas,{" "}
+            {fmtNumero(medicao.notas ?? 0)} notas, {fmtNumero(medicao.parceiros ?? 0)} parceiros
+            {medicao.janelaDesde ? ` — desde ${medicao.janelaDesde}` : ""}.
+          </p>
+          {medicao.msTotal !== null && medicao.msTotal > 40_000 && (
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+              <strong>Acima de 40s.</strong> A base cresce cerca de 2.400 títulos por mês, e esta fase estoura o teto
+              antes de o ano virar. A medição acima diz qual metade apertar — e a fase adiada é registrada em vez de
+              morrer com a função, então um estouro atrasa a auditoria de um dia, não a perde.
+            </p>
+          )}
         </Secao>
       )}
 

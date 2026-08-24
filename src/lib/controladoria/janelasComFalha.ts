@@ -19,6 +19,10 @@ import { prisma } from "@/lib/prisma";
 // declaração". Se um mês está aqui, ele é candidato imediato.
 
 export type JanelaComFalha = {
+  // Necessários para a ação de releitura: ela apaga a execução daquele mês
+  // daquela conexão, e o ciclo a refaz por ser a primeira que falta.
+  conexaoId: string | null;
+  backfill: boolean;
   conexaoApelido: string;
   competencia: string;
   inicio: Date;
@@ -39,6 +43,8 @@ export async function janelasComFalha(companyId: string, limite = 40): Promise<J
       // A execução do ciclo inteiro (não a de uma conexão) tem `conexaoId`
       // nulo, e aí o rótulo é "todas" — que é o que ela de fato cobre.
       select: {
+        conexaoId: true,
+        backfill: true,
         janelaInicio: true,
         fase: true,
         erro: true,
@@ -47,6 +53,8 @@ export async function janelasComFalha(companyId: string, limite = 40): Promise<J
     });
 
     return runs.map((r) => ({
+      conexaoId: r.conexaoId,
+      backfill: r.backfill,
       conexaoApelido: r.conexao?.apelido ?? "todas",
       competencia: `${r.janelaInicio.getFullYear()}-${String(r.janelaInicio.getMonth() + 1).padStart(2, "0")}`,
       inicio: r.janelaInicio,

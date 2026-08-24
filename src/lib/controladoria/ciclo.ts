@@ -226,7 +226,29 @@ export async function executarPasso(params: {
 
     const inicioAgentes = Date.now();
     const resultado = await executarAuditoria(ctx);
-    console.log(`[auditoria] agentes em ${Date.now() - inicioAgentes}ms`);
+    const msAgentes = Date.now() - inicioAgentes;
+    console.log(`[auditoria] agentes em ${msAgentes}ms`);
+
+    // A MEDIÇÃO COMPLETA, GRAVADA E VISÍVEL.
+    //
+    // A primeira metade — o tempo de carregar o contexto — já era gravada,
+    // porque a função estourava o tempo e levava o diagnóstico junto. Faltava a
+    // segunda: sem saber quanto custam os agentes, "a auditoria roda em 46s de
+    // um teto de 60" não diz o que apertar. Carregar mais rápido e rodar menos
+    // agente são consertos diferentes, e um deles é trabalho perdido.
+    //
+    // Fica no mesmo campo, ao lado da primeira: uma medição pela metade é o que
+    // fez a fase estourar por semanas sem ninguém saber por quê.
+    await prisma.omieSyncRun
+      .update({
+        where: { id: run.id },
+        data: {
+          detalhes: {
+            medicaoContexto: { ...medicao, msAgentes, msTotal: msContexto + msAgentes },
+          } as Prisma.InputJsonValue,
+        },
+      })
+      .catch(() => undefined);
 
     // A conciliação com os apontamentos da consultoria roda DEPOIS da
     // auditoria, e não dentro dela: ela liga apontamento a achado, e para isso
@@ -341,7 +363,11 @@ export async function executarPasso(params: {
 //   2. próxima janela de carga histórica de alguma conexão;
 //   3. sincronização do dia de alguma conexão que ainda não rodou;
 //   4. consolidação do dia, quando todas as conexões já terminaram.
-async function obterOuCriarRun(
+// Exportada para poder ser conferida de fora. É esta função que decide qual
+// janela a carga faz em seguida, e o defeito que ela acabou de perder — pular
+// para sempre um mês apagado no meio — é invisível pela interface: a barra de
+// progresso continua em 100% com o buraco lá dentro.
+export async function obterOuCriarRun(
   companyId: string,
   conexoes: OmieConexao[],
   dataReferencia: Date,
@@ -356,17 +382,39 @@ async function obterOuCriarRun(
   const mesCorrente = inicioDoMes(dataReferencia);
 
   // ---- 2. Carga histórica pendente ----
+  //
+  // A PRIMEIRA JANELA QUE FALTA, e não "a seguinte à última concluída".
+  //
+  // A regra antiga olhava o maior `janelaFim` concluído e pedia o mês seguinte.
+  // Funciona enquanto a carga é uma fila que só anda para a frente — e falha no
+  // caso que interessa: um mês que precisa ser RELIDO. Apagar a execução
+  // daquele mês não o trazia de volta, porque o maior `janelaFim` continuava
+  // sendo um mês posterior, e o buraco era pulado para sempre.
+  //
+  // Procurar o primeiro faltante custa uma lista de até algumas dezenas de
+  // datas por conexão e torna a carga AUTOCURÁVEL: qualquer lacuna — de reler
+  // de propósito, de execução apagada, de janela que nunca rodou — é preenchida
+  // sozinha no ciclo seguinte.
   for (const conexao of conexoes) {
-    const ultimoBackfill = await prisma.omieSyncRun.findFirst({
+    const concluidas = await prisma.omieSyncRun.findMany({
       where: { conexaoId: conexao.id, backfill: true, status: "CONCLUIDO" },
-      orderBy: { janelaFim: "desc" },
+      select: { janelaInicio: true },
     });
+    const jaFeitas = new Set(concluidas.map((c) => inicioDoMes(c.janelaInicio).getTime()));
 
-    const proximoMes = ultimoBackfill
-      ? inicioDoMes(new Date(ultimoBackfill.janelaFim.getFullYear(), ultimoBackfill.janelaFim.getMonth() + 1, 1))
-      : inicioDoMes(dataInicioBase);
+    let proximoMes: Date | null = null;
+    for (
+      let cursor = inicioDoMes(dataInicioBase);
+      cursor < mesCorrente;
+      cursor = inicioDoMes(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
+    ) {
+      if (!jaFeitas.has(cursor.getTime())) {
+        proximoMes = cursor;
+        break;
+      }
+    }
 
-    if (proximoMes < mesCorrente) {
+    if (proximoMes !== null) {
       const fim = fimDoDia(new Date(proximoMes.getFullYear(), proximoMes.getMonth() + 1, 0));
       return prisma.omieSyncRun.create({
         data: {
