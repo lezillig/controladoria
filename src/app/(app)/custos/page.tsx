@@ -1,17 +1,30 @@
-import { dreGerencial, montarComparativo, ranking } from "@/lib/controladoria/analytics";
+import { montarComparativo, ranking } from "@/lib/controladoria/analytics";
+import { montarDre } from "@/lib/controladoria/dre";
+import { prisma } from "@/lib/prisma";
+import ClassificarCategoria from "./ClassificarCategoria";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { secondaryButtonClass } from "@/lib/ui";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
-import { Barra, Kpi, Secao, Tabela, Variacao } from "../_componentes";
+import { Kpi, Secao, Tabela, Variacao } from "../_componentes";
+import { Fragment } from "react";
 import Filtros from "../Filtros";
 
-// CUSTOS E DRE GERENCIAL.
+// CUSTOS E DRE.
 //
-// O DRE aqui é por CATEGORIA da Omie — o plano de contas real da empresa, e
-// não um plano paralelo inventado pelo sistema. Categoria em branco vira uma
-// linha própria e visível ("Sem categoria") em vez de ser diluída nas outras:
-// dinheiro não classificado precisa incomodar, é o que faz alguém classificar.
+// A demonstração segue a estrutura do art. 187 da Lei 6.404/76 — receita
+// bruta, deduções, receita líquida, custo, lucro bruto, despesas, EBIT,
+// resultado financeiro, tributos, resultado líquido. Nessa ordem, porque a
+// ordem É a demonstração.
+//
+// O que liga essa estrutura ao plano de categorias REAL da empresa é dado
+// editável, não regra no código (ver DreClassificacao): a Omie diz se a
+// categoria é receita ou despesa, mas não diz se uma despesa é custo do
+// serviço ou despesa operacional — e é essa distinção que separa lucro bruto
+// de resultado operacional.
+//
+// Categoria em branco fica FORA da demonstração, num aviso à parte. Diluí-la
+// faria o DRE fechar escondendo justamente o que falta classificar.
 
 export default async function CustosPage({
   searchParams,
@@ -22,13 +35,23 @@ export default async function CustosPage({
   const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
 
   const comparativo = await montarComparativo(ctx);
-  const dre = dreGerencial(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior);
-  const despesas = dre.filter((l) => l.natureza === "DESPESA");
-  const receitas = dre.filter((l) => l.natureza === "RECEITA");
 
-  const totalDespesa = despesas.reduce((acc, l) => acc + l.valorCents, 0);
-  const totalReceita = receitas.reduce((acc, l) => acc + l.valorCents, 0);
-  const semCategoria = despesas.find((l) => l.codigo === "SEM_CATEGORIA");
+  const guardadas = await prisma.dreClassificacao.findMany({
+    where: { companyId: ctx.companyId },
+    select: { categoriaCodigo: true, linha: true, subgrupo: true, origem: true },
+  });
+  const classificacoes = new Map(
+    guardadas.map((c) => [
+      c.categoriaCodigo,
+      { linha: c.linha, subgrupo: c.subgrupo, confirmada: c.origem === "CONFIRMADA" },
+    ])
+  );
+  const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
+
+  const dre = montarDre(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior, classificacoes);
+  const totalDespesa = dre.linhas
+    .filter((l) => l.tipo === "GRUPO" && l.chave !== "RECEITA_BRUTA" && l.chave !== "RECEITA_FINANCEIRA")
+    .reduce((a, l) => a + l.valorCents, 0);
 
   const fornecedores = ranking(ctx, comparativo.janelas.mesAtual, "PAGAR", 15);
   const estrategia = analisarEstrategiaDeCusto(ctx);
@@ -45,7 +68,7 @@ export default async function CustosPage({
           <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
           <p className="mt-1 text-sm text-slate-500">
             {comparativo.janelas.mesAtual.rotulo} até {fmtData(ctx.dataReferencia)}, comparado ao mês anterior inteiro.
-            Regime de competência (data de vencimento), não de caixa.
+            Regime de competência, pela data de emissão do documento.
           </p>
         </div>
         {/* Corrigir categorização é trabalho de lista, não de tela: exige
@@ -66,21 +89,49 @@ export default async function CustosPage({
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi rotulo="Receita do mês" valor={fmtBRL(totalReceita)} apoio={`${fmtNumero(receitas.length)} categoria(s)`} />
-        <Kpi rotulo="Despesa do mês" valor={fmtBRL(totalDespesa)} apoio={`${fmtNumero(despesas.length)} categoria(s)`} />
         <Kpi
-          rotulo="Resultado"
-          valor={fmtBRL(totalReceita - totalDespesa)}
-          apoio={`Margem ${fmtPercent(totalReceita > 0 ? ((totalReceita - totalDespesa) / totalReceita) * 100 : null)}`}
-          tom={totalReceita - totalDespesa >= 0 ? "bom" : "ruim"}
+          rotulo="Receita líquida"
+          valor={fmtBRL(dre.receitaLiquidaCents)}
+          apoio="Receita bruta menos as deduções"
         />
         <Kpi
-          rotulo="Sem categoria"
-          valor={fmtBRL(semCategoria?.valorCents ?? 0)}
-          apoio="Despesa que não aparece em nenhuma análise por natureza"
-          tom={(semCategoria?.valorCents ?? 0) > 0 ? "atencao" : "bom"}
+          rotulo="Lucro bruto"
+          valor={fmtBRL(dre.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.valorCents ?? 0)}
+          apoio={`${fmtPercent(dre.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.percentReceitaLiquida ?? null)} da receita líquida`}
+        />
+        <Kpi
+          rotulo="Resultado líquido"
+          valor={fmtBRL(dre.resultadoLiquidoCents)}
+          apoio={`Margem ${fmtPercent(dre.margemLiquidaPercent)}`}
+          tom={dre.resultadoLiquidoCents >= 0 ? "bom" : "ruim"}
+        />
+        <Kpi
+          rotulo="Por classificar"
+          valor={fmtBRL(dre.naoConfirmadoCents + dre.semCategoriaCents)}
+          apoio="Movimento em categoria que ninguém confirmou ainda"
+          tom={dre.naoConfirmadoCents + dre.semCategoriaCents > 0 ? "atencao" : "bom"}
         />
       </div>
+
+      {(dre.naoConfirmadoCents > 0 || dre.semCategoriaCents > 0) && (
+        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <strong>Este DRE ainda não foi conferido por inteiro.</strong>{" "}
+          {dre.naoConfirmadoCents > 0 && (
+            <>
+              {fmtBRL(dre.naoConfirmadoCents)} estão em categorias classificadas por dedução automática — e a dedução é
+              conservadora de propósito: toda despesa que o sistema não reconhece com segurança cai em{" "}
+              <em>outras despesas operacionais</em>, que é a única linha que não desloca o lucro bruto por engano.
+              Enquanto houver valor aqui, a margem bruta está subestimada.{" "}
+            </>
+          )}
+          {dre.semCategoriaCents > 0 && (
+            <>
+              {fmtBRL(dre.semCategoriaCents)} estão em títulos <strong>sem categoria nenhuma</strong> na Omie e ficaram
+              fora da demonstração — o conserto desses é lá, não aqui.
+            </>
+          )}
+        </div>
+      )}
 
       <Secao
         titulo="Onde reduzir"
@@ -151,42 +202,111 @@ export default async function CustosPage({
         )}
       </Secao>
 
-      <Secao titulo="Despesas por categoria" descricao="Ordenadas por valor. A variação compara com o mês anterior fechado.">
-        <Tabela
-          colunas={["Categoria", "Mês atual", "Participação", "Mês anterior", "Variação"]}
-          alinharDireita={[1, 3]}
-          vazio="Nenhuma despesa espelhada no período."
-          linhas={despesas.map((l) => [
-            <span key="c" className={l.codigo === "SEM_CATEGORIA" ? "font-medium text-amber-700" : "text-slate-800"}>
-              {l.descricao}
-            </span>,
-            fmtBRL(l.valorCents),
-            <div key="p" className="w-24">
-              <Barra percentual={l.participacaoPercent} tom={l.codigo === "SEM_CATEGORIA" ? "ambar" : "azul"} />
-              <span className="mt-1 block text-xs text-slate-500">{fmtPercent(l.participacaoPercent)}</span>
-            </div>,
-            fmtBRL(l.valorAnteriorCents),
-            <Variacao key="v" valor={l.variacaoPercent} bomSeSobe={false} />,
-          ])}
-        />
-      </Secao>
+      <Secao
+        titulo="Demonstração do resultado"
+        descricao={`${comparativo.janelas.mesAtual.rotulo}, na estrutura do art. 187 da Lei 6.404/76. Percentuais sobre a receita líquida.`}
+      >
+        <div className="-mx-6 overflow-x-auto px-6">
+          <table className="w-full min-w-[720px] text-sm">
+            <thead>
+              <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                <th className="px-3 py-2">Conta</th>
+                <th className="px-3 py-2 text-right">Mês atual</th>
+                <th className="px-3 py-2 text-right">% RL</th>
+                <th className="px-3 py-2 text-right">Mês anterior</th>
+                <th className="px-3 py-2 text-right">Variação</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {dre.linhas.map((linha) => {
+                const subtotal = linha.tipo === "SUBTOTAL";
+                const resultado = linha.chave === "RESULTADO_LIQUIDO";
+                return (
+                  <Fragment key={linha.chave}>
+                    <tr
+                      className={
+                        resultado
+                          ? "border-t-2 border-slate-900 bg-slate-50 font-semibold text-slate-900"
+                          : subtotal
+                            ? "border-t border-slate-300 bg-slate-50/60 font-semibold text-slate-800"
+                            : "border-b border-slate-100 text-slate-700"
+                      }
+                    >
+                      <td className="px-3 py-2.5">{linha.rotulo}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtBRL(linha.valorCents)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
+                        {fmtPercent(linha.percentReceitaLiquida)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
+                        {fmtBRL(linha.valorAnteriorCents)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <Variacao
+                          valor={
+                            linha.valorAnteriorCents !== 0
+                              ? ((linha.valorCents - linha.valorAnteriorCents) / Math.abs(linha.valorAnteriorCents)) * 100
+                              : null
+                          }
+                          bomSeSobe={linha.chave.startsWith("RECEITA") || subtotal}
+                        />
+                      </td>
+                      <td className="px-3 py-2.5"></td>
+                    </tr>
 
-      <Secao titulo="Receitas por categoria">
-        <Tabela
-          colunas={["Categoria", "Mês atual", "Participação", "Mês anterior", "Variação"]}
-          alinharDireita={[1, 3]}
-          vazio="Nenhuma receita espelhada no período."
-          linhas={receitas.map((l) => [
-            l.descricao,
-            fmtBRL(l.valorCents),
-            <div key="p" className="w-24">
-              <Barra percentual={l.participacaoPercent} tom="verde" />
-              <span className="mt-1 block text-xs text-slate-500">{fmtPercent(l.participacaoPercent)}</span>
-            </div>,
-            fmtBRL(l.valorAnteriorCents),
-            <Variacao key="v" valor={l.variacaoPercent} />,
-          ])}
-        />
+                    {/* Subtotais por subgrupo, quando a empresa montou algum. */}
+                    {linha.subgrupos.map((s) => (
+                      <tr key={`${linha.chave}:${s.nome}`} className="border-b border-slate-50 text-xs text-slate-600">
+                        <td className="py-1.5 pl-8 pr-3 font-medium">{s.nome}</td>
+                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtBRL(s.valorCents)}</td>
+                        <td className="px-3 py-1.5"></td>
+                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtBRL(s.valorAnteriorCents)}</td>
+                        <td className="px-3 py-1.5"></td>
+                        <td className="px-3 py-1.5"></td>
+                      </tr>
+                    ))}
+
+                    {linha.itens.map((i) => (
+                      <tr key={i.categoriaCodigo} className="border-b border-slate-50 text-xs hover:bg-slate-50">
+                        <td className="py-1.5 pl-12 pr-3 text-slate-600">
+                          {i.descricao}
+                          {!i.confirmada && (
+                            <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
+                              por confirmar
+                            </span>
+                          )}
+                          {i.subgrupo && <span className="ml-2 text-slate-400">· {i.subgrupo}</span>}
+                        </td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{fmtBRL(i.valorCents)}</td>
+                        <td className="px-3 py-1.5"></td>
+                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">
+                          {fmtBRL(i.valorAnteriorCents)}
+                        </td>
+                        <td className="px-3 py-1.5"></td>
+                        <td className="px-3 py-1.5 text-right">
+                          <ClassificarCategoria
+                            categoriaCodigo={i.categoriaCodigo}
+                            linhaAtual={linha.chave}
+                            subgrupoAtual={i.subgrupo}
+                            confirmada={i.confirmada}
+                            subgruposConhecidos={subgruposConhecidos}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <p className="mt-4 text-xs text-slate-500">
+          <strong>Como esta demonstração difere do DRE contábil oficial.</strong> Aqui o regime é o de competência dos
+          títulos, pela data de emissão do documento. Não há provisão, apropriação de despesa antecipada nem
+          depreciação — depreciação não passa por título, e este sistema espelha títulos. É uma leitura gerencial na
+          estrutura legal: serve para decidir no dia 5, não para assinar balanço. O DRE oficial é o da contabilidade.
+        </p>
       </Secao>
 
       <Secao titulo="Maiores fornecedores do mês" descricao="Volume concentrado é poder de negociação — e risco de dependência.">

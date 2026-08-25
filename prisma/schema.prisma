@@ -294,6 +294,14 @@ model OmieCategoria {
   categoriaSuperior String?
   totalizadora      Boolean     @default(false)
   inativa           Boolean     @default(false)
+  // A classificação contábil que a Omie já mandava e era descartada.
+  // `codigoDre` é o código do plano de DRE da própria empresa; as duas marcas
+  // dizem de que lado a categoria entra. Juntos, são o que permite propor a
+  // linha do DRE em vez de adivinhar pelo nome da categoria.
+  codigoDre         String?
+  tipoCategoria     String?
+  contaReceita      Boolean     @default(false)
+  contaDespesa      Boolean     @default(false)
   sincronizadoEm    DateTime    @default(now())
 
   @@unique([conexaoId, codigo])
@@ -1124,4 +1132,38 @@ model FalhaDeServidor {
 
   @@index([criadoEm])
   @@index([digest])
+}
+
+// CLASSIFICAÇÃO DE CADA CATEGORIA NUMA LINHA DO DRE.
+//
+// A estrutura do DRE é fixa (Lei 6.404/76, art. 187) e vive no código; o que
+// vive aqui é a ligação entre o plano de categorias REAL da empresa e essa
+// estrutura. Precisa ser dado, e não regra no código, por um motivo concreto:
+// a Omie informa se a categoria é receita ou despesa, mas não se uma despesa é
+// CUSTO do serviço ou DESPESA operacional — e é essa linha que separa lucro
+// bruto de resultado operacional. Combustível é custo, contabilidade é
+// despesa, e nenhuma marca no cadastro distingue os dois.
+//
+// O sistema propõe, uma pessoa confirma. `origem` guarda essa diferença
+// porque um DRE montado só com palpite não pode ser apresentado como
+// conferido.
+model DreClassificacao {
+  id              String   @id @default(cuid())
+  companyId       String
+  // Sem conexaoId de propósito: o plano de categorias é o mesmo nas duas
+  // empresas do grupo, e classificar o mesmo código duas vezes seria a forma
+  // mais rápida de as duas divergirem sem ninguém notar.
+  categoriaCodigo String
+  linha           String
+  // Subgrupo livre, para a análise que a empresa montar por cima da estrutura
+  // legal ("Frota", "Pessoal operacional", "Sede"). Nulo = sem subtotal.
+  subgrupo        String?
+  origem          String   @default("PROPOSTA")
+  userNome        String?
+  observacao      String?
+  criadoEm        DateTime @default(now())
+  atualizadoEm    DateTime @updatedAt
+
+  @@unique([companyId, categoriaCodigo])
+  @@index([companyId, linha])
 }

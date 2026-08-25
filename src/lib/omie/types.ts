@@ -31,6 +31,10 @@ export type CategoriaNormalizada = {
   categoriaSuperior: string | null;
   totalizadora: boolean;
   inativa: boolean;
+  codigoDre: string | null;
+  tipoCategoria: string | null;
+  contaReceita: boolean;
+  contaDespesa: boolean;
 };
 
 export type DepartamentoNormalizado = {

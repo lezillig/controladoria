@@ -249,6 +249,13 @@ export function normalizarCategoria(bruto: Bruto): CategoriaNormalizada | null {
     categoriaSuperior: str(bruto, "categoria_superior"),
     totalizadora: (bool(bruto, "totalizadora") ?? false) || str(bruto, "totalizadora") === "S",
     inativa: (bool(bruto, "conta_inativa") ?? false) || str(bruto, "conta_inativa") === "S",
+    // A classificacao contabil da propria empresa. `codigo_dre` e o codigo do
+    // plano de DRE dela; as duas marcas dizem de que lado a categoria entra.
+    // Sem isso, a linha do DRE so poderia ser adivinhada pelo nome.
+    codigoDre: str(bruto, "codigo_dre", "cCodDRE"),
+    tipoCategoria: str(bruto, "tipo_categoria"),
+    contaReceita: (bool(bruto, "conta_receita") ?? false) || str(bruto, "conta_receita") === "S",
+    contaDespesa: (bool(bruto, "conta_despesa") ?? false) || str(bruto, "conta_despesa") === "S",
   };
 }
 
