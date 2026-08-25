@@ -6,7 +6,8 @@ import { isEnvioDisponivel } from "@/lib/email/send";
 import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controladoria/saudeDaBase";
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
-import { ultimasFalhas } from "@/lib/controladoria/falhas";
+import { falhaDeVersaoAnterior, ultimasFalhas } from "@/lib/controladoria/falhas";
+import { badgeClass } from "@/lib/ui";
 import { apenasNotas, janelasComFalha } from "@/lib/controladoria/janelasComFalha";
 import { ultimaMedicaoDaAuditoria } from "@/lib/controladoria/medicaoAuditoria";
 import { driftDoEsquema, ondeOBancoOlha, sobrasEmOutrosEsquemas } from "@/lib/controladoria/esquema";
@@ -675,12 +676,42 @@ export default async function SincronizacaoPage() {
         </Secao>
       )}
 
-      <Secao titulo="Falhas de tela registradas">
+      <Secao
+        titulo="Falhas de tela registradas"
+        descricao={
+          falhas.length > 0 && falhas.every((f) => falhaDeVersaoAnterior(f) === true)
+            ? "Todas as falhas listadas são de versões anteriores — nenhuma delas foi causada pelo código que está no ar agora."
+            : undefined
+        }
+      >
         <Tabela
-          colunas={["Quando", "Tela", "Identificador", "O que aconteceu"]}
+          colunas={["Quando", "Versão", "Tela", "Identificador", "O que aconteceu"]}
           vazio="Nenhuma falha registrada nos últimos 30 dias."
           linhas={falhas.map((f) => [
             fmtDataHora(f.criadoEm),
+            // A COLUNA QUE FALTAVA. Sem ela, o painel mostrava um erro já
+            // corrigido do mesmo jeito que mostraria um acontecendo agora — e
+            // quem lê não tem como saber, a não ser comparando de cabeça o
+            // horário do registro com o da última publicação.
+            (() => {
+              const anterior = falhaDeVersaoAnterior(f);
+              if (anterior === null) {
+                return (
+                  <span key="v" className="text-xs text-slate-400">
+                    —
+                  </span>
+                );
+              }
+              return anterior ? (
+                <span key="v" className={`${badgeClass} bg-slate-100 text-slate-600`}>
+                  versão anterior
+                </span>
+              ) : (
+                <span key="v" className={`${badgeClass} bg-red-100 text-red-700`}>
+                  versão no ar
+                </span>
+              );
+            })(),
             f.rota ?? "—",
             <span key="d" className="font-mono text-xs">
               {f.digest ?? "—"}
@@ -696,8 +727,10 @@ export default async function SincronizacaoPage() {
           ])}
         />
         <p className="mt-3 text-xs text-slate-500">
-          Só falhas de servidor, e só dos últimos 30 dias — isto é dado de diagnóstico, não histórico. A mensagem passa
-          por redação antes de ser gravada: string de conexão, chave de API e token são apagados, porque uma exceção de
+          <strong>Versão anterior</strong> quer dizer que a falha foi gravada por uma publicação que não está mais no
+          ar: o código que a causou já foi substituído. <strong>Versão no ar</strong> é o que exige olhar hoje. Só
+          falhas de servidor, e só dos últimos 30 dias — isto é dado de diagnóstico, não histórico. A mensagem passa por
+          redação antes de ser gravada: string de conexão, chave de API e token são apagados, porque uma exceção de
           servidor carrega essas coisas e esta tela não é lugar para elas.
         </p>
       </Secao>

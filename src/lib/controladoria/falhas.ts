@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { versaoPublicada } from "./versao";
 
 // REGISTRO DE FALHA DE SERVIDOR.
 //
@@ -101,6 +102,7 @@ export async function registrarFalha(params: {
         metodo: params.metodo ?? null,
         mensagem: redigir(mensagem).slice(0, MAX_MENSAGEM),
         pilha: pilha ? redigir(pilha).slice(0, MAX_PILHA) : null,
+        commitDoBuild: versaoPublicada().commit,
       },
     });
   } catch {
@@ -117,6 +119,7 @@ export type FalhaRegistrada = {
   rota: string | null;
   mensagem: string;
   pilha: string | null;
+  commitDoBuild: string | null;
   criadoEm: Date;
 };
 
@@ -131,7 +134,16 @@ export async function falhaPorDigest(digest: string): Promise<FalhaRegistrada | 
     return await prisma.falhaDeServidor.findFirst({
       where: { digest },
       orderBy: { criadoEm: "desc" },
-      select: { id: true, digest: true, origem: true, rota: true, mensagem: true, pilha: true, criadoEm: true },
+      select: {
+        id: true,
+        digest: true,
+        origem: true,
+        rota: true,
+        mensagem: true,
+        pilha: true,
+        commitDoBuild: true,
+        criadoEm: true,
+      },
     });
   } catch {
     return null;
@@ -143,7 +155,16 @@ export async function ultimasFalhas(limite = 10): Promise<FalhaRegistrada[]> {
     return await prisma.falhaDeServidor.findMany({
       orderBy: { criadoEm: "desc" },
       take: limite,
-      select: { id: true, digest: true, origem: true, rota: true, mensagem: true, pilha: true, criadoEm: true },
+      select: {
+        id: true,
+        digest: true,
+        origem: true,
+        rota: true,
+        mensagem: true,
+        pilha: true,
+        commitDoBuild: true,
+        criadoEm: true,
+      },
     });
   } catch {
     // A tela que mostra falhas não pode ser a próxima a falhar.
@@ -164,4 +185,26 @@ export async function limparFalhasAntigas(): Promise<void> {
   } catch {
     // Poda é higiene, não requisito.
   }
+}
+
+// ESTA FALHA AINDA PODE ESTAR ACONTECENDO?
+//
+// Responde a pergunta que o painel provocava e não respondia. Duas leituras,
+// nesta ordem:
+//
+//   1. O COMMIT. Se a falha foi gravada por um build diferente do que está no
+//      ar, o código que a causou não é mais o código que roda. É a resposta
+//      exata, e vale para toda linha gravada a partir de agora.
+//   2. A DATA, como reserva, para as linhas antigas que não têm commit: falha
+//      anterior à publicação atual não pode ter vindo dela.
+//
+// Sem nenhuma das duas informações, devolve `null` — "não dá para saber" é uma
+// resposta melhor que um palpite num painel de diagnóstico.
+export function falhaDeVersaoAnterior(falha: FalhaRegistrada): boolean | null {
+  const versao = versaoPublicada();
+  if (!versao.publicado) return null;
+
+  if (falha.commitDoBuild) return falha.commitDoBuild !== versao.commit;
+  if (versao.buildEm) return falha.criadoEm < versao.buildEm;
+  return null;
 }

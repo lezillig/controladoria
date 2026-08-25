@@ -1115,6 +1115,11 @@ model FalhaDeServidor {
   // Primeiras linhas da pilha, já redigidas. O suficiente para localizar o
   // arquivo; não o suficiente para virar despejo de código na tela.
   pilha    String?
+  // Commit do build que estava no ar quando a falha aconteceu. É o que separa
+  // "já corrigido" de "acontecendo agora" sem obrigar ninguém a comparar
+  // horários com a última publicação. Nulo nas linhas gravadas antes desta
+  // coluna existir.
+  commitDoBuild String?
   criadoEm DateTime @default(now())
 
   @@index([criadoEm])
