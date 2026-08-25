@@ -289,6 +289,22 @@ export async function relerPeriodo(formData: FormData): Promise<ResultadoSync> {
   // O mês seguinte ao final, para o intervalo pegar o último mês inteiro.
   const limite = new Date(fim.getFullYear(), fim.getMonth() + 1, 1);
 
+  // O MÊS CORRENTE NÃO TEM JANELA DE CARGA — e isso precisa ser dito, não
+  // descoberto.
+  //
+  // A carga histórica só cria janelas até o mês ANTERIOR ao corrente (ver
+  // `obterOuCriarRun`: o laço para em `cursor < mesCorrente`). Pedir releitura
+  // de agosto em agosto não encontra nada para marcar. Sem este aviso, a ação
+  // marcaria abril a julho, responderia "4 janelas marcadas" — e quem pediu
+  // abril a agosto leria isso como sucesso e concluiria que agosto foi relido.
+  //
+  // Na prática o mês corrente já é relido todo dia: o ciclo diário cobre
+  // emissão e pagamento dos últimos três dias E os vencimentos de hoje ±120
+  // dias, o que alcança praticamente todo título do mês em curso.
+  const agora = new Date();
+  const mesCorrente = new Date(agora.getFullYear(), agora.getMonth(), 1);
+  const pediuMesCorrente = limite > mesCorrente;
+
   // Conexões do escopo. Vazio = todas as ativas: quem corrigiu o cadastro na
   // Omie quase sempre corrigiu nas duas empresas, e obrigar duas passadas
   // idênticas só cria a chance de esquecer uma.
@@ -315,9 +331,11 @@ export async function relerPeriodo(formData: FormData): Promise<ResultadoSync> {
 
   if (alvos.length === 0) {
     return {
-      erro:
-        "Nenhuma janela de carga encontrada nesse período. Confira o intervalo e a empresa — só existem janelas a " +
-        "partir da data de início da base configurada.",
+      erro: pediuMesCorrente
+        ? "Nenhuma janela para marcar. A carga histórica só tem janela até o mês fechado anterior — o mês corrente " +
+          "já é relido todos os dias pelo ciclo, que cobre os vencimentos de hoje ±120 dias."
+        : "Nenhuma janela de carga encontrada nesse período. Confira o intervalo e a empresa — só existem janelas a " +
+          "partir da data de início da base configurada.",
     };
   }
 
@@ -339,10 +357,15 @@ export async function relerPeriodo(formData: FormData): Promise<ResultadoSync> {
   });
 
   revalidatePath("/sincronizacao");
-  return {
-    mensagens: [
-      `${alvos.length} janela(s) marcada(s) para releitura: ${competencias.join(", ")}.`,
-      "Clique em Sincronizar agora e deixe a aba aberta — as janelas são refeitas uma após a outra.",
-    ],
-  };
+  const mensagens = [
+    `${alvos.length} janela(s) marcada(s) para releitura: ${competencias.join(", ")}.`,
+    "Clique em Sincronizar agora e deixe a aba aberta — as janelas são refeitas uma após a outra.",
+  ];
+  if (pediuMesCorrente) {
+    mensagens.push(
+      "O mês corrente não entra: a carga histórica só tem janela até o mês fechado anterior. Ele já é relido todos " +
+        "os dias pelo ciclo, que cobre os vencimentos de hoje ±120 dias."
+    );
+  }
+  return { mensagens };
 }
