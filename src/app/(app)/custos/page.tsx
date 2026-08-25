@@ -1,13 +1,12 @@
 import { montarComparativo, ranking } from "@/lib/controladoria/analytics";
 import { montarDre } from "@/lib/controladoria/dre";
 import { prisma } from "@/lib/prisma";
-import LinhaCategoria from "./LinhaCategoria";
+import TabelaDre from "./TabelaDre";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { secondaryButtonClass } from "@/lib/ui";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
-import { Kpi, Secao, Tabela, Variacao } from "../_componentes";
-import { Fragment } from "react";
+import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 
 // CUSTOS E DRE.
@@ -46,7 +45,19 @@ export default async function CustosPage({
       { linha: c.linha, subgrupo: c.subgrupo, confirmada: c.origem === "CONFIRMADA" },
     ])
   );
-  const categoriasPorCodigo = new Map(ctx.categorias.map((c) => [c.codigo, c]));
+  // Montado no servidor e passado pronto: o componente da tabela é de cliente,
+  // e mandar o cadastro inteiro de categorias para o navegador só para extrair
+  // quatro campos seria carga que ninguém vê e todos pagam.
+  const marcasPorCategoria: Record<string, string> = {};
+  for (const c of ctx.categorias) {
+    const marcas = [
+      c.codigoDre ? `DRE ${c.codigoDre}` : null,
+      c.tipoCategoria,
+      c.contaReceita ? "receita" : null,
+      c.contaDespesa ? "despesa" : null,
+    ].filter(Boolean);
+    if (marcas.length > 0) marcasPorCategoria[c.codigo] = marcas.join(" · ");
+  }
   const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
 
   const dre = montarDre(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior, classificacoes);
@@ -186,92 +197,11 @@ export default async function CustosPage({
         titulo="Demonstração do resultado"
         descricao={`${comparativo.janelas.mesAtual.rotulo}, na estrutura do art. 187 da Lei 6.404/76. Percentuais sobre a receita líquida.`}
       >
-        <div className="-mx-6 overflow-x-auto px-6">
-          <table className="w-full min-w-[720px] text-sm">
-            <thead>
-              <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
-                <th className="px-3 py-2">Conta</th>
-                <th className="px-3 py-2 text-right">Mês atual</th>
-                <th className="px-3 py-2 text-right">% RL</th>
-                <th className="px-3 py-2 text-right">Mês anterior</th>
-                <th className="px-3 py-2 text-right">Variação</th>
-                <th className="px-3 py-2"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {linhasVisiveis.map((linha) => {
-                const subtotal = linha.tipo === "SUBTOTAL";
-                const resultado = linha.chave === "RESULTADO_LIQUIDO";
-                return (
-                  <Fragment key={linha.chave}>
-                    <tr
-                      className={
-                        resultado
-                          ? "border-t-2 border-slate-900 bg-slate-50 font-semibold text-slate-900"
-                          : subtotal
-                            ? "border-t border-slate-300 bg-slate-50/60 font-semibold text-slate-800"
-                            : "border-b border-slate-100 text-slate-700"
-                      }
-                    >
-                      <td className="px-3 py-2.5">{linha.rotulo}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">{fmtBRL(linha.valorCents)}</td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
-                        {fmtPercent(linha.percentReceitaLiquida)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
-                        {fmtBRL(linha.valorAnteriorCents)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <Variacao
-                          valor={
-                            linha.valorAnteriorCents !== 0
-                              ? ((linha.valorCents - linha.valorAnteriorCents) / Math.abs(linha.valorAnteriorCents)) * 100
-                              : null
-                          }
-                          bomSeSobe={linha.chave.startsWith("RECEITA") || subtotal}
-                        />
-                      </td>
-                      <td className="px-3 py-2.5"></td>
-                    </tr>
-
-                    {/* Subtotais por subgrupo, quando a empresa montou algum. */}
-                    {linha.subgrupos.map((s) => (
-                      <tr key={`${linha.chave}:${s.nome}`} className="border-b border-slate-50 text-xs text-slate-600">
-                        <td className="py-1.5 pl-8 pr-3 font-medium">{s.nome}</td>
-                        <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtBRL(s.valorCents)}</td>
-                        <td className="px-3 py-1.5"></td>
-                        <td className="px-3 py-1.5 text-right tabular-nums">{fmtBRL(s.valorAnteriorCents)}</td>
-                        <td className="px-3 py-1.5"></td>
-                        <td className="px-3 py-1.5"></td>
-                      </tr>
-                    ))}
-
-                    {linha.itens.map((i) => {
-                      const cat = categoriasPorCodigo.get(i.categoriaCodigo);
-                      const marcas = cat
-                        ? [
-                            cat.codigoDre ? `DRE ${cat.codigoDre}` : null,
-                            cat.tipoCategoria,
-                            cat.contaReceita ? "receita" : null,
-                            cat.contaDespesa ? "despesa" : null,
-                          ].filter(Boolean)
-                        : [];
-                      return (
-                        <LinhaCategoria
-                          key={i.categoriaCodigo}
-                          item={i}
-                          linhaChave={linha.chave}
-                          subgruposConhecidos={subgruposConhecidos}
-                          marcasOmie={marcas.length > 0 ? marcas.join(" · ") : null}
-                        />
-                      );
-                    })}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <TabelaDre
+          linhas={linhasVisiveis}
+          subgruposConhecidos={subgruposConhecidos}
+          marcasPorCategoria={marcasPorCategoria}
+        />
 
         {dre.retencoes.totalCents > 0 && (
           <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
