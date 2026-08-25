@@ -144,12 +144,51 @@ console.log("\n5. Subgrupos dentro da linha");
   conferir("subgrupos somam a linha", linha.subgrupos.reduce((a, s) => a + s.valorCents, 0), linha.valorCents);
 }
 
+// ------------------------------------------------------ regressão
+console.log("\n7. REGRESSÃO — a receita que foi parar em despesas");
+{
+  // O caso real: "Clientes - Serviços Prestados", R$ 7,3 milhões, apareceu em
+  // "outras despesas operacionais" com a receita bruta zerada. Cadastro sem
+  // `natureza` e sem `conta_receita` — que é o estado da base antes da próxima
+  // sincronização de cadastros, e o estado que o diagnóstico já reportava.
+  const semSinal = { codigo: "1", descricao: "Clientes - Serviços Prestados", natureza: null,
+    contaReceita: false, contaDespesa: false, totalizadora: false, inativa: false,
+    codigoDre: null, tipoCategoria: null } as unknown as ContextoAuditoria["categorias"][number];
+
+  const r = montarDre(
+    ctx([tit("RECEBER", "1", 7_355_783.80), tit("PAGAR", "2", 738_486.80)],
+        [semSinal, cat("2", "Combustível")]),
+    MES, ANT, cls({})
+  );
+  const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
+  conferir("receita bruta reconhecida pelo LADO DO TÍTULO", v("RECEITA_BRUTA"), 735_578_380);
+  conferir("não foi parar em despesas", v("DESPESA_GERAL"), 73_848_680);
+  conferir("e a receita líquida deixa de ser negativa", v("RECEITA_LIQUIDA")! > 0, true);
+}
+
+// ------------------------------------------------------ drill-down
+console.log("\n8. Drill-down");
+{
+  const r = montarDre(
+    ctx([tit("PAGAR", "2", 1_000), tit("PAGAR", "2", 5_000), tit("PAGAR", "2", 300)],
+        [cat("2", "Combustível")]),
+    MES, ANT, cls({ "2": ["CUSTO_SERVICO", null, true] })
+  );
+  const item = r.linhas.find((l) => l.chave === "CUSTO_SERVICO")!.itens[0];
+  conferir("traz os títulos da categoria", item.titulos.length, 3);
+  conferir("do maior para o menor", item.titulos.map((t) => t.valorCents), [500_000, 100_000, 30_000]);
+  conferir("e diz o total", item.totalDeTitulos, 3);
+}
+
 // ------------------------------------------------------ proposta
 console.log("\n6. Proposta automática — conservadora de propósito");
 {
   const p = (desc: string, receita = false) =>
     proporLinha({ descricao: desc, natureza: receita ? "R" : "D", contaReceita: receita, contaDespesa: !receita });
   conferir("receita de serviço", p("Serviços prestados", true), "RECEITA_BRUTA");
+  conferir("o MOVIMENTO manda sobre o cadastro",
+    proporLinha({ descricao: "Clientes - Serviços Prestados", natureza: null, contaReceita: false, contaDespesa: true },
+      { receberCents: 100, pagarCents: 0 }), "RECEITA_BRUTA");
   conferir("rendimento de aplicação é financeira", p("Rendimento de Aplicação", true), "RECEITA_FINANCEIRA");
   conferir("ISS é dedução", p("ISS sobre serviços"), "DEDUCOES");
   conferir("IRPJ é tributo sobre lucro", p("IRPJ a recolher"), "TRIBUTO_SOBRE_LUCRO");

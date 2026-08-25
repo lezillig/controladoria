@@ -1,7 +1,7 @@
 import { montarComparativo, ranking } from "@/lib/controladoria/analytics";
 import { montarDre } from "@/lib/controladoria/dre";
 import { prisma } from "@/lib/prisma";
-import ClassificarCategoria from "./ClassificarCategoria";
+import LinhaCategoria from "./LinhaCategoria";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { secondaryButtonClass } from "@/lib/ui";
@@ -46,6 +46,7 @@ export default async function CustosPage({
       { linha: c.linha, subgrupo: c.subgrupo, confirmada: c.origem === "CONFIRMADA" },
     ])
   );
+  const categoriasPorCodigo = new Map(ctx.categorias.map((c) => [c.codigo, c]));
   const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
 
   const dre = montarDre(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior, classificacoes);
@@ -60,6 +61,7 @@ export default async function CustosPage({
   if (escopo.conexaoId) filtros.set("empresa", escopo.conexaoId);
   if (periodo.competencia) filtros.set("competencia", periodo.competencia);
   const urlDaPlanilha = `/api/exportar/composicao${filtros.toString() ? `?${filtros}` : ""}`;
+  const urlDaConferencia = `/api/exportar/dre${filtros.toString() ? `?${filtros}` : ""}`;
 
   return (
     <div className="max-w-5xl space-y-6">
@@ -75,9 +77,20 @@ export default async function CustosPage({
             ordenar, filtrar e riscar conforme se resolve. A planilha traz
             receita e despesa juntas, com o mesmo recorte de empresa e
             competência que está visível aqui. */}
-        <a href={urlDaPlanilha} className={secondaryButtonClass}>
-          Baixar planilha
-        </a>
+        <div className="flex flex-wrap gap-2">
+          {/* Duas planilhas, e não uma com tudo: elas servem a trabalhos
+              diferentes. A de composição é para corrigir a CATEGORIA na Omie;
+              a de conferência do DRE é para julgar em que LINHA a categoria
+              caiu, e traz os campos do cadastro Omie lado a lado justamente
+              para isso. Juntá-las daria uma planilha que ninguém percorre
+              inteira. */}
+          <a href={urlDaConferencia} className={secondaryButtonClass}>
+            Planilha de conferência do DRE
+          </a>
+          <a href={urlDaPlanilha} className={secondaryButtonClass}>
+            Composição por categoria
+          </a>
+        </div>
       </div>
 
       <Filtros
@@ -266,34 +279,26 @@ export default async function CustosPage({
                       </tr>
                     ))}
 
-                    {linha.itens.map((i) => (
-                      <tr key={i.categoriaCodigo} className="border-b border-slate-50 text-xs hover:bg-slate-50">
-                        <td className="py-1.5 pl-12 pr-3 text-slate-600">
-                          {i.descricao}
-                          {!i.confirmada && (
-                            <span className="ml-2 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800">
-                              por confirmar
-                            </span>
-                          )}
-                          {i.subgrupo && <span className="ml-2 text-slate-400">· {i.subgrupo}</span>}
-                        </td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{fmtBRL(i.valorCents)}</td>
-                        <td className="px-3 py-1.5"></td>
-                        <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">
-                          {fmtBRL(i.valorAnteriorCents)}
-                        </td>
-                        <td className="px-3 py-1.5"></td>
-                        <td className="px-3 py-1.5 text-right">
-                          <ClassificarCategoria
-                            categoriaCodigo={i.categoriaCodigo}
-                            linhaAtual={linha.chave}
-                            subgrupoAtual={i.subgrupo}
-                            confirmada={i.confirmada}
-                            subgruposConhecidos={subgruposConhecidos}
-                          />
-                        </td>
-                      </tr>
-                    ))}
+                    {linha.itens.map((i) => {
+                      const cat = categoriasPorCodigo.get(i.categoriaCodigo);
+                      const marcas = cat
+                        ? [
+                            cat.codigoDre ? `DRE ${cat.codigoDre}` : null,
+                            cat.tipoCategoria,
+                            cat.contaReceita ? "receita" : null,
+                            cat.contaDespesa ? "despesa" : null,
+                          ].filter(Boolean)
+                        : [];
+                      return (
+                        <LinhaCategoria
+                          key={i.categoriaCodigo}
+                          item={i}
+                          linhaChave={linha.chave}
+                          subgruposConhecidos={subgruposConhecidos}
+                          marcasOmie={marcas.length > 0 ? marcas.join(" · ") : null}
+                        />
+                      );
+                    })}
                   </Fragment>
                 );
               })}

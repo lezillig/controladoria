@@ -71,14 +71,33 @@ const PADRAO_TRIBUTO_LUCRO = /\b(irpj|csll|imposto de renda|contribui[çc][ãa]o
 const PADRAO_FINANCEIRA = /juros|multa|tarifa|banc[áa]ri|iof|encargo financeiro|desconto concedido/i;
 const PADRAO_RECEITA_FINANCEIRA = /rendimento|aplica[çc][ãa]o|juros recebidos|receita financeira/i;
 
-export function proporLinha(cat: {
-  descricao: string;
-  natureza: string | null;
-  contaReceita: boolean;
-  contaDespesa: boolean;
-}): ChaveDre {
+export function proporLinha(
+  cat: {
+    descricao: string;
+    natureza: string | null;
+    contaReceita: boolean;
+    contaDespesa: boolean;
+  },
+  // De que lado a categoria APARECE nos títulos do período. É o sinal
+  // primário, e a razão é dura: a primeira versão desta função confiava em
+  // `contaReceita`/`natureza` do cadastro, e a tela mostrou "Clientes —
+  // Serviços Prestados", R$ 7,3 milhões, dentro de "outras despesas
+  // operacionais", com a receita bruta zerada.
+  //
+  // Os dois campos estavam vazios: `contaReceita` é coluna nova, com padrão
+  // falso até a próxima sincronização de cadastros, e `natureza` o diagnóstico
+  // JÁ TINHA REPORTADO como não preenchida nas duas empresas — eu tinha a
+  // informação e construí em cima dela assim mesmo.
+  //
+  // A natureza do TÍTULO não depende de cadastro nenhum: se o dinheiro entra,
+  // é receita. É o dado que o sistema tem com certeza, e por isso decide.
+  movimento?: { receberCents: number; pagarCents: number }
+): ChaveDre {
   const d = cat.descricao;
-  const ehReceita = cat.contaReceita || /^r/i.test(cat.natureza ?? "");
+  const ehReceita =
+    movimento && movimento.receberCents + movimento.pagarCents > 0
+      ? movimento.receberCents > movimento.pagarCents
+      : cat.contaReceita || /^r/i.test(cat.natureza ?? "");
 
   if (ehReceita) {
     return PADRAO_RECEITA_FINANCEIRA.test(d) ? "RECEITA_FINANCEIRA" : "RECEITA_BRUTA";
@@ -89,6 +108,24 @@ export function proporLinha(cat: {
   return "DESPESA_GERAL";
 }
 
+export type TituloDoDre = {
+  id: string;
+  natureza: "RECEBER" | "PAGAR";
+  parceiro: string;
+  documento: string | null;
+  data: Date;
+  valorCents: number;
+  empresa: string;
+};
+
+// Teto de títulos por categoria levados à tela. Vinte cobre a pergunta que o
+// clique faz — "de onde vem esse número?" — sem transformar a página numa
+// cópia da base: uma categoria de folha tem centenas de títulos no mês, e
+// mandar todos ao navegador em cada uma das quarenta categorias é o que
+// derruba a tela justamente na empresa maior. A lista completa está na
+// planilha.
+export const TITULOS_POR_CATEGORIA_NA_TELA = 20;
+
 export type ItemDre = {
   categoriaCodigo: string;
   descricao: string;
@@ -96,6 +133,9 @@ export type ItemDre = {
   confirmada: boolean;
   valorCents: number;
   valorAnteriorCents: number;
+  // Os maiores títulos da categoria no mês, para o drill-down.
+  titulos: TituloDoDre[];
+  totalDeTitulos: number;
 };
 
 export type LinhaDreCalculada = {
@@ -149,6 +189,34 @@ export function montarDre(
     return mapa;
   };
 
+  // De que lado cada categoria aparece, e os títulos por trás dela. O primeiro
+  // decide a proposta de linha; o segundo é o que a tela abre quando alguém
+  // clica na categoria e pergunta "de onde vem esse número?".
+  const movimentoPorCategoria = new Map<string, { receberCents: number; pagarCents: number }>();
+  const titulosPorCategoria = new Map<string, TituloDoDre[]>();
+  for (const natureza of ["RECEBER", "PAGAR"] as const) {
+    for (const t of titulosAtivos(ctx, natureza)) {
+      if (!dentro(dataDeCompetencia(t), periodo)) continue;
+      const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+      const m = movimentoPorCategoria.get(chave) ?? { receberCents: 0, pagarCents: 0 };
+      if (natureza === "RECEBER") m.receberCents += Math.abs(t.valorDocumentoCents);
+      else m.pagarCents += Math.abs(t.valorDocumentoCents);
+      movimentoPorCategoria.set(chave, m);
+
+      const lista = titulosPorCategoria.get(chave) ?? [];
+      lista.push({
+        id: t.id,
+        natureza,
+        parceiro: t.parceiroNome ?? "(sem parceiro)",
+        documento: t.numeroDocumento,
+        data: dataDeCompetencia(t),
+        valorCents: t.valorDocumentoCents,
+        empresa: t.conexaoApelido,
+      });
+      titulosPorCategoria.set(chave, lista);
+    }
+  }
+
   const atual = porCategoria(periodo);
   const anterior = porCategoria(periodoAnterior);
 
@@ -174,17 +242,22 @@ export function montarDre(
     const linha =
       guardada?.linha ??
       (cat
-        ? proporLinha(cat)
+        ? proporLinha(cat, movimentoPorCategoria.get(codigo))
         : // Categoria que aparece em título e não existe no cadastro: quase
-          // sempre categoria excluída na Omie depois de usada. Vai para outras
-          // despesas se for saída, receita bruta se for entrada — e nunca
-          // conta como confirmada.
-          (valor >= 0 ? "DESPESA_GERAL" : "RECEITA_BRUTA"));
+          // sempre categoria excluída na Omie depois de usada. O lado vem do
+          // movimento, pelo mesmo motivo de cima.
+          ((movimentoPorCategoria.get(codigo)?.receberCents ?? 0) >
+          (movimentoPorCategoria.get(codigo)?.pagarCents ?? 0)
+            ? "RECEITA_BRUTA"
+            : "DESPESA_GERAL"));
 
     const confirmada = guardada?.confirmada ?? false;
     if (!confirmada) naoConfirmado += Math.abs(valor);
 
     const lista = itensPorLinha.get(linha) ?? [];
+    const doMes = (titulosPorCategoria.get(codigo) ?? []).sort(
+      (a, b) => Math.abs(b.valorCents) - Math.abs(a.valorCents)
+    );
     lista.push({
       categoriaCodigo: codigo,
       descricao: cat?.descricao ?? `Categoria ${codigo}`,
@@ -192,6 +265,8 @@ export function montarDre(
       confirmada,
       valorCents: valor,
       valorAnteriorCents: valorAnterior,
+      titulos: doMes.slice(0, TITULOS_POR_CATEGORIA_NA_TELA),
+      totalDeTitulos: doMes.length,
     });
     itensPorLinha.set(linha, lista);
   }
