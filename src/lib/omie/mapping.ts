@@ -291,6 +291,11 @@ export function normalizarContaCorrente(bruto: Bruto): ContaCorrenteNormalizada 
     numeroConta: str(bruto, "numero_conta_corrente", "conta_corrente", "cConta", "numero_conta"),
     saldoInicialCents: centsOuZero(bruto, "saldo_inicial", "nSaldoInicial"),
     inativa: (bool(bruto, "inativo") ?? false) || str(bruto, "inativo") === "S",
+    // `nao_resumo` e `nao_fluxo` chegam como "S"/"N" nas duas contas reais.
+    // `bool` ja entende S/N; o `=== "S"` cobre a variante em que a Omie manda
+    // a letra dentro de um campo que `bool` nao reconheceu como booleano.
+    naoEntraNoResumo: (bool(bruto, "nao_resumo") ?? false) || str(bruto, "nao_resumo") === "S",
+    naoEntraNoFluxo: (bool(bruto, "nao_fluxo") ?? false) || str(bruto, "nao_fluxo") === "S",
   };
 }
 

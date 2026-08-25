@@ -345,6 +345,13 @@ model OmieContaCorrente {
   numeroConta       String?
   saldoInicialCents Int         @default(0)
   inativa           Boolean     @default(false)
+  // Marcas da própria Omie que excluem a conta do resumo de caixa e da
+  // projeção de fluxo. Guardadas porque uma conta por onde passa dinheiro e
+  // que não aparece no relatório de caixa da empresa é, no mínimo, uma
+  // pergunta — e havia usos legítimos demais (aplicação, cartão,
+  // transferência interna) para transformar a marca em suspeita automática.
+  naoEntraNoResumo  Boolean     @default(false)
+  naoEntraNoFluxo   Boolean     @default(false)
   sincronizadoEm    DateTime    @default(now())
 
   @@unique([conexaoId, codigo])

@@ -43,7 +43,7 @@ export const agenteAntifraude: Agente = {
   nome: "Antifraude e integridade",
   area: "Controladoria",
   descricao:
-    "Procura padrões que exigem verificação: troca de conta bancária de fornecedor às vésperas do pagamento, fracionamento para burlar alçada, fornecedor com documento inválido ou igual ao de funcionário, cadastros duplicados, pagamentos em dia não útil e desvio da distribuição esperada de valores (Lei de Benford).",
+    "Procura padrões que exigem verificação. Para quem se pagou: troca de conta bancária de fornecedor às vésperas do pagamento, fracionamento para burlar alçada, fornecedor com documento inválido ou igual ao de funcionário, cadastros duplicados, pagamentos em dia não útil e desvio da distribuição esperada de valores (Lei de Benford). Por onde o dinheiro saiu: conta excluída do resumo de caixa com movimento, pagamento por conta diferente da do título, baixa sem conta corrente, baixa em título cancelado e pagamento anterior à emissão.",
   executar: auditarFraude,
 };
 
@@ -59,8 +59,287 @@ function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...pagamentoEmDiaNaoUtil(ctx, materialidade));
   achados.push(...fornecedorNovoComValorAlto(ctx, materialidade));
   achados.push(...desvioDeBenford(ctx));
+  achados.push(...dinheiroPorContaEscondida(ctx, materialidade));
+  achados.push(...baixaDesviadaDeConta(ctx, materialidade));
+  achados.push(...baixaSemConta(ctx, materialidade));
+  achados.push(...canceladoComBaixa(ctx, materialidade));
+  achados.push(...baixaAntesDaEmissao(ctx, materialidade));
 
   return achados;
+}
+
+// ---------------------------------------------------------------------------
+// POR ONDE O DINHEIRO SAIU
+//
+// As regras acima olham PARA QUEM se pagou. Este bloco olha POR ONDE. Sao
+// perguntas diferentes, e a segunda estava sem ninguem: o espelho guarda a
+// conta corrente do titulo e a conta corrente da baixa em campos separados, e
+// nada comparava os dois.
+// ---------------------------------------------------------------------------
+
+// FR-CONTA-ESCONDIDA — conta marcada na Omie para NAO entrar no resumo de
+// caixa nem na projecao de fluxo, com dinheiro passando por ela.
+//
+// A marca tem uso legitimo — aplicacao, conta de cartao, conta de
+// transferencia interna — e por isso o achado e de VERIFICACAO, nao de
+// suspeita. Mas o efeito dela e objetivo: o dinheiro entra e sai sem aparecer
+// no relatorio de caixa que a empresa le. Uma conta assim, com movimento
+// relevante, precisa de dono e de motivo escrito.
+function dinheiroPorContaEscondida(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const escondidas = ctx.contasCorrentes.filter((c) => c.naoEntraNoResumo || c.naoEntraNoFluxo);
+  if (escondidas.length === 0) return [];
+
+  const achados: AchadoNovo[] = [];
+  for (const conta of escondidas) {
+    const baixas = ctx.baixas.filter((b) => b.contaCorrenteCodigo === conta.codigo);
+    if (baixas.length === 0) continue;
+
+    const valor = somar(baixas, (b) => Math.abs(b.valorCents));
+    if (valor < materialidade) continue;
+
+    const fora = [
+      conta.naoEntraNoResumo ? "do resumo de caixa" : null,
+      conta.naoEntraNoFluxo ? "da projeção de fluxo" : null,
+    ].filter(Boolean);
+
+    achados.push({
+      regra: "FR-CONTA-ESCONDIDA",
+      tipo: "ESTADO",
+      // Sempre um degrau acima do valor: o que pesa aqui nao e o tamanho, e o
+      // fato de o dinheiro nao aparecer onde a empresa olha.
+      severidade: agravar(severidadePorValor(valor, materialidade)),
+      categoria: "FRAUDE",
+      titulo: `Conta "${conta.descricao}" está fora ${fora.join(" e ")} e movimentou ${fmtBRL(valor)}`,
+      descricao:
+        `A conta ${conta.descricao}${conta.banco ? ` (banco ${conta.banco})` : ""} está marcada na Omie para não ` +
+        `entrar ${fora.join(" nem ")}, e ainda assim ${baixas.length} baixa(s) passaram por ela no período, ` +
+        `somando ${fmtBRL(valor)}. Na prática, esse dinheiro entra e sai sem aparecer no relatório de caixa que a ` +
+        `empresa lê.`,
+      recomendacao:
+        "Confirmar quem marcou a conta e por quê. Aplicação, conta de cartão e conta de transferência interna são " +
+        "usos legítimos da marca — e é justamente por isso que ela precisa de motivo escrito. Sem motivo, desmarcar.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        conta: conta.descricao,
+        codigo: conta.codigo,
+        foraDoResumo: conta.naoEntraNoResumo,
+        foraDoFluxo: conta.naoEntraNoFluxo,
+        baixas: baixas.length,
+        valorCents: valor,
+      },
+      chave: chaveAchado("FR-CONTA-ESCONDIDA", conta.codigo, chaveMes(ctx.dataReferencia)),
+    });
+  }
+  return achados;
+}
+
+// FR-BAIXA-DESVIADA — o titulo aponta uma conta corrente, e o pagamento saiu
+// de outra.
+//
+// E o padrao mais direto de desvio que este espelho consegue enxergar: o
+// lancamento foi aprovado com uma conta e liquidado por outra. Tem explicacao
+// banal na maioria das vezes (troca de banco, conta sem saldo no dia) — e e
+// exatamente por ser banal que ninguem confere, o que faz dele um bom lugar
+// para esconder um pagamento.
+function baixaDesviadaDeConta(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const porId = new Map(ctx.titulos.map((t) => [t.id, t]));
+  const nomeDaConta = new Map(ctx.contasCorrentes.map((c) => [c.codigo, c.descricao]));
+
+  const desviadas = ctx.baixas.filter((b) => {
+    const t = porId.get(b.tituloId);
+    if (!t || t.cancelado) return false;
+    // So conta como desvio quando os DOIS lados informam conta e elas diferem.
+    // Ausencia de um dos lados e outro achado (FR-BAIXA-SEM-CONTA) — misturar
+    // os dois faria a lista crescer sem que nenhuma das duas ficasse clara.
+    if (!t.contaCorrenteCodigo || !b.contaCorrenteCodigo) return false;
+    return t.contaCorrenteCodigo !== b.contaCorrenteCodigo;
+  });
+  if (desviadas.length === 0) return [];
+
+  const achados: AchadoNovo[] = [];
+  // Um achado por PAR de contas: trinta pagamentos que mudaram do mesmo banco
+  // para o mesmo banco sao um fato so, e trinta linhas iguais afogariam o resto.
+  for (const [par, grupo] of agrupar(desviadas, (b) => {
+    const t = porId.get(b.tituloId);
+    return `${t?.contaCorrenteCodigo ?? "?"}->${b.contaCorrenteCodigo ?? "?"}`;
+  })) {
+    const valor = somar(grupo, (b) => Math.abs(b.valorCents));
+    if (valor < materialidade) continue;
+
+    const [de, para] = par.split("->");
+    achados.push({
+      regra: "FR-BAIXA-DESVIADA",
+      tipo: "ESTADO",
+      severidade: severidadePorValor(valor, materialidade),
+      categoria: "FRAUDE",
+      titulo: `${grupo.length} pagamento(s) saíram de conta diferente da do título`,
+      descricao:
+        `${grupo.length} baixa(s) somando ${fmtBRL(valor)} têm no título a conta ` +
+        `"${nomeDaConta.get(de) ?? de}" e foram liquidadas pela conta "${nomeDaConta.get(para) ?? para}". ` +
+        `O lançamento foi aprovado com uma conta e pago por outra.`,
+      recomendacao:
+        "Confirmar com o financeiro se houve troca de banco no período. Se a troca for definitiva, corrigir a conta " +
+        "padrão no cadastro — o desvio deixa de aparecer e volta a ser sinal quando acontecer de novo.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        contaDoTitulo: nomeDaConta.get(de) ?? de,
+        contaDoPagamento: nomeDaConta.get(para) ?? para,
+        baixas: grupo.slice(0, 20).map((b) => ({ chave: b.chave, data: b.dataBaixa, valorCents: b.valorCents })),
+        total: grupo.length,
+      },
+      chave: chaveAchado("FR-BAIXA-DESVIADA", par, chaveMes(ctx.dataReferencia)),
+    });
+  }
+  return achados;
+}
+
+// FR-BAIXA-SEM-CONTA — o titulo consta como pago e nao ha conta corrente na
+// baixa. Dinheiro que saiu sem origem declarada: nao da para conferir contra
+// extrato nenhum, porque nao se sabe qual extrato olhar.
+function baixaSemConta(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const semConta = ctx.baixas.filter((b) => !b.contaCorrenteCodigo);
+  if (semConta.length === 0) return [];
+
+  const valor = somar(semConta, (b) => Math.abs(b.valorCents));
+  if (valor < materialidade && semConta.length < 5) return [];
+
+  return [
+    {
+      regra: "FR-BAIXA-SEM-CONTA",
+      tipo: "ESTADO",
+      severidade: severidadePorValor(valor, materialidade),
+      categoria: "ERRO_PROCESSO",
+      titulo: `${semConta.length} baixa(s) sem conta corrente informada`,
+      descricao:
+        `${fmtBRL(valor)} em baixas registradas sem conta corrente. O título consta como pago, mas não há de onde ` +
+        `o dinheiro saiu — e sem isso não há extrato contra o qual conferir, porque não se sabe qual extrato olhar.`,
+      recomendacao:
+        "Tornar a conta corrente obrigatória na baixa. Para as já lançadas, o financeiro consegue identificar pela " +
+        "data e pelo valor no extrato do banco — comece pelas maiores.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        total: semConta.length,
+        valorCents: valor,
+        baixas: semConta.slice(0, 20).map((b) => ({ chave: b.chave, data: b.dataBaixa, valorCents: b.valorCents })),
+      },
+      chave: chaveAchado("FR-BAIXA-SEM-CONTA", chaveMes(ctx.dataReferencia)),
+    },
+  ];
+}
+
+// FR-CANCELADO-COM-BAIXA — o titulo esta cancelado E tem baixa.
+//
+// Cancelamento e baixa sao estados que se excluem: ou a obrigacao deixou de
+// existir, ou ela foi paga. As duas coisas juntas significam que se pagou algo
+// que o sistema diz nao existir — ou que se cancelou algo depois de pago, que
+// e como uma saida some do relatorio sem sumir do banco.
+function canceladoComBaixa(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const cancelados = new Map(ctx.titulos.filter((t) => t.cancelado).map((t) => [t.id, t]));
+  if (cancelados.size === 0) return [];
+
+  const suspeitas = ctx.baixas.filter((b) => cancelados.has(b.tituloId));
+  if (suspeitas.length === 0) return [];
+
+  const valor = somar(suspeitas, (b) => Math.abs(b.valorCents));
+
+  return [
+    {
+      regra: "FR-CANCELADO-COM-BAIXA",
+      tipo: "ESTADO",
+      // Sem corte por materialidade: um unico caso ja e uma contradicao de
+      // estado, e o valor pequeno e justamente o teste que costuma vir antes
+      // do grande.
+      severidade: agravar(severidadePorValor(valor, materialidade)),
+      categoria: "FRAUDE",
+      titulo: `${suspeitas.length} baixa(s) em título cancelado — ${fmtBRL(valor)}`,
+      descricao:
+        `${suspeitas.length} baixa(s), somando ${fmtBRL(valor)}, estão registradas em títulos que constam como ` +
+        `CANCELADOS. Cancelamento e pagamento se excluem: ou a obrigação deixou de existir, ou ela foi paga. As duas ` +
+        `juntas significam pagamento de algo que o sistema diz não existir — ou cancelamento depois do pagamento, ` +
+        `que é como uma saída some do relatório sem sumir do banco.`,
+      recomendacao:
+        "Conferir cada caso no extrato: se o dinheiro saiu, o cancelamento é indevido e precisa ser revertido. Se não " +
+        "saiu, a baixa é que está errada. Nenhum dos dois se resolve deixando como está.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        casos: suspeitas.slice(0, 20).map((b) => {
+          const t = cancelados.get(b.tituloId);
+          return {
+            titulo: t?.codigoLancamento,
+            parceiro: t?.parceiroNome,
+            natureza: t?.natureza,
+            dataBaixa: b.dataBaixa,
+            valorCents: b.valorCents,
+          };
+        }),
+        total: suspeitas.length,
+      },
+      chave: chaveAchado("FR-CANCELADO-COM-BAIXA", chaveMes(ctx.dataReferencia)),
+    },
+  ];
+}
+
+// FR-BAIXA-ANTECIPADA — pagamento com data ANTERIOR a emissao do titulo.
+//
+// Impossivel na ordem natural dos fatos: paga-se o que ja existe. Quando
+// aparece, ou a data foi digitada errada, ou o titulo foi criado depois para
+// justificar uma saida que ja tinha acontecido — e a segunda hipotese e a
+// razao de esta regra existir.
+function baixaAntesDaEmissao(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const porId = new Map(ctx.titulos.map((t) => [t.id, t]));
+
+  const invertidas = ctx.baixas.filter((b) => {
+    const t = porId.get(b.tituloId);
+    if (!t || t.cancelado || !t.dataEmissao) return false;
+    // Um dia de folga: baixa e emissao no mesmo dia, com horas diferentes,
+    // aparecem invertidas por arredondamento de fuso e nao sao anomalia.
+    // `diasEntre(a, b)` devolve b − a. O que se quer aqui é quanto a BAIXA
+    // antecede a EMISSÃO, então a baixa vem primeiro. Invertido, a regra
+    // apontava pagamento em atraso — o oposto exato do que ela procura, e
+    // silenciosamente, porque atraso é comum e o achado pareceria plausível.
+    return diasEntre(b.dataBaixa, t.dataEmissao) > 1;
+  });
+  if (invertidas.length === 0) return [];
+
+  const valor = somar(invertidas, (b) => Math.abs(b.valorCents));
+
+  return [
+    {
+      regra: "FR-BAIXA-ANTECIPADA",
+      tipo: "ESTADO",
+      severidade: agravar(severidadePorValor(valor, materialidade)),
+      categoria: "FRAUDE",
+      titulo: `${invertidas.length} pagamento(s) com data anterior à emissão do título`,
+      descricao:
+        `${invertidas.length} baixa(s), somando ${fmtBRL(valor)}, têm data de pagamento ANTERIOR à data de emissão ` +
+        `do título que elas liquidam. Paga-se o que já existe: ou a data foi digitada errada, ou o título foi criado ` +
+        `depois para justificar uma saída que já tinha acontecido.`,
+      recomendacao:
+        "Conferir cada caso contra o extrato do banco. A data do banco é a que não se digita — é ela que decide qual " +
+        "das duas hipóteses é a verdadeira.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        casos: invertidas.slice(0, 20).map((b) => {
+          const t = porId.get(b.tituloId);
+          return {
+            titulo: t?.codigoLancamento,
+            parceiro: t?.parceiroNome,
+            emissao: t?.dataEmissao,
+            dataBaixa: b.dataBaixa,
+            diasDeDiferenca: t?.dataEmissao ? diasEntre(b.dataBaixa, t.dataEmissao) : null,
+            valorCents: b.valorCents,
+          };
+        }),
+        total: invertidas.length,
+      },
+      chave: chaveAchado("FR-BAIXA-ANTECIPADA", chaveMes(ctx.dataReferencia)),
+    },
+  ];
 }
 
 // FR-CONTA-ALTERADA — fornecedor teve os dados bancarios trocados e recebeu

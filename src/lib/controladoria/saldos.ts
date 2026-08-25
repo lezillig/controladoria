@@ -44,6 +44,13 @@ export type SaldoDaConta = {
   // com o que tem espelhado — e só vale quando a coluna de movimentos cobre o
   // período inteiro desde o saldo inicial.
   saldoCalculadoCents: number;
+  // De onde veio o saldo: do extrato bancário espelhado ou da soma das baixas
+  // de título. A tela mostra isso porque as duas leituras respondem perguntas
+  // diferentes, e um saldo sem procedência não dá para conferir.
+  saldoOrigem: "EXTRATO" | "BAIXAS";
+  // Só quando existem as duas fontes. Diferente de zero significa baixa sem
+  // linha no banco, ou linha no banco sem baixa — os dois lados de um furo.
+  divergenciaExtratoBaixasCents: number | null;
 };
 
 type LinhaBruta = {
@@ -124,7 +131,32 @@ export async function saldosPorConta(companyId: string): Promise<SaldoDaConta[]>
     ultimoMovimento: l.ultimo,
     baixas: Number(l.baixas),
     somaBaixasCents: Number(l.soma_baixas),
-    saldoCalculadoCents: Number(l.saldo_inicial) + Number(l.soma_movimentos),
+    // O SALDO CONTA AS BAIXAS. Esta linha somava só `soma_movimentos`, e é a
+    // causa do painel mostrar R$ 135 mil de caixa contra os R$ 2,99 milhões da
+    // Omie: `OmieMovimento` guarda o EXTRATO bancário, que está vazio porque a
+    // Omie não devolve extrato importado por esta API — enquanto a soma das
+    // baixas, o dinheiro que de fato entrou e saiu por título, era calculada
+    // na consulta acima e descartada aqui.
+    //
+    // Não somo os dois. Onde há extrato, ele é a verdade: cada baixa aparece
+    // como linha do banco, e somar as duas contaria o mesmo dinheiro duas
+    // vezes. Onde não há, as baixas são a melhor leitura disponível.
+    //
+    // A escolha fica registrada em `saldoOrigem` em vez de embutida: um saldo
+    // sem procedência é um número que ninguém consegue conferir, e este é
+    // justamente o número que não fechava.
+    saldoCalculadoCents:
+      Number(l.movimentos) > 0
+        ? Number(l.saldo_inicial) + Number(l.soma_movimentos)
+        : Number(l.saldo_inicial) + Number(l.soma_baixas),
+    saldoOrigem: Number(l.movimentos) > 0 ? ("EXTRATO" as const) : ("BAIXAS" as const),
+    // Quando existem os DOIS, a diferença entre eles é um sinal por si só:
+    // baixa registrada sem linha no banco, ou linha no banco sem baixa. Nulo
+    // quando só há uma das fontes, porque aí não há o que confrontar.
+    divergenciaExtratoBaixasCents:
+      Number(l.movimentos) > 0 && Number(l.baixas) > 0
+        ? Number(l.soma_movimentos) - Number(l.soma_baixas)
+        : null,
   }));
 }
 

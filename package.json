@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "teste:cte": "tsx scripts/teste-cte.ts",
+    "teste:antifraude": "tsx scripts/teste-antifraude.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

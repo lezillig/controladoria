@@ -119,6 +119,12 @@ const REGRAS_AGREGADAS = new Set([
   // Um achado por TIPO de documento, falando do conjunto de titulos daquele
   // tipo — nao um achado por titulo.
   "FI-DOC-SEM-NUMERO",
+  // "Por onde o dinheiro saiu": cada uma fala do CONJUNTO de baixas do
+  // período, não de um caso — um achado por regra, com a lista na evidência.
+  "FR-BAIXA-SEM-CONTA",
+  "FR-CANCELADO-COM-BAIXA",
+  "FR-BAIXA-ANTECIPADA",
+  "FR-BAIXA-DESVIADA",
   "RE-COBERTURA-BAIXA",
   "CONF-NAO-CONFERIDO",
   "CONF-SEM-RELATORIO",
@@ -151,8 +157,14 @@ export function avaliarQualidadeDaBase(ctx: ContextoAuditoria): QualidadeDaBase 
   }
   if (!temExtrato) {
     score -= 20;
+    // O SALDO NÃO ENTRA MAIS NESTA LISTA. Ele passou a ser calculado pela soma
+    // das baixas quando não há extrato (ver saldos.ts) — anunciá-lo como
+    // suspenso mandaria desconfiar de um número que agora está certo.
+    // Conciliação e projeção continuam dependendo do extrato: conciliar é,
+    // por definição, confrontar o banco com o título, e não há o lado do banco.
     limitacoes.push(
-      "Extrato bancário não importado: conciliação, saldo e projeção de caixa ficam suspensos nesta rodada."
+      "Extrato bancário não importado: a conciliação e a projeção de caixa ficam suspensas nesta rodada. O saldo é " +
+        "calculado pela soma das baixas de título — é o dinheiro que entrou e saiu por título, não a posição do banco."
     );
   }
   if (!temNotas) {

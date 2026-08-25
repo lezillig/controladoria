@@ -55,6 +55,8 @@ export type ContaCorrenteNormalizada = {
   numeroConta: string | null;
   saldoInicialCents: number;
   inativa: boolean;
+  naoEntraNoResumo: boolean;
+  naoEntraNoFluxo: boolean;
 };
 
 export type BaixaNormalizada = {
