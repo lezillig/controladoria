@@ -624,8 +624,13 @@ async function sincronizarMovimentos(ctx: ContextoFase): Promise<ResultadoFase> 
           conexaoId: ctx.conexaoId,
           conexaoApelido: ctx.conexaoApelido,
           ...m,
+          // A coluna é não-nula com padrão `false`; o normalizador devolve nulo
+          // quando a Omie não informa. A decisão de tratar desconhecido como
+          // "não conciliado" é DA GRAVAÇÃO, e fica escrita aqui — no
+          // normalizador ela apagaria a diferença antes do diagnóstico vê-la.
+          conciliado: m.conciliado ?? false,
         },
-        update: { ...m, sincronizadoEm: new Date() },
+        update: { ...m, conciliado: m.conciliado ?? false, sincronizadoEm: new Date() },
       });
       res.movimentos++;
     }

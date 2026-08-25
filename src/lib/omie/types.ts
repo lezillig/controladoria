@@ -129,7 +129,14 @@ export type MovimentoNormalizado = {
   parceiroNome: string | null;
   documento: string | null;
   observacao: string | null;
-  conciliado: boolean;
+  // NULO QUANDO A FONTE NÃO DIZ, e não `false`.
+  //
+  // `false` aqui seria uma afirmação — "este movimento não está conciliado" —
+  // onde só existe ausência de informação. E o diagnóstico conta `false` como
+  // campo preenchido (corretamente: zero e falso são respostas legítimas), de
+  // modo que a diferença sumiria justo na tela feita para revelá-la. A
+  // movimentação financeira não devolve estado de conciliação; o extrato sim.
+  conciliado: boolean | null;
   dataConciliacao: Date | null;
   tituloCodigo: string | null;
   // AS DUAS COLUNAS QUE SO A MOVIMENTACAO TRAZ.

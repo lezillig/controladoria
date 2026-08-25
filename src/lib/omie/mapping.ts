@@ -452,7 +452,7 @@ export function normalizarMovimentoExtrato(
     parceiroNome: str(bruto, "cNomeCliente", "cRazaoSocial", "cNome"),
     documento: str(bruto, "cNumDoc", "cDocumento", "numero_documento"),
     observacao: str(bruto, "cObservacoes", "observacao", "cObs", "cHistorico"),
-    conciliado: bool(bruto, "cConciliado", "conciliado", "lConciliado") ?? false,
+    conciliado: bool(bruto, "cConciliado", "conciliado", "lConciliado"),
     dataConciliacao: data(bruto, "dDtConciliacao", "data_conciliacao"),
     tituloCodigo: str(bruto, "nCodTitulo", "codigo_titulo"),
   };
@@ -515,7 +515,7 @@ export function normalizarMovimentoFinanceiro(bruto: Bruto): MovimentoNormalizad
     // "Conciliado" e "Conciliado (bloqueado)" na tela; o vocabulario da API
     // ainda nao foi visto. `bool` cobre S/N e true/false; o `?? ` deixa a
     // ausencia como nao-conciliado, que e a leitura conservadora.
-    conciliado: bool(det, "cConciliado", "lConciliado", "conciliado") ?? false,
+    conciliado: bool(det, "cConciliado", "lConciliado", "conciliado"),
     dataConciliacao: data(det, "dDtConciliacao", "data_conciliacao"),
     tituloCodigo: str(det, "nCodTitulo", "codigo_titulo"),
     tipoDocumento: str(det, "cTipo", "cCodTipoDoc", "cTipoDocumento"),

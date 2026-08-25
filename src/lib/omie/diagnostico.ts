@@ -208,42 +208,6 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
     await sleep(OMIE_PACE_MS);
   }
 
-  // O extrato depende de uma conta corrente: ele é chamado por nCodCC, e não
-  // há como testá-lo sem antes descobrir um código válido. Por isso ele fica
-  // por último e usa o código que o próprio diagnóstico acabou de obter — o
-  // que, de quebra, testa a cadeia inteira, que é como o sync funciona.
-  const codigoConta = await primeiraContaCorrente(conexao.credencialRef);
-  if (codigoConta === null) {
-    endpoints.push({
-      chave: "extrato",
-      rotulo: "Extrato bancário",
-      call: OMIE_ENDPOINTS.extrato.call,
-      estado: "PULADO",
-      registros: 0,
-      totalNaConta: 0,
-      listaEncontradaEm: null,
-      filtroAceito: null,
-      camposRecebidos: [],
-      camposMapeados: [],
-      camposVazios: [],
-      erro: "Nenhuma conta corrente foi obtida — o extrato é consultado por conta e não pôde ser testado.",
-      duracaoMs: 0,
-    });
-  } else {
-    endpoints.push(
-      await testar(
-        {
-          chave: "extrato",
-          rotulo: `Extrato bancário (conta ${codigoConta})`,
-          endpoint: OMIE_ENDPOINTS.extrato,
-          param: { nCodCC: Number(codigoConta), dPeriodoInicial: de, dPeriodoFinal: ate },
-          normalizar: (b) => normalizarMovimentoExtrato(b, codigoConta),
-        },
-        conexao.credencialRef
-      )
-    );
-  }
-
   // MOVIMENTAÇÃO DA CONTA CORRENTE — a hipótese que ainda não foi testada.
   //
   // Vem antes dos lançamentos avulsos porque é a candidata a fonte, não a
@@ -268,6 +232,54 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
     )
   );
   await sleep(OMIE_PACE_MS);
+
+  // O EXTRATO É TESTADO NAS CONTAS QUE TÊM MOVIMENTO, e não na primeira da
+  // lista. Esta correção é a lição de um erro caro: a versão anterior pegava a
+  // primeira conta corrente que a Omie devolvesse — uma entre QUARENTA E UMA na
+  // Azul — e, quando ela voltava vazia, o sistema concluía "a empresa não
+  // importa extrato". Uma conta arbitrária sem movimento e uma empresa sem
+  // extrato produzem exatamente a mesma resposta, e nada no resultado permitia
+  // distinguir as duas.
+  //
+  // Agora a escolha vem do próprio dado: as contas que aparecem na movimentação
+  // do período são, por construção, contas em uso. Três delas, para que uma
+  // conta parada não volte a decidir a conclusão sozinha.
+  const contasEmUso = await contasComMovimento(conexao.credencialRef, de, ate);
+  const contasParaTestar = contasEmUso.length > 0 ? contasEmUso : await contasDeFallback(conexao.credencialRef);
+
+  if (contasParaTestar.length === 0) {
+    endpoints.push({
+      chave: "extrato",
+      rotulo: "Extrato bancário",
+      call: OMIE_ENDPOINTS.extrato.call,
+      estado: "PULADO",
+      registros: 0,
+      totalNaConta: 0,
+      listaEncontradaEm: null,
+      filtroAceito: null,
+      camposRecebidos: [],
+      camposMapeados: [],
+      camposVazios: [],
+      erro: "Nenhuma conta corrente foi obtida — o extrato é consultado por conta e não pôde ser testado.",
+      duracaoMs: 0,
+    });
+  } else {
+    for (const codigoConta of contasParaTestar) {
+      endpoints.push(
+        await testar(
+          {
+            chave: `extrato:${codigoConta}`,
+            rotulo: `Extrato bancário (conta ${codigoConta}${contasEmUso.length > 0 ? ", com movimento" : ""})`,
+            endpoint: OMIE_ENDPOINTS.extrato,
+            param: { nCodCC: Number(codigoConta), dPeriodoInicial: de, dPeriodoFinal: ate },
+            normalizar: (b) => normalizarMovimentoExtrato(b, codigoConta),
+          },
+          conexao.credencialRef
+        )
+      );
+      await sleep(OMIE_PACE_MS);
+    }
+  }
 
   // LANÇAMENTOS AVULSOS de conta corrente — sentinela, não fonte.
   //
@@ -419,6 +431,41 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
     camposVazios: houveEscolha ? tentadas : [],
     duracaoMs: Date.now() - inicio,
   };
+}
+
+// Contas correntes QUE TÊM MOVIMENTO no período, tiradas da própria
+// movimentação. Uma página maior que a amostra de propósito: com três
+// registros, uma empresa que movimenta oito contas mostraria uma só, e o teste
+// do extrato voltaria a depender de sorte.
+const CONTAS_PARA_TESTAR_EXTRATO = 3;
+
+async function contasComMovimento(credencialRef: string, de: string, ate: string): Promise<string[]> {
+  try {
+    const resposta = await omieCall(
+      OMIE_ENDPOINTS.movimentos,
+      { nPagina: 1, nRegPorPagina: 50, dDtPagtoDe: de, dDtPagtoAte: ate },
+      { credencialRef, toleraVazio: true }
+    );
+    await sleep(OMIE_PACE_MS);
+
+    const codigos = new Set<string>();
+    for (const bruto of extrairItens(resposta, OMIE_ENDPOINTS.movimentos)) {
+      const m = normalizarMovimentoFinanceiro(bruto as Record<string, unknown>);
+      if (m) codigos.add(m.contaCorrenteCodigo);
+      if (codigos.size >= CONTAS_PARA_TESTAR_EXTRATO) break;
+    }
+    return [...codigos];
+  } catch {
+    // Sem movimentação não há como escolher conta pelo uso — o chamador cai no
+    // fallback. Engolir aqui é correto: este é um passo auxiliar, e falhar nele
+    // não deve derrubar o diagnóstico inteiro.
+    return [];
+  }
+}
+
+async function contasDeFallback(credencialRef: string): Promise<string[]> {
+  const primeira = await primeiraContaCorrente(credencialRef);
+  return primeira === null ? [] : [primeira];
 }
 
 async function primeiraContaCorrente(credencialRef: string): Promise<string | null> {
