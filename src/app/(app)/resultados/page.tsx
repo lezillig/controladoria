@@ -391,8 +391,28 @@ export default async function ResultadosPage({
               "",
               fmtBRL(receita.totalCents - fiscal.fiscaisPorEmissaoCents),
             ],
+            [
+              <span key="cc" className={fiscal.canceladasComTitulo > 0 ? "font-medium text-red-700" : undefined}>
+                Nota CANCELADA com título ativo — não deveria contar
+              </span>,
+              fmtNumero(fiscal.canceladasComTitulo),
+              <span key="ccv" className={fiscal.canceladasComTitulo > 0 ? "font-medium text-red-700" : undefined}>
+                {fmtBRL(fiscal.canceladasComTituloCents)}
+              </span>,
+            ],
           ]}
         />
+        {fiscal.canceladasComTitulo > 0 && (
+          <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs leading-relaxed text-red-900">
+            <strong>
+              {fmtBRL(fiscal.canceladasComTituloCents)} em {fmtNumero(fiscal.canceladasComTitulo)} título(s) estão neste
+              mês com a nota fiscal já cancelada.
+            </strong>{" "}
+            Cancelar a nota na prefeitura não cancela o título na Omie — são dois atos, e o segundo é manual. Enquanto o
+            título viver, ele conta no resultado. O conserto é cancelar o título na Omie; aqui a correção não é feita
+            sozinha, porque apagar receita por conta própria é a última coisa que um sistema de auditoria deve fazer.
+          </p>
+        )}
         <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs leading-relaxed text-emerald-900">
           <strong>Para conferir com a contabilidade, use a linha de EMISSÃO.</strong> Conferida contra a declaração de
           faturamento assinada, doze meses, extraída da própria Omie: os títulos com documento fiscal somados pela data

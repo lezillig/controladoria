@@ -525,6 +525,34 @@ export function normalizarNfe(bruto: Bruto): NotaNormalizada | null {
 // exige numero + data + valor para aceitar o registro, faltar qualquer um
 // derruba a nota inteira — e no fretamento a NFS-e e a receita principal, entao
 // o efeito seria a base nascer sem faturamento.
+// A NOTA DE SERVICO ESTA CANCELADA?
+//
+// Era `/cancelad/i` sobre o status. Parece bastar, e nao basta: a prefeitura
+// nao devolve so "Cancelada". O ciclo de cancelamento tem etapas, e o texto do
+// status acompanha — "Cancelamento Solicitado", "Cancelamento Homologado". E
+// `/cancelad/i` NAO casa com "cancelamento": a palavra tem `cancelam`, nao
+// `cancelad`. Uma letra, e treze notas de julho entraram na receita do mes com
+// o cancelamento ja homologado na prefeitura.
+//
+// Pior que o numero errado: a regra FI-NOTA-CANCELADA do agente fiscal —
+// "nota cancelada, mas o titulo continua vivo" — depende deste campo. Com a
+// deteccao falhando, ela nunca disparava. O sistema tinha a regra certa e nunca
+// chegava a aplica-la, que e a forma mais cara de errar num modulo de auditoria.
+//
+// A NEGATIVA IMPORTA TANTO QUANTO. "Cancelamento Rejeitado" e "Cancelamento
+// Negado" contem a palavra e significam o oposto: a nota vale, o pedido de
+// cancelamento e que caiu. Marcar essas como canceladas tiraria da receita nota
+// legitima — trocaria um erro de mais por um erro de menos, que num relatorio
+// fiscal e o pior dos dois.
+const CANCELAMENTO_NEGADO = /rejeitad|negad|recusad|indeferid/i;
+
+export function notaCancelada(status: string | null | undefined): boolean {
+  const texto = (status ?? "").trim();
+  if (texto === "") return false;
+  if (CANCELAMENTO_NEGADO.test(texto)) return false;
+  return /cancel/i.test(texto);
+}
+
 export function normalizarNfse(bruto: Bruto): NotaNormalizada | null {
   const cabec = obj(bruto, "Cabecalho", "cabecalho", "NFSeCabecalho") ?? bruto;
   const emissao = obj(bruto, "Emissao", "emissao") ?? bruto;
@@ -568,7 +596,7 @@ export function normalizarNfse(bruto: Bruto): NotaNormalizada | null {
     valorIrCents: cents(impostos, "nValorIr", "nIr"),
     valorCsllCents: cents(impostos, "nValorCsll", "nCsll"),
     valorInssCents: cents(impostos, "nValorInss", "nInss"),
-    cancelada: /cancelad/i.test(str(cabec, "cStatusNFSe", "cStatus", "cSituacao", "situacao") ?? ""),
+    cancelada: notaCancelada(str(cabec, "cStatusNFSe", "cStatus", "cSituacao", "situacao")),
     naturezaOperacao: str(cabec, "cNaturezaOperacao", "natureza_operacao"),
     cfop: null,
   };

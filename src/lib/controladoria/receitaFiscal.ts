@@ -67,6 +67,20 @@ export type ReceitaFiscalDoPeriodo = {
   fiscaisPorEmissaoCents: number;
   fiscaisPorEmissao: number;
   todosPorEmissaoCents: number;
+  // NOTA CANCELADA COM TÍTULO VIVO — o dinheiro que não deveria estar no mês.
+  //
+  // Cancelar a nota na prefeitura não cancela o título na Omie: são dois atos,
+  // e o segundo é manual. Enquanto o título viver, ele conta no resultado — a
+  // receita do mês fica maior que o faturamento, sem nada denunciar.
+  //
+  // O agente fiscal já tinha a regra FI-NOTA-CANCELADA para isso. Ela não
+  // disparava porque a detecção do cancelamento falhava (ver `notaCancelada` em
+  // mapping.ts): a regra certa, nunca aplicada.
+  //
+  // Aqui o número aparece na tela do resultado, ao lado do total que ele
+  // contamina, em vez de só virar achado numa lista de quatro mil.
+  canceladasComTituloCents: number;
+  canceladasComTitulo: number;
 };
 
 const ROTULO: Record<string, string> = {
@@ -136,6 +150,29 @@ export async function receitaFiscalDoPeriodo(params: {
        ${filtroTitulo}
   `;
 
+  // O casamento é pelo NÚMERO do documento: o título guarda `numeroDocumento`
+  // (de `cNumDocFiscal`) e a nota guarda o próprio número. Não há chave
+  // estrangeira entre os dois na Omie, e inventar uma seria pior que casar pelo
+  // número, que é o que a pessoa faz na tela do ERP.
+  //
+  // `conexaoId` entra no casamento porque numeração de nota é por empresa: sem
+  // ele, a nota 12615 da AZUL casaria com o título 12615 da MCZ.
+  const [comCancelada] = await prisma.$queryRaw<{ quantidade: bigint; valor: bigint }[]>`
+    SELECT COUNT(*)::bigint AS quantidade,
+           COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS valor
+      FROM ${tabela("OmieTitulo")} t
+      JOIN ${tabela("OmieNota")} n
+        ON n."conexaoId" = t."conexaoId"
+       AND n.numero = t."numeroDocumento"
+       AND n.cancelada = true
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND t.natureza::text = 'RECEBER'
+       AND ${competenciaSql("t")} >= ${periodo.inicio}
+       AND ${competenciaSql("t")} <= ${periodo.fim}
+       ${filtroTitulo}
+  `;
+
   const detalhadas = linhas.map((l) => ({
     tipo: l.tipo,
     rotulo: ROTULO[l.tipo] ?? l.tipo,
@@ -152,6 +189,8 @@ export async function receitaFiscalDoPeriodo(params: {
     fiscaisPorEmissaoCents: Number(emissao?.fv ?? 0),
     fiscaisPorEmissao: Number(emissao?.fq ?? 0),
     todosPorEmissaoCents: Number(emissao?.tv ?? 0),
+    canceladasComTituloCents: Number(comCancelada?.valor ?? 0),
+    canceladasComTitulo: Number(comCancelada?.quantidade ?? 0),
   };
 }
 
