@@ -20,6 +20,7 @@ import { sessaoControladoria } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
 import RelerJanelaButton from "./RelerJanelaButton";
+import RelerPeriodoForm from "./RelerPeriodoForm";
 
 // Teto de duração das Server Actions desta tela, declarado por precaução e não
 // por diagnóstico.
@@ -58,6 +59,19 @@ export default async function SincronizacaoPage() {
     select: { dataInicioBase: true },
   });
   const dataInicioBase = config?.dataInicioBase ?? new Date();
+
+  const conexoesAtivas = await prisma.omieConexao.findMany({
+    where: { companyId: session.companyId, ativa: true },
+    orderBy: { ordem: "asc" },
+    select: { id: true, apelido: true, nome: true },
+  });
+
+  // Mês PASSADO como padrão do formulário de releitura, não o corrente: quem
+  // corrige lançamento quase sempre está fechando o mês anterior, e o mês
+  // corrente já é relido todo dia pelo ciclo.
+  const mesAnterior = new Date();
+  mesAnterior.setMonth(mesAnterior.getMonth() - 1);
+  const mesPadraoParaReleitura = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, "0")}`;
 
   const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde, janelasRuins, medicao, sobras] =
     await Promise.all([
@@ -526,6 +540,33 @@ export default async function SincronizacaoPage() {
               conferência ficou aqui, em vez de sumir junto com o problema.
             </p>
           )}
+        </Secao>
+      )}
+
+      {/* RELER UM PERÍODO — depois de corrigir dado na Omie.
+
+          Vem ANTES da lista de janelas com erro de propósito: aquela responde
+          "a carga quebrou, refaça"; esta responde "a carga foi bem, mas o dado
+          mudou na Omie depois". A segunda acontece toda vez que alguém conserta
+          um lançamento, e não tinha caminho nenhum na tela — o botão Reler só
+          aparece em janela que falhou.
+
+          Sem isto, o ciclo "corrige na Omie, confere aqui" tinha um buraco
+          silencioso: o ciclo diário relê emissão e pagamento dos últimos três
+          dias, e vencimento de hoje ±120 dias. Um título de abril corrigido
+          hoje, com vencimento em abril, nunca mais seria lido — e a conferência
+          mostraria o número velho como se fosse o novo. */}
+      {podeSincronizar && (
+        <Secao
+          titulo="Reler um período"
+          descricao="Depois de corrigir lançamentos na Omie, marque os meses corrigidos para o espelho ler de novo."
+        >
+          <RelerPeriodoForm conexoes={conexoesAtivas} mesPadrao={mesPadraoParaReleitura} />
+          <p className="mt-4 text-xs text-slate-500">
+            O ciclo diário relê só a emissão e o pagamento dos <strong>últimos três dias</strong>, mais os vencimentos
+            de hoje ±120 dias. Correção em mês mais antigo que isso não chega sozinha — é para ela que esta seção
+            existe.
+          </p>
         </Secao>
       )}
 

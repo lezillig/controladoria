@@ -238,3 +238,111 @@ export async function relerJanela(formData: FormData): Promise<ResultadoSync> {
     ],
   };
 }
+
+// RELER UM PERÍODO INTEIRO — o passo que faltava no ciclo "corrige na Omie,
+// confere aqui".
+//
+// `relerJanela`, acima, só é alcançável pela lista de janelas que FALHARAM.
+// Isso cobre o caso em que a carga quebrou, e não cobre o caso mais comum
+// depois que o módulo entrou em uso: a janela carregou bem, alguém corrigiu o
+// dado na Omie, e o espelho continua com a versão antiga.
+//
+// O ciclo diário não resolve. Ele relê emissão e pagamento dos ÚLTIMOS TRÊS
+// DIAS, e vencimento de hoje ±120 dias. Um título emitido em abril, corrigido
+// hoje, só volta se o vencimento dele ainda estiver dentro da janela de
+// vencimento — e, se não estiver, o espelho fica desatualizado para sempre,
+// sem nada avisando. Quem conferisse veria o número velho achando que era o
+// novo, que é o pior modo de falhar de um sistema de conferência.
+//
+// TETO DE DOZE MESES por chamada. Não é limitação técnica: é o mesmo motivo do
+// "uma janela por vez" do botão original — cada janela é uma carga completa do
+// mês nas duas contas, e um intervalo digitado errado (2020 a 2026) viraria
+// horas de consumo de API sem que ninguém tivesse pedido isso.
+const MAXIMO_JANELAS_POR_RELEITURA = 12;
+
+export async function relerPeriodo(formData: FormData): Promise<ResultadoSync> {
+  const session = await requireRole("ADMIN", "CONTROLADORIA");
+
+  const conexaoParam = String(formData.get("conexaoId") ?? "");
+  const de = String(formData.get("de") ?? "");
+  const ate = String(formData.get("ate") ?? "");
+
+  const casaDe = /^(\d{4})-(\d{2})$/.exec(de);
+  const casaAte = /^(\d{4})-(\d{2})$/.exec(ate);
+  if (!casaDe || !casaAte) {
+    return { erro: "Informe o mês inicial e o final, no formato AAAA-MM." };
+  }
+
+  const inicio = new Date(Number(casaDe[1]), Number(casaDe[2]) - 1, 1);
+  const fim = new Date(Number(casaAte[1]), Number(casaAte[2]) - 1, 1);
+  if (fim < inicio) return { erro: "O mês final é anterior ao inicial." };
+
+  const meses = (fim.getFullYear() - inicio.getFullYear()) * 12 + (fim.getMonth() - inicio.getMonth()) + 1;
+  if (meses > MAXIMO_JANELAS_POR_RELEITURA) {
+    return {
+      erro:
+        `${meses} meses de uma vez. O limite é ${MAXIMO_JANELAS_POR_RELEITURA} — cada mês é uma carga completa ` +
+        `nas contas Omie, e um intervalo digitado errado viraria horas de consumo. Faça em partes.`,
+    };
+  }
+
+  // O mês seguinte ao final, para o intervalo pegar o último mês inteiro.
+  const limite = new Date(fim.getFullYear(), fim.getMonth() + 1, 1);
+
+  // Conexões do escopo. Vazio = todas as ativas: quem corrigiu o cadastro na
+  // Omie quase sempre corrigiu nas duas empresas, e obrigar duas passadas
+  // idênticas só cria a chance de esquecer uma.
+  const conexoes = await prisma.omieConexao.findMany({
+    where: {
+      companyId: session.companyId,
+      ativa: true,
+      ...(conexaoParam ? { id: conexaoParam } : {}),
+    },
+    select: { id: true, apelido: true },
+  });
+  if (conexoes.length === 0) return { erro: "Nenhuma conexão ativa no escopo escolhido." };
+
+  const alvos = await prisma.omieSyncRun.findMany({
+    where: {
+      companyId: session.companyId,
+      conexaoId: { in: conexoes.map((c) => c.id) },
+      backfill: true,
+      janelaInicio: { gte: inicio, lt: limite },
+    },
+    select: { id: true, janelaInicio: true, conexaoId: true, conexao: { select: { apelido: true } } },
+    orderBy: { janelaInicio: "asc" },
+  });
+
+  if (alvos.length === 0) {
+    return {
+      erro:
+        "Nenhuma janela de carga encontrada nesse período. Confira o intervalo e a empresa — só existem janelas a " +
+        "partir da data de início da base configurada.",
+    };
+  }
+
+  await prisma.omieSyncRun.deleteMany({ where: { id: { in: alvos.map((a) => a.id) } } });
+
+  const competencias = alvos.map(
+    (a) =>
+      `${a.conexao?.apelido ?? "?"} ${a.janelaInicio.getFullYear()}-${String(a.janelaInicio.getMonth() + 1).padStart(2, "0")}`
+  );
+
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SYNC_PERIODO_RELIDO",
+    entidadeTipo: "OmieSyncRun",
+    descricao: `${alvos.length} janela(s) marcada(s) para releitura: ${competencias.join(", ")}.`,
+  });
+
+  revalidatePath("/sincronizacao");
+  return {
+    mensagens: [
+      `${alvos.length} janela(s) marcada(s) para releitura: ${competencias.join(", ")}.`,
+      "Clique em Sincronizar agora e deixe a aba aberta — as janelas são refeitas uma após a outra.",
+    ],
+  };
+}
