@@ -243,6 +243,142 @@ console.log("\nFR-BAIXA-ANTECIPADA — pagou antes de existir");
   conferir("título sem emissão não pode ser julgado", rodar(ctx, "FR-BAIXA-ANTECIPADA").length, 0);
 }
 
+// ---------------------------------------------------------- FR-BAIXA-FUTURA
+console.log("\nFR-BAIXA-FUTURA — baixa registrada antes de acontecer");
+{
+  const t = titulo({ valorDocumentoCents: 400_000_00 });
+  const ctx = contexto({
+    titulos: [t],
+    baixas: [baixa({ tituloId: t.id, dataBaixa: d("2026-09-15"), valorCents: 400_000_00 })],
+  });
+  const a = rodar(ctx, "FR-BAIXA-FUTURA");
+  conferir("data futura é achado", a.length, 1);
+  conferir("com os dias no futuro na evidência", (a[0]?.evidencia as { casos: { diasNoFuturo: number }[] })?.casos[0]?.diasNoFuturo, 21);
+}
+{
+  const t = titulo();
+  const ctx = contexto({ titulos: [t], baixas: [baixa({ tituloId: t.id, dataBaixa: HOJE })] });
+  conferir("baixa de hoje não é futuro", rodar(ctx, "FR-BAIXA-FUTURA").length, 0);
+}
+
+// ------------------------------------------------------- FR-BAIXA-DUPLICADA
+console.log("\nFR-BAIXA-DUPLICADA — o mesmo título baixado duas vezes");
+{
+  const t = titulo({ valorDocumentoCents: 200_000_00 });
+  const ctx = contexto({
+    titulos: [t],
+    baixas: [
+      baixa({ tituloId: t.id, dataBaixa: d("2026-08-10"), valorCents: 200_000_00 }),
+      baixa({ tituloId: t.id, dataBaixa: d("2026-08-10"), valorCents: 200_000_00 }),
+    ],
+  });
+  const a = rodar(ctx, "FR-BAIXA-DUPLICADA");
+  conferir("aponta a repetição", a.length, 1);
+  conferir("conta só a SEGUNDA — a primeira é legítima", a[0]?.valorCents, 200_000_00);
+}
+{
+  const t = titulo({ valorDocumentoCents: 200_000_00 });
+  const ctx = contexto({
+    titulos: [t],
+    baixas: [
+      baixa({ tituloId: t.id, dataBaixa: d("2026-08-10"), valorCents: 100_000_00 }),
+      baixa({ tituloId: t.id, dataBaixa: d("2026-08-10"), valorCents: 100_000_00 }),
+    ],
+  });
+  conferir("duas parcelas iguais no mesmo dia ainda contam", rodar(ctx, "FR-BAIXA-DUPLICADA").length, 1);
+}
+{
+  const t = titulo({ valorDocumentoCents: 200_000_00 });
+  const ctx = contexto({
+    titulos: [t],
+    baixas: [
+      baixa({ tituloId: t.id, dataBaixa: d("2026-08-10"), valorCents: 200_000_00 }),
+      baixa({ tituloId: t.id, dataBaixa: d("2026-08-20"), valorCents: 200_000_00 }),
+    ],
+  });
+  conferir("dias diferentes não é duplicidade", rodar(ctx, "FR-BAIXA-DUPLICADA").length, 0);
+}
+
+// ---------------------------------------------------- FR-RECEBIVEL-CANCELADO
+console.log("\nFR-RECEBIVEL-CANCELADO — desistiu de cobrar, sem passar por perda");
+{
+  const pago = titulo({ natureza: "RECEBER", valorDocumentoCents: 1_000_000_00 });
+  const cancelados = [1, 2].map(() =>
+    titulo({ natureza: "RECEBER", cancelado: true, valorDocumentoCents: 200_000_00, parceiroDocumento: "11222333000181" })
+  );
+  const ctx = contexto({
+    titulos: [pago, ...cancelados],
+    baixas: [baixa({ tituloId: pago.id, valorCents: 1_000_000_00 })],
+  });
+  const a = rodar(ctx, "FR-RECEBIVEL-CANCELADO");
+  conferir("agrupa por cliente", a.length, 1);
+  conferir("somando os dois cancelados", a[0]?.valorCents, 400_000_00);
+}
+{
+  const t = titulo({ natureza: "RECEBER", cancelado: true, valorDocumentoCents: 500_000_00 });
+  const ctx = contexto({ titulos: [t], baixas: [baixa({ tituloId: t.id, valorCents: 500_000_00 })] });
+  conferir("cancelado COM recebimento é outra regra", rodar(ctx, "FR-RECEBIVEL-CANCELADO").length, 0);
+}
+{
+  const t = titulo({ natureza: "PAGAR", cancelado: true, valorDocumentoCents: 500_000_00 });
+  conferir("título a pagar cancelado não entra aqui", rodar(contexto({ titulos: [t] }), "FR-RECEBIVEL-CANCELADO").length, 0);
+}
+
+// ------------------------------------------------------- FR-DESCONTO-TOTAL
+console.log("\nFR-DESCONTO-TOTAL — o desconto engoliu o título");
+{
+  const t = titulo({ natureza: "RECEBER", valorDocumentoCents: 500_000_00 });
+  const ctx = contexto({
+    titulos: [t],
+    baixas: [baixa({ tituloId: t.id, valorCents: 1_00, descontoCents: 499_999_00 })],
+  });
+  const a = rodar(ctx, "FR-DESCONTO-TOTAL");
+  conferir("desconto de ~100% é achado", a.length, 1);
+  conferir("e o valor é o desconto", a[0]?.valorCents, 499_999_00);
+}
+{
+  const t = titulo({ natureza: "RECEBER", valorDocumentoCents: 500_000_00 });
+  const ctx = contexto({
+    titulos: [t],
+    baixas: [baixa({ tituloId: t.id, valorCents: 450_000_00, descontoCents: 50_000_00 })],
+  });
+  conferir("desconto de 10% é política comercial, não é aqui", rodar(ctx, "FR-DESCONTO-TOTAL").length, 0);
+}
+
+// --------------------------------------------------- FR-CLIENTE-FORNECEDOR
+console.log("\nFR-CLIENTE-FORNECEDOR — o mesmo CNPJ nos dois sentidos");
+{
+  const DOC = "11222333000181";
+  const ctx = contexto({
+    titulos: [
+      titulo({ natureza: "PAGAR", parceiroDocumento: DOC, parceiroNome: "PARCEIRA TRANSPORTES", valorDocumentoCents: 800_000_00 }),
+      titulo({ natureza: "RECEBER", parceiroDocumento: DOC, parceiroNome: "PARCEIRA TRANSPORTES", valorDocumentoCents: 600_000_00 }),
+    ],
+    baixas: [],
+  });
+  const a = rodar(ctx, "FR-CLIENTE-FORNECEDOR");
+  conferir("aponta a parte relacionada", a.length, 1);
+  conferir("valor é o MENOR dos dois lados", a[0]?.valorCents, 600_000_00);
+}
+{
+  const ctx = contexto({
+    titulos: [
+      titulo({ natureza: "PAGAR", parceiroDocumento: "11222333000181", valorDocumentoCents: 800_000_00 }),
+      titulo({ natureza: "RECEBER", parceiroDocumento: "11222333000181", valorDocumentoCents: 1_00 }),
+    ],
+  });
+  conferir("um lado irrelevante não faz parte relacionada", rodar(ctx, "FR-CLIENTE-FORNECEDOR").length, 0);
+}
+{
+  const ctx = contexto({
+    titulos: [
+      titulo({ natureza: "PAGAR", parceiroDocumento: "11111111111111", valorDocumentoCents: 800_000_00 }),
+      titulo({ natureza: "RECEBER", parceiroDocumento: "11111111111111", valorDocumentoCents: 800_000_00 }),
+    ],
+  });
+  conferir("documento inválido não vira parte relacionada", rodar(ctx, "FR-CLIENTE-FORNECEDOR").length, 0);
+}
+
 // ------------------------------------------------------------ base vazia
 console.log("\nBase vazia");
 {

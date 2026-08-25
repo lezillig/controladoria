@@ -43,7 +43,7 @@ export const agenteAntifraude: Agente = {
   nome: "Antifraude e integridade",
   area: "Controladoria",
   descricao:
-    "Procura padrões que exigem verificação. Para quem se pagou: troca de conta bancária de fornecedor às vésperas do pagamento, fracionamento para burlar alçada, fornecedor com documento inválido ou igual ao de funcionário, cadastros duplicados, pagamentos em dia não útil e desvio da distribuição esperada de valores (Lei de Benford). Por onde o dinheiro saiu: conta excluída do resumo de caixa com movimento, pagamento por conta diferente da do título, baixa sem conta corrente, baixa em título cancelado e pagamento anterior à emissão.",
+    "Procura padrões que exigem verificação. Para quem se pagou: troca de conta bancária de fornecedor às vésperas do pagamento, fracionamento para burlar alçada, fornecedor com documento inválido ou igual ao de funcionário, cadastros duplicados, pagamentos em dia não útil e desvio da distribuição esperada de valores (Lei de Benford). Por onde o dinheiro saiu: conta excluída do resumo de caixa com movimento, pagamento por conta diferente da do título, baixa sem conta corrente, baixa em título cancelado, pagamento anterior à emissão, baixa com data no futuro e baixa repetida no mesmo título. O que sumiu do lado de receber: recebível cancelado sem substituto, desconto que engole o título e parceiro que é cliente e fornecedor ao mesmo tempo.",
   executar: auditarFraude,
 };
 
@@ -64,6 +64,11 @@ function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...baixaSemConta(ctx, materialidade));
   achados.push(...canceladoComBaixa(ctx, materialidade));
   achados.push(...baixaAntesDaEmissao(ctx, materialidade));
+  achados.push(...baixaComDataFutura(ctx, materialidade));
+  achados.push(...baixaDuplicada(ctx, materialidade));
+  achados.push(...recebivelCancelado(ctx, materialidade));
+  achados.push(...descontoQueEngoleOTitulo(ctx, materialidade));
+  achados.push(...clienteQueTambemEFornecedor(ctx, materialidade));
 
   return achados;
 }
@@ -776,3 +781,306 @@ function desvioDeBenford(ctx: ContextoAuditoria): AchadoNovo[] {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// O QUE SUMIU DO LADO DE RECEBER
+//
+// As regras de contas a receber olham CREDITO: quem esta atrasado, quem deve
+// virar perda, quem paga a menos. Todas partem do principio de que o titulo
+// existe e continua existindo. Este bloco olha o contrario — o titulo que
+// deixou de existir, o desconto que o engoliu, o recebimento que foi
+// registrado antes de acontecer.
+//
+// Uma regra que eu ia escrever aqui NAO entrou: "mesmo cliente, mesmo valor,
+// mesma data, dois titulos". Esta base tem dois CT-e de R$ 52.000,00 emitidos
+// no mesmo dia para o mesmo tomador, e sao os dois legitimos — a regra
+// acusaria duplicidade toda vez que a operacao fizesse dois fretes iguais.
+// Fica registrado para nao ser reinventada.
+// ---------------------------------------------------------------------------
+
+// FR-BAIXA-FUTURA — baixa com data POSTERIOR a hoje.
+//
+// O espelho de uma baixa e um fato consumado: o dinheiro entrou ou saiu. Data
+// no futuro nao e previsao — previsao tem campo proprio (dDtPrevisao). Do lado
+// de receber, infla o resultado do mes com dinheiro que ainda nao chegou; do
+// lado de pagar, esvazia o caixa que ainda esta la.
+function baixaComDataFutura(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const futuras = ctx.baixas.filter((b) => diasEntre(ctx.agora, b.dataBaixa) > 0);
+  if (futuras.length === 0) return [];
+
+  const porId = new Map(ctx.titulos.map((t) => [t.id, t]));
+  const valor = somar(futuras, (b) => Math.abs(b.valorCents));
+
+  return [
+    {
+      regra: "FR-BAIXA-FUTURA",
+      tipo: "ESTADO",
+      severidade: agravar(severidadePorValor(valor, materialidade)),
+      categoria: "FRAUDE",
+      titulo: `${futuras.length} baixa(s) com data no futuro — ${fmtBRL(valor)}`,
+      descricao:
+        `${futuras.length} baixa(s), somando ${fmtBRL(valor)}, estão registradas com data POSTERIOR a hoje. Baixa é ` +
+        `fato consumado: o dinheiro entrou ou saiu. Previsão tem campo próprio na Omie. Do lado de receber, isso ` +
+        `infla o resultado do mês com dinheiro que ainda não chegou; do lado de pagar, esvazia um caixa que ainda ` +
+        `está lá.`,
+      recomendacao:
+        "Conferir se foi erro de digitação de data ou baixa antecipada de propósito. Baixa antecipada de propósito " +
+        "muda o resultado do mês e precisa de autorização — não de correção silenciosa.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        casos: futuras.slice(0, 20).map((b) => {
+          const t = porId.get(b.tituloId);
+          return {
+            titulo: t?.codigoLancamento,
+            parceiro: t?.parceiroNome,
+            natureza: t?.natureza,
+            dataBaixa: b.dataBaixa,
+            diasNoFuturo: diasEntre(ctx.agora, b.dataBaixa),
+            valorCents: b.valorCents,
+          };
+        }),
+        total: futuras.length,
+      },
+      chave: chaveAchado("FR-BAIXA-FUTURA", chaveMes(ctx.dataReferencia)),
+    },
+  ];
+}
+
+// FR-BAIXA-DUPLICADA — o MESMO titulo baixado duas vezes, mesmo dia, mesmo
+// valor.
+//
+// Diferente de CP-DUPLICIDADE, que olha titulos repetidos: aqui o titulo e um
+// so e a baixa e que veio dobrada. Do lado de pagar, e pagamento em dobro — o
+// fornecedor recebeu duas vezes e raramente avisa. Do lado de receber, e
+// credito dado duas vezes ao cliente pelo mesmo dinheiro.
+//
+// A Omie ja impede baixa identica (chave unica), entao o que sobra aqui sao
+// baixas DISTINTAS que coincidem em titulo, dia e valor — que e exatamente o
+// formato do pagamento em duplicidade.
+function baixaDuplicada(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const porId = new Map(ctx.titulos.map((t) => [t.id, t]));
+
+  const suspeitas: typeof ctx.baixas = [];
+  for (const [, grupo] of agrupar(
+    ctx.baixas,
+    (b) => `${b.tituloId}|${b.dataBaixa.toISOString().slice(0, 10)}|${b.valorCents}`
+  )) {
+    // A partir da SEGUNDA: a primeira baixa e a legitima, e conta-la como
+    // perda dobraria o valor do achado.
+    if (grupo.length > 1) suspeitas.push(...grupo.slice(1));
+  }
+  if (suspeitas.length === 0) return [];
+
+  const valor = somar(suspeitas, (b) => Math.abs(b.valorCents));
+
+  return [
+    {
+      regra: "FR-BAIXA-DUPLICADA",
+      tipo: "ESTADO",
+      severidade: agravar(severidadePorValor(valor, materialidade)),
+      categoria: "FRAUDE",
+      titulo: `${suspeitas.length} baixa(s) repetidas no mesmo título, dia e valor — ${fmtBRL(valor)}`,
+      descricao:
+        `${suspeitas.length} baixa(s) além da primeira, somando ${fmtBRL(valor)}, repetem título, data e valor. Do ` +
+        `lado de pagar isso é pagamento em dobro — o fornecedor recebeu duas vezes e raramente avisa. Do lado de ` +
+        `receber, é crédito dado duas vezes ao cliente pelo mesmo dinheiro.`,
+      recomendacao:
+        "Conferir no extrato se saíram (ou entraram) dois valores. Havendo dobra real, pedir devolução ao fornecedor " +
+        "ou reabrir a cobrança do cliente; sendo lançamento duplicado, estornar a segunda baixa na Omie.",
+      valorCents: valor,
+      impactoCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        casos: suspeitas.slice(0, 20).map((b) => {
+          const t = porId.get(b.tituloId);
+          return {
+            titulo: t?.codigoLancamento,
+            parceiro: t?.parceiroNome,
+            natureza: t?.natureza,
+            dataBaixa: b.dataBaixa,
+            valorCents: b.valorCents,
+          };
+        }),
+        total: suspeitas.length,
+      },
+      chave: chaveAchado("FR-BAIXA-DUPLICADA", chaveMes(ctx.dataReferencia)),
+    },
+  ];
+}
+
+// FR-RECEBIVEL-CANCELADO — titulo a receber cancelado sem nunca ter sido
+// recebido.
+//
+// Cancelar um titulo a receber e desistir de cobrar. Pode ser correto (nota
+// emitida errada, servico nao prestado) — e o caso do CT-e cancelado e
+// reemitido, que esta base tem as dezenas. O que faz disto um achado e o
+// caminho: cancelamento nao passa por provisao de perda, nao aparece no
+// resultado como baixa contabil e nao pede aprovacao de ninguem. E a forma
+// mais silenciosa de uma receita desaparecer.
+function recebivelCancelado(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const comBaixa = new Set(ctx.baixas.map((b) => b.tituloId));
+  const cancelados = ctx.titulos.filter(
+    (t) => t.natureza === "RECEBER" && t.cancelado && !comBaixa.has(t.id) && t.valorDocumentoCents > 0
+  );
+  if (cancelados.length === 0) return [];
+
+  const achados: AchadoNovo[] = [];
+  // Por CLIENTE: um cliente com quinze cancelamentos e um padrao; quinze
+  // clientes com um cancelamento cada e rotina de emissao.
+  for (const [chave, grupo] of agrupar(cancelados, (t) => chaveParceiro(t))) {
+    const valor = somar(grupo, (t) => t.valorDocumentoCents);
+    if (valor < materialidade) continue;
+
+    achados.push({
+      regra: "FR-RECEBIVEL-CANCELADO",
+      tipo: "ESTADO",
+      severidade: severidadePorValor(valor, materialidade),
+      categoria: "RISCO_FINANCEIRO",
+      titulo: `${fmtBRL(valor)} a receber cancelados de ${nomeParceiro(ctx, grupo[0])}`,
+      descricao:
+        `${grupo.length} título(s) a receber desse cliente, somando ${fmtBRL(valor)}, foram CANCELADOS sem nenhum ` +
+        `recebimento. Cancelar um recebível é desistir de cobrar — e, ao contrário de uma perda provisionada, não ` +
+        `passa por aprovação, não aparece no resultado como baixa contábil e não deixa rastro fora da Omie.`,
+      recomendacao:
+        "Conferir se cada cancelamento tem substituto: documento reemitido, nota corrigida, serviço não prestado. " +
+        "Cancelamento sem substituto é receita perdida, e precisa aparecer como tal.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieParceiro",
+      entidadeRef: nomeParceiro(ctx, grupo[0]),
+      evidencia: {
+        cliente: nomeParceiro(ctx, grupo[0]),
+        total: grupo.length,
+        valorCents: valor,
+        titulos: grupo.slice(0, 20).map((t) => ({
+          codigoLancamento: t.codigoLancamento,
+          numeroDocumento: t.numeroDocumento,
+          emissao: t.dataEmissao ?? t.dataVencimento,
+          valorCents: t.valorDocumentoCents,
+        })),
+      },
+      chave: chaveAchado("FR-RECEBIVEL-CANCELADO", chave, chaveMes(ctx.dataReferencia)),
+    });
+  }
+  return achados;
+}
+
+// FR-DESCONTO-TOTAL — o desconto engoliu o titulo.
+//
+// CR-DESCONTO ja olha o desconto como politica comercial, somado por cliente e
+// medido em percentual do faturamento. Esta regra e outra coisa: um desconto
+// que zera (ou quase) UM titulo nao e politica, e baixa contabil disfarcada.
+// O titulo fecha como "recebido", o resultado nao registra perda nenhuma, e o
+// dinheiro simplesmente nao entrou.
+const PERCENTUAL_DESCONTO_QUE_ENGOLE = 90;
+
+function descontoQueEngoleOTitulo(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const porId = new Map(ctx.titulos.map((t) => [t.id, t]));
+
+  const engolidas = ctx.baixas.filter((b) => {
+    if (b.descontoCents <= 0) return false;
+    const t = porId.get(b.tituloId);
+    if (!t || t.natureza !== "RECEBER" || t.cancelado) return false;
+    const bruto = b.valorCents + b.descontoCents;
+    return bruto > 0 && (b.descontoCents / bruto) * 100 >= PERCENTUAL_DESCONTO_QUE_ENGOLE;
+  });
+  if (engolidas.length === 0) return [];
+
+  const valor = somar(engolidas, (b) => b.descontoCents);
+  if (valor < materialidade) return [];
+
+  return [
+    {
+      regra: "FR-DESCONTO-TOTAL",
+      tipo: "ESTADO",
+      severidade: agravar(severidadePorValor(valor, materialidade)),
+      categoria: "PERDA_FINANCEIRA",
+      titulo: `${engolidas.length} recebimento(s) com desconto de ${PERCENTUAL_DESCONTO_QUE_ENGOLE}% ou mais`,
+      descricao:
+        `${engolidas.length} baixa(s) de títulos a receber tiveram desconto de ao menos ` +
+        `${PERCENTUAL_DESCONTO_QUE_ENGOLE}% do valor, somando ${fmtBRL(valor)} em desconto. Desconto desse tamanho ` +
+        `não é política comercial: é baixa contábil disfarçada. O título fecha como recebido, o resultado não ` +
+        `registra perda nenhuma, e o dinheiro não entrou.`,
+      recomendacao:
+        "Verificar quem autorizou cada um. Se a dívida foi mesmo perdoada, o lançamento correto é perda, não " +
+        "desconto — a diferença muda o resultado, a base de imposto e o histórico de crédito do cliente.",
+      valorCents: valor,
+      impactoCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        casos: engolidas.slice(0, 20).map((b) => {
+          const t = porId.get(b.tituloId);
+          return {
+            titulo: t?.codigoLancamento,
+            parceiro: t?.parceiroNome,
+            dataBaixa: b.dataBaixa,
+            recebidoCents: b.valorCents,
+            descontoCents: b.descontoCents,
+          };
+        }),
+        total: engolidas.length,
+      },
+      chave: chaveAchado("FR-DESCONTO-TOTAL", chaveMes(ctx.dataReferencia)),
+    },
+  ];
+}
+
+// FR-CLIENTE-FORNECEDOR — o mesmo CNPJ/CPF recebe da empresa E paga a ela.
+//
+// Nao e irregularidade: no transporte, subcontratar quem tambem e seu cliente
+// e comum. E parte relacionada, e o que a auditoria pede de parte relacionada
+// e que ela seja DECLARADA — porque e o desenho onde dinheiro circula em
+// volta (paga-se mais caro de um lado, cobra-se mais barato do outro) sem que
+// nenhum dos dois lados, olhado sozinho, pareca errado.
+//
+// Exige valor relevante NOS DOIS SENTIDOS: um fornecedor que uma vez comprou
+// uma passagem nao e parte relacionada.
+function clienteQueTambemEFornecedor(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const porDocumento = new Map<string, { pagar: number; receber: number; nome: string }>();
+
+  for (const t of ctx.titulos) {
+    if (t.cancelado) continue;
+    const doc = t.parceiroDocumento;
+    if (!doc || !documentoValido(doc)) continue;
+    const atual = porDocumento.get(doc) ?? { pagar: 0, receber: 0, nome: t.parceiroNome ?? doc };
+    if (t.natureza === "PAGAR") atual.pagar += t.valorDocumentoCents;
+    else atual.receber += t.valorDocumentoCents;
+    porDocumento.set(doc, atual);
+  }
+
+  const achados: AchadoNovo[] = [];
+  for (const [doc, v] of porDocumento) {
+    if (v.pagar < materialidade || v.receber < materialidade) continue;
+
+    const total = v.pagar + v.receber;
+    achados.push({
+      regra: "FR-CLIENTE-FORNECEDOR",
+      tipo: "ESTADO",
+      severidade: severidadePorValor(Math.min(v.pagar, v.receber), materialidade),
+      categoria: "RISCO_FINANCEIRO",
+      titulo: `${v.nome} é cliente e fornecedor ao mesmo tempo`,
+      descricao:
+        `${fmtDocumento(doc)} tem ${fmtBRL(v.pagar)} em títulos a pagar e ${fmtBRL(v.receber)} a receber no período. ` +
+        `Subcontratar quem também é cliente é comum no transporte — e é exatamente por ser comum que precisa estar ` +
+        `declarado: é o desenho em que dinheiro circula em volta, pagando mais caro de um lado e cobrando mais ` +
+        `barato do outro, sem que nenhum dos dois lados, olhado sozinho, pareça errado.`,
+      recomendacao:
+        "Registrar a relação como parte relacionada e conferir os preços dos dois lados contra o praticado com " +
+        "terceiros. Havendo diferença nos dois sentidos ao mesmo tempo, o caso é de contrato, não de lançamento.",
+      valorCents: Math.min(v.pagar, v.receber),
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieParceiro",
+      entidadeRef: v.nome,
+      evidencia: {
+        documento: fmtDocumento(doc),
+        nome: v.nome,
+        pagarCents: v.pagar,
+        receberCents: v.receber,
+        totalCents: total,
+        pessoaFisica: ehPessoaFisica(doc),
+      },
+      chave: chaveAchado("FR-CLIENTE-FORNECEDOR", doc, chaveMes(ctx.dataReferencia)),
+    });
+  }
+  return achados;
+}
