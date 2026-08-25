@@ -78,8 +78,8 @@ console.log("\n1. A cadeia de subtotais");
   conferir("receita líquida = bruta − deduções", v("RECEITA_LIQUIDA"), 85_000_000);
   conferir("lucro bruto = líquida − custo", v("LUCRO_BRUTO"), 45_000_000);
   conferir("EBIT = lucro bruto − despesas", v("EBIT"), 35_000_000);
-  conferir("LAIR = EBIT + rec.fin − desp.fin", v("LAIR"), 33_000_000);
-  conferir("resultado líquido = LAIR − IRPJ/CSLL", v("RESULTADO_LIQUIDO"), 28_000_000);
+  conferir("resultado antes dos investimentos = EBIT + rec.fin − desp.fin", v("LAIR"), 33_000_000);
+  conferir("resultado líquido = − financiamentos − IRPJ/CSLL", v("RESULTADO_LIQUIDO"), 28_000_000);
   conferir("margem líquida sobre a RECEITA LÍQUIDA", Math.round(r.margemLiquidaPercent!  * 100) / 100, 32.94);
   conferir("nada por confirmar", r.naoConfirmadoCents, 0);
 }
@@ -142,6 +142,20 @@ console.log("\n5. Subgrupos dentro da linha");
   conferir("dois subgrupos", linha.subgrupos.map((s) => s.nome), ["Frota", "Pessoal operacional"]);
   conferir("Frota soma combustível + pneus", linha.subgrupos[0].valorCents, 6_500_000);
   conferir("subgrupos somam a linha", linha.subgrupos.reduce((a, s) => a + s.valorCents, 0), linha.valorCents);
+}
+
+// ------------------------------------------- financiamentos e consórcios
+console.log("\n10. Financiamento e consórcio abaixo do resultado da operação");
+{
+  const r = montarDre(
+    ctx([tit("RECEBER", "1", 100_000), tit("PAGAR", "2", 30_000), tit("PAGAR", "3", 5_000)],
+        [cat("1", "Serviços", true), cat("2", "Consórcio de Veículos"), cat("3", "Juros de financiamento")]),
+    MES, ANT, cls({})
+  );
+  const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
+  conferir("consórcio não afeta o resultado da operação", v("LAIR"), 10_000_000 - 500_000);
+  conferir("mas entra no resultado líquido", v("RESULTADO_LIQUIDO"), 10_000_000 - 500_000 - 3_000_000);
+  conferir("e os juros ficaram em financeiras", v("DESPESA_FINANCEIRA"), 500_000);
 }
 
 // -------------------------------------------- outras receitas operacionais
@@ -219,6 +233,11 @@ console.log("\n6. Proposta automática — conservadora de propósito");
   // comportam como percentual do faturamento — decisão da empresa, registrada.
   conferir("IRPJ é dedução da receita (lucro presumido)", p("IRPJ a recolher"), "DEDUCOES");
   conferir("CSLL também", p("CSLL"), "DEDUCOES");
+  conferir("consórcio de frota é investimento", p("Consórcio de Veículos"), "FINANCIAMENTO_INVESTIMENTO");
+  conferir("parcela de financiamento também", p("Financiamento de Veículos"), "FINANCIAMENTO_INVESTIMENTO");
+  // A ordem importa: juros de financiamento é despesa financeira, não
+  // investimento — é onde a contabilidade os coloca.
+  conferir("mas os JUROS ficam em financeiras", p("Juros de financiamento"), "DESPESA_FINANCEIRA");
   conferir("tarifa bancária é financeira", p("Tarifas Bancárias"), "DESPESA_FINANCEIRA");
   conferir("COMBUSTÍVEL NÃO é adivinhado como custo", p("Combustível"), "DESPESA_GERAL");
   conferir("nem folha", p("Salários e ordenados"), "DESPESA_GERAL");

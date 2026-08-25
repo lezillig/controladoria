@@ -273,6 +273,48 @@ export default async function CustosPage({
           </table>
         </div>
 
+        {dre.retencoes.totalCents > 0 && (
+          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Retido na fonte pelos clientes — não somado acima
+            </p>
+            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-700">
+              {[
+                ["ISS", dre.retencoes.issCents],
+                ["PIS", dre.retencoes.pisCents],
+                ["COFINS", dre.retencoes.cofinsCents],
+                ["CSLL", dre.retencoes.csllCents],
+                ["IR", dre.retencoes.irCents],
+                ["INSS", dre.retencoes.inssCents],
+              ]
+                .filter(([, v]) => (v as number) > 0)
+                .map(([nome, v]) => (
+                  <span key={nome as string}>
+                    {nome as string}{" "}
+                    <strong className="tabular-nums">{fmtBRL(v as number)}</strong>
+                  </span>
+                ))}
+              <span className="font-semibold">
+                Total <span className="tabular-nums">{fmtBRL(dre.retencoes.totalCents)}</span>
+              </span>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-slate-600">
+              São tributos que o cliente reteve e recolheu no lugar da empresa, em{" "}
+              {fmtNumero(dre.retencoes.titulosComRetencao)} título(s) do mês.{" "}
+              <strong>Ficam de fora das deduções de propósito, porque somá-los pode contar o mesmo imposto duas vezes.</strong>{" "}
+              Depende de como a empresa lança: se o imposto retido não vira título a pagar, estes valores{" "}
+              <em>completam</em> a linha de deduções e deveriam ser somados; se a empresa lança o imposto cheio e abate a
+              retenção na hora de recolher, o título já contém este valor e somar duplicaria. A diferença está na prática
+              de lançamento, não no registro — por isso o sistema mostra os dois lados em vez de escolher.
+            </p>
+            <p className="mt-2 text-xs leading-relaxed text-slate-600">
+              <strong>Como decidir em um minuto:</strong> pegue um título de imposto do mês e veja se o valor dele é o
+              imposto cheio sobre o faturamento ou só o saldo depois da retenção. Me diga qual dos dois e eu passo a
+              somar — ou deixo como está.
+            </p>
+          </div>
+        )}
+
         {linhasOcultas > 0 && (
           <p className="mt-3 text-xs text-slate-500">
             {linhasOcultas} linha(s) da estrutura não aparecem por estarem zeradas e sem nenhuma categoria — entre elas,

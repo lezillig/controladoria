@@ -54,7 +54,27 @@ export const LINHAS_DRE = [
   { chave: "EBIT", rotulo: "= Resultado antes do financeiro (EBIT)", tipo: "SUBTOTAL", sinal: 1 },
   { chave: "RECEITA_FINANCEIRA", rotulo: "(+) Receitas financeiras", tipo: "GRUPO", sinal: 1 },
   { chave: "DESPESA_FINANCEIRA", rotulo: "(-) Despesas financeiras", tipo: "GRUPO", sinal: -1 },
-  { chave: "LAIR", rotulo: "= Resultado antes dos tributos", tipo: "SUBTOTAL", sinal: 1 },
+  // "RESULTADO ANTES DOS INVESTIMENTOS", e não "antes dos tributos".
+  //
+  // Os tributos sobre o lucro subiram para as deduções da receita — no Lucro
+  // Presumido eles são percentual do faturamento —, então já não há tributo
+  // nenhum abaixo desta linha, e o nome antigo apontava para uma conta que
+  // deixou de existir ali.
+  //
+  // O nome novo é o da decisão que a linha separa: acima dela está o que a
+  // OPERAÇÃO gerou; abaixo, o que a empresa gasta para RENOVAR A FROTA —
+  // financiamento e consórcio. Numa transportadora essa é a fronteira que
+  // importa, porque a operação pode ir bem e o caixa sumir na prestação do
+  // ônibus, e nenhum dos dois números sozinho conta isso.
+  { chave: "LAIR", rotulo: "= Resultado antes dos investimentos", tipo: "SUBTOTAL", sinal: 1 },
+  // FINANCIAMENTOS E CONSÓRCIOS.
+  //
+  // Ressalva registrada: a amortização do principal de um financiamento NÃO é
+  // despesa em contabilidade — é baixa de passivo, e não passa pelo DRE
+  // oficial. Aqui ela passa de propósito, porque esta demonstração responde
+  // "quanto sobrou depois de tudo que sai", e a prestação sai. Os juros
+  // continuam em despesas financeiras, onde a contabilidade os coloca.
+  { chave: "FINANCIAMENTO_INVESTIMENTO", rotulo: "(-) Financiamentos e consórcios", tipo: "GRUPO", sinal: -1 },
   { chave: "TRIBUTO_SOBRE_LUCRO", rotulo: "(-) IRPJ e CSLL", tipo: "GRUPO", sinal: -1 },
   { chave: "RESULTADO_LIQUIDO", rotulo: "= Resultado líquido do período", tipo: "SUBTOTAL", sinal: 1 },
 ] as const;
@@ -89,6 +109,10 @@ const PADRAO_RECEITA_FINANCEIRA = /rendimento|juros recebidos|receita financeira
 // Entrada que NÃO é faturamento de serviço. Cada uma destas apareceu dentro da
 // receita operacional bruta na primeira leitura real da tela — somadas ao
 // faturamento, deslocam a base de todo percentual do DRE.
+// Saída ligada à AQUISIÇÃO de bem, não à operação do mês. Numa transportadora
+// é quase toda a renovação de frota.
+const PADRAO_FINANCIAMENTO =
+  /financiamento|cons[óo]rcio|leasing|arrendamento mercantil|presta[çc][ãa]o de ve[íi]culo|finame|cdc\b/i;
 const PADRAO_OUTRA_RECEITA =
   /venda de ve[íi]culo|aliena[çc][ãa]o|resgate|cons[óo]rcio|lucros cessantes|reembolso|recupera[çc][ãa]o|indeniza[çc][ãa]o|sinistro|conv[êe]nio m[ée]dico|sobra|doa[çc][ãa]o/i;
 
@@ -146,7 +170,11 @@ export function proporLinha(
   // real, os dois voltam a depender do resultado e o lugar deles é lá — e
   // classificar uma categoria nela continua possível a qualquer momento.
   if (PADRAO_TRIBUTO_LUCRO.test(d)) return "DEDUCOES";
+  // Juros e tarifas ficam em despesa FINANCEIRA — é onde a contabilidade os
+  // coloca, e o teste vem antes por isso: "juros de financiamento" é despesa
+  // financeira, "parcela de financiamento" é investimento.
   if (PADRAO_FINANCEIRA.test(d)) return "DESPESA_FINANCEIRA";
+  if (PADRAO_FINANCIAMENTO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
   return "DESPESA_GERAL";
 }
 
@@ -204,7 +232,70 @@ export type ResultadoDre = {
   // uma pessoa. É o número que diz se este DRE pode ser levado a uma reunião.
   naoConfirmadoCents: number;
   semCategoriaCents: number;
+  // RETENÇÕES NA FONTE do período, por tributo. Mostradas ao lado das
+  // deduções e NUNCA somadas a elas — ver `retencoesDoPeriodo` abaixo.
+  retencoes: {
+    issCents: number;
+    pisCents: number;
+    cofinsCents: number;
+    csllCents: number;
+    irCents: number;
+    inssCents: number;
+    totalCents: number;
+    titulosComRetencao: number;
+  };
 };
+
+// O QUE O CLIENTE RETEVE, e por que isto NÃO entra na conta.
+//
+// A pergunta que originou esta função foi a certa: "podemos colocar as
+// retenções nos impostos, ou vai duplicar a informação?". Vai depender de como
+// a empresa lança, e há dois regimes possíveis:
+//
+//   1. O cliente retém R$ 1.000 de ISS e recolhe no lugar da empresa. A empresa
+//      não gera título a pagar desse valor. Aqui as retenções COMPLETAM os
+//      títulos de imposto, e somá-las é o certo.
+//   2. A empresa lança o imposto cheio como título a pagar e abate a retenção
+//      no momento de recolher. Aqui o título JÁ CONTÉM o valor retido, e somar
+//      contaria o mesmo imposto duas vezes.
+//
+// Não há como distinguir os dois pelo dado sozinho — a diferença está na
+// prática de lançamento, não no registro. Então o sistema não escolhe: mostra
+// os dois lados separados, nomeados, e diz o que cada leitura significaria.
+// Somar por conta própria seria arriscar inflar a carga tributária do DRE em
+// centenas de milhares de reais, e o erro apareceria como margem pior — que é
+// o tipo de número que ninguém questiona.
+function retencoesDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo) {
+  const receber = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo));
+  const soma = (campo: (t: (typeof receber)[number]) => number) => somar(receber, campo);
+
+  const issCents = soma((t) => t.retencaoIssCents);
+  const pisCents = soma((t) => t.retencaoPisCents);
+  const cofinsCents = soma((t) => t.retencaoCofinsCents);
+  const csllCents = soma((t) => t.retencaoCsllCents);
+  const irCents = soma((t) => t.retencaoIrCents);
+  const inssCents = soma((t) => t.retencaoInssCents);
+
+  return {
+    issCents,
+    pisCents,
+    cofinsCents,
+    csllCents,
+    irCents,
+    inssCents,
+    totalCents: issCents + pisCents + cofinsCents + csllCents + irCents + inssCents,
+    titulosComRetencao: receber.filter(
+      (t) =>
+        t.retencaoIssCents +
+          t.retencaoPisCents +
+          t.retencaoCofinsCents +
+          t.retencaoCsllCents +
+          t.retencaoIrCents +
+          t.retencaoInssCents >
+        0
+    ).length,
+  };
+}
 
 type Classificacao = { linha: string; subgrupo: string | null; confirmada: boolean };
 
@@ -338,7 +429,7 @@ export function montarDre(
       LUCRO_BRUTO: lucroBruto,
       EBIT: ebit,
       LAIR: lair,
-      RESULTADO_LIQUIDO: lair - g("TRIBUTO_SOBRE_LUCRO"),
+      RESULTADO_LIQUIDO: lair - g("FINANCIAMENTO_INVESTIMENTO") - g("TRIBUTO_SOBRE_LUCRO"),
     } as Record<string, number>;
   };
 
@@ -384,5 +475,6 @@ export function montarDre(
     margemLiquidaPercent: receitaLiquida > 0 ? (sub.RESULTADO_LIQUIDO / receitaLiquida) * 100 : null,
     naoConfirmadoCents: naoConfirmado,
     semCategoriaCents: semCategoria,
+    retencoes: retencoesDoPeriodo(ctx, periodo),
   };
 }
