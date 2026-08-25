@@ -96,14 +96,48 @@ export const OMIE_ENDPOINTS = {
   // buscar aqui. O endpoint fica no diagnostico como sentinela; se um dia
   // aparecer avulso, ele aparece.
   //
-  // A licao concreta: a diferenca de saldo nunca foi um endpoint faltando. Era
-  // um total contra outro total, sem nada no meio que permitisse investigar.
-  // O que resolveu foi abrir o nosso lado conta a conta — ver `saldos.ts`.
+  // CORRECAO, registrada porque a conclusao anterior estava errada e ficou
+  // escrita aqui por semanas: nao era "nao ha o que buscar". Este endpoint, de
+  // fato, so lista avulso — isso continua valendo. O que estava errado era o
+  // passo seguinte, o de concluir que a movimentacao da tela ja estava
+  // espelhada via baixa de titulo: a tela de Conciliacao mostra zero
+  // lancamento em todas as contas, contra 21.713 registros conciliados na
+  // Omie no mesmo periodo.
+  //
+  // O erro de metodo foi ter variado o NOME da operacao mantendo o CAMINHO.
+  // `ListarMovimentos` esta na lista de alternativos abaixo e nunca teve
+  // chance: a operacao existe, mas em `financas/mf/` — ver `movimentos`.
   lancamentos: {
     path: "financas/contacorrentelancamentos/",
     call: "ListarLancCC",
     callsAlternativos: ["ListarLancamentosCC", "ListarMovimentos", "ListarLancamentos"],
     listKey: ["lancamentoCCCadastro", "listaLancamento", "lancamentos", "movimentos"],
+  },
+  // MOVIMENTOS FINANCEIROS — a tela "Movimentacao da Conta Corrente".
+  //
+  // Entrou depois de uma correcao de rota que vale registrar, porque o erro é
+  // facil de repetir: a Omie roteia por CAMINHO + `call`, e a tentativa
+  // anterior variou so o nome da operacao (`ListarMovimentos` entre os
+  // `callsAlternativos` de `financas/contacorrentelancamentos/`). Nome certo em
+  // caminho errado devolve "method not exists" igual a nome errado — e a
+  // conclusao que se tirou dali ("nao ha o que buscar") era do teste, nao da
+  // conta. O caminho desta operacao e `financas/mf/`.
+  //
+  // O que a tela mostra e que os outros dois endpoints nao mostram: 21.713
+  // registros no ano, conciliados, com CONTA CORRENTE, CATEGORIA, TIPO DE
+  // DOCUMENTO, DOCUMENTO e NOTA FISCAL na mesma linha. Se vier assim pela API,
+  // resolve as duas coisas que hoje faltam — a conciliacao bancaria, que esta
+  // zerada por nao ter o lado do extrato, e o numero do documento fiscal dos
+  // titulos, que e o que obriga a conferencia de CT-e a casar por valor e data.
+  //
+  // Entra primeiro no DIAGNOSTICO, nao no sync: e uma hipotese com bom
+  // fundamento, nao um fato. O diagnostico responde se a conta aceita, qual
+  // filtro passa e quais campos chegam preenchidos — e so entao vale gravar.
+  movimentos: {
+    path: "financas/mf/",
+    call: "ListarMovimentos",
+    callsAlternativos: ["ListarMovimentosFinanceiros", "ListarMF"],
+    listKey: ["movimentos", "listaMovimentos", "movimentosEncontrados"],
   },
   nfe: { path: "produtos/nfconsultar/", call: "ListarNF", listKey: ["nfCadastro"] },
   // `ListarNFSEs` — plural e com a sigla em caixa alta. A primeira versao usava
@@ -188,6 +222,29 @@ export function paramsLancamentos(
     { ...paginacao, dDtAltDe: de, dDtAltAte: ate },
     // So paginacao: o metodo aceita chamada sem filtro, e essa e a unica forma
     // de distinguir "a janela nao tem lancamento" de "a conta nao tem nenhum".
+    paginacao,
+  ];
+}
+
+// Variantes de parametro dos MOVIMENTOS FINANCEIROS.
+//
+// A tela da Omie filtra por periodo de PAGAMENTO — e a data que ela chama de
+// "Data" na linha conciliada — entao essa variante vem primeiro. As seguintes
+// cobrem emissao e registro, e a ultima e so paginacao: sem filtro nenhum, a
+// resposta distingue "a janela nao tem movimento" de "a conta nao devolve
+// nada", que foi exatamente a duvida que custou uma semana no extrato.
+export function paramsMovimentos(
+  pagina: number,
+  porPagina: number,
+  de: string,
+  ate: string
+): readonly Record<string, unknown>[] {
+  const paginacao = { nPagina: pagina, nRegPorPagina: porPagina };
+  return [
+    { ...paginacao, dDtPagtoDe: de, dDtPagtoAte: ate },
+    { ...paginacao, dDtEmissaoDe: de, dDtEmissaoAte: ate },
+    { ...paginacao, dDtRegistroDe: de, dDtRegistroAte: ate },
+    { ...paginacao, dDtVencDe: de, dDtVencAte: ate },
     paginacao,
   ];
 }

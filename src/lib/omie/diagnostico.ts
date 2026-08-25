@@ -10,6 +10,7 @@ import {
   conferirFormatoCredencial,
   descreverParam,
   paramsLancamentos,
+  paramsMovimentos,
   paramsNfse,
   type OmieEndpoint,
   type ProblemaCredencial,
@@ -20,6 +21,7 @@ import {
   normalizarContaCorrente,
   normalizarDepartamento,
   normalizarMovimentoExtrato,
+  normalizarMovimentoFinanceiro,
   normalizarNfe,
   normalizarNfse,
   normalizarParceiro,
@@ -242,14 +244,43 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
     );
   }
 
+  // MOVIMENTAÇÃO DA CONTA CORRENTE — a hipótese que ainda não foi testada.
+  //
+  // Vem antes dos lançamentos avulsos porque é a candidata a fonte, não a
+  // sentinela: é a tela que mostra 21.713 registros conciliados no ano, com
+  // conta, categoria, tipo de documento e número fiscal na mesma linha.
+  //
+  // O que este teste responde, e que nenhuma leitura de documentação responde:
+  // (1) a conta aceita a operação neste caminho; (2) qual filtro de data ela
+  // aceita — a lista de variantes deixa a própria conta escolher; (3) quais
+  // campos chegam PREENCHIDOS. A terceira é a que decide se isto resolve o
+  // número do documento fiscal ou só a conciliação.
+  endpoints.push(
+    await testar(
+      {
+        chave: "movimentos",
+        rotulo: "Movimentação da conta corrente",
+        endpoint: OMIE_ENDPOINTS.movimentos,
+        param: paramsMovimentos(1, REGISTROS_DE_AMOSTRA, de, ate),
+        normalizar: normalizarMovimentoFinanceiro,
+      },
+      conexao.credencialRef
+    )
+  );
+  await sleep(OMIE_PACE_MS);
+
   // LANÇAMENTOS AVULSOS de conta corrente — sentinela, não fonte.
   //
   // Entrou aqui como aposta: o extrato voltava vazio, a tela da Omie mostrava
   // 21.551 movimentações, e este parecia o endpoint que faltava. As variantes
   // rodaram nas duas contas e a resposta foi "não existem registros" até sem
-  // filtro nenhum — o que respondeu a pergunta pelo outro lado: a movimentação
-  // da tela vem de BAIXA DE TÍTULO, que já está espelhada, e este endpoint
-  // lista só o crédito ou débito digitado direto na conta.
+  // filtro nenhum. Isso continua valendo, e é o que faz dele uma sentinela
+  // útil: este endpoint lista só o crédito ou débito digitado direto na conta.
+  //
+  // O que NÃO se sustentou foi a conclusão que se tirou dali — a de que a
+  // movimentação da tela já estaria espelhada por vir de baixa de título. Se
+  // estivesse, a Conciliação não estaria zerada. A movimentação tem endpoint
+  // próprio, testado logo acima.
   //
   // Fica no diagnóstico de propósito. Custa uma chamada, e é o que vai avisar
   // no dia em que a operação passar a usar lançamento avulso — sem isso, esse

@@ -458,6 +458,71 @@ export function normalizarMovimentoExtrato(
   };
 }
 
+// MOVIMENTO FINANCEIRO — `financas/mf/ListarMovimentos`.
+//
+// Estrutura ANINHADA, ao contrario do extrato: cada item vem como
+// { detalhes: {...}, resumo: {...}, categorias: [...], departamentos: [...] }.
+// O `?? bruto` em cada bloco e o que faz esta funcao sobreviver a resposta
+// achatada — se a conta devolver os campos na raiz, ela le igual, em vez de
+// descartar tudo em silencio, que e o modo de falhar caro deste ERP.
+//
+// AINDA NAO E GRAVADA. Existe para o diagnostico dizer, contra a conta real,
+// quais destes campos chegam preenchidos. So depois disso vale ligar no sync.
+export function normalizarMovimentoFinanceiro(bruto: Bruto): MovimentoNormalizado | null {
+  const det = obj(bruto, "detalhes", "cabecTitulo", "cabecalho") ?? bruto;
+  const res = obj(bruto, "resumo") ?? bruto;
+
+  const conta = str(det, "nCodCC", "codigo_conta_corrente", "nCodContaCorrente");
+  // A data do movimento e a do PAGAMENTO/baixa — e a que a tela mostra na
+  // linha conciliada e a que faz sentido conciliar contra o banco. Vencimento
+  // e emissao entram so como ultimo recurso, para o registro nao ser
+  // descartado por falta de data.
+  const dataMov =
+    data(det, "dDtPagamento", "data_pagamento", "dDtBaixa") ??
+    data(det, "dDtPrevisao", "data_previsao") ??
+    data(det, "dDtVenc", "data_vencimento");
+  if (!conta || !dataMov) return null;
+
+  // Valor: o PAGO, quando ha; o do titulo, quando o movimento ainda nao foi
+  // baixado. Somar os dois seria contar o mesmo dinheiro duas vezes.
+  const valorBruto =
+    num(res, "nValPago", "valor_pago") ??
+    num(det, "nValorTitulo", "valor_documento", "nValorMovimento");
+  if (valorBruto === null) return null;
+
+  const natureza = str(det, "cNatureza", "natureza", "cTipoOperacao");
+  // Natureza "P" (a pagar) e saida. O extrato usa "D"/"C"; aqui o vocabulario
+  // e outro, e tratar os dois no mesmo lugar e o que evita um sinal invertido
+  // aparecer meses depois como saldo que nao fecha.
+  const ehSaida = natureza !== null && /^(p|d)/i.test(natureza);
+  const valorCents = Math.round(Math.abs(valorBruto) * 100) * (ehSaida ? -1 : 1);
+
+  const codigo = str(det, "nCodTitulo", "codigo_lancamento", "nCodMovCC", "cCodIntTitulo");
+  if (!codigo) return null;
+
+  return {
+    contaCorrenteCodigo: conta,
+    codigoLancamento: codigo,
+    data: dataMov,
+    valorCents,
+    natureza,
+    tipo: str(det, "cTipo", "cCodTipoDoc", "tipo"),
+    categoriaCodigo: str(det, "cCodCateg", "cCategoria", "codigo_categoria"),
+    parceiroCodigo: str(det, "nCodCliente", "codigo_cliente", "nCodFornecedor"),
+    parceiroNome: str(det, "cRazaoSocial", "cNomeCliente", "cNomeFornecedor"),
+    documento: str(det, "cNumTitulo", "cNumDoc", "numero_documento"),
+    observacao: str(det, "cObservacoes", "observacao", "cHistorico"),
+    // "Conciliado" e "Conciliado (bloqueado)" na tela; o vocabulario da API
+    // ainda nao foi visto. `bool` cobre S/N e true/false; o `?? ` deixa a
+    // ausencia como nao-conciliado, que e a leitura conservadora.
+    conciliado: bool(det, "cConciliado", "lConciliado", "conciliado") ?? false,
+    dataConciliacao: data(det, "dDtConciliacao", "data_conciliacao"),
+    tituloCodigo: str(det, "nCodTitulo", "codigo_titulo"),
+    tipoDocumento: str(det, "cTipo", "cCodTipoDoc", "cTipoDocumento"),
+    documentoFiscal: str(det, "cNumDocFiscal", "numero_documento_fiscal", "cNumNFSe"),
+  };
+}
+
 // NF-e — estrutura real de `ListarNF`, conferida pelo diagnostico.
 //
 // A versao anterior procurava numero, serie e data dentro de `compl` e

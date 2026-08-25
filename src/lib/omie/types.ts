@@ -132,6 +132,15 @@ export type MovimentoNormalizado = {
   conciliado: boolean;
   dataConciliacao: Date | null;
   tituloCodigo: string | null;
+  // AS DUAS COLUNAS QUE SO A MOVIMENTACAO TRAZ.
+  //
+  // A tela "Movimentacao da Conta Corrente" mostra, na mesma linha, o tipo do
+  // documento ("CT-e", "Nota Fiscal de Servico") e o numero fiscal — que e
+  // justamente o que falta em 43% dos titulos de CT-e espelhados e o que obriga
+  // a conferencia a casar por valor e data. Opcionais porque o extrato bancario
+  // nao tem nenhuma das duas: ali a linha e do banco, nao do documento.
+  tipoDocumento?: string | null;
+  documentoFiscal?: string | null;
 };
 
 export type NotaNormalizada = {
