@@ -6,6 +6,7 @@ import {
   Banknote,
   Building2,
   CalendarRange,
+  FileCheck,
   Landmark,
   LayoutDashboard,
   Mail,
@@ -44,6 +45,11 @@ const NAV: NavItem[] = [
   // olhar o mês, e antes de descer ao título individual.
   { href: "/resultados", label: "Resultado mês a mês", icon: CalendarRange },
   { href: "/titulos", label: "Contas a pagar e receber", icon: Receipt },
+  // Colada nos títulos de propósito: é a mesma pergunta vista do outro lado —
+  // ali estão as cobranças, aqui está se cada uma tem documento fiscal que a
+  // justifique. A Omie não expõe CT-e pela API, então esta é a única tela do
+  // sistema que depende de alguém colar uma lista.
+  { href: "/cte", label: "Conferência de CT-e", icon: FileCheck },
   { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote },
   { href: "/conciliacao", label: "Conciliação bancária", icon: Landmark },
   { href: "/custos", label: "Custos e DRE", icon: TrendingUp },

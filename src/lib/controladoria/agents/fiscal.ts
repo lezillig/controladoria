@@ -37,7 +37,7 @@ export const agenteFiscal: Agente = {
   nome: "Fiscal e contábil",
   area: "Contabilidade",
   descricao:
-    "Confronta notas fiscais e títulos: receita sem nota, nota sem título, notas canceladas com título ativo, carga tributária efetiva fora da faixa esperada para o Lucro Presumido e falhas na sequência de numeração.",
+    "Confronta notas fiscais e títulos: receita sem nota, nota sem título, notas canceladas com título ativo, título de documento fiscal sem número, carga tributária efetiva fora da faixa esperada para o Lucro Presumido e falhas na sequência de numeração.",
   executar: auditarFiscal,
 };
 
@@ -50,7 +50,85 @@ function auditarFiscal(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...notaSemTitulo(ctx, materialidade));
   achados.push(...cargaTributaria(ctx));
   achados.push(...falhaNaSequencia(ctx));
+  achados.push(...documentoSemNumero(ctx, materialidade));
 
+  return achados;
+}
+
+// FI-DOC-SEM-NUMERO — titulo de documento fiscal sem o numero preenchido.
+//
+// Nasceu de uma conferencia a mao: 24 de 56 titulos de CT-e estavam sem o
+// numero do documento na Omie, e a proporcao piorava mes a mes — de nenhum em
+// abril para todos em agosto. Ninguem tinha notado, porque nada olhava.
+//
+// O custo nao e de arrumacao. Sem o numero, nao ha como ligar a cobranca ao
+// documento fiscal que a autoriza, e e exatamente esse elo que responde as tres
+// perguntas caras: o documento foi cancelado e a cobranca continuou? o frete
+// foi emitido e nunca virou fatura? o valor cobrado e o mesmo que o documento
+// autoriza? Sem numero, a conferencia cai no casamento por valor e data — que
+// nao distingue dois fretes de mesmo valor no mesmo dia, caso real desta base.
+//
+// AGRUPADO POR TIPO DE DOCUMENTO, e nao um achado por titulo: sao dezenas por
+// mes, e trinta achados iguais afogam o resto do relatorio. Um achado por tipo
+// diz o tamanho do problema e deixa a lista na evidencia.
+function documentoSemNumero(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  // Mes fechado anterior, como nas demais regras deste agente: o mes corrente
+  // ainda esta sendo lancado, e apontar titulo recem-criado sem numero seria
+  // alarme diario contra trabalho em andamento.
+  const inicio = inicioDoMes(new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth() - 1, 1));
+  const fim = new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth(), 0, 23, 59, 59, 999);
+  if (fim < inicio) return [];
+
+  const semNumero = titulosAtivos(ctx, "RECEBER").filter((t) => {
+    const competencia = t.dataEmissao ?? t.dataVencimento;
+    if (competencia < inicio || competencia > fim) return false;
+    // So onde a falta significa alguma coisa: titulo sem TIPO de documento
+    // tambem nao tem numero a preencher, e cobrar numero dele seria ruido.
+    if ((t.tipoDocumento ?? "").trim() === "") return false;
+    return !/\d/.test(t.numeroDocumento ?? "");
+  });
+  if (semNumero.length === 0) return [];
+
+  const achados: AchadoNovo[] = [];
+  for (const [tipo, grupo] of agrupar(semNumero, (t) => (t.tipoDocumento ?? "").trim().toUpperCase())) {
+    const valor = somar(grupo, (t) => t.valorDocumentoCents);
+    // Um titulo isolado sem numero e digitacao; um punhado repetido e processo
+    // quebrado. O corte por materialidade sozinho deixaria passar um tipo
+    // inteiro de documento com valores pequenos — por isso ele OU a contagem.
+    if (valor < materialidade && grupo.length < 3) continue;
+
+    achados.push({
+      regra: "FI-DOC-SEM-NUMERO",
+      tipo: "ESTADO",
+      severidade: severidadePorValor(valor, materialidade),
+      categoria: "CONFORMIDADE",
+      titulo: `${grupo.length} título(s) de ${tipo} sem o número do documento fiscal`,
+      descricao:
+        `Entre ${fmtData(inicio)} e ${fmtData(fim)}, ${grupo.length} título(s) do tipo ${tipo}, somando ` +
+        `${fmtBRL(valor)}, estão sem o número do documento preenchido na Omie. Sem esse número não há como ligar a ` +
+        `cobrança ao documento fiscal que a autoriza — é o elo que mostra documento cancelado ainda sendo cobrado, ` +
+        `documento emitido que nunca virou fatura e valor cobrado diferente do autorizado.`,
+      recomendacao:
+        `Preencher o número do documento nos títulos listados. Se a falta for recorrente neste tipo, o ajuste é no ` +
+        `processo de faturamento, não título a título. A tela "Conferência de CT-e" mostra o efeito disso: sem o ` +
+        `número, o cruzamento cai no casamento por valor e data.`,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        tipoDocumento: tipo,
+        quantidade: grupo.length,
+        valorCents: valor,
+        // Vinte basta para conferir na Omie sem transformar a evidencia num
+        // despejo do banco.
+        titulos: grupo.slice(0, 20).map((t) => ({
+          codigoLancamento: t.codigoLancamento,
+          parceiro: t.parceiroNome,
+          emissao: t.dataEmissao ?? t.dataVencimento,
+          valorCents: t.valorDocumentoCents,
+        })),
+      },
+      chave: chaveAchado("FI-DOC-SEM-NUMERO", tipo, chaveMes(ctx.dataReferencia)),
+    });
+  }
   return achados;
 }
 

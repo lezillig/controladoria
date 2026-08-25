@@ -116,6 +116,9 @@ const REGRAS_AGREGADAS = new Set([
   "OP-TARIFAS",
   "OP-ALCADA",
   "FI-RECEITA-SEM-NOTA",
+  // Um achado por TIPO de documento, falando do conjunto de titulos daquele
+  // tipo — nao um achado por titulo.
+  "FI-DOC-SEM-NUMERO",
   "RE-COBERTURA-BAIXA",
   "CONF-NAO-CONFERIDO",
   "CONF-SEM-RELATORIO",
