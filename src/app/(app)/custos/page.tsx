@@ -50,6 +50,42 @@ export default async function CustosPage({
   const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
 
   const dre = montarDre(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior, classificacoes);
+
+  // LINHA VAZIA NÃO É MOSTRADA, e subtotal repetido tampouco.
+  //
+  // Sem custo dos serviços classificado, "custo" dá R$ 0,00 e o lucro bruto
+  // repete a receita líquida — duas linhas dizendo o mesmo número, com a
+  // segunda sugerindo uma informação que ela não tem. O mesmo vale para
+  // "despesas comerciais" e "despesas administrativas" enquanto nada estiver
+  // classificado ali.
+  //
+  // A que SOBREVIVE do par é a receita líquida, e não o lucro bruto. Lucro
+  // bruto é, por definição, receita líquida menos o custo do serviço: sem o
+  // custo, chamar o número de lucro bruto seria dar-lhe um nome que ele não
+  // tem — e esta demonstração vai ser comparada com a da contabilidade.
+  // Assim que qualquer categoria for classificada em custo, as duas linhas
+  // voltam sozinhas e passam a divergir, que é quando o lucro bruto começa a
+  // significar alguma coisa.
+  //
+  // Grupo com ITENS aparece mesmo somando zero: ali existe movimento, e
+  // escondê-lo esconderia o que precisa ser olhado.
+  const linhasVisiveis: typeof dre.linhas = [];
+  let ultimoSubtotal: number | null = null;
+  for (const linha of dre.linhas) {
+    if (linha.tipo === "GRUPO") {
+      if (linha.valorCents === 0 && linha.valorAnteriorCents === 0 && linha.itens.length === 0) continue;
+      linhasVisiveis.push(linha);
+      ultimoSubtotal = null;
+      continue;
+    }
+    // Subtotal que repete o anterior só acrescenta ruído — a não ser o último,
+    // que é o resultado do período e fecha a demonstração.
+    const repetido = ultimoSubtotal !== null && linha.valorCents === ultimoSubtotal;
+    if (repetido && linha.chave !== "RESULTADO_LIQUIDO") continue;
+    linhasVisiveis.push(linha);
+    ultimoSubtotal = linha.valorCents;
+  }
+  const linhasOcultas = dre.linhas.length - linhasVisiveis.length;
   const totalDespesa = dre.linhas
     .filter((l) => l.tipo === "GRUPO" && l.chave !== "RECEITA_BRUTA" && l.chave !== "RECEITA_FINANCEIRA")
     .reduce((a, l) => a + l.valorCents, 0);
@@ -163,7 +199,7 @@ export default async function CustosPage({
               </tr>
             </thead>
             <tbody>
-              {dre.linhas.map((linha) => {
+              {linhasVisiveis.map((linha) => {
                 const subtotal = linha.tipo === "SUBTOTAL";
                 const resultado = linha.chave === "RESULTADO_LIQUIDO";
                 return (
@@ -236,6 +272,14 @@ export default async function CustosPage({
             </tbody>
           </table>
         </div>
+
+        {linhasOcultas > 0 && (
+          <p className="mt-3 text-xs text-slate-500">
+            {linhasOcultas} linha(s) da estrutura não aparecem por estarem zeradas e sem nenhuma categoria — entre elas,
+            as que ainda não receberam classificação. Elas voltam sozinhas assim que houver movimento classificado ali,
+            e continuam disponíveis no seletor de cada categoria.
+          </p>
+        )}
 
         <p className="mt-4 text-xs text-slate-500">
           <strong>IRPJ e CSLL entram como dedução da receita bruta</strong>, e não abaixo do resultado antes dos
