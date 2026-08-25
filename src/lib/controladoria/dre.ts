@@ -35,6 +35,22 @@ export const LINHAS_DRE = [
   { chave: "DESPESA_COMERCIAL", rotulo: "(-) Despesas comerciais", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_ADMINISTRATIVA", rotulo: "(-) Despesas administrativas", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_GERAL", rotulo: "(-) Outras despesas operacionais", tipo: "GRUPO", sinal: -1 },
+  // OUTRAS RECEITAS OPERACIONAIS — a linha que faltava, e a tela mostrou por
+  // quê: "Venda de Veículos", "Resgate Consórcio", "Lucros Cessantes",
+  // "Reembolso de multa de trânsito" e "Pagamento Convênio Médico" estavam
+  // todas dentro da RECEITA OPERACIONAL BRUTA.
+  //
+  // Nenhuma delas é receita de serviço. Venda de veículo é baixa de
+  // imobilizado; resgate de consórcio é recuperação de aplicação; reembolso é
+  // devolução de despesa. Somá-las ao faturamento infla a base sobre a qual
+  // TODO percentual do DRE é calculado — a margem bruta cai, a carga
+  // tributária efetiva parece menor, e o faturamento deixa de bater com a
+  // declaração da contabilidade sem que nada aponte onde.
+  //
+  // Depois das despesas operacionais e antes do EBIT, que é onde a prática
+  // contábil brasileira as colocou depois de a Lei 11.941/09 extinguir o
+  // "resultado não operacional".
+  { chave: "OUTRAS_RECEITAS", rotulo: "(+) Outras receitas operacionais", tipo: "GRUPO", sinal: 1 },
   { chave: "EBIT", rotulo: "= Resultado antes do financeiro (EBIT)", tipo: "SUBTOTAL", sinal: 1 },
   { chave: "RECEITA_FINANCEIRA", rotulo: "(+) Receitas financeiras", tipo: "GRUPO", sinal: 1 },
   { chave: "DESPESA_FINANCEIRA", rotulo: "(-) Despesas financeiras", tipo: "GRUPO", sinal: -1 },
@@ -69,7 +85,12 @@ export const ROTULO_LINHA: Record<string, string> = Object.fromEntries(
 const PADRAO_TRIBUTO_FATURAMENTO = /\b(iss|pis|cofins|icms|simples|das)\b/i;
 const PADRAO_TRIBUTO_LUCRO = /\b(irpj|csll|imposto de renda|contribui[çc][ãa]o social)\b/i;
 const PADRAO_FINANCEIRA = /juros|multa|tarifa|banc[áa]ri|iof|encargo financeiro|desconto concedido/i;
-const PADRAO_RECEITA_FINANCEIRA = /rendimento|aplica[çc][ãa]o|juros recebidos|receita financeira/i;
+const PADRAO_RECEITA_FINANCEIRA = /rendimento|juros recebidos|receita financeira/i;
+// Entrada que NÃO é faturamento de serviço. Cada uma destas apareceu dentro da
+// receita operacional bruta na primeira leitura real da tela — somadas ao
+// faturamento, deslocam a base de todo percentual do DRE.
+const PADRAO_OUTRA_RECEITA =
+  /venda de ve[íi]culo|aliena[çc][ãa]o|resgate|cons[óo]rcio|lucros cessantes|reembolso|recupera[çc][ãa]o|indeniza[çc][ãa]o|sinistro|conv[êe]nio m[ée]dico|sobra|doa[çc][ãa]o/i;
 
 export function proporLinha(
   cat: {
@@ -100,10 +121,31 @@ export function proporLinha(
       : cat.contaReceita || /^r/i.test(cat.natureza ?? "");
 
   if (ehReceita) {
-    return PADRAO_RECEITA_FINANCEIRA.test(d) ? "RECEITA_FINANCEIRA" : "RECEITA_BRUTA";
+    if (PADRAO_RECEITA_FINANCEIRA.test(d)) return "RECEITA_FINANCEIRA";
+    if (PADRAO_OUTRA_RECEITA.test(d)) return "OUTRAS_RECEITAS";
+    return "RECEITA_BRUTA";
   }
   if (PADRAO_TRIBUTO_FATURAMENTO.test(d)) return "DEDUCOES";
-  if (PADRAO_TRIBUTO_LUCRO.test(d)) return "TRIBUTO_SOBRE_LUCRO";
+  // IRPJ E CSLL COMO DEDUÇÃO DA RECEITA BRUTA — decisão da empresa, e ela tem
+  // razão de negócio.
+  //
+  // No LUCRO PRESUMIDO os dois não dependem do lucro apurado: a base é uma
+  // presunção sobre a RECEITA (16% para transporte de passageiros, 12% de
+  // CSLL), então na prática são um percentual do faturamento, exatamente como
+  // PIS, COFINS e ISS. Deixá-los embaixo do LAIR faria a receita líquida e a
+  // margem bruta ignorarem um custo que varia com a receita e com nada mais.
+  //
+  // A RESSALVA, que a tela precisa dizer: isto DIVERGE da estrutura do art.
+  // 187, onde IRPJ e CSLL vêm depois do resultado antes dos tributos. O
+  // resultado líquido final é o mesmo pelos dois caminhos; o que muda é a
+  // receita líquida e, com ela, todo percentual do DRE. Quem comparar esta
+  // demonstração com a da contabilidade vai encontrar essa diferença, e
+  // precisa saber de onde ela vem.
+  //
+  // A linha "IRPJ e CSLL" continua existindo: se a empresa migrar para lucro
+  // real, os dois voltam a depender do resultado e o lugar deles é lá — e
+  // classificar uma categoria nela continua possível a qualquer momento.
+  if (PADRAO_TRIBUTO_LUCRO.test(d)) return "DEDUCOES";
   if (PADRAO_FINANCEIRA.test(d)) return "DESPESA_FINANCEIRA";
   return "DESPESA_GERAL";
 }
@@ -285,7 +327,11 @@ export function montarDre(
     const receitaLiquida = g("RECEITA_BRUTA") - g("DEDUCOES");
     const lucroBruto = receitaLiquida - g("CUSTO_SERVICO");
     const ebit =
-      lucroBruto - g("DESPESA_COMERCIAL") - g("DESPESA_ADMINISTRATIVA") - g("DESPESA_GERAL");
+      lucroBruto -
+      g("DESPESA_COMERCIAL") -
+      g("DESPESA_ADMINISTRATIVA") -
+      g("DESPESA_GERAL") +
+      g("OUTRAS_RECEITAS");
     const lair = ebit + g("RECEITA_FINANCEIRA") - g("DESPESA_FINANCEIRA");
     return {
       RECEITA_LIQUIDA: receitaLiquida,

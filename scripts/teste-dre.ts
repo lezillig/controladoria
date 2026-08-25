@@ -144,6 +144,30 @@ console.log("\n5. Subgrupos dentro da linha");
   conferir("subgrupos somam a linha", linha.subgrupos.reduce((a, s) => a + s.valorCents, 0), linha.valorCents);
 }
 
+// -------------------------------------------- outras receitas operacionais
+console.log("\n9. Entrada que NÃO é faturamento");
+{
+  // Os cinco casos reais do print: todos estavam dentro da receita bruta.
+  const cats = [
+    cat("1", "Clientes - Serviços Prestados", true),
+    cat("2", "Venda de Veículos", true),
+    cat("3", "Resgate Consórcio", true),
+    cat("4", "Lucros Cessantes", true),
+    cat("5", "Reembolso de multa de trânsito", true),
+    cat("6", "Pagamento Convênio Médico", true),
+  ];
+  const r = montarDre(
+    ctx([tit("RECEBER", "1", 7_039_183.80), tit("RECEBER", "2", 5_000), tit("RECEBER", "3", 47_575),
+         tit("RECEBER", "4", 4_508), tit("RECEBER", "5", 703.68), tit("RECEBER", "6", 770.70)], cats),
+    MES, ANT, cls({})
+  );
+  const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
+  conferir("só o serviço fica na receita bruta", v("RECEITA_BRUTA"), 703_918_380);
+  conferir("as outras cinco saem para outras receitas", v("OUTRAS_RECEITAS"), 5_855_738);
+  // 5.000 + 47.575 + 4.508 + 703,68 + 770,70 = 58.557,38
+  conferir("e o EBIT continua somando todas", v("EBIT"), 703_918_380 + 5_855_738);
+}
+
 // ------------------------------------------------------ regressão
 console.log("\n7. REGRESSÃO — a receita que foi parar em despesas");
 {
@@ -191,7 +215,10 @@ console.log("\n6. Proposta automática — conservadora de propósito");
       { receberCents: 100, pagarCents: 0 }), "RECEITA_BRUTA");
   conferir("rendimento de aplicação é financeira", p("Rendimento de Aplicação", true), "RECEITA_FINANCEIRA");
   conferir("ISS é dedução", p("ISS sobre serviços"), "DEDUCOES");
-  conferir("IRPJ é tributo sobre lucro", p("IRPJ a recolher"), "TRIBUTO_SOBRE_LUCRO");
+  // Lucro Presumido: a base é presumida sobre a receita, então os dois se
+  // comportam como percentual do faturamento — decisão da empresa, registrada.
+  conferir("IRPJ é dedução da receita (lucro presumido)", p("IRPJ a recolher"), "DEDUCOES");
+  conferir("CSLL também", p("CSLL"), "DEDUCOES");
   conferir("tarifa bancária é financeira", p("Tarifas Bancárias"), "DESPESA_FINANCEIRA");
   conferir("COMBUSTÍVEL NÃO é adivinhado como custo", p("Combustível"), "DESPESA_GERAL");
   conferir("nem folha", p("Salários e ordenados"), "DESPESA_GERAL");

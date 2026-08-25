@@ -147,75 +147,6 @@ export default async function CustosPage({
       )}
 
       <Secao
-        titulo="Onde reduzir"
-        descricao="Reduzir custo é meta; saber onde reduzir é estratégia. As categorias são cruzadas em dois eixos: peso no custo total e acoplamento à receita."
-      >
-        {!estrategia.baseSuficiente ? (
-          <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
-            São necessários pelo menos 4 meses de histórico para julgar se um custo acompanha a receita ou cresceu sozinho.
-            A base tem {estrategia.mesesAnalisados} mês(es) — a análise aparece automaticamente quando houver histórico
-            suficiente. Recomendar onde cortar com menos que isso custa mais caro que não recomendar.
-          </p>
-        ) : (
-          <>
-            <p className="mb-3 text-sm text-slate-600">
-              Economia anual estimada nos alvos prioritários:{" "}
-              <strong className="text-emerald-700">{fmtBRL(estrategia.economiaAnualTotalCents)}</strong>. Custo médio
-              mensal analisado: {fmtBRL(estrategia.custoTotalMensalCents)} ao longo de {estrategia.mesesAnalisados} meses.
-            </p>
-            <ul className="space-y-3">
-              {estrategia.linhas
-                .filter((l) => l.dentroDosPrimeiros80)
-                .slice(0, 8)
-                .map((l) => (
-                  <li key={l.codigo} className="rounded-lg border border-slate-200 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">{l.descricao}</p>
-                        <span
-                          className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                            l.classificacao === "DESACOPLADO_CRESCENTE"
-                              ? "bg-red-100 text-red-700"
-                              : l.classificacao === "FIXO_ESTRUTURAL"
-                                ? "bg-amber-100 text-amber-700"
-                                : l.classificacao === "VARIAVEL_ACOPLADO"
-                                  ? "bg-sky-100 text-sky-700"
-                                  : "bg-slate-100 text-slate-600"
-                          }`}
-                        >
-                          {ROTULO_CLASSIFICACAO[l.classificacao]}
-                        </span>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold tabular-nums text-slate-900">
-                          {fmtBRL(l.custoMedioMensalCents)}/mês
-                        </p>
-                        <p className="text-xs text-slate-500">{fmtPercent(l.participacaoPercent)} do custo</p>
-                        {l.economiaAnualEstimadaCents > 0 && (
-                          <p className="text-xs font-medium text-emerald-700">
-                            até {fmtBRL(l.economiaAnualEstimadaCents)}/ano
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="mt-2 text-sm leading-relaxed text-slate-600">{l.racional}</p>
-                    <div className="mt-2 rounded-lg bg-slate-50 p-3">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">O que fazer</p>
-                      <p className="mt-1 text-sm leading-relaxed text-slate-700">{l.acao}</p>
-                    </div>
-                  </li>
-                ))}
-            </ul>
-            <p className="mt-3 text-xs text-slate-500">
-              Corte linear (&quot;todos reduzem 10%&quot;) trata igual o que é desigual: corta o combustível que leva o
-              passageiro na mesma proporção do contrato que ninguém usa. As categorias marcadas como &quot;acompanha a
-              entrega&quot; devem ser atacadas por eficiência (custo por km, por hora), nunca por corte de valor absoluto.
-            </p>
-          </>
-        )}
-      </Secao>
-
-      <Secao
         titulo="Demonstração do resultado"
         descricao={`${comparativo.janelas.mesAtual.rotulo}, na estrutura do art. 187 da Lei 6.404/76. Percentuais sobre a receita líquida.`}
       >
@@ -307,11 +238,92 @@ export default async function CustosPage({
         </div>
 
         <p className="mt-4 text-xs text-slate-500">
+          <strong>IRPJ e CSLL entram como dedução da receita bruta</strong>, e não abaixo do resultado antes dos
+          tributos. É uma escolha da empresa, com razão de negócio: no Lucro Presumido a base dos dois é uma presunção
+          sobre a receita — 16% para transporte de passageiros, 12% de CSLL —, então eles se comportam como percentual
+          do faturamento, igual a PIS, COFINS e ISS. O resultado líquido final é o mesmo pelos dois caminhos; o que muda
+          é a receita líquida e, com ela, todo percentual desta tela. Ao comparar com o DRE da contabilidade, é aqui que
+          a diferença aparece.
+          <br />
+          <br />
           <strong>Como esta demonstração difere do DRE contábil oficial.</strong> Aqui o regime é o de competência dos
           títulos, pela data de emissão do documento. Não há provisão, apropriação de despesa antecipada nem
           depreciação — depreciação não passa por título, e este sistema espelha títulos. É uma leitura gerencial na
           estrutura legal: serve para decidir no dia 5, não para assinar balanço. O DRE oficial é o da contabilidade.
         </p>
+      </Secao>
+
+      {/* DEPOIS do DRE, e não antes: recomendar corte antes de mostrar o
+          resultado é dar resposta a quem ainda não viu a pergunta. Quem abre
+          esta tela quer saber primeiro se deu lucro; onde cortar é a conversa
+          seguinte. */}
+      <Secao
+        titulo="Onde reduzir"
+        descricao="Reduzir custo é meta; saber onde reduzir é estratégia. As categorias são cruzadas em dois eixos: peso no custo total e acoplamento à receita."
+      >
+        {!estrategia.baseSuficiente ? (
+          <p className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-600">
+            São necessários pelo menos 4 meses de histórico para julgar se um custo acompanha a receita ou cresceu sozinho.
+            A base tem {estrategia.mesesAnalisados} mês(es) — a análise aparece automaticamente quando houver histórico
+            suficiente. Recomendar onde cortar com menos que isso custa mais caro que não recomendar.
+          </p>
+        ) : (
+          <>
+            <p className="mb-3 text-sm text-slate-600">
+              Economia anual estimada nos alvos prioritários:{" "}
+              <strong className="text-emerald-700">{fmtBRL(estrategia.economiaAnualTotalCents)}</strong>. Custo médio
+              mensal analisado: {fmtBRL(estrategia.custoTotalMensalCents)} ao longo de {estrategia.mesesAnalisados} meses.
+            </p>
+            <ul className="space-y-3">
+              {estrategia.linhas
+                .filter((l) => l.dentroDosPrimeiros80)
+                .slice(0, 8)
+                .map((l) => (
+                  <li key={l.codigo} className="rounded-lg border border-slate-200 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-900">{l.descricao}</p>
+                        <span
+                          className={`mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                            l.classificacao === "DESACOPLADO_CRESCENTE"
+                              ? "bg-red-100 text-red-700"
+                              : l.classificacao === "FIXO_ESTRUTURAL"
+                                ? "bg-amber-100 text-amber-700"
+                                : l.classificacao === "VARIAVEL_ACOPLADO"
+                                  ? "bg-sky-100 text-sky-700"
+                                  : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {ROTULO_CLASSIFICACAO[l.classificacao]}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-semibold tabular-nums text-slate-900">
+                          {fmtBRL(l.custoMedioMensalCents)}/mês
+                        </p>
+                        <p className="text-xs text-slate-500">{fmtPercent(l.participacaoPercent)} do custo</p>
+                        {l.economiaAnualEstimadaCents > 0 && (
+                          <p className="text-xs font-medium text-emerald-700">
+                            até {fmtBRL(l.economiaAnualEstimadaCents)}/ano
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="mt-2 text-sm leading-relaxed text-slate-600">{l.racional}</p>
+                    <div className="mt-2 rounded-lg bg-slate-50 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">O que fazer</p>
+                      <p className="mt-1 text-sm leading-relaxed text-slate-700">{l.acao}</p>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+            <p className="mt-3 text-xs text-slate-500">
+              Corte linear (&quot;todos reduzem 10%&quot;) trata igual o que é desigual: corta o combustível que leva o
+              passageiro na mesma proporção do contrato que ninguém usa. As categorias marcadas como &quot;acompanha a
+              entrega&quot; devem ser atacadas por eficiência (custo por km, por hora), nunca por corte de valor absoluto.
+            </p>
+          </>
+        )}
       </Secao>
 
       <Secao titulo="Maiores fornecedores do mês" descricao="Volume concentrado é poder de negociação — e risco de dependência.">
