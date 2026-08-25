@@ -15,6 +15,7 @@ export type ValoresConfig = {
   diasAtrasoCritico: string;
   limiteConcentracao: string;
   relatorioAutomatico: boolean;
+  retencoesNasDeducoes: boolean;
 };
 
 export default function ConfiguracaoForm({
@@ -59,6 +60,22 @@ export default function ConfiguracaoForm({
             className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
           />
           Gerar o relatório diário ao fim de cada ciclo
+        </label>
+      </Campo>
+
+      <Campo
+        rotulo="Tributos retidos na fonte no DRE"
+        ajuda="Ligado, os tributos que os clientes retiveram entram nas deduções da receita bruta como item próprio, somados aos títulos de imposto — é a leitura certa quando o retido NÃO vira título a pagar, porque aí os dois se completam. Desligado, ficam de fora: é a leitura certa quando a empresa lança o imposto cheio e abate a retenção na hora de recolher, porque aí o título já contém o valor e somar contaria o mesmo imposto duas vezes. O dado sozinho não distingue os dois arranjos — a diferença está na prática de lançamento, e por isso a escolha é sua. Para confirmar: pegue um título de imposto do mês e veja se o valor é o imposto cheio sobre o faturamento (desligue) ou só o saldo depois da retenção (mantenha ligado)."
+      >
+        <label className="flex items-center gap-2.5 text-sm text-slate-700">
+          <input
+            name="retencoesNasDeducoes"
+            type="checkbox"
+            value="1"
+            defaultChecked={valores.retencoesNasDeducoes}
+            className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
+          />
+          Somar as retenções às deduções da receita bruta
         </label>
       </Campo>
 

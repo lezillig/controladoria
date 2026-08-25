@@ -54,7 +54,11 @@ export async function GET(req: NextRequest) {
   );
   const quemClassificou = new Map(guardadas.map((c) => [c.categoriaCodigo, c.userNome]));
 
-  const dre = montarDre(ctx, mes, mesAnterior, classificacoes);
+  const config = await prisma.controladoriaConfig.findUnique({
+    where: { companyId: session.companyId },
+    select: { retencoesNasDeducoes: true },
+  });
+  const dre = montarDre(ctx, mes, mesAnterior, classificacoes, config?.retencoesNasDeducoes ?? true);
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
   const empresa = escopo.apelido
@@ -72,7 +76,10 @@ export async function GET(req: NextRequest) {
       competencia,
       criterio:
         "Competência pela data de emissão do documento. Ordem das linhas conforme o art. 187 da Lei 6.404/76. " +
-        "As colunas 'Omie:' são o que o cadastro de categorias da Omie informa — é contra elas que se confere.",
+        "As colunas 'Omie:' são o que o cadastro de categorias da Omie informa — é contra elas que se confere. " +
+        (config?.retencoesNasDeducoes ?? true
+          ? "Os tributos retidos na fonte pelos clientes ESTÃO somados às deduções, como item próprio."
+          : "Os tributos retidos na fonte pelos clientes NÃO estão somados às deduções."),
       geradoEm: new Date(),
     }),
     [],

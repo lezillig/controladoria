@@ -60,7 +60,13 @@ export default async function CustosPage({
   }
   const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
 
-  const dre = montarDre(ctx, comparativo.janelas.mesAtual, comparativo.janelas.mesAnterior, classificacoes);
+  const dre = montarDre(
+    ctx,
+    comparativo.janelas.mesAtual,
+    comparativo.janelas.mesAnterior,
+    classificacoes,
+    ctx.config.retencoesNasDeducoes
+  );
 
   // LINHA VAZIA NÃO É MOSTRADA, e subtotal repetido tampouco.
   //

@@ -244,6 +244,10 @@ export type ResultadoDre = {
     totalCents: number;
     titulosComRetencao: number;
   };
+  // Se as retenções acima entraram na linha de deduções. A tela precisa dizer
+  // qual das duas leituras está no ar — um total de impostos sem essa
+  // informação não dá para conferir contra nada.
+  retencoesSomadas: boolean;
 };
 
 // O QUE O CLIENTE RETEVE, e por que isto NÃO entra na conta.
@@ -303,7 +307,10 @@ export function montarDre(
   ctx: ContextoAuditoria,
   periodo: Periodo,
   periodoAnterior: Periodo,
-  classificacoes: Map<string, Classificacao>
+  classificacoes: Map<string, Classificacao>,
+  // Somar as retenções na fonte às deduções da receita. Ver
+  // `retencoesDoPeriodo` e a coluna `retencoesNasDeducoes` na configuração.
+  somarRetencoes = false
 ): ResultadoDre {
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
@@ -433,6 +440,31 @@ export function montarDre(
     } as Record<string, number>;
   };
 
+  // A RETENÇÃO ENTRA COMO ITEM PRÓPRIO, e não somada ao total da linha em
+  // silêncio. Nomeada, ela aparece no drill-down das deduções ao lado dos
+  // títulos de imposto — e se um dia passar a duplicar, a duplicidade fica
+  // visível como duas entradas do mesmo tributo, em vez de um total que
+  // simplesmente dobrou sem explicação.
+  const retencoes = retencoesDoPeriodo(ctx, periodo);
+  const retencoesAnteriores = retencoesDoPeriodo(ctx, periodoAnterior);
+  if (somarRetencoes && retencoes.totalCents > 0) {
+    const lista = itensPorLinha.get("DEDUCOES") ?? [];
+    lista.push({
+      categoriaCodigo: "RETENCAO_NA_FONTE",
+      descricao: "Tributos retidos na fonte pelos clientes",
+      subgrupo: null,
+      // Não é classificável: não é categoria da Omie, é um agregado calculado.
+      // Marcada como confirmada para não contar como "por classificar" — o que
+      // mandaria alguém procurar na tela uma categoria que não existe.
+      confirmada: true,
+      valorCents: retencoes.totalCents,
+      valorAnteriorCents: retencoesAnteriores.totalCents,
+      titulos: [],
+      totalDeTitulos: 0,
+    });
+    itensPorLinha.set("DEDUCOES", lista);
+  }
+
   const sub = calc("valorCents");
   const subAnterior = calc("valorAnteriorCents");
   const receitaLiquida = sub.RECEITA_LIQUIDA;
@@ -475,6 +507,7 @@ export function montarDre(
     margemLiquidaPercent: receitaLiquida > 0 ? (sub.RESULTADO_LIQUIDO / receitaLiquida) * 100 : null,
     naoConfirmadoCents: naoConfirmado,
     semCategoriaCents: semCategoria,
-    retencoes: retencoesDoPeriodo(ctx, periodo),
+    retencoes,
+    retencoesSomadas: somarRetencoes,
   };
 }

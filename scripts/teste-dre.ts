@@ -43,6 +43,13 @@ const ctx = (titulos: unknown[], categorias: unknown[]) =>
      parceiros: [], departamentos: [], contasCorrentes: [], vinculos: [], motoristas: [],
      config: {} }) as unknown as ContextoAuditoria;
 
+const titComRetencao = (cat: string, reais: number, ret: Partial<Record<
+  "retencaoIssCents" | "retencaoPisCents" | "retencaoCofinsCents" | "retencaoCsllCents" |
+  "retencaoIrCents" | "retencaoInssCents", number>>) =>
+  ({ ...tit("RECEBER", cat, reais), retencaoIssCents: 0, retencaoPisCents: 0, retencaoCofinsCents: 0,
+     retencaoCsllCents: 0, retencaoIrCents: 0, retencaoInssCents: 0, ...ret }) as unknown as
+    ContextoAuditoria["titulos"][number];
+
 const cls = (m: Record<string, [string, string | null, boolean]>) =>
   new Map(Object.entries(m).map(([k, [linha, subgrupo, confirmada]]) => [k, { linha, subgrupo, confirmada }]));
 
@@ -142,6 +149,30 @@ console.log("\n5. Subgrupos dentro da linha");
   conferir("dois subgrupos", linha.subgrupos.map((s) => s.nome), ["Frota", "Pessoal operacional"]);
   conferir("Frota soma combustível + pneus", linha.subgrupos[0].valorCents, 6_500_000);
   conferir("subgrupos somam a linha", linha.subgrupos.reduce((a, s) => a + s.valorCents, 0), linha.valorCents);
+}
+
+// -------------------------------------------------- retenções na fonte
+console.log("\n11. Tributos retidos na fonte — interruptor, não regra");
+{
+  const dados = () =>
+    ctx([titComRetencao("1", 100_000, { retencaoIssCents: 200_000, retencaoPisCents: 65_000 }),
+         tit("PAGAR", "2", 1_000)],
+        [cat("1", "Serviços", true), cat("2", "ISS")]);
+
+  const desligado = montarDre(dados(), MES, ANT, cls({}), false);
+  const ligado = montarDre(dados(), MES, ANT, cls({}), true);
+  const v = (r: typeof desligado, c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
+
+  conferir("desligado: só o título de imposto", v(desligado, "DEDUCOES"), 100_000);
+  conferir("ligado: título + retenção", v(ligado, "DEDUCOES"), 100_000 + 265_000);
+  conferir("a retenção é ITEM NOMEADO, não um total inflado",
+    ligado.linhas.find((l) => l.chave === "DEDUCOES")!.itens.map((i) => i.categoriaCodigo).includes("RETENCAO_NA_FONTE"),
+    true);
+  conferir("e não conta como 'por classificar'", ligado.naoConfirmadoCents, desligado.naoConfirmadoCents);
+  conferir("a tela sabe qual leitura está no ar", [desligado.retencoesSomadas, ligado.retencoesSomadas], [false, true]);
+  conferir("o total das retenções é o mesmo nos dois", ligado.retencoes.totalCents, 265_000);
+  conferir("e a receita líquida cai o que o imposto subiu",
+    v(desligado, "RECEITA_LIQUIDA")! - v(ligado, "RECEITA_LIQUIDA")!, 265_000);
 }
 
 // ------------------------------------------- financiamentos e consórcios

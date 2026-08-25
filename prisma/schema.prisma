@@ -736,6 +736,11 @@ model ControladoriaConfig {
   // manual em Relatórios, que é como se confere o resultado antes de ligar o
   // automático.
   relatorioAutomatico                 Boolean  @default(false)
+  // Somar ao DRE os tributos que os clientes retiveram na fonte. Ligado
+  // quando o retido NÃO vira título a pagar (os dois se completam); desligado
+  // quando a empresa lança o imposto cheio e abate a retenção ao recolher (o
+  // título já contém o valor, e somar duplicaria).
+  retencoesNasDeducoes                Boolean  @default(true)
   atualizadoEm                        DateTime @updatedAt
 }
 
