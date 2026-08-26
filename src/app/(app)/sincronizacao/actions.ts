@@ -388,7 +388,12 @@ export async function relerPeriodo(formData: FormData): Promise<ResultadoSync> {
 // sessenta segundos da função, e estourar deixaria o trabalho pela metade sem
 // dizer onde parou. Cada chamada faz o que couber e devolve quantas faltam; a
 // tela chama de novo até zerar.
-const SEGUNDOS_DO_LOTE = 45;
+// 25 segundos, e não 45. A função tem sessenta no total, e o que sobra não é
+// folga: é o tempo de a última competência iniciada terminar. Um lote que
+// começa aos 44 segundos e leva vinte estoura — e a resposta que o cliente
+// recebe não é um erro tratado, é "An unexpected response was received from
+// the server", que não diz nada a ninguém.
+const SEGUNDOS_DO_LOTE = 25;
 
 export async function recalcularResumoMensal(): Promise<{
   feitas: number;

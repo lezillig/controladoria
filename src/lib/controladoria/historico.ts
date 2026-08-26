@@ -34,6 +34,12 @@ export type Dimensao = "PARCEIRO" | "CATEGORIA";
 // A competência de um título é a data de EMISSÃO, com o vencimento como
 // reserva — a mesma regra de competencia.ts, e pelo mesmo motivo documentado
 // lá. Repetida aqui em SQL porque o cálculo é do banco.
+// DUAS expressões, e a distinção é de TIPO. `DATA_COMPETENCIA` é a data em si e
+// serve ao filtro por faixa — é o que o índice por expressão indexa.
+// `COMPETENCIA` é o texto "AAAA-MM" e serve ao agrupamento e à coluna gravada.
+// Comparar o texto contra uma data seria erro de tipo no Postgres; usar a data
+// no GROUP BY agruparia por dia em vez de por mês.
+const DATA_COMPETENCIA = Prisma.raw(`COALESCE(t."dataEmissao", t."dataVencimento")`);
 const COMPETENCIA = Prisma.raw(`to_char(COALESCE(t."dataEmissao", t."dataVencimento"), 'YYYY-MM')`);
 
 // UMA COMPETÊNCIA, UMA DIMENSÃO, DE UMA VEZ.
@@ -43,10 +49,24 @@ const COMPETENCIA = Prisma.raw(`to_char(COALESCE(t."dataEmissao", t."dataVencime
 // chamar isto ao fim de toda janela de sincronização sem pensar duas vezes —
 // inclusive na janela diária, que cobre D-3 e portanto reprocessa dias já
 // contados.
+// O RECORTE DO MÊS É POR FAIXA DE DATA, e não por `to_char(...) = '2021-03'`.
+//
+// Parece a mesma coisa e não é. `to_char(COALESCE(emissao, vencimento))` é uma
+// FUNÇÃO sobre a coluna: nenhum índice a atende, então cada competência
+// recalculada varria a tabela inteira de títulos. Com 134 competências × 2
+// empresas × 2 dimensões isso são mais de quinhentas varreduras de cinco anos
+// de base — e foi por isso que o primeiro recálculo estourou o tempo da função
+// antes de terminar o primeiro lote.
+//
+// Comparar a mesma expressão contra um INTERVALO usa o índice por expressão
+// criado em 20260826190000_indice_competencia. O `to_char` continua no SELECT e
+// no GROUP BY, onde opera sobre as poucas linhas que o filtro já separou.
 async function recalcularDimensao(
   companyId: string,
   conexaoId: string,
   competencia: string,
+  inicio: Date,
+  fim: Date,
   dimensao: Dimensao
 ): Promise<number> {
   const chave =
@@ -100,7 +120,8 @@ async function recalcularDimensao(
     ) b ON TRUE
     WHERE t."companyId" = ${companyId}
       AND t."conexaoId" = ${conexaoId}
-      AND ${COMPETENCIA} = ${competencia}
+      AND ${DATA_COMPETENCIA} >= ${inicio}
+      AND ${DATA_COMPETENCIA} < ${fim}
       -- Cancelado fica de fora do histórico, e isto é decisão de conteúdo, não
       -- de desempenho: um título cancelado nunca foi despesa nem receita, e
       -- deixá-lo entrar na base de comparação faria a média do fornecedor
@@ -130,7 +151,9 @@ async function recalcularDimensao(
 async function limparOrfas(
   companyId: string,
   conexaoId: string,
-  competencia: string
+  competencia: string,
+  inicio: Date,
+  fim: Date
 ): Promise<number> {
   return prisma.$executeRaw`
     DELETE FROM ${tabela("HistoricoMensal")} h
@@ -143,11 +166,20 @@ async function limparOrfas(
           WHERE t."companyId" = h."companyId"
             AND t."conexaoId" = h."conexaoId"
             AND t.cancelado = false
-            AND ${COMPETENCIA} = h.competencia
+            AND ${DATA_COMPETENCIA} >= ${inicio}
+            AND ${DATA_COMPETENCIA} < ${fim}
             AND t.natureza::text = h.natureza
             AND (CASE WHEN h.dimensao = 'PARCEIRO' THEN t."parceiroCodigo" ELSE t."categoriaCodigo" END) = h.chave
        )
   `;
+}
+
+// Primeiro e último instante de uma competência "AAAA-MM", como DATAS. O fim é
+// o primeiro dia do mês SEGUINTE, e a comparação é `< fim`: assim nenhum
+// título do último dia do mês fica de fora por causa da hora gravada nele.
+export function faixaDaCompetencia(competencia: string): { inicio: Date; fim: Date } {
+  const [ano, mes] = competencia.split("-").map(Number);
+  return { inicio: new Date(ano, mes - 1, 1), fim: new Date(ano, mes, 1) };
 }
 
 export async function recalcularHistorico(
@@ -157,9 +189,10 @@ export async function recalcularHistorico(
 ): Promise<{ competencias: number; linhas: number }> {
   let linhas = 0;
   for (const competencia of new Set(competencias)) {
-    linhas += await recalcularDimensao(companyId, conexaoId, competencia, "PARCEIRO");
-    linhas += await recalcularDimensao(companyId, conexaoId, competencia, "CATEGORIA");
-    await limparOrfas(companyId, conexaoId, competencia);
+    const { inicio, fim } = faixaDaCompetencia(competencia);
+    linhas += await recalcularDimensao(companyId, conexaoId, competencia, inicio, fim, "PARCEIRO");
+    linhas += await recalcularDimensao(companyId, conexaoId, competencia, inicio, fim, "CATEGORIA");
+    await limparOrfas(companyId, conexaoId, competencia, inicio, fim);
   }
   return { competencias: new Set(competencias).size, linhas };
 }
@@ -180,19 +213,50 @@ export async function recalcularHistorico(
 export async function competenciasPendentes(
   companyId: string
 ): Promise<{ conexaoId: string; competencia: string }[]> {
-  return prisma.$queryRaw<{ conexaoId: string; competencia: string }[]>`
-    SELECT DISTINCT t."conexaoId", ${COMPETENCIA} AS competencia
-      FROM ${tabela("OmieTitulo")} t
-     WHERE t."companyId" = ${companyId}
-       AND t.cancelado = false
-       AND NOT EXISTS (
-         SELECT 1 FROM ${tabela("HistoricoMensal")} h
-          WHERE h."companyId" = t."companyId"
-            AND h."conexaoId" = t."conexaoId"
-            AND h.competencia = ${COMPETENCIA}
-       )
-     ORDER BY 2 DESC
-  `;
+  // As competências possíveis são CALCULADAS, não consultadas. A primeira
+  // versão perguntava ao espelho quais competências existiam — um DISTINCT
+  // sobre todos os títulos com um NOT EXISTS correlacionado por linha. Sobre
+  // cinco anos de base, essa consulta sozinha estourava o tempo da função
+  // ANTES de recalcular a primeira competência.
+  //
+  // O calendário responde a mesma pergunta de graça: os meses vão do início da
+  // base até o mês corrente, e as conexões são poucas. Competência sem título
+  // nenhum simplesmente não grava linha — custa uma consulta indexada e some
+  // da lista na passada seguinte.
+  const [config, conexoes, prontas] = await Promise.all([
+    prisma.controladoriaConfig.findUnique({
+      where: { companyId },
+      select: { dataInicioBase: true },
+    }),
+    prisma.omieConexao.findMany({ where: { companyId }, select: { id: true } }),
+    prisma.historicoMensal.findMany({
+      where: { companyId },
+      select: { conexaoId: true, competencia: true },
+      distinct: ["conexaoId", "competencia"],
+    }),
+  ]);
+  if (!config) return [];
+
+  const jaFeitas = new Set(prontas.map((p) => `${p.conexaoId}|${p.competencia}`));
+  const hoje = new Date();
+  const pendentes: { conexaoId: string; competencia: string }[] = [];
+
+  for (const conexao of conexoes) {
+    const cursor = new Date(config.dataInicioBase.getFullYear(), config.dataInicioBase.getMonth(), 1);
+    // Teto de sanidade, como no resto do sistema: data de início digitada
+    // errada não pode gerar milhares de meses.
+    for (let n = 0; cursor <= hoje && n < 240; n++) {
+      const competencia = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`;
+      if (!jaFeitas.has(`${conexao.id}|${competencia}`)) {
+        pendentes.push({ conexaoId: conexao.id, competencia });
+      }
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  }
+
+  // Da mais recente para a mais antiga: se o processo for interrompido, o que
+  // já está pronto é o período que as telas mais consultam.
+  return pendentes.sort((a, b) => b.competencia.localeCompare(a.competencia));
 }
 
 // UM LOTE POR CHAMADA, com prazo.

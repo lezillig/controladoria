@@ -11,6 +11,7 @@
     "teste:antifraude": "tsx scripts/teste-antifraude.ts",
     "teste:dre": "tsx scripts/teste-dre.ts",
     "teste:acessos": "tsx scripts/teste-acessos.ts",
+    "teste:historico": "tsx scripts/teste-historico.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
