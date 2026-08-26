@@ -321,6 +321,11 @@ export type SerieMensal = {
   valorCents: number;
   valorMaximoCents: number;
   baixas: number;
+  // Quanto de fato saiu (ou entrou) no mês. Separado do valor do documento
+  // porque as duas perguntas são diferentes: o documento diz o que foi
+  // cobrado, a baixa diz o que foi pago — e é sobre o pago que se mede
+  // mudança de prazo.
+  valorBaixadoCents: number;
   diasPagamentoSoma: number;
 };
 
@@ -340,7 +345,7 @@ export async function lerSeries(params: {
   const { companyId, conexaoId, dimensao, natureza, de, ate } = params;
   return prisma.$queryRaw<SerieMensal[]>`
     SELECT chave, rotulo, competencia, titulos,
-           "valorCents", "valorMaximoCents", baixas, "diasPagamentoSoma"
+           "valorCents", "valorMaximoCents", baixas, "valorBaixadoCents", "diasPagamentoSoma"
       FROM ${tabela("HistoricoMensal")}
      WHERE "companyId" = ${companyId}
        AND dimensao = ${dimensao}

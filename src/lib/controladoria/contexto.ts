@@ -95,6 +95,7 @@ export async function carregarContexto(
     parceiros,
     categorias,
     departamentos,
+    projetos,
     contasCorrentes,
     vinculos,
     ultimoSyncConcluido,
@@ -128,6 +129,10 @@ export async function carregarContexto(
     prisma.omieParceiro.findMany({ where: escopo }),
     prisma.omieCategoria.findMany({ where: escopo }),
     prisma.omieDepartamento.findMany({ where: escopo }),
+    // Projeto é a ordem de serviço deste grupo. São poucos por mês e a tabela
+    // é pequena — o custo de carregá-los é irrelevante perto de a regra de OS
+    // não faturada poder dizer o NOME da OS em vez do código.
+    prisma.omieProjeto.findMany({ where: escopo }),
     prisma.omieContaCorrente.findMany({ where: escopo }),
     prisma.omieVinculoCentroCusto.findMany({ where: { companyId } }),
     prisma.omieSyncRun.findFirst({
@@ -154,6 +159,7 @@ export async function carregarContexto(
     parceiros,
     categorias,
     departamentos,
+    projetos,
     contasCorrentes,
     vinculos,
     motoristas,

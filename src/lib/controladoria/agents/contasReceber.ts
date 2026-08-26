@@ -24,6 +24,10 @@ import {
 // dinheiro some mais devagar: recebimento a menor, desconto concedido sem
 // politica, cliente que atrasa sistematicamente e receita que envelhece ate
 // virar perda.
+//
+// E uma regra que olha o contrario de todas as outras: a OS que teve custo e
+// NUNCA foi faturada. Nao aparece em atraso, em aging nem em inadimplencia,
+// porque para esses relatorios ela simplesmente nao existe.
 
 // Faixas de aging usadas no relatorio e nas regras. Sao as mesmas faixas
 // classicas de credito e cobranca — trocar por faixas proprias so
@@ -60,6 +64,9 @@ function auditarContasReceber(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...recebimentoAMenor(ctx, titulos, materialidade));
   achados.push(...concentracaoDeReceita(ctx, titulos, materialidade));
   achados.push(...atrasoRecorrente(ctx, titulos, materialidade));
+  // Esta última não olha os títulos a RECEBER — olha os que não existem. Por
+  // isso recebe o contexto inteiro e não a lista filtrada acima.
+  achados.push(...osComCustoSemFaturamento(ctx, materialidade));
 
   return achados;
 }
@@ -370,4 +377,98 @@ export function resumoAging(ctx: ContextoAuditoria, natureza: "PAGAR" | "RECEBER
     (f) => f.valorCents
   );
   return { faixas, totalCents: total, vencidoCents: vencido, fmt: { total: fmtBRL(total), vencido: fmtBRL(vencido) } };
+}
+
+// CR-OS-NAO-FATURADA — a ordem de serviço que custou e nunca virou receita.
+//
+// Na Omie deste grupo, cada OS é um código de PROJETO (14516, 14517, ...), e é
+// nele que o custo da viagem é lançado: motorista, combustível, pedágio,
+// terceiro. Quando o mesmo projeto não tem nenhum título a RECEBER, a conta é
+// direta — a viagem rodou, foi paga, e ninguém cobrou o cliente.
+//
+// É o furo que nenhuma outra regra deste sistema pega. Contas a receber olha o
+// que foi cobrado e não entrou; esta olha o que nunca chegou a ser cobrado, e
+// portanto não aparece em atraso, em aging, nem em inadimplência. Some sem
+// deixar rastro em relatório nenhum.
+//
+// A CARÊNCIA É O QUE SEPARA ACHADO DE ANSIEDADE. Faturar depois da viagem é o
+// normal do negócio: o custo entra no dia, a fatura sai no fechamento. Sem
+// carência, toda OS da semana viraria alerta e a regra seria desligada no
+// primeiro mês. Trinta dias depois do ÚLTIMO custo lançado, a explicação
+// "ainda não faturamos" deixa de ser suficiente.
+const DIAS_DE_CARENCIA_PARA_FATURAR = 30;
+
+export function osComCustoSemFaturamento(
+  ctx: ContextoAuditoria,
+  materialidade: number
+): AchadoNovo[] {
+  const achados: AchadoNovo[] = [];
+
+  // Projeto vazio não é OS — é título sem classificação, e disso já trata
+  // CP-SEM-CENTRO-CUSTO. Agrupar os sem-projeto todos juntos criaria um
+  // "projeto fantasma" com o custo de meia empresa dentro.
+  const comProjeto = ctx.titulos.filter((t) => !t.cancelado && t.projetoCodigo);
+  const porProjeto = agrupar(comProjeto, (t) => t.projetoCodigo!);
+
+  const nomeProjeto = new Map(ctx.projetos.map((p) => [p.codigo, p.nome]));
+
+  for (const [projeto, titulos] of porProjeto) {
+    const custos = titulos.filter((t) => t.natureza === "PAGAR");
+    const receitas = titulos.filter((t) => t.natureza === "RECEBER");
+    if (custos.length === 0 || receitas.length > 0) continue;
+
+    const custoCents = somar(custos, (t) => t.valorDocumentoCents);
+    if (custoCents < materialidade) continue;
+
+    // A data do último custo é o marco da carência: enquanto ainda entram
+    // lançamentos, a OS não terminou, e cobrar por ela seria prematuro.
+    const ultimoCusto = custos.reduce(
+      (maior, t) => {
+        const d = t.dataEmissao ?? t.dataVencimento;
+        return d > maior ? d : maior;
+      },
+      new Date(0)
+    );
+    const diasParado = diasEntre(ultimoCusto, ctx.dataReferencia);
+    if (diasParado < DIAS_DE_CARENCIA_PARA_FATURAR) continue;
+
+    const rotulo = nomeProjeto.get(projeto) ?? projeto;
+    achados.push({
+      regra: "CR-OS-NAO-FATURADA",
+      tipo: "ESTADO",
+      // Sem receita, o custo inteiro é a perda — não há margem a calcular.
+      severidade: severidadePorValor(custoCents, materialidade),
+      categoria: "PERDA_FINANCEIRA",
+      titulo: `OS ${rotulo}: ${fmtBRL(custoCents)} de custo e nenhuma cobrança`,
+      descricao:
+        `O projeto ${projeto}${rotulo !== projeto ? ` (${rotulo})` : ""} acumula ${fmtBRL(custoCents)} em ` +
+        `${custos.length} título(s) a pagar e nenhum título a receber. O último custo foi lançado há ` +
+        `${diasParado} dias. Custo pago, serviço prestado, receita nunca faturada.`,
+      recomendacao:
+        "Conferir na Omie se a OS foi concluída e se há CT-e ou nota de serviço emitida para ela. " +
+        "Havendo entrega sem cobrança, faturar — e, se o prazo contratual já passou, verificar com o cliente antes. " +
+        "Se a OS foi cancelada, o custo lançado nela precisa ser reclassificado, ou continuará aparecendo aqui.",
+      valorCents: custoCents,
+      impactoCents: custoCents,
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieProjeto",
+      entidadeId: projeto,
+      entidadeRef: rotulo,
+      evidencia: {
+        projeto,
+        nome: rotulo,
+        custoCents,
+        titulosDeCusto: custos.length,
+        ultimoCusto: ultimoCusto.toISOString(),
+        diasSemFaturar: diasParado,
+        maioresCustos: custos
+          .sort((a, b) => b.valorDocumentoCents - a.valorDocumentoCents)
+          .slice(0, 5)
+          .map((t) => ({ parceiro: t.parceiroNome, valor: t.valorDocumentoCents, doc: t.numeroDocumento })),
+      },
+      chave: chaveAchado("CR-OS-NAO-FATURADA", projeto),
+    });
+  }
+
+  return achados;
 }

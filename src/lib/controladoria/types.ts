@@ -7,6 +7,7 @@ import type {
   OmieConexao,
   OmieContaCorrente,
   OmieDepartamento,
+  OmieProjeto,
   OmieMovimento,
   OmieNota,
   OmieParceiro,
@@ -72,6 +73,11 @@ export type ContextoAuditoria = {
   parceiros: OmieParceiro[];
   categorias: OmieCategoria[];
   departamentos: OmieDepartamento[];
+  // PROJETO É A ORDEM DE SERVIÇO neste grupo: cada viagem tem um código
+  // (14516, 14517, ...) e é nele que o custo dela é lançado. Sem os projetos
+  // carregados, o código do título não tem nome e a regra de OS não faturada
+  // só saberia dizer "projeto 14516" — número que ninguém reconhece.
+  projetos: OmieProjeto[];
   contasCorrentes: OmieContaCorrente[];
   vinculos: OmieVinculoCentroCusto[];
 

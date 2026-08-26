@@ -91,6 +91,7 @@ const serie = (chave: string, valores: [string, number][]): SerieMensal[] =>
     valorCents,
     valorMaximoCents: valorCents,
     baixas: 1,
+    valorBaixadoCents: valorCents,
     diasPagamentoSoma: 0,
   }));
 

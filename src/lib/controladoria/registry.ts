@@ -8,6 +8,7 @@ import { agenteCustos } from "./agents/custos";
 import { agenteFiscal } from "./agents/fiscal";
 import { agenteFluxoCaixa } from "./agents/fluxoCaixa";
 import { agenteOportunidades } from "./agents/oportunidades";
+import { agentePadroes } from "./agents/padroes";
 import { agenteRentabilidade } from "./agents/rentabilidade";
 import type { Agente } from "./types";
 
@@ -45,6 +46,11 @@ export const AGENTES: Agente[] = [
   agenteConciliacao,
   agenteAntifraude,
   agenteCustos,
+  // Logo depois de custos, e não no fim: os dois olham a mesma despesa, e a
+  // diferença é o eixo. Custos compara com o mês anterior e com a tolerância
+  // configurada; padrões compara cada fornecedor com o histórico DELE, que é a
+  // pergunta que limiar nenhum responde.
+  agentePadroes,
   agenteFiscal,
   agenteFluxoCaixa,
   agenteRentabilidade,

@@ -12,6 +12,7 @@
     "teste:dre": "tsx scripts/teste-dre.ts",
     "teste:acessos": "tsx scripts/teste-acessos.ts",
     "teste:historico": "tsx scripts/teste-historico.ts",
+    "teste:padroes": "tsx scripts/teste-padroes.ts",
     "teste:sql": "tsx scripts/teste-sql.ts",
     "postinstall": "prisma generate"
   },
