@@ -16,6 +16,12 @@ import { larguraPainel } from "@/lib/ui";
 // cobrados (R$ 11.950,00) e uma cobrança R$ 7.617,65 acima do documento
 // reemitido. Nada disso aparecia em nenhum relatório.
 
+// Um ano de CT-e colado cruza contra todos os títulos a receber do período. É a
+// consulta mais pesada que uma tela deste sistema dispara sob clique de gente —
+// e no tempo limite padrão da hospedagem ela era interrompida no meio, sem
+// resultado e sem erro. O mesmo teto da tela de sincronização.
+export const maxDuration = 60;
+
 export default async function CtePage() {
   const session = await exigirPermissao("cte");
 

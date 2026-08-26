@@ -31,6 +31,14 @@ export default function ConferenciaForm({
   conexoes: { id: string; apelido: string; nome: string }[];
 }) {
   const [estado, setEstado] = useState<EstadoConferencia | null>(null);
+  // O TEXTO COLADO É CONTROLADO, e isso não é preferência de estilo.
+  //
+  // React reinicia o formulário sozinho depois de uma action, então a caixa
+  // esvaziava a cada envio. Numa tela em que o conteúdo colado tem milhares de
+  // linhas, perder a colagem é perder o trabalho — e quando o envio falha, a
+  // pessoa fica sem o resultado E sem o que colou, o que é o pior dos dois
+  // mundos.
+  const [lista, setLista] = useState("");
   const [processando, iniciar] = useTransition();
 
   const r = estado?.resultado;
@@ -45,7 +53,23 @@ export default function ConferenciaForm({
           className="space-y-4"
           action={(formData) => {
             setEstado(null);
-            iniciar(async () => setEstado(await conferirListaDeCte(formData)));
+            iniciar(async () => {
+              try {
+                setEstado(await conferirListaDeCte(formData));
+              } catch (e) {
+                // A action já devolve erro como dado; isto pega o que nem chega
+                // a ela — conexão caída, resposta cortada por tempo limite da
+                // hospedagem, payload recusado. Sem este catch a promessa
+                // rejeita em silêncio e a tela não diz nada, que foi o defeito
+                // relatado.
+                setEstado({
+                  erro:
+                    "Não consegui falar com o servidor para conferir a lista. " +
+                    "Se a relação for muito grande, tente um período menor — e me diga o que aparece aqui: " +
+                    (e instanceof Error ? e.message : String(e)),
+                });
+              }
+            });
           }}
         >
           <div>
@@ -56,14 +80,23 @@ export default function ConferenciaForm({
               id="lista"
               name="lista"
               required
+              value={lista}
+              onChange={(e) => setLista(e.target.value)}
               rows={10}
               spellCheck={false}
               placeholder={EXEMPLO}
               className={`${inputClass} font-mono text-xs`}
             />
-            <p className="mt-1 text-xs text-slate-500">
-              Aceita tabulação, ponto e vírgula ou vírgula como separador, e as duas telas da Omie. O período é
-              descoberto pelas datas da lista — pode colar um mês ou o ano inteiro.
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-slate-500">
+              <span>
+                Aceita tabulação, ponto e vírgula ou vírgula como separador, e as duas telas da Omie. O período é
+                descoberto pelas datas da lista — pode colar um mês ou o ano inteiro.
+              </span>
+              {lista.trim() !== "" && (
+                <span className="font-medium text-slate-600">
+                  {fmtNumero(lista.trim().split(/\r?\n/).length)} linha(s) coladas
+                </span>
+              )}
             </p>
           </div>
 
@@ -87,9 +120,23 @@ export default function ConferenciaForm({
             </div>
           )}
 
-          <button type="submit" disabled={processando} className={primaryButtonClass}>
-            {processando ? "Conferindo..." : "Conferir"}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="submit" disabled={processando || lista.trim() === ""} className={primaryButtonClass}>
+              {processando ? "Conferindo..." : "Conferir"}
+            </button>
+            {lista.trim() !== "" && !processando && (
+              <button
+                type="button"
+                onClick={() => {
+                  setLista("");
+                  setEstado(null);
+                }}
+                className="text-xs font-medium text-slate-500 hover:underline"
+              >
+                limpar
+              </button>
+            )}
+          </div>
         </form>
 
         {estado?.erro && <p className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{estado.erro}</p>}

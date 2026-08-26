@@ -660,13 +660,38 @@ function pagamentoEmDiaNaoUtil(ctx: ContextoAuditoria, materialidade: number): A
 // FR-FORNECEDOR-NOVO-ALTO — cadastro recente que ja recebe valor relevante.
 // Empresa de fachada tipicamente aparece assim: cadastro novo, poucas notas,
 // valores altos, sem historico.
+//
+// ESTA REGRA ESTAVA SEM EFEITO, e o defeito era de uma palavra: ela lia
+// `sincronizadoEm`, que e reescrito a CADA sincronizacao. Todo fornecedor
+// parecia cadastrado hoje, entao "novo" nao filtrava nada — na pratica a regra
+// virou "fornecedor com volume alto", que nao e o que ela se propoe a achar, e
+// ainda dava a impressao de que a checagem de empresa de fachada estava
+// rodando.
+//
+// A data certa e `dataCadastroOmie` (o `info.dInc` da propria Omie). Quando a
+// conta nao devolve aquele bloco, vale `primeiraVezEm` — quando o espelho viu a
+// linha pela primeira vez —, que nao e o cadastro real mas responde "apareceu
+// agora?" para tudo daqui em diante.
+//
+// SEM NENHUMA DAS DUAS, A REGRA SE CALA. Sao as linhas que ja existiam antes
+// destas colunas: nao ha resposta, e tratar ausencia de data como "novo" faria
+// a base inteira disparar de uma vez — exatamente o defeito que se esta
+// corrigindo, invertido.
 const DIAS_FORNECEDOR_NOVO = 60;
+
+function desdeQuandoExiste(p: {
+  dataCadastroOmie: Date | null;
+  primeiraVezEm: Date | null;
+}): Date | null {
+  return p.dataCadastroOmie ?? p.primeiraVezEm ?? null;
+}
 
 function fornecedorNovoComValorAlto(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
-  const novos = ctx.parceiros.filter(
-    (p) => diasEntre(p.sincronizadoEm, ctx.dataReferencia) <= DIAS_FORNECEDOR_NOVO
-  );
+  const novos = ctx.parceiros.filter((p) => {
+    const desde = desdeQuandoExiste(p);
+    return desde !== null && diasEntre(desde, ctx.dataReferencia) <= DIAS_FORNECEDOR_NOVO;
+  });
 
   for (const p of novos) {
     const titulos = ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo === p.codigoOmie);
@@ -692,7 +717,18 @@ function fornecedorNovoComValorAlto(ctx: ContextoAuditoria, materialidade: numbe
       entidadeTipo: "OmieParceiro",
       entidadeId: p.id,
       entidadeRef: p.nome,
-      evidencia: { fornecedor: p.nome, documento: p.documento, titulos: titulos.length, valor, pessoaFisica: ehPessoaFisica(p.documento) },
+      evidencia: {
+        fornecedor: p.nome,
+        documento: p.documento,
+        titulos: titulos.length,
+        valor,
+        pessoaFisica: ehPessoaFisica(p.documento),
+        cadastradoEm: desdeQuandoExiste(p)?.toISOString() ?? null,
+        // Qual das duas datas sustentou o achado. "Primeira vez no espelho" e
+        // um limite inferior, nao o cadastro de verdade — quem for conferir na
+        // Omie precisa saber disso antes de cobrar alguem.
+        origemDaData: p.dataCadastroOmie ? "cadastro na Omie" : "primeira vez no espelho",
+      },
       chave: chaveAchado("FR-FORNECEDOR-NOVO-ALTO", p.codigoOmie),
     });
   }

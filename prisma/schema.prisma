@@ -276,6 +276,23 @@ model OmieParceiro {
   // bancário de terceiro.
   contaBancariaHash       String?
   contaBancariaAlteradaEm DateTime?
+  // QUANDO ESTE FORNECEDOR PASSOU A EXISTIR — duas fontes, nesta ordem.
+  //
+  // `sincronizadoEm` NÃO serve para isso, e a confusão entre os dois deixou a
+  // regra de empresa de fachada sem efeito por meses: ele é reescrito a cada
+  // sincronização, então todo fornecedor parecia ter sido cadastrado hoje.
+  //
+  // `dataCadastroOmie` é a verdade — vem do `info.dInc` da própria Omie.
+  // `primeiraVezEm` é o substituto quando a conta não devolve aquele bloco:
+  // gravado na CRIAÇÃO da linha e nunca mais tocado. Não é a data real do
+  // cadastro (é a data em que o espelho o viu pela primeira vez), mas responde
+  // "apareceu agora?" para tudo que surgir daqui em diante.
+  //
+  // Os dois são opcionais de propósito: para as linhas que já existiam quando
+  // esta coluna nasceu, não há resposta, e a regra se cala em vez de tratar
+  // fornecedor antigo como novo.
+  dataCadastroOmie        DateTime?
+  primeiraVezEm           DateTime?
   sincronizadoEm          DateTime    @default(now())
 
   @@unique([conexaoId, codigoOmie])

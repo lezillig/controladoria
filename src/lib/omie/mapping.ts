@@ -255,6 +255,8 @@ export function normalizarParceiro(bruto: Bruto): ParceiroNormalizado | null {
   const ehFornecedor = bool(bruto, "fornecedor") ?? /fornecedor/.test(tags);
 
   const dadosBancarios = obj(bruto, "dadosBancarios", "dados_bancarios");
+  // A data de inclusão vem num bloco `info` à parte, e não na raiz do registro.
+  const info = obj(bruto, "info", "infoCadastro");
 
   return {
     codigoOmie,
@@ -269,6 +271,7 @@ export function normalizarParceiro(bruto: Bruto): ParceiroNormalizado | null {
     estado: str(bruto, "estado"),
     inativo: (bool(bruto, "inativo") ?? false) || str(bruto, "inativo") === "S",
     bloqueado: bool(bruto, "bloquear_faturamento", "bloqueado") ?? false,
+    dataCadastroOmie: data(info, "dInc", "dInclusao", "data_inclusao"),
     contaBancariaHash: hashContaBancaria(
       str(dadosBancarios, "codigo_banco", "cCodBanco"),
       str(dadosBancarios, "agencia", "cAgencia"),

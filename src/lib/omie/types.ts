@@ -22,6 +22,11 @@ export type ParceiroNormalizado = {
   inativo: boolean;
   bloqueado: boolean;
   contaBancariaHash: string | null;
+  // Data em que a Omie cadastrou o parceiro (`info.dInc`). É o único dado que
+  // diz "este fornecedor é novo" — e sem ele a regra que procura empresa de
+  // fachada não tem em que se apoiar. Nulo quando a conta não devolve o bloco
+  // `info`, e nesse caso a regra se cala em vez de chutar.
+  dataCadastroOmie: Date | null;
 };
 
 export type CategoriaNormalizada = {

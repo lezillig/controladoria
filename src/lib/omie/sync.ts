@@ -257,7 +257,12 @@ async function gravarCadastros(
           const trocou = antes !== null && p.contaBancariaHash !== null && antes !== p.contaBancariaHash;
           return prisma.omieParceiro.upsert({
             where: { conexaoId_codigoOmie: { conexaoId, codigoOmie: p.codigoOmie } },
-            create: { ...comuns, ...p, sincronizadoEm: agora },
+            // `primeiraVezEm` só no create, e é o ponto inteiro dela: no update
+            // ela não aparece, então a data em que o espelho viu o fornecedor
+            // pela primeira vez sobrevive a todas as sincronizações seguintes.
+            // Foi exatamente isso que faltou a `sincronizadoEm`, que é
+            // reescrito toda vez e por isso não sabe dizer quem é novo.
+            create: { ...comuns, ...p, primeiraVezEm: agora, sincronizadoEm: agora },
             update: {
               ...p,
               ...(trocou ? { contaBancariaAlteradaEm: agora } : {}),

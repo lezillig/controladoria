@@ -4,6 +4,7 @@ import {
   conferirCte,
   lerListaDeCte,
   DIAS_DE_TOLERANCIA,
+  type CteDaLista,
   type ResultadoConferencia,
 } from "@/lib/controladoria/cte";
 import { fimDoDia, inicioDoDia } from "@/lib/controladoria/periodos";
@@ -44,6 +45,33 @@ export async function conferirListaDeCte(formData: FormData): Promise<EstadoConf
     };
   }
 
+  try {
+    return await cruzar(session, formData, itens, ignoradas);
+  } catch (e) {
+    // ERRO VIRA RESPOSTA, NUNCA EXCEÇÃO.
+    //
+    // Server action que lança some no cliente: a promessa rejeita dentro da
+    // transição, nenhum estado é gravado, e a tela volta ao normal como se nada
+    // tivesse acontecido — foi exatamente o que o usuário viu ("colei, apertei
+    // o botão e sumiu"). Falha silenciosa numa tela de conferência é pior que
+    // falha barulhenta: ela é indistinguível de "está tudo certo".
+    const texto = e instanceof Error ? e.message : String(e);
+    const digest = (e as { digest?: string })?.digest;
+    return {
+      erro:
+        `A conferência não completou: ${texto.slice(0, 300)}` +
+        (digest ? ` (identificador ${digest})` : ""),
+      ignoradas,
+    };
+  }
+}
+
+async function cruzar(
+  session: { companyId: string; userId: string; name: string; email: string },
+  formData: FormData,
+  itens: CteDaLista[],
+  ignoradas: string[]
+): Promise<EstadoConferencia> {
   const escopo = await resolverEscopo(session.companyId, String(formData.get("empresa") ?? "") || undefined);
 
   // O PERÍODO VEM DA LISTA, não do filtro da tela.
@@ -69,7 +97,11 @@ export async function conferirListaDeCte(formData: FormData): Promise<EstadoConf
   });
 
   const conta = (tipo: string) => resultado.linhas.filter((l) => l.tipo === tipo).length;
-  await registrarEvento({
+  // A trilha é importante, mas não é o produto desta tela. Se o log falhar, o
+  // resultado da conferência já está pronto e jogá-lo fora por isso seria
+  // trocar um problema pequeno por um grande.
+  try {
+    await registrarEvento({
     companyId: session.companyId,
     userId: session.userId,
     userNome: session.name,
@@ -81,8 +113,11 @@ export async function conferirListaDeCte(formData: FormData): Promise<EstadoConf
       `${conta("cancelado_com_titulo")} cancelados com título vivo, ` +
       `${conta("valor_divergente")} com valor divergente, ` +
       `${conta("autorizado_sem_titulo")} sem título, ` +
-      `${conta("titulo_sem_cte")} títulos sem CT-e na lista.`,
-  });
+        `${conta("titulo_sem_cte")} títulos sem CT-e na lista.`,
+    });
+  } catch {
+    // segue com o resultado
+  }
 
   return {
     resultado,
