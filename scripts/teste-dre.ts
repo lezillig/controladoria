@@ -3,7 +3,7 @@
 // A aritmética de um DRE é a parte que ninguém confere de olho: os subtotais
 // encadeiam, e um sinal trocado no meio fecha o resultado líquido certo com o
 // lucro bruto errado. É exatamente o erro que passa numa reunião.
-import { montarDre, proporLinha } from "../src/lib/controladoria/dre";
+import { montarDre, montarDreAnual, proporLinha } from "../src/lib/controladoria/dre";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 
 let falhas = 0;
@@ -207,8 +207,8 @@ console.log("\n14. Caixa × competência");
     ],
   } as unknown as ContextoAuditoria;
 
-  const comp = montarDre(ctxCaixa, MES, ANT, cls({}), false, "competencia");
-  const caixa = montarDre(ctxCaixa, MES, ANT, cls({}), false, "caixa");
+  const comp = montarDre(ctxCaixa, MES, ANT, cls({}), { regime: "competencia" });
+  const caixa = montarDre(ctxCaixa, MES, ANT, cls({}), { regime: "caixa" });
   const v = (r: typeof comp, c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
 
   conferir("competência: o faturamento inteiro", v(comp, "RECEITA_BRUTA"), 10_000_000);
@@ -231,8 +231,8 @@ console.log("\n11. Tributos retidos na fonte — interruptor, não regra");
          tit("PAGAR", "2", 1_000)],
         [cat("1", "Serviços", true), cat("2", "ISS")]);
 
-  const desligado = montarDre(dados(), MES, ANT, cls({}), false);
-  const ligado = montarDre(dados(), MES, ANT, cls({}), true);
+  const desligado = montarDre(dados(), MES, ANT, cls({}), { somarRetencoes: false });
+  const ligado = montarDre(dados(), MES, ANT, cls({}), { somarRetencoes: true });
   const v = (r: typeof desligado, c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
 
   conferir("desligado: só o título de imposto", v(desligado, "DEDUCOES"), 100_000);
@@ -390,6 +390,35 @@ console.log("\n6. Proposta automática — conservadora de propósito");
   conferir("mas o DAS do Simples continua sendo dedução", p("DAS - Simples Nacional"), "DEDUCOES");
   conferir("e CUSTO DOS SERVIÇOS nunca é adivinhado",
     [p("Combustível"), p("Pneus")].includes("CUSTO_SERVICO"), false);
+}
+
+// ------------------------------------------------------------ visão anual
+console.log("\n15. Visão anual — mês a mês e total do ano");
+{
+  const base = ctx(
+    [tit("RECEBER", "1", 100_000, "05"), tit("RECEBER", "1", 120_000, "06"), tit("RECEBER", "1", 90_000, "07"),
+     tit("PAGAR", "2", 30_000, "06")],
+    [cat("1", "Serviços", true), cat("2", "Combustível")]
+  );
+  const r = montarDreAnual(base, 2026, cls({}));
+  const linha = (c: string) => r.linhas.find((l) => l.chave === c)!;
+
+  // A data de referência do contexto é 01/08/2026 — a tabela vai até agosto e
+  // não projeta os meses que ainda não aconteceram.
+  conferir("vai só até o mês da data de referência", r.meses.map((m) => m.rotulo),
+    ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago"]);
+  conferir("cada mês no seu lugar",
+    linha("RECEITA_BRUTA").porMes, [0, 0, 0, 0, 10_000_000, 12_000_000, 9_000_000, 0]);
+  conferir("total do ano soma os meses", linha("RECEITA_BRUTA").totalCents, 31_000_000);
+  conferir("a despesa também", linha("DESPESA_VEICULOS").totalCents, 3_000_000);
+  conferir("e o resultado do ano fecha", r.resultadoLiquidoCents, 31_000_000 - 3_000_000);
+
+  // A SOMA DOS MESES TEM DE BATER COM O MÊS. É o teste que justifica reusar
+  // `montarDre` doze vezes em vez de somar por fora: uma segunda conta
+  // divergiria em algum arredondamento e ninguém saberia qual está certa.
+  const junho = montarDre(base, { inicio: d("2026-06-01"), fim: d("2026-06-30T23:59:59"), rotulo: "jun" }, ANT, cls({}));
+  conferir("junho da visão anual = junho da visão mensal",
+    linha("RECEITA_BRUTA").porMes[5], junho.linhas.find((l) => l.chave === "RECEITA_BRUTA")?.valorCents);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);

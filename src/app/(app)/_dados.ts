@@ -86,7 +86,13 @@ export function competenciasDisponiveis(
 
 export async function contextoDaPagina(
   empresaParam?: string,
-  competenciaParam?: string
+  competenciaParam?: string,
+  // Janela de leitura, quando a tela precisa de mais que a padrão. O DRE anual
+  // é o caso: ele mostra doze meses, e a janela de auditoria não os cobre.
+  // Fica como parâmetro, e não como padrão maior para todo mundo, porque
+  // carregar um ano de títulos em toda tela foi o que já esgotou a franquia de
+  // transferência do banco uma vez.
+  desdeParam?: Date
 ): Promise<{
   session: SessionPayload;
   ctx: ContextoAuditoria;
@@ -97,7 +103,7 @@ export async function contextoDaPagina(
   const escopo = await resolverEscopo(session.companyId, empresaParam);
   const periodo = resolverPeriodo(competenciaParam);
   const ctx = await carregarContexto(session.companyId, periodo.dataReferencia, escopo.conexaoId ?? undefined, {
-    desde: janelaDeAuditoria(periodo.dataReferencia),
+    desde: desdeParam ?? janelaDeAuditoria(periodo.dataReferencia),
   });
   return { session, ctx, escopo, periodo };
 }

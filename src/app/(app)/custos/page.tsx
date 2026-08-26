@@ -1,11 +1,12 @@
 import { montarComparativo, ranking } from "@/lib/controladoria/analytics";
-import { montarDre } from "@/lib/controladoria/dre";
+import { montarDre, montarDreAnual } from "@/lib/controladoria/dre";
 import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
+import TabelaDreAnual from "./TabelaDreAnual";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { secondaryButtonClass } from "@/lib/ui";
-import { competenciasDisponiveis, contextoDaPagina, resolverRegime } from "../_dados";
+import { competenciasDisponiveis, contextoDaPagina, resolverPeriodo, resolverRegime } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 
@@ -28,10 +29,23 @@ import Filtros from "../Filtros";
 export default async function CustosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ empresa?: string; competencia?: string; regime?: string }>;
+  searchParams: Promise<{ empresa?: string; competencia?: string; regime?: string; visao?: string }>;
 }) {
   const params = await searchParams;
-  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  // VISÃO ANUAL carrega o ano inteiro; a mensal, a janela de sempre.
+  //
+  // A janela maior fica atrelada à visão, e não vira padrão: carregar um ano de
+  // títulos em toda abertura de tela foi o que já esgotou a franquia de
+  // transferência do banco uma vez, derrubando junto o sistema de gestão que
+  // divide o mesmo Postgres. Quem pede o ano paga pelo ano.
+  const anual = params.visao === "ano";
+  const periodoEscolhido = resolverPeriodo(params.competencia);
+  const anoDaTela = periodoEscolhido.dataReferencia.getFullYear();
+  const { ctx, escopo, periodo } = await contextoDaPagina(
+    params.empresa,
+    params.competencia,
+    anual ? new Date(anoDaTela, 0, 1) : undefined
+  );
   const regime = resolverRegime(params.regime);
 
   const comparativo = await montarComparativo(ctx);
@@ -61,13 +75,19 @@ export default async function CustosPage({
   }
   const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
 
+  const dreAnual = anual
+    ? montarDreAnual(ctx, anoDaTela, classificacoes, {
+        somarRetencoes: ctx.config.retencoesNasDeducoes,
+        regime,
+      })
+    : null;
+
   const dre = montarDre(
     ctx,
     comparativo.janelas.mesAtual,
     comparativo.janelas.mesAnterior,
     classificacoes,
-    ctx.config.retencoesNasDeducoes,
-    regime
+    { somarRetencoes: ctx.config.retencoesNasDeducoes, regime }
   );
 
   // LINHA VAZIA NÃO É MOSTRADA, e subtotal repetido tampouco.
@@ -135,7 +155,32 @@ export default async function CustosPage({
             ordenar, filtrar e riscar conforme se resolve. A planilha traz
             receita e despesa juntas, com o mesmo recorte de empresa e
             competência que está visível aqui. */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Mês ou ano. São perguntas diferentes: "como foi julho" e "o que
+              mudou ao longo do ano". Um seletor, e não duas telas, porque a
+              segunda pergunta quase sempre nasce da primeira. */}
+          <div className="mr-1 flex rounded-full bg-slate-100 p-0.5">
+            {[
+              { valor: "mes", rotulo: "Mês" },
+              { valor: "ano", rotulo: `Ano ${anoDaTela}` },
+            ].map((v) => {
+              const q = new URLSearchParams(filtros);
+              if (v.valor === "ano") q.set("visao", "ano");
+              else q.delete("visao");
+              const ativo = (v.valor === "ano") === anual;
+              return (
+                <a
+                  key={v.valor}
+                  href={`/custos${q.toString() ? `?${q}` : ""}`}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${
+                    ativo ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {v.rotulo}
+                </a>
+              );
+            })}
+          </div>
           {/* Duas planilhas, e não uma com tudo: elas servem a trabalhos
               diferentes. A de composição é para corrigir a CATEGORIA na Omie;
               a de conferência do DRE é para julgar em que LINHA a categoria
@@ -162,26 +207,41 @@ export default async function CustosPage({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
-          rotulo="Receita líquida"
-          valor={fmtBRL(dre.receitaLiquidaCents)}
+          rotulo={anual ? `Receita líquida ${anoDaTela}` : "Receita líquida"}
+          valor={fmtBRL(dreAnual?.receitaLiquidaCents ?? dre.receitaLiquidaCents)}
           apoio="Receita bruta menos as deduções"
         />
         <Kpi
           rotulo="Lucro bruto"
-          valor={fmtBRL(dre.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.valorCents ?? 0)}
-          apoio={`${fmtPercent(dre.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.percentReceitaLiquida ?? null)} da receita líquida`}
+          valor={fmtBRL(
+            dreAnual
+              ? (dreAnual.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.totalCents ?? 0)
+              : (dre.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.valorCents ?? 0)
+          )}
+          apoio={`${fmtPercent(
+            (dreAnual ?? dre).linhas.find((l) => l.chave === "LUCRO_BRUTO")?.percentReceitaLiquida ?? null
+          )} da receita líquida`}
         />
         <Kpi
           rotulo="Resultado líquido"
-          valor={fmtBRL(dre.resultadoLiquidoCents)}
-          apoio={`Margem ${fmtPercent(dre.margemLiquidaPercent)}`}
-          tom={dre.resultadoLiquidoCents >= 0 ? "bom" : "ruim"}
+          valor={fmtBRL(dreAnual?.resultadoLiquidoCents ?? dre.resultadoLiquidoCents)}
+          apoio={`Margem ${fmtPercent(dreAnual?.margemLiquidaPercent ?? dre.margemLiquidaPercent)}`}
+          tom={(dreAnual?.resultadoLiquidoCents ?? dre.resultadoLiquidoCents) >= 0 ? "bom" : "ruim"}
         />
         <Kpi
           rotulo="Por classificar"
-          valor={fmtBRL(dre.naoConfirmadoCents + dre.semCategoriaCents)}
+          valor={fmtBRL(
+            (dreAnual?.naoConfirmadoCents ?? dre.naoConfirmadoCents) +
+              (dreAnual?.semCategoriaCents ?? dre.semCategoriaCents)
+          )}
           apoio="Movimento em categoria que ninguém confirmou ainda"
-          tom={dre.naoConfirmadoCents + dre.semCategoriaCents > 0 ? "atencao" : "bom"}
+          tom={
+            (dreAnual?.naoConfirmadoCents ?? dre.naoConfirmadoCents) +
+              (dreAnual?.semCategoriaCents ?? dre.semCategoriaCents) >
+            0
+              ? "atencao"
+              : "bom"
+          }
         />
       </div>
 
@@ -208,20 +268,24 @@ export default async function CustosPage({
       <Secao
         titulo="Demonstração do resultado"
         descricao={
-          `${comparativo.janelas.mesAtual.rotulo}, na estrutura do art. 187 da Lei 6.404/76. ` +
+          `${anual ? `Janeiro a ${dreAnual?.meses[dreAnual.meses.length - 1]?.rotulo ?? "dezembro"} de ${anoDaTela}, valores dos meses em MILHARES de reais` : comparativo.janelas.mesAtual.rotulo}, na estrutura do art. 187 da Lei 6.404/76. ` +
           `Percentuais sobre a receita líquida. ` +
           (regime === "caixa"
             ? "Regime de CAIXA — o que se moveu na conta, pela data da baixa."
             : "Regime de COMPETÊNCIA — o que aconteceu, pela data de emissão.")
         }
       >
-        <TabelaDre
-          linhas={linhasVisiveis}
-          subgruposConhecidos={subgruposConhecidos}
-          marcasPorCategoria={marcasPorCategoria}
-        />
+        {dreAnual ? (
+          <TabelaDreAnual dre={dreAnual} />
+        ) : (
+          <TabelaDre
+            linhas={linhasVisiveis}
+            subgruposConhecidos={subgruposConhecidos}
+            marcasPorCategoria={marcasPorCategoria}
+          />
+        )}
 
-        {dre.retencoes.totalCents > 0 && (
+        {!anual && dre.retencoes.totalCents > 0 && (
           <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Retido na fonte pelos clientes — não somado acima
@@ -263,7 +327,7 @@ export default async function CustosPage({
           </div>
         )}
 
-        {linhasOcultas > 0 && (
+        {!anual && linhasOcultas > 0 && (
           <p className="mt-3 text-xs text-slate-500">
             {linhasOcultas} linha(s) da estrutura não aparecem por estarem zeradas e sem nenhuma categoria — entre elas,
             as que ainda não receberam classificação. Elas voltam sozinhas assim que houver movimento classificado ali,

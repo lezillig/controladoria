@@ -437,20 +437,29 @@ function retencoesDoPeriodo(
 
 type Classificacao = { linha: string; subgrupo: string | null; confirmada: boolean };
 
+export type OpcoesDre = {
+  // Somar as retenções na fonte às deduções da receita. Ver
+  // `retencoesDoPeriodo` e a coluna `retencoesNasDeducoes` na configuração.
+  somarRetencoes?: boolean;
+  // COMPETÊNCIA ou CAIXA. São perguntas diferentes sobre o mesmo mês:
+  // competência responde "a operação deu lucro?", caixa responde "sobrou
+  // dinheiro?". Um mês pode fechar no azul num e no vermelho no outro — é o
+  // descasamento entre faturar e receber, e é justamente o que se quer ver.
+  regime?: "competencia" | "caixa";
+  // Carregar os títulos de cada categoria para o drill-down. Desligado na
+  // visão anual, que chama esta função doze vezes e não abre título nenhum:
+  // montar as listas ali seria trabalho jogado fora doze vezes.
+  incluirTitulos?: boolean;
+};
+
 export function montarDre(
   ctx: ContextoAuditoria,
   periodo: Periodo,
   periodoAnterior: Periodo,
   classificacoes: Map<string, Classificacao>,
-  // Somar as retenções na fonte às deduções da receita. Ver
-  // `retencoesDoPeriodo` e a coluna `retencoesNasDeducoes` na configuração.
-  somarRetencoes = false,
-  // COMPETÊNCIA ou CAIXA. São perguntas diferentes sobre o mesmo mês:
-  // competência responde "a operação deu lucro?", caixa responde "sobrou
-  // dinheiro?". Um mês pode fechar no azul num e no vermelho no outro — é o
-  // descasamento entre faturar e receber, e é justamente o que se quer ver.
-  regime: "competencia" | "caixa" = "competencia"
+  opcoes: OpcoesDre = {}
 ): ResultadoDre {
+  const { somarRetencoes = false, regime = "competencia", incluirTitulos = true } = opcoes;
   const porTitulo = new Map(ctx.titulos.map((t) => [t.id, t]));
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
@@ -513,7 +522,9 @@ export function montarDre(
   }
 
   const titulosPorCategoria = new Map<string, TituloDoDre[]>();
-  if (regime === "caixa") {
+  if (!incluirTitulos) {
+    // nada a montar
+  } else if (regime === "caixa") {
     // O drill-down segue o regime: no caixa, quem abre a categoria quer ver os
     // PAGAMENTOS que compõem o número, com a data e o valor de cada um. Mostrar
     // o título cheio faria a soma da lista não bater com a linha, que é o jeito
@@ -535,8 +546,8 @@ export function montarDre(
       });
       titulosPorCategoria.set(chave, lista);
     }
-  } else
-  for (const natureza of ["RECEBER", "PAGAR"] as const) {
+  } else {
+    for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
       if (!dentro(dataDeCompetencia(t), periodo)) continue;
       const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
@@ -551,6 +562,7 @@ export function montarDre(
         empresa: t.conexaoApelido,
       });
       titulosPorCategoria.set(chave, lista);
+    }
     }
   }
 
@@ -732,5 +744,112 @@ export function montarDre(
     retencoes,
     retencoesSomadas: somarRetencoes,
     regime,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// A DEMONSTRAÇÃO DO ANO INTEIRO, MÊS A MÊS
+//
+// A visão mensal responde "como foi julho". Esta responde outra pergunta, que
+// nenhuma tela do sistema respondia: "o que mudou ao longo do ano". São as
+// perguntas de dois leitores diferentes — quem fecha o mês e quem decide o
+// próximo —, e a segunda é a que revela tendência: a despesa que subiu todo
+// mês sem ninguém notar, o trimestre em que a margem virou, o mês fora da
+// curva.
+//
+// REUSA `montarDre`, doze vezes, em vez de somar por conta própria. Uma
+// segunda implementação da mesma conta divergiria da primeira em algum
+// arredondamento, e a divergência apareceria como "a soma dos meses não bate
+// com o mês" — sem que nada apontasse qual das duas está certa.
+//
+// O drill-down fica desligado nas doze chamadas: a visão anual não abre
+// título, e montar as listas seria trabalho jogado fora doze vezes.
+// ---------------------------------------------------------------------------
+
+export type LinhaDreAnual = {
+  chave: string;
+  rotulo: string;
+  tipo: "GRUPO" | "SUBTOTAL";
+  porMes: number[];
+  totalCents: number;
+  // Percentual do total do ano sobre a receita líquida do ano. Comparar com a
+  // receita líquida ANUAL, e não com a de cada mês, é o que torna a coluna de
+  // total comparável entre linhas.
+  percentReceitaLiquida: number | null;
+};
+
+export type ResultadoDreAnual = {
+  ano: number;
+  meses: { indice: number; rotulo: string }[];
+  linhas: LinhaDreAnual[];
+  receitaLiquidaCents: number;
+  resultadoLiquidoCents: number;
+  margemLiquidaPercent: number | null;
+  naoConfirmadoCents: number;
+  semCategoriaCents: number;
+  regime: "competencia" | "caixa";
+};
+
+const ROTULO_MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+export function montarDreAnual(
+  ctx: ContextoAuditoria,
+  ano: number,
+  classificacoes: Map<string, Classificacao>,
+  opcoes: OpcoesDre = {}
+): ResultadoDreAnual {
+  // Só até o mês da data de referência: projetar dezembro em agosto encheria a
+  // tabela de zeros que parecem queda de receita — e uma linha caindo a zero é
+  // lida como problema, não como "ainda não aconteceu".
+  const ultimoMes =
+    ctx.dataReferencia.getFullYear() === ano ? ctx.dataReferencia.getMonth() : 11;
+
+  const meses = Array.from({ length: ultimoMes + 1 }, (_, i) => ({
+    indice: i,
+    rotulo: ROTULO_MES[i],
+  }));
+
+  const porMes = meses.map((m) => {
+    const inicio = new Date(ano, m.indice, 1, 0, 0, 0, 0);
+    const fim = new Date(ano, m.indice + 1, 0, 23, 59, 59, 999);
+    const anterior = { inicio: new Date(ano, m.indice - 1, 1), fim: new Date(ano, m.indice, 0), rotulo: "" };
+    return montarDre(ctx, { inicio, fim, rotulo: m.rotulo }, anterior, classificacoes, {
+      ...opcoes,
+      incluirTitulos: false,
+    });
+  });
+
+  const linhas: LinhaDreAnual[] = LINHAS_DRE.map((def) => {
+    const valores = porMes.map((r) => r.linhas.find((l) => l.chave === def.chave)?.valorCents ?? 0);
+    return {
+      chave: def.chave,
+      rotulo: def.rotulo,
+      tipo: def.tipo,
+      porMes: valores,
+      totalCents: valores.reduce((a, v) => a + v, 0),
+      percentReceitaLiquida: null,
+    };
+  });
+
+  const receitaLiquida = linhas.find((l) => l.chave === "RECEITA_LIQUIDA")?.totalCents ?? 0;
+  for (const l of linhas) {
+    l.percentReceitaLiquida = receitaLiquida > 0 ? (l.totalCents / receitaLiquida) * 100 : null;
+  }
+
+  return {
+    ano,
+    meses,
+    linhas,
+    receitaLiquidaCents: receitaLiquida,
+    resultadoLiquidoCents: linhas.find((l) => l.chave === "RESULTADO_LIQUIDO")?.totalCents ?? 0,
+    margemLiquidaPercent:
+      receitaLiquida > 0
+        ? ((linhas.find((l) => l.chave === "RESULTADO_LIQUIDO")?.totalCents ?? 0) / receitaLiquida) * 100
+        : null,
+    // Somados dos doze meses: uma categoria por confirmar em março continua por
+    // confirmar em agosto, e mostrar só o mês corrente subestimaria o que falta.
+    naoConfirmadoCents: porMes.reduce((a, r) => a + r.naoConfirmadoCents, 0),
+    semCategoriaCents: porMes.reduce((a, r) => a + r.semCategoriaCents, 0),
+    regime: opcoes.regime ?? "competencia",
   };
 }

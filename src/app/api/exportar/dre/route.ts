@@ -59,7 +59,10 @@ export async function GET(req: NextRequest) {
     where: { companyId: session.companyId },
     select: { retencoesNasDeducoes: true },
   });
-  const dre = montarDre(ctx, mes, mesAnterior, classificacoes, config?.retencoesNasDeducoes ?? true, regime);
+  const dre = montarDre(ctx, mes, mesAnterior, classificacoes, {
+    somarRetencoes: config?.retencoesNasDeducoes ?? true,
+    regime,
+  });
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
   const empresa = escopo.apelido
