@@ -24,10 +24,14 @@ export default function TabelaDre({
   linhas,
   subgruposConhecidos,
   marcasPorCategoria,
+  anoAnterior,
 }: {
   linhas: LinhaDreCalculada[];
   subgruposConhecidos: string[];
   marcasPorCategoria: Record<string, string>;
+  // Só o ano, para o cabeçalho da coluna. "Mesmo mês 2025" diz o que "ano
+  // anterior" não diz: qual ano exatamente está do outro lado da comparação.
+  anoAnterior?: number;
 }) {
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
 
@@ -63,6 +67,8 @@ export default function TabelaDre({
               <th className="px-3 py-2 text-right">% RL</th>
               <th className="px-3 py-2 text-right">Mês anterior</th>
               <th className="px-3 py-2 text-right">Variação</th>
+              <th className="px-3 py-2 text-right">Mesmo mês {anoAnterior ?? ""}</th>
+              <th className="px-3 py-2 text-right">Var. a/a</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -124,6 +130,21 @@ export default function TabelaDre({
                         bomSeSobe={linha.chave.startsWith("RECEITA") || subtotal}
                       />
                     </td>
+                    <td className="px-3 py-2.5 text-right tabular-nums text-slate-500">
+                      {linha.valorAnoAnteriorCents === null ? "—" : fmtBRL(linha.valorAnoAnteriorCents)}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      <Variacao
+                        valor={
+                          linha.valorAnoAnteriorCents !== null && linha.valorAnoAnteriorCents !== 0
+                            ? ((linha.valorCents - linha.valorAnoAnteriorCents) /
+                                Math.abs(linha.valorAnoAnteriorCents)) *
+                              100
+                            : null
+                        }
+                        bomSeSobe={linha.chave.startsWith("RECEITA") || subtotal}
+                      />
+                    </td>
                     <td className="px-3 py-2.5"></td>
                   </tr>
 
@@ -134,6 +155,8 @@ export default function TabelaDre({
                         <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtBRL(s.valorCents)}</td>
                         <td className="px-3 py-1.5"></td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{fmtBRL(s.valorAnteriorCents)}</td>
+                        <td className="px-3 py-1.5"></td>
+                        <td className="px-3 py-1.5"></td>
                         <td className="px-3 py-1.5"></td>
                         <td className="px-3 py-1.5"></td>
                       </tr>

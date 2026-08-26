@@ -392,6 +392,38 @@ console.log("\n6. Proposta automática — conservadora de propósito");
     [p("Combustível"), p("Pneus")].includes("CUSTO_SERVICO"), false);
 }
 
+// ------------------------------------------- comparativo ano contra ano
+console.log("\n16. Mesmo mês do ano anterior");
+{
+  const ANO_ANT = { inicio: d("2025-07-01"), fim: d("2025-07-31T23:59:59"), rotulo: "jul/25" };
+  const base = ctx(
+    [tit("RECEBER", "1", 100_000, "07"), tit("PAGAR", "2", 30_000, "07")],
+    [cat("1", "Serviços", true), cat("2", "Combustível")]
+  );
+  // Mesmo contexto, com julho do ano passado dentro dele.
+  const comAnterior = {
+    ...base,
+    titulos: [
+      ...base.titulos,
+      { ...tit("RECEBER", "1", 80_000), dataEmissao: d("2025-07-10"), dataVencimento: d("2025-07-20") },
+    ],
+  } as unknown as ContextoAuditoria;
+
+  const r = montarDre(comAnterior, MES, ANT, cls({}), { periodoAnoAnterior: ANO_ANT });
+  const linha = (c: string) => r.linhas.find((l) => l.chave === c)!;
+  conferir("julho do ano passado na coluna própria", linha("RECEITA_BRUTA").valorAnoAnteriorCents, 8_000_000);
+  conferir("sem mexer no mês atual", linha("RECEITA_BRUTA").valorCents, 10_000_000);
+  conferir("nem no mês anterior", linha("RECEITA_BRUTA").valorAnteriorCents, 0);
+  conferir("e a categoria também traz o dado",
+    linha("RECEITA_BRUTA").itens[0].valorAnoAnteriorCents, 8_000_000);
+
+  // SEM a opção, a coluna é NULA — e nulo é diferente de zero: zero afirmaria
+  // "não houve movimento" onde só existe "não foi carregado".
+  const semComparativo = montarDre(comAnterior, MES, ANT, cls({}));
+  conferir("sem a opção, nulo e não zero",
+    semComparativo.linhas.find((l) => l.chave === "RECEITA_BRUTA")?.valorAnoAnteriorCents, null);
+}
+
 // ------------------------------------------------------------ visão anual
 console.log("\n15. Visão anual — mês a mês e total do ano");
 {

@@ -301,6 +301,10 @@ export type ItemDre = {
   confirmada: boolean;
   valorCents: number;
   valorAnteriorCents: number;
+  // Mesmo mês do ano anterior. Nulo quando a janela de leitura não o cobre —
+  // e nulo é dito na tela como "—", nunca como zero: zero é uma afirmação
+  // ("não houve movimento") onde só existe ausência de dado.
+  valorAnoAnteriorCents: number | null;
   // De que lado a categoria vive. Decide o SINAL com que ela entra na linha:
   // uma entrada dentro de uma linha de saída reduz a linha, não a engorda.
   ehReceita: boolean;
@@ -315,6 +319,7 @@ export type LinhaDreCalculada = {
   tipo: "GRUPO" | "SUBTOTAL";
   valorCents: number;
   valorAnteriorCents: number;
+  valorAnoAnteriorCents: number | null;
   // Percentual sobre a RECEITA OPERACIONAL LÍQUIDA — a base de comparação
   // usual da análise vertical. Sobre a bruta, toda margem apareceria melhor do
   // que é, na exata proporção dos impostos.
@@ -450,6 +455,18 @@ export type OpcoesDre = {
   // visão anual, que chama esta função doze vezes e não abre título nenhum:
   // montar as listas ali seria trabalho jogado fora doze vezes.
   incluirTitulos?: boolean;
+  // O MESMO MÊS DO ANO ANTERIOR.
+  //
+  // Mês contra mês anterior mede movimento; mês contra o mesmo mês do ano
+  // passado mede TENDÊNCIA — e num negócio com sazonalidade os dois dizem
+  // coisas diferentes. Fretamento cai em janeiro e sobe em março por causa do
+  // calendário escolar, não por causa da gestão: comparar março com fevereiro
+  // premia quem não fez nada, e comparar março com março do ano passado é a
+  // única leitura que separa estação de desempenho.
+  //
+  // Opcional porque exige uma janela de leitura maior — treze meses em vez de
+  // três —, e quem não pede não paga.
+  periodoAnoAnterior?: Periodo;
 };
 
 export function montarDre(
@@ -459,7 +476,7 @@ export function montarDre(
   classificacoes: Map<string, Classificacao>,
   opcoes: OpcoesDre = {}
 ): ResultadoDre {
-  const { somarRetencoes = false, regime = "competencia", incluirTitulos = true } = opcoes;
+  const { somarRetencoes = false, regime = "competencia", incluirTitulos = true, periodoAnoAnterior } = opcoes;
   const porTitulo = new Map(ctx.titulos.map((t) => [t.id, t]));
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
@@ -568,15 +585,17 @@ export function montarDre(
 
   const atual = porCategoria(periodo);
   const anterior = porCategoria(periodoAnterior);
+  const anoAnterior = periodoAnoAnterior ? porCategoria(periodoAnoAnterior) : null;
 
   const itensPorLinha = new Map<string, ItemDre[]>();
   let naoConfirmado = 0;
   let semCategoria = 0;
 
-  for (const codigo of new Set([...atual.keys(), ...anterior.keys()])) {
+  for (const codigo of new Set([...atual.keys(), ...anterior.keys(), ...(anoAnterior?.keys() ?? [])])) {
     const valor = atual.get(codigo) ?? 0;
     const valorAnterior = anterior.get(codigo) ?? 0;
-    if (valor === 0 && valorAnterior === 0) continue;
+    const valorAnoAnterior = anoAnterior ? (anoAnterior.get(codigo) ?? 0) : null;
+    if (valor === 0 && valorAnterior === 0 && (valorAnoAnterior ?? 0) === 0) continue;
 
     if (codigo === "SEM_CATEGORIA") {
       semCategoria += valor;
@@ -616,6 +635,7 @@ export function montarDre(
       ehReceita: (mov?.receberCents ?? 0) > (mov?.pagarCents ?? 0),
       valorCents: valor,
       valorAnteriorCents: valorAnterior,
+      valorAnoAnteriorCents: valorAnoAnterior,
       titulos: doMes.slice(0, TITULOS_POR_CATEGORIA_NA_TELA),
       totalDeTitulos: doMes.length,
     });
@@ -641,14 +661,14 @@ export function montarDre(
   // como valor negativo já foi líquido no total da categoria, e aplicá-lo por
   // título faria o estorno virar mais despesa.
   const sinalDaLinha = new Map(LINHAS_DRE.map((l) => [l.chave as string, l.sinal as number]));
-  const totalDe = (chave: string, campo: "valorCents" | "valorAnteriorCents") => {
+  const totalDe = (chave: string, campo: "valorCents" | "valorAnteriorCents" | "valorAnoAnteriorCents") => {
     const linhaEhReceita = (sinalDaLinha.get(chave) ?? -1) > 0;
     return somar(itensPorLinha.get(chave) ?? [], (i) =>
-      i.ehReceita === linhaEhReceita ? Math.abs(i[campo]) : -Math.abs(i[campo])
+      i.ehReceita === linhaEhReceita ? Math.abs(i[campo] ?? 0) : -Math.abs(i[campo] ?? 0)
     );
   };
 
-  const calc = (campo: "valorCents" | "valorAnteriorCents") => {
+  const calc = (campo: "valorCents" | "valorAnteriorCents" | "valorAnoAnteriorCents") => {
     const g = (c: string) => totalDe(c, campo);
     const receitaLiquida = g("RECEITA_BRUTA") - g("DEDUCOES");
     const lucroBruto = receitaLiquida - g("CUSTO_SERVICO");
@@ -693,6 +713,9 @@ export function montarDre(
       ehReceita: false,
       valorCents: retencoes.totalCents,
       valorAnteriorCents: retencoesAnteriores.totalCents,
+      valorAnoAnteriorCents: periodoAnoAnterior
+        ? retencoesDoPeriodo(ctx, periodoAnoAnterior, regime).totalCents
+        : null,
       titulos: [],
       totalDeTitulos: 0,
     });
@@ -701,6 +724,7 @@ export function montarDre(
 
   const sub = calc("valorCents");
   const subAnterior = calc("valorAnteriorCents");
+  const subAnoAnterior = periodoAnoAnterior ? calc("valorAnoAnteriorCents") : null;
   const receitaLiquida = sub.RECEITA_LIQUIDA;
 
   const linhas: LinhaDreCalculada[] = LINHAS_DRE.map((def) => {
@@ -710,6 +734,11 @@ export function montarDre(
     const valor = def.tipo === "SUBTOTAL" ? (sub[def.chave] ?? 0) : totalDe(def.chave, "valorCents");
     const valorAnterior =
       def.tipo === "SUBTOTAL" ? (subAnterior[def.chave] ?? 0) : totalDe(def.chave, "valorAnteriorCents");
+    const valorAnoAnterior = !periodoAnoAnterior
+      ? null
+      : def.tipo === "SUBTOTAL"
+        ? (subAnoAnterior?.[def.chave] ?? 0)
+        : totalDe(def.chave, "valorAnoAnteriorCents");
 
     const porSubgrupo = new Map<string, { valorCents: number; valorAnteriorCents: number }>();
     for (const i of itens) {
@@ -726,6 +755,7 @@ export function montarDre(
       tipo: def.tipo,
       valorCents: valor,
       valorAnteriorCents: valorAnterior,
+      valorAnoAnteriorCents: valorAnoAnterior,
       percentReceitaLiquida: receitaLiquida > 0 ? (valor / receitaLiquida) * 100 : null,
       itens,
       subgrupos: [...porSubgrupo.entries()]

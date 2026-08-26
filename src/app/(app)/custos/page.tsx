@@ -11,10 +11,21 @@ import {
   competenciasDisponiveis,
   contextoDaPagina,
   resolverAno,
+  resolverPeriodo,
   resolverRegime,
 } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
+
+// Mesmo mês, um ano antes. O mês INTEIRO, mesmo quando o atual está pela
+// metade: comparar agosto até o dia 26 com agosto inteiro do ano passado daria
+// uma queda que é só de calendário. A tela diz que a comparação é com o mês
+// fechado, e quem lê decide o que fazer com isso.
+function mesmoMesAnoAnterior(mes: { inicio: Date }) {
+  const inicio = new Date(mes.inicio.getFullYear() - 1, mes.inicio.getMonth(), 1, 0, 0, 0, 0);
+  const fim = new Date(mes.inicio.getFullYear() - 1, mes.inicio.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { inicio, fim, rotulo: `${inicio.getFullYear()}` };
+}
 
 // CUSTOS E DRE.
 //
@@ -54,10 +65,16 @@ export default async function CustosPage({
   // dezembro do ano corrente é futuro, e `resolverPeriodo` cai sozinho na
   // leitura corrente — que é exatamente o que se quer para o ano em curso.
   const anoDaTela = anual ? resolverAno(params.competencia) : 0;
+  // A JANELA COBRE O MESMO MÊS DO ANO PASSADO, na visão mensal — treze meses
+  // em vez de três. É o custo do comparativo ano contra ano, e ele é pago só
+  // aqui: nenhuma outra tela precisa dessa profundidade.
+  const referenciaProvisoria = resolverPeriodo(anual ? `${anoDaTela}-12` : params.competencia).dataReferencia;
   const { ctx, escopo, periodo } = await contextoDaPagina(
     params.empresa,
     anual ? `${anoDaTela}-12` : params.competencia,
-    anual ? new Date(anoDaTela, 0, 1) : undefined
+    anual
+      ? new Date(anoDaTela, 0, 1)
+      : new Date(referenciaProvisoria.getFullYear() - 1, referenciaProvisoria.getMonth(), 1)
   );
   const regime = resolverRegime(params.regime);
 
@@ -100,7 +117,11 @@ export default async function CustosPage({
     comparativo.janelas.mesAtual,
     comparativo.janelas.mesAnterior,
     classificacoes,
-    { somarRetencoes: ctx.config.retencoesNasDeducoes, regime }
+    {
+      somarRetencoes: ctx.config.retencoesNasDeducoes,
+      regime,
+      periodoAnoAnterior: anual ? undefined : mesmoMesAnoAnterior(comparativo.janelas.mesAtual),
+    }
   );
 
   // LINHA VAZIA NÃO É MOSTRADA, e subtotal repetido tampouco.
@@ -153,7 +174,16 @@ export default async function CustosPage({
   const urlDaConferencia = `/api/exportar/dre${filtros.toString() ? `?${filtros}` : ""}`;
 
   return (
-    <div className="max-w-5xl space-y-6">
+    /* LARGURA LIVRE NESTA TELA, e não os 1024px das demais.
+       O DRE anual tem doze colunas de mês mais total e percentual; o mensal
+       ganhou o comparativo ano contra ano. Presos a max-w-5xl, os dois
+       rolavam de lado numa tela de 1900px que estava mais da metade vazia — e
+       tabela financeira que rola de lado é tabela que não se compara, porque
+       a linha some do campo de visão junto com o número.
+       O TETO DE 1800px continua existindo: sem nenhum, num monitor
+       ultralargo a primeira coluna e a última ficam a meio metro uma da
+       outra. */
+    <div className="max-w-[1800px] space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
@@ -281,7 +311,7 @@ export default async function CustosPage({
       </div>
 
       {(dre.naoConfirmadoCents > 0 || dre.semCategoriaCents > 0) && (
-        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="max-w-4xl rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <strong>Este DRE ainda não foi conferido por inteiro.</strong>{" "}
           {dre.naoConfirmadoCents > 0 && (
             <>
@@ -307,7 +337,10 @@ export default async function CustosPage({
           `Percentuais sobre a receita líquida. ` +
           (regime === "caixa"
             ? "Regime de CAIXA — o que se moveu na conta, pela data da baixa."
-            : "Regime de COMPETÊNCIA — o que aconteceu, pela data de emissão.")
+            : "Regime de COMPETÊNCIA — o que aconteceu, pela data de emissão.") +
+          (anual
+            ? ""
+            : " A coluna do ano anterior é o MESMO MÊS, fechado — comparar um mês pela metade com um mês inteiro daria uma queda que é só de calendário.")
         }
       >
         {dreAnual ? (
@@ -317,11 +350,12 @@ export default async function CustosPage({
             linhas={linhasVisiveis}
             subgruposConhecidos={subgruposConhecidos}
             marcasPorCategoria={marcasPorCategoria}
+            anoAnterior={comparativo.janelas.mesAtual.inicio.getFullYear() - 1}
           />
         )}
 
         {!anual && dre.retencoes.totalCents > 0 && (
-          <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className="mt-5 max-w-4xl rounded-lg border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Retido na fonte pelos clientes — não somado acima
             </p>
@@ -363,14 +397,14 @@ export default async function CustosPage({
         )}
 
         {!anual && linhasOcultas > 0 && (
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-3 max-w-4xl text-xs text-slate-500">
             {linhasOcultas} linha(s) da estrutura não aparecem por estarem zeradas e sem nenhuma categoria — entre elas,
             as que ainda não receberam classificação. Elas voltam sozinhas assim que houver movimento classificado ali,
             e continuam disponíveis no seletor de cada categoria.
           </p>
         )}
 
-        <p className="mt-4 text-xs text-slate-500">
+        <p className="mt-4 max-w-4xl text-xs text-slate-500">
           <strong>IRPJ e CSLL entram como dedução da receita bruta</strong>, e não abaixo do resultado antes dos
           tributos. É uma escolha da empresa, com razão de negócio: no Lucro Presumido a base dos dois é uma presunção
           sobre a receita — 16% para transporte de passageiros, 12% de CSLL —, então eles se comportam como percentual
@@ -450,7 +484,7 @@ export default async function CustosPage({
                   </li>
                 ))}
             </ul>
-            <p className="mt-3 text-xs text-slate-500">
+            <p className="mt-3 max-w-4xl text-xs text-slate-500">
               Corte linear (&quot;todos reduzem 10%&quot;) trata igual o que é desigual: corta o combustível que leva o
               passageiro na mesma proporção do contrato que ninguém usa. As categorias marcadas como &quot;acompanha a
               entrega&quot; devem ser atacadas por eficiência (custo por km, por hora), nunca por corte de valor absoluto.

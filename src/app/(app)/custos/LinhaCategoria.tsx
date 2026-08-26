@@ -86,6 +86,10 @@ export default function LinhaCategoria({
         <td className={`px-3 py-1.5 text-right tabular-nums ${contraFluxo ? "text-emerald-600" : "text-slate-400"}`}>
           {valorNaLinha(item.valorAnteriorCents)}
         </td>
+        <td className={`px-3 py-1.5 text-right tabular-nums ${contraFluxo ? "text-emerald-600" : "text-slate-400"}`}>
+          {item.valorAnoAnteriorCents === null ? "—" : valorNaLinha(item.valorAnoAnteriorCents)}
+        </td>
+        <td className="px-3 py-1.5"></td>
         <td className="px-3 py-1.5"></td>
         <td className="px-3 py-1.5 text-right">
           <ClassificarCategoria
@@ -108,7 +112,7 @@ export default function LinhaCategoria({
               <span className="ml-2 text-slate-400">{t.empresa}</span>
             </td>
             <td className="px-3 py-1 text-right tabular-nums">{fmtBRL(t.valorCents)}</td>
-            <td colSpan={4}></td>
+            <td colSpan={6}></td>
           </tr>
         ))}
 
@@ -118,7 +122,7 @@ export default function LinhaCategoria({
             e mais {item.totalDeTitulos - item.titulos.length} título(s) menores — a lista completa está na planilha de
             conferência.
           </td>
-          <td colSpan={5}></td>
+          <td colSpan={7}></td>
         </tr>
       )}
     </Fragment>
