@@ -190,5 +190,44 @@ const t = (
   conferir("o que confere vem por último", r.linhas[r.linhas.length - 1]?.tipo, "titulo_sem_cte");
 }
 
+// ---------------------------------------------------------------- 4. regressão
+//
+// TRÊS CASOS REAIS QUE UMA ANÁLISE MINHA, FEITA POR FORA, DEU COMO "EMITIDO E
+// NÃO COBRADO". Os três estavam cobrados na Omie, e dois já recebidos. O
+// usuário conferiu um a um e mostrou os títulos.
+//
+// O que os três têm em comum é o que quase certamente derrubou aquela análise:
+// o NOME DO CLIENTE NO TÍTULO É DIFERENTE DO TOMADOR DO CT-e. "GM- HUB
+// FACILITIES" x "GF MENEZES EVENTOS", "SERVICO SOCIAL DA INDUSTRIA - SESI" x
+// "SESI SUZANO", "MUNICIPIO DE CAMPINAS" x "PREFEITURA MUNICIPAL DE CAMPINAS".
+// São a mesma empresa com cadastro diferente — situação normal num ERP, e
+// motivo nenhum para dizer que a nota não foi faturada.
+//
+// O cruzamento DESTE módulo acerta os três porque casa por NÚMERO primeiro e
+// nunca usa o nome. Estes casos ficam aqui para que continue assim: o dia em
+// que alguém acrescentar o parceiro ao casamento, três testes quebram e
+// explicam por quê.
+console.log("\n4. Regressão: nome do cliente diferente do tomador do CT-e");
+{
+  const lista = `Data\tStatus\tCTE\tCFOP\tTipo\tTomador (CNPJ/CPF)\tTomador (Razão Social)\tTotal Frete
+22/04/2026\tAutorizada\t1223\t5357\tNormal\t23730540000126\tGM- HUB FACILITIES MARKETING E EVENTOS LTDA\t1.150,00
+06/05/2026\tAutorizada\t1237\t5357\tNormal\t03667884003065\tSERVICO SOCIAL DA INDUSTRIA - SESI\t2.200,00
+09/06/2026\tAutorizada\t1262\t5357\tNormal\t51885242000140\tMUNICIPIO DE CAMPINAS\t2.800,00`;
+
+  const r = cruzarCte(lerListaDeCte(lista).itens, [
+    t({ id: "r1", numero: "1223", valorCents: 115_000, data: "2026-04-17", parceiro: "GF MENEZES EVENTOS" }),
+    t({ id: "r2", numero: "1237", valorCents: 220_000, data: "2026-06-01", parceiro: "SESI SUZANO" }),
+    t({ id: "r3", numero: "1262", valorCents: 280_000, data: "2026-06-10", parceiro: "PREFEITURA MUNICIPAL DE CAMPINAS" }),
+  ]);
+
+  conferir("os três casam", r.casados, 3);
+  conferir("nenhum aparece como não cobrado", r.linhas.filter((l) => l.tipo === "autorizado_sem_titulo").length, 0);
+  conferir("e o casamento é pelo número, não pelo nome", r.linhas[0]?.casadoPor, "número");
+  // O título do 1223 vence CINCO DIAS ANTES da emissão do CT-e. Casar só por
+  // valor e data exigiria acertar a direção da tolerância; por número, a data
+  // deixa de ser o critério e vira só desempate.
+  conferir("título anterior à emissão do CT-e também casa", r.linhas.some((l) => l.numero === "1223" && l.tipo === "casado"), true);
+}
+
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);
 process.exit(falhas === 0 ? 0 : 1);
