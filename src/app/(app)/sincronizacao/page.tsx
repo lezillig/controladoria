@@ -73,6 +73,27 @@ export default async function SincronizacaoPage() {
   mesAnterior.setMonth(mesAnterior.getMonth() - 1);
   const mesPadraoParaReleitura = `${mesAnterior.getFullYear()}-${String(mesAnterior.getMonth() + 1).padStart(2, "0")}`;
 
+  // O DIAGNÓSTICO PESADO SAI DE CENA ENQUANTO A CARGA RODA.
+  //
+  // "Volume espelhado", "Preenchimento dos campos" e "Saldo por conta" somam
+  // dezessete COUNT de tabela inteira, e nenhum deles usa índice: contar
+  // "quantos títulos têm categoria" é varrer todos os títulos, por definição.
+  // Fora de carga isso custa milissegundos e vale o que informa.
+  //
+  // Durante a carga histórica é outra história: o banco está saturado de
+  // escrita, as varreduras entram na fila, e a requisição morre por tempo. O
+  // resultado é a pior ironia possível deste sistema — a ÚNICA tela que mostra
+  // o andamento da carga era a que quebrava por causa dela, e quem quisesse
+  // acompanhar o progresso não conseguia abrir a página.
+  //
+  // Então enquanto houver carga em andamento, a tela carrega só o que é barato
+  // e diz por que o resto não está ali. Terminada a carga, tudo volta sozinho.
+  const emAndamentoAgora = await prisma.omieSyncRun.findFirst({
+    where: { companyId: session.companyId, status: "EXECUTANDO" },
+    orderBy: { iniciadoEm: "asc" },
+  });
+  const cargaRodando = Boolean(emAndamentoAgora?.backfill);
+
   const [execucoes, emAndamento, progresso, volume, cobertura, contasCorrentes, falhas, drift, onde, janelasRuins, medicao, sobras] =
     await Promise.all([
     prisma.omieSyncRun.findMany({
@@ -80,24 +101,21 @@ export default async function SincronizacaoPage() {
       orderBy: { iniciadoEm: "desc" },
       take: 20,
     }),
-    prisma.omieSyncRun.findFirst({
-      where: { companyId: session.companyId, status: "EXECUTANDO" },
-      orderBy: { iniciadoEm: "asc" },
-    }),
+    Promise.resolve(emAndamentoAgora),
     progressoDaCarga(session.companyId, dataInicioBase),
-    volumeEspelhadoNoBanco(session.companyId),
-    coberturaDeCamposNoBanco(session.companyId),
+    cargaRodando ? Promise.resolve(null) : volumeEspelhadoNoBanco(session.companyId),
+    cargaRodando ? Promise.resolve(null) : coberturaDeCamposNoBanco(session.companyId),
     // `catch` aqui, e não dentro da função: esta tela é a que mostra o
     // relatório de diferenças de esquema, e ela não pode morrer justamente
     // quando o esquema é o problema. Uma consulta que depende de coluna
     // ausente derrubaria a página antes de o diagnóstico aparecer.
-    saldosPorConta(session.companyId).catch(() => null),
+    cargaRodando ? Promise.resolve(null) : saldosPorConta(session.companyId).catch(() => null),
     ultimasFalhas(10),
     driftDoEsquema(),
     ondeOBancoOlha(),
     janelasComFalha(session.companyId),
     ultimaMedicaoDaAuditoria(session.companyId),
-    sobrasEmOutrosEsquemas(),
+    cargaRodando ? Promise.resolve(null) : sobrasEmOutrosEsquemas(),
   ]);
 
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
@@ -323,6 +341,18 @@ export default async function SincronizacaoPage() {
         )}
       </Secao>
 
+      {cargaRodando && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3">
+          <p className="text-sm font-semibold text-sky-900">Diagnóstico da base pausado enquanto a carga roda</p>
+          <p className="mt-1 text-xs text-sky-800">
+            Volume espelhado, preenchimento dos campos e saldo por conta somam dezessete contagens de tabela inteira.
+            Com a carga em andamento elas disputam o banco com a importação e derrubam esta página por tempo — que é
+            justamente a página onde você acompanha a carga. Voltam sozinhas quando a importação terminar.
+          </p>
+        </div>
+      )}
+
+      {volume && (
       <Secao titulo="Volume espelhado" descricao={`Desde ${fmtData(dataInicioBase)}.`}>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
           <Kpi rotulo="Títulos a pagar" valor={fmtNumero(volume.titulosPagar)} apoio={volume.valorPagar} />
@@ -331,7 +361,9 @@ export default async function SincronizacaoPage() {
           <Kpi rotulo="Notas / parceiros" valor={`${fmtNumero(volume.notas)} / ${fmtNumero(volume.parceiros)}`} />
         </div>
       </Secao>
+      )}
 
+      {cobertura && (
       <Secao
         titulo="Preenchimento dos campos"
         descricao="Campo vazio em massa costuma significar duas coisas: ou o dado não é preenchido na Omie (falha de processo, que vira achado), ou o mapeamento da integração não encontrou aquele campo. Esta tabela distingue as duas."
@@ -360,6 +392,7 @@ export default async function SincronizacaoPage() {
           ))}
         </div>
       </Secao>
+      )}
 
       <Secao titulo="Últimas execuções">
         <Tabela
@@ -504,7 +537,7 @@ export default async function SincronizacaoPage() {
               </li>
             ))}
           </ul>
-          {sobras.length > 0 && (
+          {sobras && sobras.length > 0 && (
             <>
               <p className="mt-3 text-xs font-medium text-slate-800">
                 Cópias antigas da Controladoria em outros schemas — candidatas a limpeza:
