@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
+import { inputClass, labelClass, larguraFormulario, primaryButtonClass } from "@/lib/ui";
 import { salvarConfiguracao } from "./actions";
 
 export type ValoresConfig = {
@@ -32,7 +32,7 @@ export default function ConfiguracaoForm({
 
   return (
     <form
-      className="space-y-6"
+      className={`${larguraFormulario} space-y-6`}
       action={(formData) => {
         setErro(null);
         setSalvo(false);

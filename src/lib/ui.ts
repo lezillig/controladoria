@@ -20,7 +20,13 @@ export const badgeClass =
 // número; era não haver sistema.
 //
 // São TRÊS larguras, e a escolha entre elas é sobre o CONTEÚDO, não sobre a
-// tela. Uma tela larga não melhora um formulário nem um parágrafo:
+// tela. Uma tela larga não melhora um formulário nem um parágrafo.
+//
+// E a escolha é POR BLOCO, não por página — foi o erro da primeira versão. Eu
+// classifiquei telas inteiras como "formulário", e Conexões, que tem um
+// formulário E uma tabela de sete colunas, ficou presa em 768px: a tabela
+// passou a rolar de lado com os botões de ação cortados na borda. Página é
+// painel; o formulário DENTRO dela é que é estreito.
 //
 //   PAINEL — tabela, KPI, gráfico. Ocupa o que a tela der, com teto: sem teto
 //   nenhum, num monitor ultralargo a primeira coluna e a última ficam a meio

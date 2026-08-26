@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { inputClass, labelClass, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
+import { inputClass, labelClass, larguraFormulario, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 import { salvarConexao } from "./actions";
 
 export type ConexaoEmEdicao = {
@@ -34,7 +34,7 @@ export default function ConexaoForm({ conexao }: { conexao?: ConexaoEmEdicao }) 
 
   return (
     <form
-      className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4"
+      className={`${larguraFormulario} space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4`}
       action={(formData) => {
         setErro(null);
         setAviso(null);

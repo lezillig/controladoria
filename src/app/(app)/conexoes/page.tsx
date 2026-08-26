@@ -7,7 +7,7 @@ import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
 import ConexaoForm from "./ConexaoForm";
 import TesteConexao from "./TesteConexao";
 import { alternarConexao } from "./actions";
-import { larguraFormulario } from "@/lib/ui";
+import { larguraPainel } from "@/lib/ui";
 
 // CONEXÕES OMIE — uma por CNPJ do grupo.
 //
@@ -49,7 +49,7 @@ export default async function ConexoesPage() {
   const semCredencial = conexoes.filter((c) => c.ativa && !credencialConfigurada(c.credencialRef));
 
   return (
-    <div className={`${larguraFormulario} space-y-6`}>
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Conexões Omie</h1>
         <p className="mt-1 text-sm text-slate-500">
