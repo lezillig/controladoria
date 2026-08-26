@@ -128,3 +128,29 @@ export async function sessaoControladoria(): Promise<SessionPayload> {
 export function resolverRegime(param?: string): "competencia" | "caixa" {
   return param === "caixa" ? "caixa" : "competencia";
 }
+
+// OS ANOS que a base cobre, do mais recente para o mais antigo.
+//
+// Derivados da data de início configurada, e não das competências mensais:
+// listar anos a partir da lista de meses obrigaria a montá-la só para
+// descartá-la, e ela tem teto de 240 entradas por outro motivo.
+//
+// O ano CORRENTE não entra na lista — ele é a opção padrão do seletor, como o
+// mês corrente é na visão mensal.
+export function anosDisponiveis(dataInicioBase: Date, agora = new Date()): { valor: string; rotulo: string }[] {
+  const anoAtual = agora.getFullYear();
+  const opcoes: { valor: string; rotulo: string }[] = [];
+  for (let ano = anoAtual - 1; ano >= dataInicioBase.getFullYear() && opcoes.length < 20; ano--) {
+    opcoes.push({ valor: String(ano), rotulo: String(ano) });
+  }
+  return opcoes;
+}
+
+// Ano escolhido no seletor. Fora da faixa plausível cai no corrente, pelo mesmo
+// motivo do filtro de mês: link velho ou colado errado não pode quebrar a tela.
+export function resolverAno(param: string | undefined, agora = new Date()): number {
+  const casa = /^(\d{4})$/.exec(param ?? "");
+  if (!casa) return agora.getFullYear();
+  const ano = Number(casa[1]);
+  return ano >= 2000 && ano <= agora.getFullYear() ? ano : agora.getFullYear();
+}

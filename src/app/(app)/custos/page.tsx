@@ -6,7 +6,13 @@ import TabelaDreAnual from "./TabelaDreAnual";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { secondaryButtonClass } from "@/lib/ui";
-import { competenciasDisponiveis, contextoDaPagina, resolverPeriodo, resolverRegime } from "../_dados";
+import {
+  anosDisponiveis,
+  competenciasDisponiveis,
+  contextoDaPagina,
+  resolverAno,
+  resolverRegime,
+} from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 
@@ -39,11 +45,18 @@ export default async function CustosPage({
   // transferência do banco uma vez, derrubando junto o sistema de gestão que
   // divide o mesmo Postgres. Quem pede o ano paga pelo ano.
   const anual = params.visao === "ano";
-  const periodoEscolhido = resolverPeriodo(params.competencia);
-  const anoDaTela = periodoEscolhido.dataReferencia.getFullYear();
+  // NA VISÃO ANUAL O MESMO PARÂMETRO CARREGA UM ANO, não uma competência —
+  // "2026" em vez de "2026-07". A caixa de seleção é a mesma; o que ela oferece
+  // muda com a visão, e é assim que se escolhe o ano.
+  //
+  // O ano vira `AAAA-12` na hora de resolver o período: dezembro de um ano
+  // passado é uma competência válida e dá a data de referência certa (31/12);
+  // dezembro do ano corrente é futuro, e `resolverPeriodo` cai sozinho na
+  // leitura corrente — que é exatamente o que se quer para o ano em curso.
+  const anoDaTela = anual ? resolverAno(params.competencia) : 0;
   const { ctx, escopo, periodo } = await contextoDaPagina(
     params.empresa,
-    params.competencia,
+    anual ? `${anoDaTela}-12` : params.competencia,
     anual ? new Date(anoDaTela, 0, 1) : undefined
   );
   const regime = resolverRegime(params.regime);
@@ -162,11 +175,26 @@ export default async function CustosPage({
           <div className="mr-1 flex rounded-full bg-slate-100 p-0.5">
             {[
               { valor: "mes", rotulo: "Mês" },
-              { valor: "ano", rotulo: `Ano ${anoDaTela}` },
+              { valor: "ano", rotulo: "Ano" },
             ].map((v) => {
               const q = new URLSearchParams(filtros);
-              if (v.valor === "ano") q.set("visao", "ano");
-              else q.delete("visao");
+              // O PERÍODO É TRADUZIDO NA TROCA, não descartado. Quem está
+              // olhando julho/2025 e clica em "Ano" quer 2025, não o ano
+              // corrente — perder o ano a cada clique seria o mesmo defeito
+              // que o filtro de empresa evita ao preservar a competência.
+              const anoCorrente = new Date().getFullYear();
+              if (v.valor === "ano") {
+                q.set("visao", "ano");
+                const anoAlvo = anual ? anoDaTela : (periodo.competencia?.slice(0, 4) ?? String(anoCorrente));
+                if (String(anoAlvo) !== String(anoCorrente)) q.set("competencia", String(anoAlvo));
+                else q.delete("competencia");
+              } else {
+                q.delete("visao");
+                // Ano passado vira dezembro daquele ano; ano corrente volta à
+                // leitura corrente, que é o padrão da visão mensal.
+                if (anual && anoDaTela !== anoCorrente) q.set("competencia", `${anoDaTela}-12`);
+                else if (anual) q.delete("competencia");
+              }
               const ativo = (v.valor === "ano") === anual;
               return (
                 <a
@@ -187,8 +215,12 @@ export default async function CustosPage({
               caiu, e traz os campos do cadastro Omie lado a lado justamente
               para isso. Juntá-las daria uma planilha que ninguém percorre
               inteira. */}
+          {/* As duas planilhas são MENSAIS. Na visão anual isso precisa estar
+              no rótulo: um arquivo baixado enquanto a tela mostra doze meses
+              seria aberto esperando doze meses, e a decepção acontece longe
+              daqui, quando ninguém pode explicar. */}
           <a href={urlDaConferencia} className={secondaryButtonClass}>
-            Planilha de conferência do DRE
+            Planilha de conferência do DRE{anual ? ` — ${comparativo.janelas.mesAtual.rotulo}` : ""}
           </a>
           <a href={urlDaPlanilha} className={secondaryButtonClass}>
             Composição por categoria
@@ -199,9 +231,12 @@ export default async function CustosPage({
       <Filtros
         conexoes={ctx.conexoes}
         empresaAtiva={escopo.conexaoId}
-        competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
-        competenciaAtiva={periodo.competencia}
+        competencias={anual ? anosDisponiveis(ctx.config.dataInicioBase) : competenciasDisponiveis(ctx.config.dataInicioBase)}
+        competenciaAtiva={anual ? (anoDaTela === new Date().getFullYear() ? null : String(anoDaTela)) : periodo.competencia}
         regimeAtivo={regime}
+        rotuloPeriodo={anual ? "Ano" : "Competência"}
+        rotuloPeriodoPadrao={anual ? `${new Date().getFullYear()} (ano corrente)` : "Leitura corrente (D-1)"}
+        extras={{ visao: anual ? "ano" : undefined }}
         rota="/custos"
       />
 

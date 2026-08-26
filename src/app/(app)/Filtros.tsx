@@ -42,6 +42,8 @@ export default function Filtros({
   competencias,
   competenciaAtiva,
   regimeAtivo,
+  rotuloPeriodo = "Competência",
+  rotuloPeriodoPadrao = "Leitura corrente (D-1)",
   rota,
   extras,
 }: {
@@ -52,6 +54,12 @@ export default function Filtros({
   // Ausente quando a tela não tem os dois regimes — o seletor some em vez de
   // aparecer desabilitado, que só levantaria a pergunta "por que não posso".
   regimeAtivo?: Regime;
+  // Rótulo e opção-padrão do seletor de período. Na visão anual a lista deixa
+  // de ser de meses e passa a ser de ANOS — a caixa é a mesma, o que ela
+  // oferece é que muda com a visão. Sem isto, escolher "Ano" e continuar vendo
+  // uma lista de meses seria a tela pedindo uma coisa e mostrando outra.
+  rotuloPeriodo?: string;
+  rotuloPeriodoPadrao?: string;
   rota: string;
   // Parâmetros da própria tela que precisam sobreviver à troca de filtro —
   // a aba "a pagar / a receber" dos títulos, por exemplo. Sem isso, escolher
@@ -106,7 +114,7 @@ export default function Filtros({
       {competencias.length > 0 && (
         <div className="flex items-center gap-1.5">
           <label htmlFor="competencia" className="text-xs text-slate-500">
-            Competência:
+            {rotuloPeriodo}:
           </label>
           <select
             id="competencia"
@@ -115,8 +123,8 @@ export default function Filtros({
             onChange={(e) => ir(empresaAtiva, e.target.value || null)}
             className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-medium text-slate-700 disabled:cursor-wait"
           >
-            {/* O mês corrente não aparece na lista: ele É esta opção. */}
-            <option value="">Leitura corrente (D-1)</option>
+            {/* O período corrente não aparece na lista: ele É esta opção. */}
+            <option value="">{rotuloPeriodoPadrao}</option>
             {competencias.map((c) => (
               <option key={c.valor} value={c.valor}>
                 {c.rotulo}
