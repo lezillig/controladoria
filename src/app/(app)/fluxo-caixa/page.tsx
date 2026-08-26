@@ -1,6 +1,6 @@
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import { saldoAtualCents } from "@/lib/controladoria/agents/conciliacao";
-import { calcularCiclo, projetarFluxoCaixa } from "@/lib/controladoria/agents/fluxoCaixa";
+import { HORIZONTES_DIAS, calcularCiclo, horizonteValido, projetarFluxoCaixa } from "@/lib/controladoria/agents/fluxoCaixa";
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { somarDias } from "@/lib/controladoria/periodos";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
@@ -13,10 +13,11 @@ import { larguraPainel } from "@/lib/ui";
 export default async function FluxoCaixaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+  searchParams: Promise<{ empresa?: string; competencia?: string; dias?: string }>;
 }) {
   const params = await searchParams;
   const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  const dias = horizonteValido(Number(params.dias));
 
   const saldo = saldoAtualCents(ctx);
   const projecao = projetarFluxoCaixa(ctx);
@@ -25,10 +26,10 @@ export default async function FluxoCaixaPage({
   const pagarAberto = titulosAtivos(ctx, "PAGAR").filter(emAberto);
   const receberAberto = titulosAtivos(ctx, "RECEBER").filter(emAberto);
 
-  // Agenda dos próximos 15 dias, dia a dia: é a visão que o financeiro usa
+  // Agenda dia a dia, no horizonte escolhido: é a visão que o financeiro usa
   // para decidir o que pagar hoje e o que empurrar — a projeção por horizonte
-  // (7/15/30) responde "vai faltar?", esta responde "em que dia".
-  const agenda = Array.from({ length: 15 }, (_, i) => {
+  // responde "vai faltar?", esta responde "em que dia".
+  const agenda = Array.from({ length: dias }, (_, i) => {
     const dia = somarDias(ctx.dataReferencia, i + 1);
     const saidas = somar(
       pagarAberto.filter((t) => t.dataVencimento.toDateString() === dia.toDateString()),
@@ -55,6 +56,36 @@ export default async function FluxoCaixaPage({
           Projeção conservadora: recebível já vencido não conta como entrada, e título vencido em aberto conta como saída
           imediata. Otimismo em projeção de caixa é o que produz surpresa no dia 20.
         </p>
+      </div>
+
+      {/* HORIZONTE DA AGENDA — e SÓ da agenda.
+          A tabela de projeção continua mostrando todos os pontos: é tabela e
+          cabe. A agenda lista dia a dia, e noventa dias viram dezenas de linhas
+          onde se procurava o que vence amanhã.
+          O ALERTA DE RUPTURA fica de fora do recorte de propósito. Ele varre os
+          noventa dias sempre, escolha qual escolher: esconder "o saldo fica
+          negativo em 60 dias" de quem está olhando os próximos 7 seria remover
+          justamente o aviso que dá tempo de negociar. Um seletor de janela não
+          pode calar um alerta. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 text-xs text-slate-500">Agenda:</span>
+        {HORIZONTES_DIAS.map((d) => {
+          const q = new URLSearchParams();
+          if (escopo.conexaoId) q.set("empresa", escopo.conexaoId);
+          if (periodo.competencia) q.set("competencia", periodo.competencia);
+          if (d !== 15) q.set("dias", String(d));
+          return (
+            <a
+              key={d}
+              href={`/fluxo-caixa${q.toString() ? `?${q}` : ""}`}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${
+                d === dias ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {d}d
+            </a>
+          );
+        })}
       </div>
 
       <Filtros
@@ -106,11 +137,14 @@ export default async function FluxoCaixaPage({
         />
       </Secao>
 
-      <Secao titulo="Agenda dos próximos 15 dias" descricao="Somente dias com movimento previsto.">
+      <Secao
+        titulo={`Agenda dos próximos ${dias} dias`}
+        descricao="Somente dias com movimento previsto."
+      >
         <Tabela
           colunas={["Dia", "Entradas", "Saídas", "Líquido"]}
           alinharDireita={[1, 2, 3]}
-          vazio="Nenhum vencimento previsto nos próximos 15 dias."
+          vazio={`Nenhum vencimento previsto nos próximos ${dias} dias.`}
           linhas={agenda.map((d) => [
             fmtData(d.dia),
             d.entradas > 0 ? fmtBRL(d.entradas) : "—",

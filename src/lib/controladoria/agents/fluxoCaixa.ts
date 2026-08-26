@@ -10,7 +10,22 @@ import { saldoAtualCents } from "./conciliacao";
 // ANTES de faltar dinheiro — que e a diferenca entre negociar com
 // antecedencia e pagar juros de conta garantida.
 
-const HORIZONTES_DIAS = [7, 15, 30, 60, 90];
+// OS HORIZONTES QUE A TESOURARIA USA.
+//
+// A lista antiga tinha cinco pontos e começava em 7. Faltavam justamente os
+// curtos: 3 e 5 dias são a pergunta de segunda-feira — "o que vence esta
+// semana e tem com que pagar?" —, e 10 é o intervalo entre as duas datas de
+// pagamento do mês na maioria das empresas. Sem eles, a primeira resposta que
+// a tela dava já era de uma semana à frente, tarde demais para negociar prazo.
+export const HORIZONTES_DIAS = [3, 5, 7, 10, 15, 30, 45, 60, 75, 90] as const;
+
+// O horizonte da AGENDA e do alerta de ruptura, escolhido na tela. A projeção
+// mostra todos os pontos de uma vez — ela é uma tabela e cabe; a agenda lista
+// título a título e precisa de recorte, senão noventa dias viram centenas de
+// linhas onde se procurava o que vence amanhã.
+export function horizonteValido(dias: number | undefined): number {
+  return dias !== undefined && (HORIZONTES_DIAS as readonly number[]).includes(dias) ? dias : 15;
+}
 
 export type PontoProjecao = {
   dias: number;
