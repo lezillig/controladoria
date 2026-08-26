@@ -225,6 +225,19 @@ export function proporLinha(
 
   if (ehReceita) {
     if (PADRAO_RECEITA_FINANCEIRA.test(d)) return "RECEITA_FINANCEIRA";
+    // RESGATE DE CONSÓRCIO E AFINS voltam para a MESMA linha do desembolso.
+    //
+    // Não é receita financeira, e a pergunta merece a resposta inteira: o
+    // resgate é a devolução de dinheiro que a empresa já pôs — recuperação de
+    // um ativo, não ganho. Em contabilidade nem passa pelo DRE; só o
+    // RENDIMENTO, a correção acima do que foi pago, seria receita financeira.
+    //
+    // Como esta demonstração já trata a parcela do consórcio como saída (que
+    // também é conta patrimonial), o lugar coerente do resgate é reduzir essa
+    // mesma linha. Lançá-lo como receita contaria como ganho o dinheiro que a
+    // empresa está apenas recebendo de volta — e inflaria o resultado no mês
+    // do resgate.
+    if (PADRAO_FINANCIAMENTO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
     if (PADRAO_OUTRA_RECEITA.test(d)) return "OUTRAS_RECEITAS";
     return "RECEITA_BRUTA";
   }
@@ -288,6 +301,9 @@ export type ItemDre = {
   confirmada: boolean;
   valorCents: number;
   valorAnteriorCents: number;
+  // De que lado a categoria vive. Decide o SINAL com que ela entra na linha:
+  // uma entrada dentro de uma linha de saída reduz a linha, não a engorda.
+  ehReceita: boolean;
   // Os maiores títulos da categoria no mês, para o drill-down.
   titulos: TituloDoDre[];
   totalDeTitulos: number;
@@ -417,17 +433,31 @@ export function montarDre(
   // De que lado cada categoria aparece, e os títulos por trás dela. O primeiro
   // decide a proposta de linha; o segundo é o que a tela abre quando alguém
   // clica na categoria e pergunta "de onde vem esse número?".
+  // DE QUE LADO A CATEGORIA VIVE — apurado sobre TODA a janela carregada, não
+  // só sobre o mês.
+  //
+  // Restringir ao mês foi um defeito com efeito visível: "Resgate Consórcio"
+  // teve movimento em junho e nenhum em julho, e em julho a categoria ficou sem
+  // sinal. Sem sinal, ela caía no ramo de despesa e o resgate — dinheiro que
+  // ENTRA — aparecia dentro de "financiamentos e consórcios" como se fosse
+  // saída. A natureza de uma categoria não muda de mês para mês; olhar só um
+  // mês era perguntar a pergunta errada.
   const movimentoPorCategoria = new Map<string, { receberCents: number; pagarCents: number }>();
-  const titulosPorCategoria = new Map<string, TituloDoDre[]>();
   for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
-      if (!dentro(dataDeCompetencia(t), periodo)) continue;
       const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
       const m = movimentoPorCategoria.get(chave) ?? { receberCents: 0, pagarCents: 0 };
       if (natureza === "RECEBER") m.receberCents += Math.abs(t.valorDocumentoCents);
       else m.pagarCents += Math.abs(t.valorDocumentoCents);
       movimentoPorCategoria.set(chave, m);
+    }
+  }
 
+  const titulosPorCategoria = new Map<string, TituloDoDre[]>();
+  for (const natureza of ["RECEBER", "PAGAR"] as const) {
+    for (const t of titulosAtivos(ctx, natureza)) {
+      if (!dentro(dataDeCompetencia(t), periodo)) continue;
+      const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
       const lista = titulosPorCategoria.get(chave) ?? [];
       lista.push({
         id: t.id,
@@ -483,11 +513,13 @@ export function montarDre(
     const doMes = (titulosPorCategoria.get(codigo) ?? []).sort(
       (a, b) => Math.abs(b.valorCents) - Math.abs(a.valorCents)
     );
+    const mov = movimentoPorCategoria.get(codigo);
     lista.push({
       categoriaCodigo: codigo,
       descricao: cat?.descricao ?? `Categoria ${codigo}`,
       subgrupo: guardada?.subgrupo ?? null,
       confirmada,
+      ehReceita: (mov?.receberCents ?? 0) > (mov?.pagarCents ?? 0),
       valorCents: valor,
       valorAnteriorCents: valorAnterior,
       titulos: doMes.slice(0, TITULOS_POR_CATEGORIA_NA_TELA),
@@ -502,8 +534,25 @@ export function montarDre(
   // despesa como número negativo pareceria mais direto e é onde este cálculo
   // costuma errar: bastaria uma categoria de despesa com valor negativo (um
   // estorno, que existe) para ela virar receita silenciosamente.
-  const totalDe = (chave: string, campo: "valorCents" | "valorAnteriorCents") =>
-    somar(itensPorLinha.get(chave) ?? [], (i) => Math.abs(i[campo]));
+  // O SINAL DE CADA ITEM DENTRO DA LINHA.
+  //
+  // Somar tudo em módulo estava certo enquanto cada linha tinha um lado só, e
+  // deixou de estar quando uma ENTRADA passou a caber numa linha de SAÍDA — o
+  // resgate de consórcio dentro de "financiamentos e consórcios". Em módulo,
+  // ele engordava a linha que deveria reduzir.
+  //
+  // Agora cada item entra com o sinal do lado dele em relação ao lado da linha:
+  // entrada numa linha de saída subtrai, saída numa linha de entrada subtrai.
+  // O módulo permanece na base, e não no título individual: um estorno lançado
+  // como valor negativo já foi líquido no total da categoria, e aplicá-lo por
+  // título faria o estorno virar mais despesa.
+  const sinalDaLinha = new Map(LINHAS_DRE.map((l) => [l.chave as string, l.sinal as number]));
+  const totalDe = (chave: string, campo: "valorCents" | "valorAnteriorCents") => {
+    const linhaEhReceita = (sinalDaLinha.get(chave) ?? -1) > 0;
+    return somar(itensPorLinha.get(chave) ?? [], (i) =>
+      i.ehReceita === linhaEhReceita ? Math.abs(i[campo]) : -Math.abs(i[campo])
+    );
+  };
 
   const calc = (campo: "valorCents" | "valorAnteriorCents") => {
     const g = (c: string) => totalDe(c, campo);
@@ -547,6 +596,7 @@ export function montarDre(
       // Marcada como confirmada para não contar como "por classificar" — o que
       // mandaria alguém procurar na tela uma categoria que não existe.
       confirmada: true,
+      ehReceita: false,
       valorCents: retencoes.totalCents,
       valorAnteriorCents: retencoesAnteriores.totalCents,
       titulos: [],

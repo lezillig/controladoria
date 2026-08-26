@@ -154,6 +154,44 @@ console.log("\n5. Subgrupos dentro da linha");
   conferir("subgrupos somam a linha", linha.subgrupos.reduce((a, s) => a + s.valorCents, 0), linha.valorCents);
 }
 
+// ------------------------------------- resgate de consórcio (caso real)
+console.log("\n12. Resgate de consórcio — entrada dentro de uma linha de saída");
+{
+  // O caso do print: consórcio e CDC saindo, resgate entrando, tudo na mesma
+  // linha. O resgate não é receita — é a devolução do que a empresa já pôs.
+  const r = montarDre(
+    ctx([tit("PAGAR", "1", 252_627), tit("PAGAR", "2", 242_067.98), tit("RECEBER", "3", 47_575)],
+        [cat("1", "Consórcio"), cat("2", "CDC"), cat("3", "Resgate Consórcio", true)]),
+    MES, ANT, cls({})
+  );
+  const linha = r.linhas.find((l) => l.chave === "FINANCIAMENTO_INVESTIMENTO")!;
+  conferir("o resgate cai na MESMA linha do desembolso", linha.itens.length, 3);
+  conferir("e REDUZ a linha em vez de engordá-la",
+    linha.valorCents, Math.round((252_627 + 242_067.98 - 47_575) * 100));
+  conferir("não virou receita financeira",
+    r.linhas.find((l) => l.chave === "RECEITA_FINANCEIRA")?.valorCents, 0);
+  conferir("nem receita bruta", r.linhas.find((l) => l.chave === "RECEITA_BRUTA")?.valorCents, 0);
+}
+
+// -------------------------- categoria sem movimento NO MÊS, mas com histórico
+console.log("\n13. Categoria parada no mês — o lado vem da janela inteira");
+{
+  // O defeito real: "Resgate Consórcio" movimentou em junho e nada em julho.
+  // Olhando só julho, a categoria ficava sem sinal e caía no ramo de despesa —
+  // e uma ENTRADA aparecia como saída.
+  const emJunho = { ...tit("RECEBER", "3", 47_575, "06") } as ContextoAuditoria["titulos"][number];
+  const r = montarDre(
+    ctx([tit("PAGAR", "1", 100_000), emJunho], [cat("1", "Consórcio"), cat("3", "Resgate Consórcio", true)]),
+    MES, ANT, cls({})
+  );
+  const item = r.linhas
+    .find((l) => l.chave === "FINANCIAMENTO_INVESTIMENTO")!
+    .itens.find((i) => i.categoriaCodigo === "3");
+  conferir("reconhecida como entrada mesmo parada no mês", item?.ehReceita, true);
+  conferir("com valor zero no mês e o histórico no anterior",
+    [item?.valorCents, item?.valorAnteriorCents], [0, 4_757_500]);
+}
+
 // -------------------------------------------------- retenções na fonte
 console.log("\n11. Tributos retidos na fonte — interruptor, não regra");
 {
@@ -211,9 +249,16 @@ console.log("\n9. Entrada que NÃO é faturamento");
   );
   const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
   conferir("só o serviço fica na receita bruta", v("RECEITA_BRUTA"), 703_918_380);
-  conferir("as outras cinco saem para outras receitas", v("OUTRAS_RECEITAS"), 5_855_738);
-  // 5.000 + 47.575 + 4.508 + 703,68 + 770,70 = 58.557,38
-  conferir("e o EBIT continua somando todas", v("EBIT"), 703_918_380 + 5_855_738);
+  // Venda de veículos + lucros cessantes + reembolso + convênio =
+  // 5.000 + 4.508 + 703,68 + 770,70 = 10.982,38.
+  conferir("quatro saem para outras receitas", v("OUTRAS_RECEITAS"), 1_098_238);
+  // O RESGATE DE CONSÓRCIO não está entre elas: ele volta para a linha do
+  // desembolso, reduzindo-a. Não é ganho, é devolução do que a empresa pôs.
+  conferir("e o resgate reduz a linha de financiamentos", v("FINANCIAMENTO_INVESTIMENTO"), -4_757_500);
+  conferir("EBIT soma as outras receitas", v("EBIT"), 703_918_380 + 1_098_238);
+  // Abaixo do EBIT o resgate ENTRA: subtrair uma linha negativa é somar.
+  conferir("e o resultado líquido cresce com o resgate",
+    v("RESULTADO_LIQUIDO"), 703_918_380 + 1_098_238 + 4_757_500);
 }
 
 // ------------------------------------------------------ regressão
