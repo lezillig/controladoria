@@ -141,5 +141,11 @@ export type Agente = {
   // caixa de entrada coletiva que ninguem assume.
   area: string;
   descricao: string;
-  executar: (ctx: ContextoAuditoria) => AchadoNovo[];
+  // Assíncrono é PERMITIDO, não a norma. Quase todo agente decide olhando só o
+  // contexto que já veio carregado, e continua síncrono — é o que mantém as
+  // regras exercitáveis por teste sem banco em pé. A exceção é o agente de
+  // histórico: ele compara o mês corrente com anos de resumo mensal, que por
+  // definição não cabem no contexto de 400 dias. Ali a CONSULTA é assíncrona e
+  // as REGRAS continuam puras, recebendo os dados por parâmetro.
+  executar: (ctx: ContextoAuditoria) => AchadoNovo[] | Promise<AchadoNovo[]>;
 };

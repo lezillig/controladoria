@@ -7,6 +7,7 @@ import { carregarContexto, garantirConfig, janelaDeAuditoria } from "./contexto"
 import { executarAuditoria } from "./engine";
 import { gerarEEnviarRelatorio } from "./relatorio";
 import { fimDoDia, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
+import { competenciasDaJanela, recalcularHistorico } from "./historico";
 
 // CICLO DIÁRIO DA CONTROLADORIA
 //
@@ -151,6 +152,30 @@ export async function executarPasso(params: {
         ...(novaFase === "concluido" ? { status: "CONCLUIDO" as const, finalizadoEm: new Date() } : {}),
       },
     });
+
+    // FIM DA JANELA: o resumo mensal é refeito para as competências que ela
+    // tocou. Aqui, e não na fase de auditoria, por duas razões: a auditoria não
+    // roda por janela de backfill (são 136 janelas e uma auditoria só no fim), e
+    // recalcular no fim da janela mantém o resumo válido mesmo que a carga seja
+    // interrompida no meio — cada mês carregado já deixa o seu resumo pronto.
+    if (novaFase === "concluido") {
+      try {
+        const competencias = competenciasDaJanela(run.janelaInicio, run.janelaFim);
+        const resumo = await recalcularHistorico(companyId, conexao.id, competencias);
+        detalhes.push(
+          `[${conexao.apelido}] resumo mensal: ${resumo.linhas} linha(s) em ${resumo.competencias} competência(s).`
+        );
+      } catch (e) {
+        // Falha aqui NÃO derruba a janela. O resumo é derivado — reconstruível
+        // a partir dos títulos que acabaram de entrar — e perder a carga de um
+        // mês inteiro por causa de um agregado seria trocar o barato pelo caro.
+        // A próxima janela que tocar a competência refaz.
+        detalhes.push(
+          `[${conexao.apelido}] resumo mensal falhou (será refeito): ` +
+            (e instanceof Error ? e.message.slice(0, 200) : String(e))
+        );
+      }
+    }
 
     detalhes.push(
       `[${conexao.apelido}] ${fase}: ${resultado.titulosPagar} títulos a pagar, ${resultado.titulosReceber} a receber, ` +

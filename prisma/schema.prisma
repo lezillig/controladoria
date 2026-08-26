@@ -475,6 +475,9 @@ model OmieTitulo {
 
   @@unique([conexaoId, natureza, codigoLancamento])
   @@index([companyId, natureza, dataVencimento])
+  // A competência é a EMISSÃO (ver competencia.ts), então este índice serve
+  // tanto ao contexto quanto a toda leitura de resultado por mês.
+  @@index([companyId, dataEmissao])
   @@index([companyId, natureza, status])
   @@index([companyId, dataUltimaBaixa])
   @@index([companyId, parceiroCodigo])
@@ -621,6 +624,9 @@ model OmieSyncRun {
   @@index([companyId, iniciadoEm])
   @@index([companyId, status])
   @@index([conexaoId, status])
+  // A busca do próximo mês de carga histórica, feita por conexão a cada
+  // invocação do ciclo.
+  @@index([conexaoId, backfill, status])
 }
 
 // ============================================================================
@@ -1236,4 +1242,63 @@ model UsuarioPerfil {
 
   @@unique([companyId, userId])
   @@index([perfilId])
+}
+
+// ---------------------------------------------------------------------------
+// RESUMO MENSAL — a memória longa da auditoria.
+//
+// O contexto que os agentes recebem tem teto de 400 dias, e isso é proposital:
+// carregar anos de títulos em memória a cada ciclo foi o que esgotou a franquia
+// de transferência do banco uma vez. Mas as perguntas que só o histórico
+// responde — "este fornecedor sempre cobrou isso?", "esta despesa é sazonal ou
+// apareceu agora?", "o prazo de pagamento dele mudou?" — precisam de anos.
+//
+// A saída é não escolher entre as duas. Esta tabela guarda o histórico já
+// SOMADO, uma linha por competência × dimensão × chave. Cinco anos de um
+// fornecedor viram sessenta linhas em vez de milhares de títulos, e a
+// comparação com o mês corrente cabe numa consulta.
+//
+// É derivada: pode ser reconstruída inteira a partir de OmieTitulo e OmieBaixa,
+// e é reconstruída a cada janela de sincronização que toca a competência. Isso
+// importa — nada aqui é fonte de verdade, e um recálculo errado se conserta
+// rodando de novo.
+model HistoricoMensal {
+  id          String   @id @default(cuid())
+  companyId   String
+  conexaoId   String
+  // "AAAA-MM". Texto, e não data: a chave é o MÊS, e guardar uma data traria
+  // de volta a pergunta "qual dia do mês?" — que aqui não tem resposta.
+  competencia String
+  natureza    String
+  // "PARCEIRO" ou "CATEGORIA". Duas dimensões numa tabela só porque as
+  // perguntas são as mesmas e os agentes leem as duas do mesmo jeito.
+  dimensao    String
+  chave       String
+  // Nome no momento do cálculo. Fornecedor renomeado na Omie não some do
+  // histórico nem reescreve o passado — o rótulo antigo fica com o mês antigo.
+  rotulo      String?
+
+  titulos     Int      @default(0)
+  // Centavos em Int, como no resto do espelho. O teto é ~R$ 21 milhões, e cada
+  // linha é UM parceiro (ou categoria) em UM mês — a maior receita mensal do
+  // grupo inteiro é uma fração disso. O total do ano nunca é gravado aqui;
+  // quem quer o ano soma as doze linhas.
+  valorCents  Int      @default(0)
+  // O maior título do mês. Sem ele, um mês com um pagamento fora da curva e
+  // vários pequenos tem a mesma média de um mês regular — e é justamente o
+  // fora da curva que se está procurando.
+  valorMaximoCents Int @default(0)
+
+  baixas           Int @default(0)
+  valorBaixadoCents Int @default(0)
+  // Soma de (dia da baixa − dia do vencimento), em dias, sobre as baixas do
+  // mês. Guardar a SOMA e a contagem, e não a média, é o que permite juntar
+  // meses depois: média de médias não é a média.
+  diasPagamentoSoma Int @default(0)
+
+  calculadoEm DateTime @default(now())
+
+  @@unique([companyId, conexaoId, competencia, natureza, dimensao, chave])
+  @@index([companyId, dimensao, chave, competencia])
+  @@index([companyId, competencia])
 }

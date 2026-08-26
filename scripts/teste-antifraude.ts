@@ -6,7 +6,7 @@
 // o dado real não seja também o primeiro contato com a regra.
 //
 // Sem banco: os agentes recebem o contexto pronto, então basta montá-lo.
-import { agenteAntifraude } from "../src/lib/controladoria/agents/antifraude";
+import { auditarFraude } from "../src/lib/controladoria/agents/antifraude";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 
 let falhas = 0;
@@ -116,7 +116,7 @@ function contexto(p: {
 }
 
 const rodar = (ctx: ContextoAuditoria, regra: string) =>
-  agenteAntifraude.executar(ctx).filter((a) => a.regra === regra);
+  auditarFraude(ctx).filter((a) => a.regra === regra);
 
 // ------------------------------------------------------- FR-CONTA-ESCONDIDA
 console.log("\nFR-CONTA-ESCONDIDA — conta fora do resumo de caixa, com movimento");
@@ -382,7 +382,7 @@ console.log("\nFR-CLIENTE-FORNECEDOR — o mesmo CNPJ nos dois sentidos");
 // ------------------------------------------------------------ base vazia
 console.log("\nBase vazia");
 {
-  const achados = agenteAntifraude.executar(contexto({}));
+  const achados = auditarFraude(contexto({}));
   conferir("nenhuma regra dispara sem dado", achados.length, 0);
 }
 

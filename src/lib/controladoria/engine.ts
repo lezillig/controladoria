@@ -39,7 +39,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
 
   for (const agente of AGENTES) {
     try {
-      for (const achado of agente.executar(ctx)) {
+      for (const achado of await agente.executar(ctx)) {
         emitidos.push(achado);
         agentePorRegra.set(achado.regra, agente.id);
       }

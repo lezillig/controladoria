@@ -47,7 +47,11 @@ export const agenteAntifraude: Agente = {
   executar: auditarFraude,
 };
 
-function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
+// Exportada para o teste. O contrato de `Agente.executar` passou a admitir
+// Promise por causa do agente de histórico, e testar pelo contrato obrigaria a
+// tratar um `await` que aqui nunca acontece — este agente decide olhando só o
+// contexto. Testar a função concreta mantém o teste síncrono e honesto.
+export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
   const materialidade = materialidadeCents(ctx);
 
