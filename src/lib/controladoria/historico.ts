@@ -78,7 +78,15 @@ async function recalcularDimensao(
       COALESCE(MAX(t."valorDocumentoCents"), 0)::int,
       COALESCE(SUM(b.qtd), 0)::int,
       COALESCE(SUM(b.valor), 0)::int,
-      COALESCE(SUM(b.dias), 0)::int
+      COALESCE(SUM(b.dias), 0)::int,
+      -- NOW() fecha a lista: são quinze colunas no INSERT, e faltava o
+      -- décimo quinto valor. O Postgres recusou com "INSERT has more target
+      -- columns than expressions" — e a recusa só apareceu na execução real,
+      -- porque SQL cru não passa pelo compilador. É por isso que a chamada
+      -- desta função vive dentro de um try/catch no ciclo: o resumo é
+      -- derivado, e derrubar a janela inteira por causa dele seria trocar o
+      -- barato pelo caro.
+      NOW()
     FROM ${tabela("OmieTitulo")} t
     -- LATERAL, e não JOIN direto: com JOIN, um título com três baixas entraria
     -- três vezes no COUNT(*) e o número de títulos do mês ficaria inflado.
@@ -154,6 +162,67 @@ export async function recalcularHistorico(
     await limparOrfas(companyId, conexaoId, competencia);
   }
   return { competencias: new Set(competencias).size, linhas };
+}
+
+// O QUE AINDA NÃO TEM RESUMO.
+//
+// Existe porque o cálculo acontece ao FIM de cada janela de sincronização — e
+// isso deixa dois buracos previsíveis: a base carregada antes desta camada
+// existir, e qualquer janela cujo recálculo tenha falhado (ele vive num
+// try/catch de propósito, para não derrubar a carga do mês por causa de um
+// agregado). Na primeira vez que isto rodou, os dois buracos eram o mesmo: 134
+// janelas carregadas, zero resumos, por um erro de SQL que só a execução real
+// revelou.
+//
+// A lista sai do próprio espelho — competências que TÊM título e não TÊM
+// resumo. Assim ela encolhe sozinha a cada lote e não depende de ninguém
+// lembrar do que ficou para trás.
+export async function competenciasPendentes(
+  companyId: string
+): Promise<{ conexaoId: string; competencia: string }[]> {
+  return prisma.$queryRaw<{ conexaoId: string; competencia: string }[]>`
+    SELECT DISTINCT t."conexaoId", ${COMPETENCIA} AS competencia
+      FROM ${tabela("OmieTitulo")} t
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND NOT EXISTS (
+         SELECT 1 FROM ${tabela("HistoricoMensal")} h
+          WHERE h."companyId" = t."companyId"
+            AND h."conexaoId" = t."conexaoId"
+            AND h.competencia = ${COMPETENCIA}
+       )
+     ORDER BY 2 DESC
+  `;
+}
+
+// UM LOTE POR CHAMADA, com prazo.
+//
+// Cento e trinta e quatro competências × duas dimensões não cabem nos sessenta
+// segundos de uma função. Em vez de arriscar o estouro — que deixaria o
+// trabalho pela metade sem dizer onde parou —, cada chamada faz o que couber no
+// prazo e devolve quantas faltam. Quem chamou decide se volta.
+//
+// As mais RECENTES primeiro (a consulta ordena por competência decrescente):
+// se o processo for interrompido, o que já está pronto é o período que as telas
+// mais consultam.
+export async function recalcularPendentes(
+  companyId: string,
+  prazo: Date
+): Promise<{ feitas: number; restantes: number }> {
+  const pendentes = await competenciasPendentes(companyId);
+  let feitas = 0;
+
+  for (const p of pendentes) {
+    // Confere ANTES de começar mais uma, e não depois: uma competência no meio
+    // do caminho é pior que uma não começada, porque a dimensão PARCEIRO
+    // ficaria gravada e a CATEGORIA não — e a próxima passada a consideraria
+    // pronta, já que "pronta" é ter qualquer linha.
+    if (new Date() >= prazo) break;
+    await recalcularHistorico(companyId, p.conexaoId, [p.competencia]);
+    feitas++;
+  }
+
+  return { feitas, restantes: pendentes.length - feitas };
 }
 
 // AS COMPETÊNCIAS QUE UMA JANELA TOCA.

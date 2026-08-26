@@ -19,6 +19,7 @@ import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
 import { exigirPermissao, podeAcao } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
+import ResumoMensalButton from "./ResumoMensalButton";
 import RelerJanelaButton from "./RelerJanelaButton";
 import RelerPeriodoForm from "./RelerPeriodoForm";
 
@@ -305,6 +306,20 @@ export default async function SincronizacaoPage() {
           descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → auditoria → relatório."
         >
           <SyncButton temExecucaoTravada={travada} emAndamento={Boolean(emAndamento) && !travada} />
+
+          {/* O resumo mensal é recalculado sozinho ao fim de cada janela. Este
+              botão cobre os buracos: base carregada antes desta camada existir,
+              ou janela cujo recálculo falhou — ele roda dentro de um try/catch
+              para um agregado com defeito não derrubar a carga do mês. */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="text-xs font-medium text-slate-700">Resumo mensal do histórico</p>
+            <p className="mb-2 mt-0.5 text-xs text-slate-500">
+              É o que permite comparar o mês corrente com anos de padrão — &quot;este fornecedor sempre cobrou isso?&quot;.
+              Normalmente se atualiza sozinho a cada janela sincronizada; use aqui se a base foi carregada antes desta
+              camada existir, ou se alguma janela acusou falha no resumo.
+            </p>
+            <ResumoMensalButton />
+          </div>
           {travada && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Existe uma execução iniciada em {fmtData(emAndamento!.iniciadoEm)} ainda marcada como em andamento. Enquanto

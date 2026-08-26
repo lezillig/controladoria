@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
+import { recalcularPendentes } from "@/lib/controladoria/historico";
 import { registrarEvento } from "../auditoria/actions";
 import { exigirPermissao } from "../_dados";
 
@@ -368,4 +369,60 @@ export async function relerPeriodo(formData: FormData): Promise<ResultadoSync> {
     );
   }
   return { mensagens };
+}
+
+// RECÁLCULO DO RESUMO MENSAL, sob demanda.
+//
+// O cálculo normal acontece ao fim de cada janela de sincronização, e não
+// precisa de botão. Este existe para os buracos: a base que foi carregada antes
+// desta camada existir, e as janelas cujo recálculo falhou — ele vive num
+// try/catch de propósito, para um agregado com defeito não derrubar a carga do
+// mês inteiro.
+//
+// Foi exatamente o que aconteceu na estreia: 134 janelas carregadas, zero
+// resumos, por uma coluna a mais na lista do INSERT que só a execução real
+// revelou. A carga sobreviveu, o resumo não — e é para isso que este botão
+// serve.
+//
+// UM LOTE POR CHAMADA. Cento e trinta e quatro competências não cabem nos
+// sessenta segundos da função, e estourar deixaria o trabalho pela metade sem
+// dizer onde parou. Cada chamada faz o que couber e devolve quantas faltam; a
+// tela chama de novo até zerar.
+const SEGUNDOS_DO_LOTE = 45;
+
+export async function recalcularResumoMensal(): Promise<{
+  feitas: number;
+  restantes: number;
+  mensagem: string;
+}> {
+  const session = await exigirPermissao("sincronizar");
+
+  const prazo = new Date(Date.now() + SEGUNDOS_DO_LOTE * 1000);
+  const { feitas, restantes } = await recalcularPendentes(session.companyId, prazo);
+
+  // Trilha só quando ZERA, e não a cada lote: um recálculo de cento e trinta
+  // competências geraria dezenas de linhas idênticas na auditoria, afogando o
+  // que a trilha existe para preservar.
+  if (feitas > 0 && restantes === 0) {
+    await registrarEvento({
+      companyId: session.companyId,
+      userId: session.userId,
+      userNome: session.name,
+      userEmail: session.email,
+      acao: "RESUMO_MENSAL_RECALCULADO",
+      descricao: "Resumo mensal do histórico recalculado até não sobrar competência pendente.",
+    });
+  }
+
+  revalidatePath("/sincronizacao");
+  return {
+    feitas,
+    restantes,
+    mensagem:
+      restantes === 0
+        ? feitas === 0
+          ? "Nada pendente: todas as competências já têm resumo."
+          : `Resumo mensal completo — ${feitas} competência(s) nesta rodada.`
+        : `${feitas} competência(s) nesta rodada, ${restantes} restante(s).`,
+  };
 }
