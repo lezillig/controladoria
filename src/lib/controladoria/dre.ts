@@ -61,6 +61,12 @@ export const LINHAS_DRE = [
   // resto é o que torna visível quanto a operação precisa faturar só para
   // manter a porta aberta.
   { chave: "DESPESA_ESTRUTURA", rotulo: "(-) Despesas de estrutura", tipo: "GRUPO", sinal: -1 },
+  // INFORMÁTICA separada da estrutura porque as duas se comportam de forma
+  // diferente: aluguel e energia acompanham o tamanho da sede, software e
+  // licença acompanham o número de usuários e sobem sozinhos, assinatura por
+  // assinatura, sem ninguém decidir. É a despesa que mais cresce em silêncio, e
+  // dentro de "estrutura" ela ficava invisível.
+  { chave: "DESPESA_INFORMATICA", rotulo: "(-) Despesas com informática", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_COMERCIAL", rotulo: "(-) Despesas comerciais", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_ADMINISTRATIVA", rotulo: "(-) Despesas administrativas", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_GERAL", rotulo: "(-) Outras despesas operacionais", tipo: "GRUPO", sinal: -1 },
@@ -171,7 +177,16 @@ const PADRAO_SOCIOS =
 
 // O que a empresa paga para EXISTIR, rode ou não rode.
 const PADRAO_ESTRUTURA =
-  /aluguel|loca[çc][ãa]o de (im[óo]vel|sala)|condom[íi]nio|iptu|energia|luz el[ée]trica|[áa]gua e esgoto|\b[áa]gua\b|telefon|celular|internet|link dedicado|software|sistema|licen[çc]a de uso|assinatura|hospedagem|material de (escrit[óo]rio|expediente)|limpeza|copa|vigil[âa]ncia|seguran[çc]a patrimonial|correio|cart[óo]rio|contabilidade|advogad|jur[íi]dic|consultoria|auditoria|honor[áa]rios cont[áa]beis/i;
+  /aluguel|loca[çc][ãa]o de (im[óo]vel|sala)|condom[íi]nio|iptu|energia|luz el[ée]trica|[áa]gua e esgoto|\b[áa]gua\b|telefon|celular|material de (escrit[óo]rio|expediente)|limpeza|copa|vigil[âa]ncia|seguran[çc]a patrimonial|correio|cart[óo]rio|contabilidade|advogad|jur[íi]dic|consultoria|auditoria|honor[áa]rios cont[áa]beis/i;
+
+// TI. Testada ANTES de estrutura porque as duas disputam palavras — e depois de
+// veículos, para "sistema de rastreamento" continuar sendo frota.
+//
+// Telefone e celular ficam em ESTRUTURA: são utilidade da sede, e mudá-los de
+// lugar só porque chegam na mesma fatura da internet trocaria uma mistura por
+// outra.
+const PADRAO_INFORMATICA =
+  /inform[áa]tica|\bti\b|tecnologia da informa[çc][ãa]o|software|sistema|licen[çc]a de uso|licen[çc]a de software|assinatura|saas|nuvem|cloud|hospedagem|servidor|dom[íi]nio|backup|antiv[íi]rus|firewall|suporte t[ée]cnico|help ?desk|computador|notebook|impressora|toner|perif[ée]rico|internet|link dedicado|banco de dados|desenvolvimento de (sistema|software)/i;
 
 // Saída ligada à AQUISIÇÃO de bem, não à operação do mês. Numa transportadora
 // é quase toda a renovação de frota.
@@ -243,6 +258,7 @@ export function proporLinha(
   if (PADRAO_FINANCIAMENTO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
   if (PADRAO_VEICULOS.test(d)) return "DESPESA_VEICULOS";
   if (PADRAO_SALARIOS.test(d)) return "DESPESA_SALARIOS";
+  if (PADRAO_INFORMATICA.test(d)) return "DESPESA_INFORMATICA";
   if (PADRAO_ESTRUTURA.test(d)) return "DESPESA_ESTRUTURA";
   return "DESPESA_GERAL";
 }
@@ -499,6 +515,7 @@ export function montarDre(
       g("DESPESA_SALARIOS") -
       g("DESPESA_SOCIOS") -
       g("DESPESA_ESTRUTURA") -
+      g("DESPESA_INFORMATICA") -
       g("DESPESA_COMERCIAL") -
       g("DESPESA_ADMINISTRATIVA") -
       g("DESPESA_GERAL") +

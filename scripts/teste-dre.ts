@@ -291,6 +291,14 @@ console.log("\n6. Proposta automática — conservadora de propósito");
   conferir("aluguel é estrutura", p("Aluguel do imóvel"), "DESPESA_ESTRUTURA");
   conferir("advogados também", p("Advogados"), "DESPESA_ESTRUTURA");
   conferir("energia também", p("Energia elétrica"), "DESPESA_ESTRUTURA");
+  conferir("software é informática", p("Licença de software"), "DESPESA_INFORMATICA");
+  conferir("nuvem também", p("Hospedagem em nuvem"), "DESPESA_INFORMATICA");
+  conferir("internet também", p("Internet e link dedicado"), "DESPESA_INFORMATICA");
+  // Telefone fica em estrutura: é utilidade da sede, e movê-lo só porque chega
+  // na mesma fatura da internet trocaria uma mistura por outra.
+  conferir("mas telefone segue em estrutura", p("Telefonia fixa"), "DESPESA_ESTRUTURA");
+  // "sistema" está nas duas listas; veículos é testado antes.
+  conferir("sistema de rastreamento continua frota", p("Sistema de rastreamento"), "DESPESA_VEICULOS");
   // Aluguel de VEÍCULO é frota, não estrutura — a palavra "aluguel" está nas
   // duas listas e a ordem decide.
   conferir("mas aluguel de veículo é frota", p("Locação de veículos"), "DESPESA_VEICULOS");
