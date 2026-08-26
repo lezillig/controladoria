@@ -129,8 +129,11 @@ console.log("\n4. Categoria sem classificação humana");
     MES, ANT,
     cls({ "1": ["RECEITA_BRUTA", null, true] })
   );
-  conferir("proposta cai em 'outras despesas', que não move lucro bruto",
-    r.linhas.find((l) => l.chave === "DESPESA_GERAL")?.valorCents, 3_000_000);
+  // "Peças e manutenção" agora é reconhecida como despesa com veículos. O que
+  // este teste prova continua valendo e é o ponto: a proposta NUNCA põe nada em
+  // custo dos serviços, então o lucro bruto não se mexe por palpite.
+  conferir("a proposta nunca cai em custo dos serviços",
+    r.linhas.find((l) => l.chave === "CUSTO_SERVICO")?.valorCents, 0);
   conferir("lucro bruto intacto", r.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.valorCents, 10_000_000);
   conferir("e o volume por confirmar é anunciado", r.naoConfirmadoCents, 3_000_000);
 }
@@ -231,7 +234,7 @@ console.log("\n7. REGRESSÃO — a receita que foi parar em despesas");
   );
   const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
   conferir("receita bruta reconhecida pelo LADO DO TÍTULO", v("RECEITA_BRUTA"), 735_578_380);
-  conferir("não foi parar em despesas", v("DESPESA_GERAL"), 73_848_680);
+  conferir("e o combustível está em veículos, não em receita", v("DESPESA_VEICULOS"), 73_848_680);
   conferir("e a receita líquida deixa de ser negativa", v("RECEITA_LIQUIDA")! > 0, true);
 }
 
@@ -270,8 +273,39 @@ console.log("\n6. Proposta automática — conservadora de propósito");
   // investimento — é onde a contabilidade os coloca.
   conferir("mas os JUROS ficam em financeiras", p("Juros de financiamento"), "DESPESA_FINANCEIRA");
   conferir("tarifa bancária é financeira", p("Tarifas Bancárias"), "DESPESA_FINANCEIRA");
-  conferir("COMBUSTÍVEL NÃO é adivinhado como custo", p("Combustível"), "DESPESA_GERAL");
-  conferir("nem folha", p("Salários e ordenados"), "DESPESA_GERAL");
+  // Combustível vai para VEÍCULOS, não para CUSTO DOS SERVIÇOS: entre veículos
+  // e outras despesas o erro não move subtotal; entre custo e despesa, move o
+  // lucro bruto. Por isso um é proposto e o outro não.
+  conferir("combustível é despesa com veículos", p("Combustível"), "DESPESA_VEICULOS");
+  conferir("pneus também", p("Pneus e recapagem"), "DESPESA_VEICULOS");
+  conferir("pedágio também", p("Pedágios"), "DESPESA_VEICULOS");
+  conferir("IPVA também", p("IPVA e licenciamento"), "DESPESA_VEICULOS");
+  // Estas duas são as armadilhas de ordem.
+  conferir("multa de TRÂNSITO não é despesa financeira", p("Multas de trânsito"), "DESPESA_VEICULOS");
+  conferir("consórcio de VEÍCULOS continua investimento", p("Consórcio de veículos"), "FINANCIAMENTO_INVESTIMENTO");
+  conferir("salários", p("Salários e ordenados"), "DESPESA_SALARIOS");
+  conferir("encargo é folha", p("FGTS"), "DESPESA_SALARIOS");
+  conferir("benefício também", p("Vale-transporte"), "DESPESA_SALARIOS");
+  conferir("pró-labore é SÓCIOS, não folha", p("Pró-labore dos sócios"), "DESPESA_SOCIOS");
+  conferir("distribuição de lucro idem", p("Distribuição de Lucros"), "DESPESA_SOCIOS");
+  conferir("aluguel é estrutura", p("Aluguel do imóvel"), "DESPESA_ESTRUTURA");
+  conferir("advogados também", p("Advogados"), "DESPESA_ESTRUTURA");
+  conferir("energia também", p("Energia elétrica"), "DESPESA_ESTRUTURA");
+  // Aluguel de VEÍCULO é frota, não estrutura — a palavra "aluguel" está nas
+  // duas listas e a ordem decide.
+  conferir("mas aluguel de veículo é frota", p("Locação de veículos"), "DESPESA_VEICULOS");
+  // DEFEITO CORRIGIDO: "das" é preposição em português. /\bdas\b/ mandava
+  // "Manutenção das vans" para dentro das deduções da receita bruta — saindo
+  // do EBIT e reduzindo a receita líquida.
+  // A asserção é NEGATIVA de propósito: o que importa não é em que linha estas
+  // caem, e sim que não caem em DEDUÇÕES — de onde sairiam do EBIT e ainda
+  // reduziriam a receita líquida.
+  conferir('"das" como preposição não vira imposto', p("Manutenção das vans") === "DEDUCOES", false);
+  conferir("nem em outra frase", p("Reforma das garagens") === "DEDUCOES", false);
+  conferir("nem numa terceira", p("Seguro das unidades") === "DEDUCOES", false);
+  conferir("mas o DAS do Simples continua sendo dedução", p("DAS - Simples Nacional"), "DEDUCOES");
+  conferir("e CUSTO DOS SERVIÇOS nunca é adivinhado",
+    [p("Combustível"), p("Pneus")].includes("CUSTO_SERVICO"), false);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);

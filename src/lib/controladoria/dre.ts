@@ -32,6 +32,35 @@ export const LINHAS_DRE = [
   { chave: "RECEITA_LIQUIDA", rotulo: "= Receita operacional líquida", tipo: "SUBTOTAL", sinal: 1 },
   { chave: "CUSTO_SERVICO", rotulo: "(-) Custo dos serviços prestados", tipo: "GRUPO", sinal: -1 },
   { chave: "LUCRO_BRUTO", rotulo: "= Lucro bruto", tipo: "SUBTOTAL", sinal: 1 },
+  // DESPESAS COM VEÍCULOS — linha própria, e não uma dobra de "outras
+  // despesas".
+  //
+  // Numa transportadora este é o maior bloco de custo depois da folha, e
+  // enterrá-lo em "outras despesas operacionais" faz a linha de maior peso da
+  // empresa não ter nome. Combustível, pneu, manutenção, IPVA, seguro e pedágio
+  // são a operação — variam com o quilômetro rodado — e precisam ser lidos
+  // juntos para que "custo por km" signifique alguma coisa.
+  //
+  // Vem primeiro entre as despesas operacionais porque é a maior: quem lê o DRE
+  // de cima para baixo encontra o que decide antes do que apenas informa.
+  { chave: "DESPESA_VEICULOS", rotulo: "(-) Despesas com veículos", tipo: "GRUPO", sinal: -1 },
+  // A FOLHA. Junto com os veículos, é a operação de uma transportadora — as
+  // duas somadas costumam ser mais de 80% do custo, e lê-las separadas é o que
+  // permite responder "o problema é frota ou é gente?".
+  { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com salários", tipo: "GRUPO", sinal: -1 },
+  // SÓCIOS em linha própria porque a pergunta que ela responde é de governança,
+  // não de operação: quanto a sociedade retira. Misturada na administrativa,
+  // some — e é justamente o número que um sócio quer achar em dez segundos.
+  //
+  // Ressalva: pró-labore é despesa, DISTRIBUIÇÃO DE LUCRO não é — é destinação
+  // do resultado, e fica abaixo dele na contabilidade. Se as duas estiverem na
+  // mesma categoria da Omie, esta linha mistura as duas coisas.
+  { chave: "DESPESA_SOCIOS", rotulo: "(-) Despesas com sócios", tipo: "GRUPO", sinal: -1 },
+  // ESTRUTURA: o que a empresa paga para existir, independente de rodar —
+  // aluguel, energia, sistemas, escritório. É o custo fixo, e separá-lo do
+  // resto é o que torna visível quanto a operação precisa faturar só para
+  // manter a porta aberta.
+  { chave: "DESPESA_ESTRUTURA", rotulo: "(-) Despesas de estrutura", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_COMERCIAL", rotulo: "(-) Despesas comerciais", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_ADMINISTRATIVA", rotulo: "(-) Despesas administrativas", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_GERAL", rotulo: "(-) Outras despesas operacionais", tipo: "GRUPO", sinal: -1 },
@@ -102,13 +131,48 @@ export const ROTULO_LINHA: Record<string, string> = Object.fromEntries(
 // distingue os dois com segurança), e TODA despesa cai em "outras despesas
 // operacionais" até que alguém diga se é custo. É a única linha que não
 // desloca lucro bruto por engano — quem classificar vai TER que olhar.
-const PADRAO_TRIBUTO_FATURAMENTO = /\b(iss|pis|cofins|icms|simples|das)\b/i;
+// `das` NÃO entra solto aqui, e a razão é um defeito que já estava no ar: em
+// português "das" é preposição, e /\bdas\b/ casava com "Manutenção das vans",
+// "Reforma das garagens", "Seguro das unidades" — mandando despesa de operação
+// para dentro das deduções da receita, onde ela sairia do EBIT e reduziria a
+// receita líquida. O DAS do Simples é pego por "simples".
+const PADRAO_TRIBUTO_FATURAMENTO = /\b(iss|pis|cofins|icms)\b|simples nacional|\bsimples\b|\bdas\s*[-–]/i;
 const PADRAO_TRIBUTO_LUCRO = /\b(irpj|csll|imposto de renda|contribui[çc][ãa]o social)\b/i;
 const PADRAO_FINANCEIRA = /juros|multa|tarifa|banc[áa]ri|iof|encargo financeiro|desconto concedido/i;
 const PADRAO_RECEITA_FINANCEIRA = /rendimento|juros recebidos|receita financeira/i;
 // Entrada que NÃO é faturamento de serviço. Cada uma destas apareceu dentro da
 // receita operacional bruta na primeira leitura real da tela — somadas ao
 // faturamento, deslocam a base de todo percentual do DRE.
+// O QUE O VEÍCULO CONSOME PARA RODAR.
+//
+// Aqui a proposta pode ser generosa, e a razão é aritmética: entre "despesas
+// com veículos" e "outras despesas operacionais" as duas são subtraídas no
+// MESMO ponto da demonstração, então um palpite errado entre elas não move
+// subtotal nenhum — é erro de apresentação, não de número. Bem diferente do
+// custo-versus-despesa, que desloca o lucro bruto e por isso continua sem
+// palpite.
+//
+// `PADRAO_TRANSITO` é testado ANTES das financeiras porque "multa de trânsito"
+// cairia em "multa" e viraria despesa financeira; e VEICULOS vem DEPOIS de
+// financiamento para "consórcio de veículos" não ser lido como combustível.
+const PADRAO_TRANSITO = /tr[âa]nsito|ipva|licenciamento|dpvat|detran|crlv/i;
+const PADRAO_VEICULOS =
+  /combust[íi]vel|diesel|gasolina|etanol|arla|pneu|recapagem|oficina|pe[çc]a|lubrificante|[óo]leo|lavagem|higieniza[çc][ãa]o|rastreamento|telemetria|ped[áa]gio|estacionamento|garagem|revis[ãa]o|funilaria|manuten[çc][ãa]o de ve[íi]culo|manuten[çc][ãa]o de frota|seguro de (frota|ve[íi]culo)|(aluguel|loca[çc][ãa]o) de ve[íi]culo|frota/i;
+
+// A FOLHA e o que anda com ela. Encargo e benefício entram: quem pergunta
+// "quanto custa a equipe" quer o custo cheio, não o salário nominal.
+const PADRAO_SALARIOS =
+  /sal[áa]rio|ordenado|folha|f[ée]rias|d[ée]cimo terceiro|13[º°]|rescis[ãa]o|fgts|verba rescis[óo]ria|vale[- ](transporte|refei[çc][ãa]o|alimenta[çc][ãa]o)|cesta b[áa]sica|plano de sa[úu]de|assist[êe]ncia m[ée]dica|conv[êe]nio m[ée]dico|seguro de vida|treinamento|uniforme|exame (admissional|peri[óo]dico)|sindicato|contribui[çc][ãa]o sindical|est[áa]gio|aprendiz|autônomo|freelance/i;
+
+// SÓCIOS antes de tudo o mais: "pró-labore dos sócios" tem de ir para cá, e não
+// para a folha, mesmo carregando a palavra que a folha procura.
+const PADRAO_SOCIOS =
+  /s[óo]cio|pr[óo][- ]?labore|prolabore|distribui[çc][ãa]o de (lucro|resultado)|retirada|dividendo|honor[áa]rios? da diretoria|diretoria/i;
+
+// O que a empresa paga para EXISTIR, rode ou não rode.
+const PADRAO_ESTRUTURA =
+  /aluguel|loca[çc][ãa]o de (im[óo]vel|sala)|condom[íi]nio|iptu|energia|luz el[ée]trica|[áa]gua e esgoto|\b[áa]gua\b|telefon|celular|internet|link dedicado|software|sistema|licen[çc]a de uso|assinatura|hospedagem|material de (escrit[óo]rio|expediente)|limpeza|copa|vigil[âa]ncia|seguran[çc]a patrimonial|correio|cart[óo]rio|contabilidade|advogad|jur[íi]dic|consultoria|auditoria|honor[áa]rios cont[áa]beis/i;
+
 // Saída ligada à AQUISIÇÃO de bem, não à operação do mês. Numa transportadora
 // é quase toda a renovação de frota.
 const PADRAO_FINANCIAMENTO =
@@ -170,11 +234,16 @@ export function proporLinha(
   // real, os dois voltam a depender do resultado e o lugar deles é lá — e
   // classificar uma categoria nela continua possível a qualquer momento.
   if (PADRAO_TRIBUTO_LUCRO.test(d)) return "DEDUCOES";
+  if (PADRAO_TRANSITO.test(d)) return "DESPESA_VEICULOS";
+  if (PADRAO_SOCIOS.test(d)) return "DESPESA_SOCIOS";
   // Juros e tarifas ficam em despesa FINANCEIRA — é onde a contabilidade os
   // coloca, e o teste vem antes por isso: "juros de financiamento" é despesa
   // financeira, "parcela de financiamento" é investimento.
   if (PADRAO_FINANCEIRA.test(d)) return "DESPESA_FINANCEIRA";
   if (PADRAO_FINANCIAMENTO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
+  if (PADRAO_VEICULOS.test(d)) return "DESPESA_VEICULOS";
+  if (PADRAO_SALARIOS.test(d)) return "DESPESA_SALARIOS";
+  if (PADRAO_ESTRUTURA.test(d)) return "DESPESA_ESTRUTURA";
   return "DESPESA_GERAL";
 }
 
@@ -426,6 +495,10 @@ export function montarDre(
     const lucroBruto = receitaLiquida - g("CUSTO_SERVICO");
     const ebit =
       lucroBruto -
+      g("DESPESA_VEICULOS") -
+      g("DESPESA_SALARIOS") -
+      g("DESPESA_SOCIOS") -
+      g("DESPESA_ESTRUTURA") -
       g("DESPESA_COMERCIAL") -
       g("DESPESA_ADMINISTRATIVA") -
       g("DESPESA_GERAL") +
