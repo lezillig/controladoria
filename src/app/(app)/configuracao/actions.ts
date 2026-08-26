@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { garantirConfig } from "@/lib/controladoria/contexto";
 import { parseLocalDate } from "@/lib/date";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // Parâmetros do modelo de gestão financeira. São os números que transformam
 // regra genérica em política DESTA empresa — sem alçada cadastrada, por
@@ -22,7 +22,7 @@ function reaisParaCents(valor: string): number | null {
 }
 
 export async function salvarConfiguracao(formData: FormData): Promise<ResultadoConfig> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-modelo");
   const anterior = await garantirConfig(session.companyId);
 
   const emails = String(formData.get("emails") ?? "")

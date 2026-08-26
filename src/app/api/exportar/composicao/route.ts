@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
 import { composicaoDoPeriodo } from "@/lib/controladoria/composicao";
 import { retencoesDoPeriodo } from "@/lib/controladoria/retencoes";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { mesCompleto, rotuloMes } from "@/lib/controladoria/periodos";
 import { resolverEscopo, resolverPeriodo, resolverRegime } from "@/app/(app)/_dados";
+import { exigirPermissao } from "@/app/(app)/_dados";
 
 // EXPORTAÇÃO DA COMPOSIÇÃO DE RECEITA E DESPESA.
 //
@@ -25,7 +25,7 @@ import { resolverEscopo, resolverPeriodo, resolverRegime } from "@/app/(app)/_da
 // circulam, ninguém sabe qual vale, e a correção é feita sobre a errada.
 
 export async function GET(req: NextRequest) {
-  const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
+  const session = await exigirPermissao("custos");
 
   const empresaParam = req.nextUrl.searchParams.get("empresa") ?? undefined;
   const competenciaParam = req.nextUrl.searchParams.get("competencia") ?? undefined;

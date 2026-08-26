@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { LINHAS_CLASSIFICAVEIS, ROTULO_LINHA } from "@/lib/controladoria/dre";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // CLASSIFICAR UMA CATEGORIA NUMA LINHA DO DRE.
 //
@@ -22,7 +22,7 @@ export type ResultadoClassificacao = { erro?: string; ok?: boolean };
 const MAX_SUBGRUPO = 40;
 
 export async function classificarCategoria(formData: FormData): Promise<ResultadoClassificacao> {
-  const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
+  const session = await exigirPermissao("classificar-dre");
 
   const categoriaCodigo = String(formData.get("categoriaCodigo") ?? "").trim();
   const linha = String(formData.get("linha") ?? "").trim();

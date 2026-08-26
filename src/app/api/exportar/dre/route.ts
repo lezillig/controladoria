@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
 import { carregarContexto } from "@/lib/controladoria/contexto";
 import { LINHAS_DRE, montarDre, ROTULO_LINHA } from "@/lib/controladoria/dre";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { mesCompleto, rotuloMes } from "@/lib/controladoria/periodos";
 import { resolverEscopo, resolverPeriodo, resolverRegime } from "@/app/(app)/_dados";
+import { exigirPermissao } from "@/app/(app)/_dados";
 
 // PLANILHA DE CONFERÊNCIA DA CLASSIFICAÇÃO DO DRE.
 //
@@ -27,7 +27,7 @@ import { resolverEscopo, resolverPeriodo, resolverRegime } from "@/app/(app)/_da
 // estrutura de cabeça a cada linha.
 
 export async function GET(req: NextRequest) {
-  const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
+  const session = await exigirPermissao("custos");
 
   const escopo = await resolverEscopo(session.companyId, req.nextUrl.searchParams.get("empresa") ?? undefined);
   const periodo = resolverPeriodo(req.nextUrl.searchParams.get("competencia") ?? undefined);

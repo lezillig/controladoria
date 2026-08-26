@@ -10,6 +10,7 @@
     "teste:cte": "tsx scripts/teste-cte.ts",
     "teste:antifraude": "tsx scripts/teste-antifraude.ts",
     "teste:dre": "tsx scripts/teste-dre.ts",
+    "teste:acessos": "tsx scripts/teste-acessos.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

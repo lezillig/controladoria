@@ -25,6 +25,7 @@ export default function TabelaDre({
   subgruposConhecidos,
   marcasPorCategoria,
   anoAnterior,
+  podeClassificar,
 }: {
   linhas: LinhaDreCalculada[];
   subgruposConhecidos: string[];
@@ -32,6 +33,7 @@ export default function TabelaDre({
   // Só o ano, para o cabeçalho da coluna. "Mesmo mês 2025" diz o que "ano
   // anterior" não diz: qual ano exatamente está do outro lado da comparação.
   anoAnterior?: number;
+  podeClassificar: boolean;
 }) {
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
 
@@ -170,6 +172,7 @@ export default function TabelaDre({
                         linhaChave={linha.chave}
                         subgruposConhecidos={subgruposConhecidos}
                         marcasOmie={marcasPorCategoria[i.categoriaCodigo] ?? null}
+                        podeClassificar={podeClassificar}
                       />
                     ))}
                 </Fragment>

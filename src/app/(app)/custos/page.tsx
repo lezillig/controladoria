@@ -10,6 +10,7 @@ import {
   anosDisponiveis,
   competenciasDisponiveis,
   contextoDaPagina,
+  podeAcao,
   resolverAno,
   resolverPeriodo,
   resolverRegime,
@@ -69,7 +70,8 @@ export default async function CustosPage({
   // em vez de três. É o custo do comparativo ano contra ano, e ele é pago só
   // aqui: nenhuma outra tela precisa dessa profundidade.
   const referenciaProvisoria = resolverPeriodo(anual ? `${anoDaTela}-12` : params.competencia).dataReferencia;
-  const { ctx, escopo, periodo } = await contextoDaPagina(
+  const { session, ctx, escopo, periodo } = await contextoDaPagina(
+    "custos",
     params.empresa,
     anual ? `${anoDaTela}-12` : params.competencia,
     anual
@@ -77,6 +79,7 @@ export default async function CustosPage({
       : new Date(referenciaProvisoria.getFullYear() - 1, referenciaProvisoria.getMonth(), 1)
   );
   const regime = resolverRegime(params.regime);
+  const podeClassificar = await podeAcao(session, "classificar-dre");
 
   const comparativo = await montarComparativo(ctx);
 
@@ -351,6 +354,7 @@ export default async function CustosPage({
             subgruposConhecidos={subgruposConhecidos}
             marcasPorCategoria={marcasPorCategoria}
             anoAnterior={comparativo.janelas.mesAtual.inicio.getFullYear() - 1}
+            podeClassificar={podeClassificar}
           />
         )}
 

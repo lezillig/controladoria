@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import { sugerirAlcadas } from "@/lib/controladoria/agents/oportunidades";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
 import { Secao, Tabela } from "../_componentes";
+import { exigirPermissao } from "../_dados";
 import ConfiguracaoForm from "./ConfiguracaoForm";
 import { larguraPainel } from "@/lib/ui";
 
@@ -15,7 +15,7 @@ export default async function ConfiguracaoPage() {
   // Só quem opera a controladoria configura: GESTOR lê o módulo inteiro, mas
   // mudar o parâmetro que define o que é "crítico" é mexer no próprio critério
   // de auditoria.
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-modelo");
   const ctx = await carregarContexto(session.companyId, dataReferenciaPadrao(), undefined, {
     desde: janelaDeAuditoria(dataReferenciaPadrao()),
   });

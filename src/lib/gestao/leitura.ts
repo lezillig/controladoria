@@ -219,6 +219,46 @@ export async function conferirAcessoDoUsuario(userId: string): Promise<AcessoAtu
   }
 }
 
+// AS PESSOAS DA EMPRESA, para a tela de usuários e perfis.
+//
+// Sem `passwordHash` na projeção, e isso não é detalhe: o hash não tem uso
+// nenhum nesta tela, e trazê-lo o faria circular por serialização de
+// componente de servidor, cache e eventualmente log de erro. Credencial que
+// não sai do banco não vaza.
+//
+// Inativos vêm junto, marcados. Esconder quem foi desligado tiraria da tela
+// justamente a conferência que mais importa: "quem ainda tem perfil de acesso
+// ao financeiro?" precisa mostrar o desligado que ficou com perfil atribuído,
+// mesmo que o papel dele já não o deixe entrar.
+export type PessoaGestao = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  active: boolean;
+};
+
+export type ResultadoPessoas =
+  | { situacao: "ok"; pessoas: PessoaGestao[] }
+  | { situacao: "indisponivel"; erro: string };
+
+export async function listarPessoas(companyId: string): Promise<ResultadoPessoas> {
+  try {
+    const pessoas = await prismaGestao.$queryRaw<PessoaGestao[]>`
+      SELECT id, name, email, role::text AS role, active
+      FROM public."User"
+      WHERE "companyId" = ${companyId}
+      ORDER BY active DESC, name ASC
+    `;
+    return { situacao: "ok", pessoas };
+  } catch (e) {
+    // Lista vazia aqui mentiria: "nenhum usuário cadastrado" numa tela de
+    // permissões faria alguém concluir que ninguém tem acesso, quando o que
+    // houve foi o banco da gestão não responder.
+    return { situacao: "indisponivel", erro: e instanceof Error ? e.message : "erro desconhecido" };
+  }
+}
+
 export async function buscarEmpresa(companyId: string): Promise<{ id: string; name: string } | null> {
   try {
     const linhas = await prismaGestao.$queryRaw<{ id: string; name: string }[]>`

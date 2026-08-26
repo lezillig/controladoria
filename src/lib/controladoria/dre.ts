@@ -47,7 +47,11 @@ export const LINHAS_DRE = [
   // A FOLHA. Junto com os veículos, é a operação de uma transportadora — as
   // duas somadas costumam ser mais de 80% do custo, e lê-las separadas é o que
   // permite responder "o problema é frota ou é gente?".
-  { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com salários", tipo: "GRUPO", sinal: -1 },
+  // A chave continua DESPESA_SALARIOS: é ela que está gravada nas
+  // classificações manuais já feitas, e trocá-la devolveria todas aquelas
+  // categorias ao palpite automático sem ninguém notar. Rótulo é o que se lê;
+  // chave é o que se guarda.
+  { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com pessoas", tipo: "GRUPO", sinal: -1 },
   // SÓCIOS em linha própria porque a pergunta que ela responde é de governança,
   // não de operação: quanto a sociedade retira. Misturada na administrativa,
   // some — e é justamente o número que um sócio quer achar em dez segundos.

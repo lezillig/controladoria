@@ -1172,3 +1172,51 @@ model DreClassificacao {
   @@unique([companyId, categoriaCodigo])
   @@index([companyId, linha])
 }
+
+// PERFIL DE ACESSO — a camada de AUTORIZAÇÃO da Controladoria.
+//
+// A IDENTIDADE continua sendo a do sistema de gestão: quem entra, com que
+// senha, e se ainda está ativo. Este sistema não tem cadastro de usuários
+// próprio, e a razão é de segurança, não de arquitetura — com dois cadastros,
+// desligar alguém passaria a depender de alguém lembrar de repetir a operação
+// nos dois lugares.
+//
+// O que mora aqui é o que cada pessoa ALCANÇA dentro da Controladoria. Os
+// cinco papéis da frota descrevem a operação, não a controladoria: não há como
+// expressar "vê o DRE mas não trata achado" criando papel de motorista.
+model PerfilAcesso {
+  id           String          @id @default(cuid())
+  companyId    String
+  nome         String
+  descricao    String?
+  // Chaves de permissão — ver src/lib/acessos.ts. Array e não tabela de
+  // junção: a lista é pequena, fechada, sempre lida inteira, e nunca
+  // consultada pelo avesso.
+  permissoes   String[]        @default([])
+  padrao       Boolean         @default(false)
+  usuarios     UsuarioPerfil[]
+  criadoEm     DateTime        @default(now())
+  atualizadoEm DateTime        @updatedAt
+
+  @@unique([companyId, nome])
+  @@index([companyId])
+}
+
+// `userId` é o id do usuário NO BANCO DA GESTÃO, sem chave estrangeira: os dois
+// bancos são separados e uma FK entre eles é impossível por construção. Apagar
+// um usuário lá deixa a linha órfã aqui — inofensiva, porque sem usuário não há
+// sessão a autorizar.
+model UsuarioPerfil {
+  id            String       @id @default(cuid())
+  companyId     String
+  userId        String
+  perfilId      String
+  perfil        PerfilAcesso @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+  userNome      String?
+  atribuidoPor  String?
+  criadoEm      DateTime     @default(now())
+  atualizadoEm  DateTime     @updatedAt
+
+  @@unique([companyId, userId])
+  @@index([perfilId])
+}

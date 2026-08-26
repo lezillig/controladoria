@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { sessaoControladoria } from "../_dados";
+import { exigirPermissao } from "../_dados";
 import ConferenciaForm from "./ConferenciaForm";
 import { larguraPainel } from "@/lib/ui";
 
@@ -17,7 +17,7 @@ import { larguraPainel } from "@/lib/ui";
 // reemitido. Nada disso aparecia em nenhum relatório.
 
 export default async function CtePage() {
-  const session = await sessaoControladoria();
+  const session = await exigirPermissao("cte");
 
   const conexoes = await prisma.omieConexao.findMany({
     where: { companyId: session.companyId, ativa: true },

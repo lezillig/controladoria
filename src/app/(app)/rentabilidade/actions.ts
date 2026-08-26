@@ -1,10 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lerClientes, lerMotoristas, lerVeiculos } from "@/lib/gestao/leitura";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // De-para entre a dimensão de custo da Omie (departamento, projeto, categoria,
 // fornecedor, texto no documento) e os cadastros de contrato/frota/pessoas
@@ -22,7 +22,7 @@ export type ResultadoVinculo = { erro?: string; ok?: boolean };
 const TIPOS_ORIGEM = ["DEPARTAMENTO", "PROJETO", "CATEGORIA", "PARCEIRO", "TEXTO"];
 
 export async function salvarVinculo(formData: FormData): Promise<ResultadoVinculo> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-rentabilidade");
 
   const tipoOrigem = String(formData.get("tipoOrigem") ?? "");
   const valorOrigem = String(formData.get("valorOrigem") ?? "").trim();
@@ -122,7 +122,7 @@ export async function salvarVinculo(formData: FormData): Promise<ResultadoVincul
 // exige essa assinatura ali. Um vínculo inexistente simplesmente não faz nada
 // — não há o que explicar ao usuário sobre um botão de uma linha que sumiu.
 export async function removerVinculo(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-rentabilidade");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 

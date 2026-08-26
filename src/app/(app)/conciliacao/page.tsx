@@ -16,7 +16,7 @@ export default async function ConciliacaoPage({
   searchParams: Promise<{ empresa?: string; competencia?: string }>;
 }) {
   const params = await searchParams;
-  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  const { ctx, escopo, periodo } = await contextoDaPagina("conciliacao", params.empresa, params.competencia);
 
   const inicio = inicioDoMes(new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth() - 1, 1));
   const movimentos = ctx.movimentos.filter((m) => m.data >= inicio && m.data <= ctx.dataReferencia);

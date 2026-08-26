@@ -8,11 +8,17 @@ export default function AppShell({
   name,
   role,
   orgName,
+  // Resolvidas no servidor (perfil atribuído, padrão da empresa ou regras do
+  // papel) e passadas prontas. O menu não recalcula acesso a partir do papel:
+  // duas implementações da mesma regra divergem, e a que diverge aqui é a que
+  // mostra uma tela que a pessoa não pode abrir.
+  permissoes,
   children,
 }: {
   name: string;
   role: string;
   orgName: string;
+  permissoes: string[];
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -27,7 +33,7 @@ export default function AppShell({
       />
       <div className="flex flex-1 overflow-hidden">
         <aside className="hidden w-60 shrink-0 border-r border-slate-200 bg-white lg:block">
-          <Sidebar role={role} />
+          <Sidebar permissoes={permissoes} />
         </aside>
         {open && (
           <div className="fixed inset-0 z-40 lg:hidden">
@@ -36,7 +42,7 @@ export default function AppShell({
               onClick={() => setOpen(false)}
             />
             <aside className="absolute left-0 top-0 h-full w-64 bg-white shadow-xl">
-              <Sidebar role={role} />
+              <Sidebar permissoes={permissoes} />
             </aside>
           </div>
         )}

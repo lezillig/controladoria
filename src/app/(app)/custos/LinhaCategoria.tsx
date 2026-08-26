@@ -21,11 +21,16 @@ export default function LinhaCategoria({
   linhaChave,
   subgruposConhecidos,
   marcasOmie,
+  podeClassificar,
 }: {
   item: ItemDre;
   linhaChave: string;
   subgruposConhecidos: string[];
   marcasOmie: string | null;
+  // Sem isto, quem não pode classificar via o botão e recebia "sem acesso" ao
+  // clicar. O botão sumindo é a metade visível da regra; a outra metade está
+  // na própria ação, que recusa mesmo sem o botão.
+  podeClassificar: boolean;
 }) {
   const [aberto, setAberto] = useState(false);
   const temDetalhe = item.titulos.length > 0;
@@ -92,13 +97,15 @@ export default function LinhaCategoria({
         <td className="px-3 py-1.5"></td>
         <td className="px-3 py-1.5"></td>
         <td className="px-3 py-1.5 text-right">
-          <ClassificarCategoria
-            categoriaCodigo={item.categoriaCodigo}
-            linhaAtual={linhaChave}
-            subgrupoAtual={item.subgrupo}
-            confirmada={item.confirmada}
-            subgruposConhecidos={subgruposConhecidos}
-          />
+          {podeClassificar && (
+            <ClassificarCategoria
+              categoriaCodigo={item.categoriaCodigo}
+              linhaAtual={linhaChave}
+              subgrupoAtual={item.subgrupo}
+              confirmada={item.confirmada}
+              subgruposConhecidos={subgruposConhecidos}
+            />
+          )}
         </td>
       </tr>
 

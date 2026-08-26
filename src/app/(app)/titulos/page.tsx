@@ -19,7 +19,7 @@ type Params = { natureza?: string; filtro?: string; empresa?: string; competenci
 
 export default async function TitulosPage({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
-  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  const { ctx, escopo, periodo } = await contextoDaPagina("titulos", params.empresa, params.competencia);
   const natureza = params.natureza === "RECEBER" ? "RECEBER" : "PAGAR";
   const filtro = params.filtro ?? "ABERTOS";
 

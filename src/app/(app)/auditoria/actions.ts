@@ -3,8 +3,8 @@
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import type { AuditStatus } from "@prisma/client";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { exigirPermissao } from "../_dados";
 
 // Tratativa de achado — a única ação humana do módulo que muda o estado de um
 // alerta. Por isso ela, e não a leitura, é o que exige a permissão mais
@@ -18,7 +18,7 @@ export async function tratarAchado(formData: FormData): Promise<ResultadoTratati
   // ADMIN e CONTROLADORIA tratam; GESTOR lê mas não desliga alerta —
   // separar "ver" de "poder encerrar" é o mínimo de segregação de função num
   // módulo cujo produto é apontar o erro de alguém.
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("tratar-achado");
 
   const id = String(formData.get("id") ?? "");
   const status = String(formData.get("status") ?? "") as AuditStatus;

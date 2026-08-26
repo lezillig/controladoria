@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { carregarConformidade } from "@/lib/conformidade/panorama";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
@@ -10,6 +9,7 @@ import { executarAuditoria } from "@/lib/controladoria/engine";
 import { gerarEEnviarRelatorio } from "@/lib/controladoria/relatorio";
 import { parseLocalDate } from "@/lib/date";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // Geração manual do relatório. O caminho normal é o agendamento diário; este
 // existe para reenviar um dia que falhou no envio, para gerar o relatório de
@@ -26,7 +26,7 @@ export type ResultadoGeracao = {
 };
 
 export async function gerarRelatorioAgora(formData: FormData): Promise<ResultadoGeracao> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("sincronizar");
 
   const enviar = formData.get("enviar") === "1";
   const dataBruta = String(formData.get("data") ?? "").trim();

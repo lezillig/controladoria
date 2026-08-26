@@ -1,11 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { credencialConfigurada, normalizarCredencialRef } from "@/lib/omie/client";
 import { diagnosticarConexao, type ResultadoDiagnostico } from "@/lib/omie/diagnostico";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // Cadastro das conexões Omie — uma por CNPJ do grupo.
 //
@@ -19,7 +19,7 @@ import { registrarEvento } from "../auditoria/actions";
 export type ResultadoConexao = { erro?: string; ok?: boolean; aviso?: string };
 
 export async function salvarConexao(formData: FormData): Promise<ResultadoConexao> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conexoes");
 
   const id = String(formData.get("id") ?? "").trim();
   const nome = String(formData.get("nome") ?? "").trim();
@@ -97,7 +97,7 @@ export type ResultadoTeste = { erro?: string; diagnostico?: ResultadoDiagnostico
 // ou que um endpoint não está liberado leva trinta segundos aqui e levaria uma
 // madrugada inteira se ficasse para o primeiro ciclo automático.
 export async function testarConexao(formData: FormData): Promise<ResultadoTeste> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conexoes");
   const id = String(formData.get("id") ?? "");
   if (!id) return { erro: "Conexão não informada." };
 
@@ -150,7 +150,7 @@ async function proximaOrdem(companyId: string): Promise<number> {
 // que sustenta os achados já emitidos. Desativada, a conexão sai do ciclo
 // diário e o histórico continua consultável.
 export async function alternarConexao(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conexoes");
   const id = String(formData.get("id") ?? "");
   if (!id) return;
 

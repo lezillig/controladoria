@@ -1,17 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { INDICADORES_BSC } from "@/lib/controladoria/bsc";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // Metas do BSC. O catálogo de indicadores (o que é medido e como) vive em
 // código; só a META vive no banco — porque meta é decisão da empresa e muda
 // sem deploy, enquanto fórmula de indicador é regra de negócio versionada.
 
 export async function salvarMeta(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-bsc");
 
   const codigo = String(formData.get("codigo") ?? "");
   const indicador = INDICADORES_BSC.find((i) => i.codigo === codigo);

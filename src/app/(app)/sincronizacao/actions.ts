@@ -1,12 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // Sincronização manual. O ciclo normal é o agendamento diário; este botão
 // existe para dois momentos concretos: a primeira configuração (ninguém quer
@@ -41,7 +41,7 @@ export type ResultadoSync = { erro?: string; mensagens?: string[]; concluido?: b
 // carga continuar.
 export async function sincronizarAgora(opts?: { encadear?: boolean }): Promise<ResultadoSync> {
   const encadear = opts?.encadear ?? true;
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("sincronizar");
 
   if (!existeAlgumaCredencialOmie()) {
     return { erro: "Nenhuma credencial da Omie encontrada no ambiente. Cadastre OMIE_APP_KEY_<APELIDO> e OMIE_APP_SECRET_<APELIDO> na hospedagem e faça um novo deploy." };
@@ -114,7 +114,7 @@ export async function sincronizarAgora(opts?: { encadear?: boolean }): Promise<R
 // motivo da recusa, esta ação é o teste limpo que faltava: só o servidor
 // conduzindo, com o resultado visível na tela em vez de no log.
 export async function continuarEmSegundoPlano(): Promise<ResultadoSync> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("sincronizar");
 
   if (!existeAlgumaCredencialOmie()) {
     return { erro: "Nenhuma credencial da Omie encontrada no ambiente." };
@@ -150,7 +150,7 @@ export async function continuarEmSegundoPlano(): Promise<ResultadoSync> {
 // (deploy no meio do ciclo, erro não capturado), toda invocação seguinte
 // tentaria retomá-la e o ciclo diário nunca começaria.
 export async function encerrarExecucaoTravada(): Promise<ResultadoSync> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("sincronizar");
 
   const resultado = await prisma.omieSyncRun.updateMany({
     where: { companyId: session.companyId, status: "EXECUTANDO" },
@@ -190,7 +190,7 @@ export async function encerrarExecucaoTravada(): Promise<ResultadoSync> {
 // são horas de sincronização e consumo de API das duas contas. Quem sabe qual
 // mês falhou não precisa pagar por isso.
 export async function relerJanela(formData: FormData): Promise<ResultadoSync> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("sincronizar");
 
   const conexaoId = String(formData.get("conexaoId") ?? "");
   const janela = String(formData.get("janelaInicio") ?? "");
@@ -261,7 +261,7 @@ export async function relerJanela(formData: FormData): Promise<ResultadoSync> {
 const MAXIMO_JANELAS_POR_RELEITURA = 12;
 
 export async function relerPeriodo(formData: FormData): Promise<ResultadoSync> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("sincronizar");
 
   const conexaoParam = String(formData.get("conexaoId") ?? "");
   const de = String(formData.get("de") ?? "");

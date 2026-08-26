@@ -1,3 +1,5 @@
+import { cache } from "react";
+import { redirect } from "next/navigation";
 import { requireRole } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/auth";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
@@ -5,6 +7,7 @@ import { fimDoMes, inicioDoDia, rotuloMes } from "@/lib/controladoria/periodos";
 import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import type { ContextoAuditoria } from "@/lib/controladoria/types";
 import { prisma } from "@/lib/prisma";
+import { resolverAcesso, type AcessoResolvido, type Permissao } from "@/lib/acessos";
 
 // Porta de entrada única das telas.
 //
@@ -85,6 +88,10 @@ export function competenciasDisponiveis(
 }
 
 export async function contextoDaPagina(
+  // A PERMISSÃO VEM PRIMEIRO, e é obrigatória. Podia ser o último parâmetro,
+  // opcional, e aí uma tela nova nasceria sem controle de acesso sem que nada
+  // reclamasse. Sendo o primeiro e obrigatório, esquecer é erro de compilação.
+  permissao: Permissao,
   empresaParam?: string,
   competenciaParam?: string,
   // Janela de leitura, quando a tela precisa de mais que a padrão. O DRE anual
@@ -99,7 +106,7 @@ export async function contextoDaPagina(
   escopo: EscopoEmpresa;
   periodo: EscopoPeriodo;
 }> {
-  const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
+  const session = await exigirPermissao(permissao);
   const escopo = await resolverEscopo(session.companyId, empresaParam);
   const periodo = resolverPeriodo(competenciaParam);
   const ctx = await carregarContexto(session.companyId, periodo.dataReferencia, escopo.conexaoId ?? undefined, {
@@ -153,4 +160,80 @@ export function resolverAno(param: string | undefined, agora = new Date()): numb
   if (!casa) return agora.getFullYear();
   const ano = Number(casa[1]);
   return ano >= 2000 && ano <= agora.getFullYear() ? ano : agora.getFullYear();
+}
+
+// O ACESSO EFETIVO da sessão — perfil quando há, papel quando não há.
+//
+// Uma resolução só, usada nas duas pontas: o menu decide o que MOSTRAR e a
+// página decide se ABRE, ambos a partir daqui. Duas implementações da mesma
+// regra divergem com o tempo, e as duas formas de divergir são ruins — item de
+// menu que leva a "sem acesso" ensina a ignorar o menu; página que abre sem
+// estar no menu é o buraco que a tela de perfis existe para fechar.
+//
+// `cache` do React: layout e página resolvem o acesso na mesma requisição, e
+// sem isso seriam duas idas ao banco por tela carregada. A chave são os três
+// campos em string, e não o objeto da sessão — `cache` compara por identidade,
+// e bastaria alguém montar o objeto de novo num lugar para o cache virar
+// enfeite silencioso.
+const resolverAcessoDe = cache(async function resolverAcessoDe(
+  userId: string,
+  companyId: string,
+  role: string
+): Promise<AcessoResolvido> {
+  const session = { userId, companyId, role };
+  try {
+    const atribuido = await prisma.usuarioPerfil.findUnique({
+      where: { companyId_userId: { companyId: session.companyId, userId: session.userId } },
+      select: { perfil: { select: { nome: true, permissoes: true } } },
+    });
+    if (atribuido?.perfil) return resolverAcesso(session.role, atribuido.perfil);
+
+    // Sem perfil próprio, o padrão da empresa, se houver um marcado.
+    const padrao = await prisma.perfilAcesso.findFirst({
+      where: { companyId: session.companyId, padrao: true },
+      select: { nome: true, permissoes: true },
+    });
+    return resolverAcesso(session.role, padrao);
+  } catch {
+    // Banco indisponível não pode virar apagão de acesso nem porta aberta: cai
+    // nas regras de papel, que é exatamente o comportamento anterior a esta
+    // camada existir.
+    return resolverAcesso(session.role, null);
+  }
+});
+
+export async function acessoDaSessao(session: {
+  userId: string;
+  companyId: string;
+  role: string;
+}): Promise<AcessoResolvido> {
+  return resolverAcessoDe(session.userId, session.companyId, session.role);
+}
+
+// A PÁGINA SÓ ABRE PARA QUEM ALCANÇA AQUELA PERMISSÃO.
+//
+// Esconder o item do menu não é controle de acesso: a rota continua digitável,
+// e num sistema que mostra o caixa do grupo isso é a diferença entre um recorte
+// de perfil e uma sugestão de recorte. Toda página desta pasta chama isto ou
+// `contextoDaPagina`, que chama por dentro.
+//
+// Destino é /sem-acesso, que não exige permissão nenhuma — redirecionar para
+// uma rota que também exige criaria loop infinito, bug já visto neste código
+// quando o destino era o painel.
+export async function exigirPermissao(permissao: Permissao): Promise<SessionPayload> {
+  const session = await sessaoControladoria();
+  const acesso = await acessoDaSessao(session);
+  if (!acesso.permissoes.has(permissao)) redirect("/sem-acesso");
+  return session;
+}
+
+// A MESMA PERGUNTA, SEM DERRUBAR A PÁGINA — para decidir se um botão aparece.
+//
+// Botão e ação consultam esta função e a anterior, que leem a mesma resolução:
+// é o que impede o par mais irritante que um sistema de permissão produz —
+// botão visível que responde "sem acesso" ao ser clicado, ou botão escondido
+// cuja ação continua aceitando o formulário de quem souber montá-lo.
+export async function podeAcao(session: SessionPayload, permissao: Permissao): Promise<boolean> {
+  const acesso = await acessoDaSessao(session);
+  return acesso.permissoes.has(permissao);
 }

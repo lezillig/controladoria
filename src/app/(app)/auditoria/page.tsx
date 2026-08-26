@@ -1,10 +1,9 @@
 import Link from "next/link";
 import type { AuditCategoria, AuditSeveridade, AuditStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canManageControladoria } from "@/lib/permissions";
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import { AGENTES } from "@/lib/controladoria/registry";
-import { sessaoControladoria } from "../_dados";
+import { exigirPermissao, podeAcao } from "../_dados";
 import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Secao } from "../_componentes";
 import TratativaForm from "./TratativaForm";
 import { larguraPainel } from "@/lib/ui";
@@ -36,9 +35,9 @@ const STATUS_ROTULO: Record<string, string> = {
 };
 
 export default async function AuditoriaPage({ searchParams }: { searchParams: Promise<Filtros> }) {
-  const session = await sessaoControladoria();
+  const session = await exigirPermissao("auditoria");
   const filtros = await searchParams;
-  const podeTratar = canManageControladoria(session.role);
+  const podeTratar = await podeAcao(session, "tratar-achado");
 
   const statusFiltro = filtros.status ?? "ABERTOS";
   const where: Prisma.AuditFindingWhereInput = {

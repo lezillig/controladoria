@@ -9,7 +9,6 @@ import type {
   ConformidadeOrigem,
   ConformidadeStatus,
 } from "@prisma/client";
-import { requireRole } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { buscarEmpresa } from "@/lib/gestao/leitura";
 import { lerDocumento, sugestoesDoEmail, type ApontamentoExtraido } from "@/lib/conformidade/analise";
@@ -20,6 +19,7 @@ import { chaveRecorrencia, competenciaDe, competenciaDeTexto, escolherChaveRecor
 import { DECISOES, PREPARACAO } from "@/lib/conformidade/regime";
 import { parseLocalDate } from "@/lib/date";
 import { registrarEvento } from "../auditoria/actions";
+import { exigirPermissao } from "../_dados";
 
 // Ações da tela de Conformidade.
 //
@@ -70,7 +70,7 @@ export type ResultadoDocumento = {
 // ---------------------------------------------------------------------------
 
 export async function enviarDocumento(formData: FormData): Promise<ResultadoDocumento> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
 
   const arquivo = formData.get("arquivo");
   if (!(arquivo instanceof File) || arquivo.size === 0) {
@@ -158,7 +158,7 @@ export async function enviarDocumento(formData: FormData): Promise<ResultadoDocu
 }
 
 export async function reprocessarDocumento(formData: FormData): Promise<ResultadoDocumento> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
   const id = String(formData.get("id") ?? "");
 
   const documento = await prisma.conformidadeDocumento.findFirst({
@@ -386,7 +386,7 @@ async function inserirApontamento(dados: {
 }
 
 export async function excluirDocumento(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
   const id = String(formData.get("id") ?? "");
 
   const documento = await prisma.conformidadeDocumento.findFirst({
@@ -426,7 +426,7 @@ export async function excluirDocumento(formData: FormData): Promise<void> {
 export type ResultadoApontamento = { erro?: string; ok?: boolean };
 
 export async function registrarApontamento(formData: FormData): Promise<ResultadoApontamento> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
 
   const titulo = String(formData.get("titulo") ?? "").trim();
   const descricao = String(formData.get("descricao") ?? "").trim();
@@ -509,7 +509,7 @@ export async function registrarApontamento(formData: FormData): Promise<Resultad
 }
 
 export async function tratarApontamento(formData: FormData): Promise<ResultadoApontamento> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
 
   const id = String(formData.get("id") ?? "");
   const statusBruto = String(formData.get("status") ?? "") as ConformidadeStatus;
@@ -567,7 +567,7 @@ export async function tratarApontamento(formData: FormData): Promise<ResultadoAp
 }
 
 export async function validarApontamento(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
   const id = String(formData.get("id") ?? "");
 
   const atual = await prisma.conformidadeApontamento.findFirst({
@@ -596,7 +596,7 @@ export async function validarApontamento(formData: FormData): Promise<void> {
 }
 
 export async function descartarApontamento(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
   const id = String(formData.get("id") ?? "");
 
   // Só proposta não validada pode ser descartada. Apontamento que uma pessoa já
@@ -632,7 +632,7 @@ export async function descartarApontamento(formData: FormData): Promise<void> {
 // A competência é o MÊS CORRENTE, e não a da virada: o item existe a partir de
 // agora, e é agora que o prazo dele começa a correr.
 export async function criarApontamentoDaTransicao(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
   const codigo = String(formData.get("codigo") ?? "");
 
   const decisao = DECISOES.find((d) => d.codigo === codigo);
@@ -718,7 +718,7 @@ export async function criarApontamentoDaTransicao(formData: FormData): Promise<v
 // ---------------------------------------------------------------------------
 
 export async function confirmarVinculo(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
   const id = String(formData.get("id") ?? "");
 
   const vinculo = await prisma.conformidadeVinculo.findFirst({
@@ -747,7 +747,7 @@ export async function confirmarVinculo(formData: FormData): Promise<void> {
 }
 
 export async function removerVinculo(formData: FormData): Promise<void> {
-  const session = await requireRole("ADMIN", "CONTROLADORIA");
+  const session = await exigirPermissao("gerir-conformidade");
   const id = String(formData.get("id") ?? "");
 
   const vinculo = await prisma.conformidadeVinculo.findFirst({

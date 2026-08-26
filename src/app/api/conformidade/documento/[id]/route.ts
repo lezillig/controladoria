@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { canViewControladoria } from "@/lib/permissions";
+import { acessoDaSessao } from "@/app/(app)/_dados";
 import { prisma } from "@/lib/prisma";
 
 // Download do arquivo original recebido da consultoria.
@@ -11,7 +11,11 @@ import { prisma } from "@/lib/prisma";
 // aparece por acidente numa consulta que só queria a lista de apontamentos.
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
-  if (!session || !canViewControladoria(session.role)) {
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // A MESMA regra da tela, e não o papel cru: um perfil que não dá acesso à
+  // tela não pode dar acesso ao conteúdo dela por uma rota direta.
+  const acesso = await acessoDaSessao(session);
+  if (!acesso.permissoes.has("conformidade")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

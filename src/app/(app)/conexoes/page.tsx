@@ -1,12 +1,11 @@
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
-import { canManageControladoria } from "@/lib/permissions";
 import { credencialConfigurada, nomesDasVariaveis } from "@/lib/omie/client";
 import { fmtData, fmtDocumento, fmtNumero } from "@/lib/controladoria/format";
 import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
 import ConexaoForm from "./ConexaoForm";
 import TesteConexao from "./TesteConexao";
 import { alternarConexao } from "./actions";
+import { exigirPermissao, podeAcao } from "../_dados";
 import { larguraPainel } from "@/lib/ui";
 
 // CONEXÕES OMIE — uma por CNPJ do grupo.
@@ -18,8 +17,8 @@ import { larguraPainel } from "@/lib/ui";
 // problema é da Azul ou da MCZ.
 
 export default async function ConexoesPage() {
-  const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
-  const podeEditar = canManageControladoria(session.role);
+  const session = await exigirPermissao("conexoes");
+  const podeEditar = await podeAcao(session, "gerir-conexoes");
 
   const conexoes = await prisma.omieConexao.findMany({
     where: { companyId: session.companyId },

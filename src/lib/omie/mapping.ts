@@ -79,11 +79,50 @@ function buscar(obj: Bruto, key: string): unknown {
   return indice.get(normalizarChave(key));
 }
 
+// A OMIE DEVOLVE TEXTO COM ENTIDADE HTML DENTRO.
+//
+// O caso que revelou isto: uma categoria apareceu no DRE escrita, literalmente,
+// `&lt;Disponível&gt;`. `<Disponível>` é o nome que a própria Omie dá à conta
+// contábil ainda não nomeada, e ela devolve os sinais de maior e menor já
+// escapados — a API entrega HTML, não texto puro.
+//
+// Guardar assim contamina tudo o que vem depois: a tela mostra a entidade crua
+// (React escapa de novo, como deve), o CSV exportado leva `&lt;` para dentro do
+// Excel, e uma busca por "Disponível" não acha a linha. Decodificar na leitura
+// resolve nos três de uma vez, porque é aqui que todo texto da Omie entra —
+// nome de fornecedor, descrição de categoria, apelido de conta, nome de projeto.
+//
+// UMA PASSADA SÓ, e isso é a parte que importa. Decodificar em laço até parar
+// de mudar transformaria `&amp;lt;script&gt;` em `<script>`: um fornecedor
+// cadastrado com esse nome viraria tag de verdade no relatório que a diretoria
+// abre no e-mail. Uma passada devolve o que a Omie escapou e nada mais; o
+// relatório continua escapando na saída (`esc` em reportHtml.ts), e as duas
+// defesas somadas é que fazem o texto ser texto nas duas pontas.
+const ENTIDADES: Record<string, string> = {
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&#39;": "'",
+  "&apos;": "'",
+  "&nbsp;": " ",
+  // `&amp;` fica por último no objeto por clareza, mas a ordem aqui não decide
+  // nada: a troca é uma varredura única da expressão, então `&amp;lt;` casa em
+  // `&amp;` e produz `&lt;` — texto —, nunca `<`.
+  "&amp;": "&",
+};
+
+export function decodificarEntidades(texto: string): string {
+  return texto.replace(/&(?:lt|gt|quot|apos|nbsp|amp|#39);/g, (e) => ENTIDADES[e] ?? e);
+}
+
 export function str(obj: Bruto | null | undefined, ...keys: string[]): string | null {
   if (!obj) return null;
   for (const key of keys) {
     const v = buscar(obj, key);
-    if (typeof v === "string" && v.trim() !== "") return v.trim();
+    // Decodifica ANTES do trim: `&nbsp;` nas pontas é espaço, e um nome que
+    // chega como "&nbsp;ITAÚ&nbsp;" precisa sair "ITAÚ" — senão a mesma conta
+    // aparece duas vezes nas listas, uma com espaço invisível na frente.
+    if (typeof v === "string" && v.trim() !== "") return decodificarEntidades(v).trim();
     if (typeof v === "number" && Number.isFinite(v)) return String(v);
   }
   return null;

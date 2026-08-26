@@ -1,9 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { canManageControladoria } from "@/lib/permissions";
 import { inputClass, larguraPainel } from "@/lib/ui";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { medirBsc, PERSPECTIVAS, type IndicadorMedido } from "@/lib/controladoria/bsc";
-import { contextoDaPagina } from "../_dados";
+import { contextoDaPagina, podeAcao } from "../_dados";
 import { Farol, Kpi, Secao } from "../_componentes";
 import { salvarMeta } from "./actions";
 
@@ -15,8 +14,8 @@ import { salvarMeta } from "./actions";
 // desconexas vira relatório de números; a leitura útil é a ligação entre eles.
 
 export default async function BscPage() {
-  const { session, ctx } = await contextoDaPagina();
-  const podeEditar = canManageControladoria(session.role);
+  const { session, ctx } = await contextoDaPagina("bsc");
+  const podeEditar = await podeAcao(session, "gerir-bsc");
 
   const medidos = await medirBsc(ctx);
 

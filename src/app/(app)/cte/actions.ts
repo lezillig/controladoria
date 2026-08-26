@@ -1,6 +1,5 @@
 "use server";
 
-import { requireRole } from "@/lib/auth";
 import {
   conferirCte,
   lerListaDeCte,
@@ -9,7 +8,7 @@ import {
 } from "@/lib/controladoria/cte";
 import { fimDoDia, inicioDoDia } from "@/lib/controladoria/periodos";
 import { fmtData } from "@/lib/controladoria/format";
-import { resolverEscopo } from "../_dados";
+import { exigirPermissao, resolverEscopo } from "../_dados";
 import { registrarEvento } from "../auditoria/actions";
 
 export type EstadoConferencia = {
@@ -30,7 +29,7 @@ export type EstadoConferencia = {
 // Nada é gravado. A conferência é uma leitura: cruza o que foi colado com o que
 // está espelhado e devolve as diferenças. O conserto é na Omie, e é de gente.
 export async function conferirListaDeCte(formData: FormData): Promise<EstadoConferencia> {
-  const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
+  const session = await exigirPermissao("conferir-cte");
 
   const texto = String(formData.get("lista") ?? "");
   if (texto.trim() === "") return { erro: "Cole a relação de CT-e da Omie." };

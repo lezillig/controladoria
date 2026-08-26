@@ -8,7 +8,7 @@ import { receitaFiscalDoPeriodo, receitaNaoOperacional } from "@/lib/controlador
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { fimDoMes, inicioDoDia, inicioDoMes, mesCompleto } from "@/lib/controladoria/periodos";
 import PageHeader from "@/components/ui/PageHeader";
-import { competenciasDisponiveis, resolverEscopo, resolverPeriodo, resolverRegime, sessaoControladoria } from "../_dados";
+import { competenciasDisponiveis, resolverEscopo, resolverPeriodo, resolverRegime, exigirPermissao } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 import { larguraPainel } from "@/lib/ui";
@@ -35,7 +35,7 @@ export default async function ResultadosPage({
 }: {
   searchParams: Promise<{ empresa?: string; competencia?: string; regime?: string }>;
 }) {
-  const session = await sessaoControladoria();
+  const session = await exigirPermissao("resultados");
   const params = await searchParams;
   const escopo = await resolverEscopo(session.companyId, params.empresa);
   const periodo = resolverPeriodo(params.competencia);

@@ -1,11 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { canManageControladoria } from "@/lib/permissions";
 import { isEnvioDisponivel } from "@/lib/email/send";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { garantirConfig, destinatarios } from "@/lib/controladoria/contexto";
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
-import { sessaoControladoria } from "../_dados";
+import { exigirPermissao, podeAcao } from "../_dados";
 import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
 import GerarRelatorioForm from "./GerarRelatorioForm";
 import { larguraPainel } from "@/lib/ui";
@@ -26,8 +25,8 @@ type ResumoGravado = {
 };
 
 export default async function RelatoriosPage() {
-  const session = await sessaoControladoria();
-  const podeGerar = canManageControladoria(session.role);
+  const session = await exigirPermissao("relatorios");
+  const podeGerar = await podeAcao(session, "sincronizar");
   const config = await garantirConfig(session.companyId);
 
   const relatorios = await prisma.relatorioDiario.findMany({

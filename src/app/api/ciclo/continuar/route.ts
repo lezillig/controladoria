@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
-import { canManageControladoria } from "@/lib/permissions";
+import { acessoDaSessao } from "@/app/(app)/_dados";
 import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 
 // Passa a carga da aba para o ciclo em segundo plano.
@@ -22,7 +22,11 @@ export async function POST() {
   // Sessão, não CRON_SECRET: quem chama é o navegador de uma pessoa logada, e
   // o segredo do cron não pode circular no cliente.
   const session = await getSession();
-  if (!session || !canManageControladoria(session.role)) {
+  if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  // A MESMA regra da tela, e não o papel cru: um perfil que não dá acesso à
+  // tela não pode dar acesso ao conteúdo dela por uma rota direta.
+  const acesso = await acessoDaSessao(session);
+  if (!acesso.permissoes.has("sincronizar")) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 

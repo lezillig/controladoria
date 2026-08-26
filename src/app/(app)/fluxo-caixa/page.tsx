@@ -16,7 +16,7 @@ export default async function FluxoCaixaPage({
   searchParams: Promise<{ empresa?: string; competencia?: string; dias?: string }>;
 }) {
   const params = await searchParams;
-  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  const { ctx, escopo, periodo } = await contextoDaPagina("fluxo-caixa", params.empresa, params.competencia);
   const dias = horizonteValido(Number(params.dias));
 
   const saldo = saldoAtualCents(ctx);

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { AuditSeveridade, ConformidadeArea, ConformidadeNatureza, ConformidadeStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { canManageControladoria } from "@/lib/permissions";
 import { isLeituraDisponivel } from "@/lib/conformidade/analise";
 import {
   carregarConformidade,
@@ -25,7 +24,7 @@ import { OBRIGACAO_POR_CODIGO, OBRIGACOES, TESES } from "@/lib/conformidade/obri
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import { inicioDoDia } from "@/lib/controladoria/periodos";
 import { AvisoVazio, BadgeSeveridade, Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
-import { resolverEscopo, sessaoControladoria } from "../_dados";
+import { exigirPermissao, podeAcao, resolverEscopo } from "../_dados";
 import NovoApontamentoForm from "./NovoApontamentoForm";
 import TratativaApontamento from "./TratativaApontamento";
 import UploadForm from "./UploadForm";
@@ -47,10 +46,10 @@ const AREAS_VALIDAS = AREAS.map((a) => a.valor);
 const NATUREZAS_VALIDAS = NATUREZAS.map((n) => n.valor);
 
 export default async function ConformidadePage({ searchParams }: { searchParams: Promise<Filtros> }) {
-  const session = await sessaoControladoria();
+  const session = await exigirPermissao("conformidade");
   const filtros = await searchParams;
   const escopo = await resolverEscopo(session.companyId, filtros.empresa);
-  const podeGerir = canManageControladoria(session.role);
+  const podeGerir = await podeAcao(session, "gerir-conformidade");
 
   const hoje = inicioDoDia(new Date());
 

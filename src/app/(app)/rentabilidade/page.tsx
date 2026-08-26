@@ -1,8 +1,7 @@
-import { canManageControladoria } from "@/lib/permissions";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { montarComparativo } from "@/lib/controladoria/analytics";
 import { custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
-import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
+import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 import VinculoForm, { type OpcaoDestino, type OpcaoOrigem } from "./VinculoForm";
@@ -23,10 +22,11 @@ export default async function RentabilidadePage({
 }) {
   const params = await searchParams;
   const { session, ctx, escopo, periodo: competenciaEscolhida } = await contextoDaPagina(
+    "rentabilidade",
     params.empresa,
     params.competencia
   );
-  const podeEditar = canManageControladoria(session.role);
+  const podeEditar = await podeAcao(session, "gerir-rentabilidade");
 
   const comparativo = await montarComparativo(ctx);
   const periodo = comparativo.janelas.mesAtual;

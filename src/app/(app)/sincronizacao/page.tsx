@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { canManageControladoria } from "@/lib/permissions";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { isAnalistaDisponivel } from "@/lib/controladoria/aiAnalyst";
 import { isEnvioDisponivel } from "@/lib/email/send";
@@ -17,7 +16,7 @@ import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/contr
 import { diasEntre } from "@/lib/controladoria/periodos";
 import { disponibilidadeGestao } from "@/lib/gestao/leitura";
 import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
-import { sessaoControladoria } from "../_dados";
+import { exigirPermissao, podeAcao } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
 import RelerJanelaButton from "./RelerJanelaButton";
@@ -52,8 +51,8 @@ export const maxDuration = 60;
 // junto o sistema de gestão que divide o mesmo Postgres. Medir o andamento não
 // pode custar mais que o andamento.
 export default async function SincronizacaoPage() {
-  const session = await sessaoControladoria();
-  const podeSincronizar = canManageControladoria(session.role);
+  const session = await exigirPermissao("sincronizacao");
+  const podeSincronizar = await podeAcao(session, "sincronizar");
 
   const config = await prisma.controladoriaConfig.findUnique({
     where: { companyId: session.companyId },

@@ -25,7 +25,7 @@ export default async function ControladoriaPage({
   searchParams: Promise<{ empresa?: string; competencia?: string }>;
 }) {
   const params = await searchParams;
-  const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  const { ctx, escopo, periodo } = await contextoDaPagina("painel", params.empresa, params.competencia);
   const competencias = competenciasDisponiveis(ctx.config.dataInicioBase);
 
   const panorama = await montarPanorama(ctx);

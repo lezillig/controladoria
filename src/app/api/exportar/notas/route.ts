@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireRole } from "@/lib/auth";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { mesCompleto, rotuloMes } from "@/lib/controladoria/periodos";
 import { resolverEscopo, resolverPeriodo } from "@/app/(app)/_dados";
+import { exigirPermissao } from "@/app/(app)/_dados";
 
 // AS NOTAS QUE O ESPELHO TEM, UMA POR LINHA.
 //
@@ -22,7 +22,7 @@ import { resolverEscopo, resolverPeriodo } from "@/app/(app)/_dados";
 // não, e essa não dá para achar numa lista que já filtrou.
 
 export async function GET(req: NextRequest) {
-  const session = await requireRole("ADMIN", "GESTOR", "CONTROLADORIA");
+  const session = await exigirPermissao("titulos");
 
   const empresaParam = req.nextUrl.searchParams.get("empresa") ?? undefined;
   const competenciaParam = req.nextUrl.searchParams.get("competencia") ?? undefined;

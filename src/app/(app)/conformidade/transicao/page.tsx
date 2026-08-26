@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { canManageControladoria } from "@/lib/permissions";
 import {
   DECISOES,
   FONTES_DE_CREDITO,
@@ -11,7 +10,7 @@ import {
   type Aproveitamento,
 } from "@/lib/conformidade/regime";
 import { ROTULO_AREA, ROTULO_NATUREZA } from "@/lib/conformidade/tipos";
-import { sessaoControladoria } from "../../_dados";
+import { exigirPermissao, podeAcao } from "../../_dados";
 import { Secao, Tabela } from "../../_componentes";
 import { criarApontamentoDaTransicao } from "../actions";
 import { larguraPainel } from "@/lib/ui";
@@ -30,8 +29,8 @@ import { larguraPainel } from "@/lib/ui";
 // um documento de referência de um plano com dono.
 
 export default async function TransicaoPage() {
-  const session = await sessaoControladoria();
-  const podeGerir = canManageControladoria(session.role);
+  const session = await exigirPermissao("conformidade");
+  const podeGerir = await podeAcao(session, "gerir-conformidade");
 
   // Quais itens já viraram apontamento. A tela precisa saber para não oferecer
   // criar de novo — e para mostrar que aquilo já tem dono em algum lugar.
