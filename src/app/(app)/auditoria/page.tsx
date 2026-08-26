@@ -1,10 +1,10 @@
 import Link from "next/link";
 import type { AuditCategoria, AuditSeveridade, AuditStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { AGENTES } from "@/lib/controladoria/registry";
 import { exigirPermissao, podeAcao } from "../_dados";
-import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Secao } from "../_componentes";
+import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Secao, Tabela } from "../_componentes";
 import TratativaForm from "./TratativaForm";
 import { larguraPainel } from "@/lib/ui";
 
@@ -14,7 +14,7 @@ import { larguraPainel } from "@/lib/ui";
 // da tela filtrada é compartilhável — "olha os 3 indícios de fraude em aberto"
 // vira uma URL que o outro abre e vê exatamente a mesma coisa.
 
-type Filtros = { status?: string; severidade?: string; categoria?: string; agente?: string; achado?: string };
+type Filtros = { status?: string; severidade?: string; categoria?: string; agente?: string; achado?: string; regra?: string };
 
 const SEVERIDADES: AuditSeveridade[] = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
 const CATEGORIAS: AuditCategoria[] = [
@@ -57,9 +57,13 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
       ? { categoria: filtros.categoria as AuditCategoria }
       : {}),
     ...(filtros.agente ? { agente: filtros.agente } : {}),
+    // Código de regra é texto livre no modelo, então o filtro é por igualdade
+    // exata: valor inventado na URL não acha nada, que é o comportamento certo
+    // — melhor lista vazia que lista errada numa tela de auditoria.
+    ...(filtros.regra ? { regra: filtros.regra } : {}),
   };
 
-  const [achados, contagens] = await Promise.all([
+  const [achados, contagens, porRegra] = await Promise.all([
     prisma.auditFinding.findMany({
       where,
       orderBy: [{ severidade: "asc" }, { impactoCents: "desc" }, { detectadoEm: "desc" }],
@@ -71,7 +75,28 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
       _count: true,
       _sum: { impactoCents: true },
     }),
+    // POR REGRA, e não só por categoria.
+    //
+    // Categoria responde "que tipo de problema", que é a pergunta de quem vai
+    // TRATAR. Regra responde "de onde vêm estes milhares", que é a pergunta de
+    // quem precisa decidir se a lista é confiável — e sem ela, uma regra mal
+    // calibrada afoga todas as outras sem deixar rastro de qual é.
+    //
+    // Foi o que aconteceu ao carregar cinco anos de base: 4.145 achados em
+    // aberto, e nenhuma forma de ver na tela que a maior parte vinha de uma ou
+    // duas regras. Uma lista que ninguém consegue triar é, na prática, uma
+    // lista vazia.
+    prisma.auditFinding.groupBy({
+      by: ["regra"],
+      where: { companyId: session.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
+      _count: true,
+      _sum: { impactoCents: true },
+      orderBy: { _count: { regra: "desc" } },
+      take: 20,
+    }),
   ]);
+
+  const totalEmAberto = contagens.reduce((acc, c) => acc + c._count, 0);
 
   const totalImpacto = achados.reduce((acc, a) => acc + (a.impactoCents ?? 0), 0);
   const agentesComAchado = new Set(achados.map((a) => a.agente));
@@ -194,6 +219,36 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
           </ul>
         )}
       </Secao>
+
+      {porRegra.length > 0 && (
+        <Secao
+          titulo="Concentração por regra"
+          descricao={
+            `${fmtNumero(totalEmAberto)} achado(s) em aberto. Quando poucas regras respondem pela maior parte da lista, ` +
+            "o problema costuma ser de calibragem — e uma lista que ninguém consegue triar informa tanto quanto uma lista vazia."
+          }
+        >
+          <Tabela
+            colunas={["Regra", "Achados", "% do total", "Valor em jogo", ""]}
+            alinharDireita={[1, 2, 3]}
+            linhas={porRegra.map((r) => [
+              <span key="r" className="font-mono text-xs text-slate-700">
+                {r.regra}
+              </span>,
+              fmtNumero(r._count),
+              fmtPercent(totalEmAberto > 0 ? (r._count / totalEmAberto) * 100 : 0),
+              r._sum.impactoCents ? fmtBRL(r._sum.impactoCents) : "—",
+              <Link
+                key="v"
+                href={`/auditoria?regra=${encodeURIComponent(r.regra)}`}
+                className="text-xs font-medium text-blue-700 hover:underline"
+              >
+                ver
+              </Link>,
+            ])}
+          />
+        </Secao>
+      )}
 
       <Secao titulo="Agentes" descricao="Quem audita o quê. Cada achado aponta para o agente e a regra que o gerou.">
         <ul className="space-y-2">
