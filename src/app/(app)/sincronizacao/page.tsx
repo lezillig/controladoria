@@ -19,7 +19,7 @@ import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
 import { exigirPermissao, podeAcao } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
-import ResumoMensalButton from "./ResumoMensalButton";
+import ResumoMensalButton, { ReabrirAuditoriaButton } from "./ResumoMensalButton";
 import RelerJanelaButton from "./RelerJanelaButton";
 import RelerPeriodoForm from "./RelerPeriodoForm";
 
@@ -319,6 +319,20 @@ export default async function SincronizacaoPage() {
               camada existir, ou se alguma janela acusou falha no resumo.
             </p>
             <ResumoMensalButton />
+          </div>
+
+          {/* O ciclo consolida uma vez por dia e recusa a segunda — certo no dia
+              a dia, errado quando a base mudou sem o espelho ficar
+              desatualizado: carga histórica, releitura de período, correção
+              feita na Omie. */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="text-xs font-medium text-slate-700">Auditoria fora do ciclo</p>
+            <p className="mb-2 mt-0.5 text-xs text-slate-500">
+              A auditoria roda uma vez por dia, ao fim do ciclo. Use aqui quando a base mudou sem o espelho ficar
+              desatualizado — depois de uma carga histórica, de reler um período ou de corrigir algo na Omie: os agentes
+              têm dado novo para olhar, e o ciclo não tem como saber disso sozinho.
+            </p>
+            <ReabrirAuditoriaButton />
           </div>
           {travada && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">

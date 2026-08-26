@@ -431,3 +431,72 @@ export async function recalcularResumoMensal(): Promise<{
         : `${feitas} competência(s) nesta rodada, ${restantes} restante(s).`,
   };
 }
+
+// RODAR A AUDITORIA DE NOVO, sem esperar amanhã.
+//
+// O ciclo consolida uma vez por dia e recusa a segunda: "Ciclo do dia já
+// concluído para todas as conexões". A recusa está certa no dia a dia — auditar
+// duas vezes o mesmo espelho gasta invocação e não muda nada.
+//
+// Ela deixa de estar certa exatamente quando a base MUDA sem o espelho ficar
+// "desatualizado": depois de uma carga histórica, de uma releitura de período,
+// ou de uma correção feita na Omie e sincronizada. Nesses casos os agentes têm
+// dado novo para olhar e o sistema respondia que não havia o que fazer — foi o
+// que aconteceu ao terminar cinco anos de importação, que é o momento em que
+// mais se quer a auditoria rodando.
+//
+// A implementação é apagar a marca do dia, não criar um caminho alternativo. A
+// execução consolidada é reconhecida por (companyId, conexaoId nulo, não
+// backfill, janelaFim de hoje); removida ela, a MESMA máquina de estados cria a
+// próxima na chamada seguinte. Um segundo caminho de auditoria seria a primeira
+// coisa a divergir do agendado e a última a ser percebida.
+export async function reabrirAuditoria(): Promise<{ mensagens: string[] }> {
+  const session = await exigirPermissao("sincronizar");
+
+  const emAndamento = await prisma.omieSyncRun.findFirst({
+    where: { companyId: session.companyId, status: "EXECUTANDO" },
+  });
+  if (emAndamento) {
+    return {
+      mensagens: [
+        "Há uma execução em andamento. Espere ela terminar antes de reabrir a auditoria — duas ao mesmo tempo " +
+          "disputariam a mesma janela.",
+      ],
+    };
+  }
+
+  const apagadas = await prisma.omieSyncRun.deleteMany({
+    where: {
+      companyId: session.companyId,
+      conexaoId: null,
+      backfill: false,
+      status: { in: ["CONCLUIDO", "ERRO"] },
+      // Só a consolidação de HOJE. As anteriores são histórico de execução e
+      // apagá-las tiraria da tela de sincronização o registro de que o ciclo
+      // rodou nos dias passados.
+      iniciadoEm: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+    },
+  });
+
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "AUDITORIA_REABERTA",
+    descricao: `Consolidação do dia reaberta (${apagadas.count} execução(ões) removida(s)) para a auditoria rodar de novo sobre a base atual.`,
+  });
+
+  revalidatePath("/sincronizacao");
+  return {
+    mensagens:
+      apagadas.count > 0
+        ? [
+            "Consolidação do dia reaberta.",
+            "Clique em Sincronizar agora: o ciclo vai direto para a fase de auditoria, sobre a base como ela está agora.",
+          ]
+        : [
+            "Não havia consolidação concluída hoje — a auditoria já vai rodar no próximo Sincronizar agora.",
+          ],
+  };
+}

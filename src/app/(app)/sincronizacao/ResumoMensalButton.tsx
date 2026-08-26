@@ -2,9 +2,9 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Layers } from "lucide-react";
+import { Layers, ShieldCheck } from "lucide-react";
 import { secondaryButtonClass } from "@/lib/ui";
-import { recalcularResumoMensal } from "./actions";
+import { reabrirAuditoria, recalcularResumoMensal } from "./actions";
 
 // O CLIENTE CONDUZ O RECÁLCULO, rodada a rodada — mesmo desenho do botão de
 // sincronizar, e pelo mesmo motivo: o trabalho não cabe nos sessenta segundos
@@ -78,6 +78,46 @@ export default function ResumoMensalButton() {
         )}
       </div>
       {mensagem && <p className="mt-2 text-xs text-slate-600">{mensagem}</p>}
+    </div>
+  );
+}
+
+// Botão irmão, e no mesmo arquivo de propósito: os dois existem pelo mesmo
+// motivo — a base mudou sem que o espelho ficasse "desatualizado", e o ciclo
+// diário não tem como saber disso sozinho.
+export function ReabrirAuditoriaButton() {
+  const [mensagens, setMensagens] = useState<string[]>([]);
+  const [processando, iniciar] = useTransition();
+  const router = useRouter();
+
+  return (
+    <div>
+      <button
+        type="button"
+        disabled={processando}
+        onClick={() =>
+          iniciar(async () => {
+            try {
+              const r = await reabrirAuditoria();
+              setMensagens(r.mensagens);
+              router.refresh();
+            } catch (e) {
+              setMensagens([
+                "Não consegui reabrir: " + (e instanceof Error ? e.message.slice(0, 200) : String(e)),
+              ]);
+            }
+          })
+        }
+        className={`${secondaryButtonClass} inline-flex items-center gap-2`}
+      >
+        <ShieldCheck className="h-4 w-4" />
+        {processando ? "Reabrindo..." : "Rodar a auditoria de novo"}
+      </button>
+      {mensagens.map((m, i) => (
+        <p key={i} className="mt-2 text-xs text-slate-600">
+          {m}
+        </p>
+      ))}
     </div>
   );
 }
