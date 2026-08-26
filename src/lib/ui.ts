@@ -39,13 +39,18 @@ export const larguraPainel = "w-full max-w-[1800px]";
 export const larguraFormulario = "w-full max-w-3xl";
 export const larguraLeitura = "max-w-[72ch]";
 
-// AVISO E NOTA DE RODAPÉ NÃO SÃO PROSA LONGA, e aplicar a medida de leitura
-// nos dois foi um erro que a tela mostrou: um alerta de três linhas preso a
-// 72ch vira uma fita estreita boiando numa tela de 1900px — pior de ler que se
-// ocupasse a largura, porque o olho procura o resto do texto onde não há nada.
+// AVISO E NOTA DE RODAPÉ NÃO LEVAM LARGURA PRÓPRIA — acompanham o contêiner.
 //
-// A regra dos 65-75 caracteres vale para o que se lê por minutos. Um aviso se
-// lê de uma vez, e quanto menos linhas ele tiver, mais rápido isso acontece.
-// Por isso a nota é larga, com teto só para não virar uma linha única de dois
-// metros num monitor ultralargo.
-export const larguraNota = "max-w-[130ch]";
+// Duas tentativas erradas antes desta, e as duas a tela derrubou. Primeiro
+// 72ch: um alerta de três linhas virou fita estreita boiando numa tela de
+// 1900px. Depois 130ch: melhorou a leitura e criou outro problema, este visual
+// — o aviso ficava alguns pixels mais curto que o cartão logo abaixo, e duas
+// bordas quase alinhadas incomodam mais que duas claramente diferentes.
+//
+// O acerto é não dar largura nenhuma: aviso e rodapé são blocos irmãos do
+// cartão, e bloco irmão alinha. Alinhamento vence medida de linha aqui porque
+// nenhum desses textos se lê por minutos — leem-se de uma vez, e o que atrapalha
+// isso é a borda quebrada, não a linha longa.
+//
+// A medida de linha continua valendo onde ela importa: `larguraLeitura`, para
+// prosa de verdade.
