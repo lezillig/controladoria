@@ -411,10 +411,10 @@ bancário e antes do expediente.
 - **Dados bancários de fornecedor viram hash**, nunca ficam em claro. O hash
   serve a um propósito único: detectar **troca** de conta entre sincronizações.
 - **CPF de pessoa física é mascarado na exibição** (LGPD, minimização).
-- **Segregação de função:** ver o sistema (ADMIN, GESTOR, CONTROLADORIA) é
-  diferente de tratar achado e mudar parâmetro (ADMIN, CONTROLADORIA). Num
-  sistema que aponta o erro dos outros, "ver" e "poder desligar o alerta" não
-  podem ser a mesma permissão.
+- **Segregação de função:** ver o sistema é diferente de tratar achado, mudar
+  parâmetro ou disparar sincronização. Num sistema que aponta o erro dos
+  outros, "ver" e "poder desligar o alerta" não podem ser a mesma permissão.
+  O recorte de cada pessoa é configurável em **Usuários e acessos** (abaixo).
 - **Login compartilhado com a gestão**, o que garante desligamento único: quem é
   desativado lá perde o acesso ao financeiro no mesmo ato.
 - **Trilha append-only** (`ControladoriaEventLog`): toda ação humana — tratativa,
@@ -439,6 +439,51 @@ bancário e antes do expediente.
   conferidas; apontamento que alguém validou sobrevive sem o anexo. E apontamento
   assumido nunca é excluído — encerra-se por tratativa, com justificativa, para
   sobrar histórico.
+
+---
+
+### Usuários e perfis de acesso
+
+Os cinco papéis do cadastro da gestão — ADMIN, GESTOR, CONTROLADORIA, FOLHA,
+MOTORISTA — descrevem a operação de transporte, não a controladoria. Não há como
+expressar neles "vê o DRE mas não trata achado" ou "só olha conformidade". O
+**perfil** é a peça que faltava: um recorte de telas e ações, definido pela
+própria empresa em **Usuários e acessos**.
+
+**A identidade continua sendo da gestão.** Criar usuário nessa tela escreve no
+cadastro de lá — o mesmo do login da frota. Um cadastro paralelo faria o
+desligamento depender de alguém lembrar de repetir a operação nos dois lugares,
+e o dia do esquecimento é o dia em que um ex-funcionário continua enxergando o
+caixa do grupo. Só a **autorização** mora aqui.
+
+Três regras sustentam o desenho:
+
+| Regra | Por quê |
+|---|---|
+| **Sem perfil atribuído, valem as regras de papel** | É o contrato de "nada muda no dia em que isto sobe". Ninguém ganhou nem perdeu acesso quando o módulo subiu; o que passou a existir é a possibilidade de ajustar. |
+| **Papel sem acesso vence qualquer perfil** | FOLHA e MOTORISTA não entram, e um perfil generoso não pode virar porta dos fundos. Quem administra pessoas é a gestão, e a decisão de lá sobre quem é do financeiro continua valendo aqui. |
+| **Um perfil padrão por empresa** | Vale para quem não tiver perfil próprio. Dois marcados fariam a resolução depender da ordem que o banco devolvesse — acesso decidido por sorte. |
+
+**O acesso é cobrado em três camadas, a partir de uma resolução só**
+(`acessoDaSessao`, em `src/app/(app)/_dados.ts`):
+
+1. **o menu** mostra apenas o que a pessoa alcança;
+2. **a página** recusa quem digitar a URL (`exigirPermissao`);
+3. **a ação e a rota de exportação** recusam o formulário montado à mão.
+
+Esconder o item do menu não é controle de acesso — é sugestão. E duas
+implementações da mesma regra divergem com o tempo, nas duas direções ruins:
+item de menu que leva a "sem acesso", ou página que abre sem estar no menu.
+
+O catálogo de permissões está em `src/lib/acessos.ts`, separado em **Telas** e
+**Ações** — e a separação é a mesma ideia da segregação de função acima. A
+resolução tem testes sem banco: `npm run teste:acessos`.
+
+**Criar usuário exige escrita no banco da gestão**, que pelo desenho recomendado
+é somente leitura. Nesse caso a tela recusa dizendo exatamente isso e apontando
+as duas saídas — cadastrar pela gestão, ou conceder `INSERT`/`UPDATE` em
+`public."User"`. O comando está em `docs/papel-leitura-gestao.sql`, numa seção
+separada e comentada, com o custo da concessão escrito nela.
 
 ---
 
