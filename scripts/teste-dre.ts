@@ -192,6 +192,37 @@ console.log("\n13. Categoria parada no mês — o lado vem da janela inteira");
     [item?.valorCents, item?.valorAnteriorCents], [0, 4_757_500]);
 }
 
+// ------------------------------------------------------ regime de caixa
+console.log("\n14. Caixa × competência");
+{
+  const t1 = tit("RECEBER", "1", 100_000, "07");   // faturado em julho
+  const t2 = tit("PAGAR", "2", 30_000, "07");
+  const ctxCaixa = {
+    ...ctx([t1, t2], [cat("1", "Serviços", true), cat("2", "Combustível")]),
+    baixas: [
+      // Metade do faturamento de julho só entrou em AGOSTO — fora da janela.
+      { id: "b1", tituloId: t1.id, dataBaixa: d("2026-07-20"), valorCents: 5_000_000, chave: "k1" },
+      { id: "b2", tituloId: t1.id, dataBaixa: d("2026-08-05"), valorCents: 5_000_000, chave: "k2" },
+      { id: "b3", tituloId: t2.id, dataBaixa: d("2026-07-25"), valorCents: 3_000_000, chave: "k3" },
+    ],
+  } as unknown as ContextoAuditoria;
+
+  const comp = montarDre(ctxCaixa, MES, ANT, cls({}), false, "competencia");
+  const caixa = montarDre(ctxCaixa, MES, ANT, cls({}), false, "caixa");
+  const v = (r: typeof comp, c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
+
+  conferir("competência: o faturamento inteiro", v(comp, "RECEITA_BRUTA"), 10_000_000);
+  conferir("caixa: só o que entrou no mês", v(caixa, "RECEITA_BRUTA"), 5_000_000);
+  conferir("a despesa paga entra nos dois", [v(comp, "DESPESA_VEICULOS"), v(caixa, "DESPESA_VEICULOS")],
+    [3_000_000, 3_000_000]);
+  conferir("e o regime viaja no resultado", [comp.regime, caixa.regime], ["competencia", "caixa"]);
+  // O drill-down segue o regime: no caixa mostra as BAIXAS, senão a soma da
+  // lista não bateria com a linha.
+  conferir("drill-down do caixa traz a baixa, não o título",
+    caixa.linhas.find((l) => l.chave === "RECEITA_BRUTA")!.itens[0].titulos.map((x) => x.valorCents),
+    [5_000_000]);
+}
+
 // -------------------------------------------------- retenções na fonte
 console.log("\n11. Tributos retidos na fonte — interruptor, não regra");
 {

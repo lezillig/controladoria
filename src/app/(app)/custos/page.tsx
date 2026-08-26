@@ -5,7 +5,7 @@ import TabelaDre from "./TabelaDre";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { secondaryButtonClass } from "@/lib/ui";
-import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
+import { competenciasDisponiveis, contextoDaPagina, resolverRegime } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 
@@ -28,10 +28,11 @@ import Filtros from "../Filtros";
 export default async function CustosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ empresa?: string; competencia?: string }>;
+  searchParams: Promise<{ empresa?: string; competencia?: string; regime?: string }>;
 }) {
   const params = await searchParams;
   const { ctx, escopo, periodo } = await contextoDaPagina(params.empresa, params.competencia);
+  const regime = resolverRegime(params.regime);
 
   const comparativo = await montarComparativo(ctx);
 
@@ -65,7 +66,8 @@ export default async function CustosPage({
     comparativo.janelas.mesAtual,
     comparativo.janelas.mesAnterior,
     classificacoes,
-    ctx.config.retencoesNasDeducoes
+    ctx.config.retencoesNasDeducoes,
+    regime
   );
 
   // LINHA VAZIA NÃO É MOSTRADA, e subtotal repetido tampouco.
@@ -114,6 +116,7 @@ export default async function CustosPage({
   if (escopo.conexaoId) filtros.set("empresa", escopo.conexaoId);
   if (periodo.competencia) filtros.set("competencia", periodo.competencia);
   const urlDaPlanilha = `/api/exportar/composicao${filtros.toString() ? `?${filtros}` : ""}`;
+  if (regime === "caixa") filtros.set("regime", "caixa");
   const urlDaConferencia = `/api/exportar/dre${filtros.toString() ? `?${filtros}` : ""}`;
 
   return (
@@ -123,7 +126,9 @@ export default async function CustosPage({
           <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
           <p className="mt-1 text-sm text-slate-500">
             {comparativo.janelas.mesAtual.rotulo} até {fmtData(ctx.dataReferencia)}, comparado ao mês anterior inteiro.
-            Regime de competência, pela data de emissão do documento.
+            {regime === "caixa"
+              ? "Regime de CAIXA: entra o que foi pago ou recebido no mês, pela data da baixa."
+              : "Regime de COMPETÊNCIA, pela data de emissão do documento."}
           </p>
         </div>
         {/* Corrigir categorização é trabalho de lista, não de tela: exige
@@ -151,6 +156,7 @@ export default async function CustosPage({
         empresaAtiva={escopo.conexaoId}
         competencias={competenciasDisponiveis(ctx.config.dataInicioBase)}
         competenciaAtiva={periodo.competencia}
+        regimeAtivo={regime}
         rota="/custos"
       />
 
@@ -201,7 +207,13 @@ export default async function CustosPage({
 
       <Secao
         titulo="Demonstração do resultado"
-        descricao={`${comparativo.janelas.mesAtual.rotulo}, na estrutura do art. 187 da Lei 6.404/76. Percentuais sobre a receita líquida.`}
+        descricao={
+          `${comparativo.janelas.mesAtual.rotulo}, na estrutura do art. 187 da Lei 6.404/76. ` +
+          `Percentuais sobre a receita líquida. ` +
+          (regime === "caixa"
+            ? "Regime de CAIXA — o que se moveu na conta, pela data da baixa."
+            : "Regime de COMPETÊNCIA — o que aconteceu, pela data de emissão.")
+        }
       >
         <TabelaDre
           linhas={linhasVisiveis}

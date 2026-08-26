@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
-import type { ItemDre } from "@/lib/controladoria/dre";
+import { LINHAS_DRE, type ItemDre } from "@/lib/controladoria/dre";
 import ClassificarCategoria from "./ClassificarCategoria";
 
 // A CATEGORIA, E O QUE ELA ESCONDE.
@@ -29,6 +29,20 @@ export default function LinhaCategoria({
 }) {
   const [aberto, setAberto] = useState(false);
   const temDetalhe = item.titulos.length > 0;
+
+  // ITEM QUE VAI CONTRA A DIREÇÃO DA LINHA aparece com sinal e em verde.
+  //
+  // Sem isso a tela mentia por omissão, e o relato foi exatamente esse: o
+  // resgate de consórcio, uma ENTRADA, aparecia como "R$ 47.575,00" embaixo de
+  // "(-) Financiamentos e consórcios", ao lado de três saídas positivas. A
+  // soma já estava certa — o total abatia o resgate —, mas quem soma as quatro
+  // linhas de cabeça não chega no total, e conclui que o sistema errou.
+  //
+  // Um número certo apresentado de um jeito que não fecha é, na prática, um
+  // número errado: ninguém confere duas vezes o que já pareceu inconsistente.
+  const linhaEhReceita = (LINHAS_DRE.find((l) => l.chave === linhaChave)?.sinal ?? -1) > 0;
+  const contraFluxo = item.ehReceita !== linhaEhReceita;
+  const valorNaLinha = (v: number) => (contraFluxo ? `− ${fmtBRL(Math.abs(v))}` : fmtBRL(Math.abs(v)));
 
   return (
     <Fragment>
@@ -58,11 +72,20 @@ export default function LinhaCategoria({
             </span>
           )}
           {item.subgrupo && <span className="ml-2 text-slate-400">· {item.subgrupo}</span>}
+          {contraFluxo && (
+            <span className="ml-2 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+              entra, abate a linha
+            </span>
+          )}
           {marcasOmie && <span className="ml-2 text-[10px] text-slate-400">Omie: {marcasOmie}</span>}
         </td>
-        <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{fmtBRL(item.valorCents)}</td>
+        <td className={`px-3 py-1.5 text-right tabular-nums ${contraFluxo ? "text-emerald-700" : "text-slate-600"}`}>
+          {valorNaLinha(item.valorCents)}
+        </td>
         <td className="px-3 py-1.5"></td>
-        <td className="px-3 py-1.5 text-right tabular-nums text-slate-400">{fmtBRL(item.valorAnteriorCents)}</td>
+        <td className={`px-3 py-1.5 text-right tabular-nums ${contraFluxo ? "text-emerald-600" : "text-slate-400"}`}>
+          {valorNaLinha(item.valorAnteriorCents)}
+        </td>
         <td className="px-3 py-1.5"></td>
         <td className="px-3 py-1.5 text-right">
           <ClassificarCategoria

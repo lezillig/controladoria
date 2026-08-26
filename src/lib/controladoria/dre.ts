@@ -349,6 +349,7 @@ export type ResultadoDre = {
   // qual das duas leituras está no ar — um total de impostos sem essa
   // informação não dá para conferir contra nada.
   retencoesSomadas: boolean;
+  regime: "competencia" | "caixa";
 };
 
 // O QUE O CLIENTE RETEVE, e por que isto NÃO entra na conta.
@@ -370,8 +371,40 @@ export type ResultadoDre = {
 // Somar por conta própria seria arriscar inflar a carga tributária do DRE em
 // centenas de milhares de reais, e o erro apareceria como margem pior — que é
 // o tipo de número que ninguém questiona.
-function retencoesDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo) {
-  const receber = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo));
+function retencoesDoPeriodo(
+  ctx: ContextoAuditoria,
+  periodo: Periodo,
+  regime: "competencia" | "caixa" = "competencia"
+) {
+  // NO CAIXA a retenção acompanha o RECEBIMENTO, não a emissão — e ela é
+  // gravada no título, não na baixa. Um título recebido pela metade teve
+  // metade da retenção; por isso a proporção, e não o valor cheio. É
+  // aproximação, e está dita: a Omie não devolve a retenção por baixa.
+  const receber =
+    regime === "caixa"
+      ? (() => {
+          const pagoPorTitulo = new Map<string, number>();
+          for (const b of ctx.baixas) {
+            if (!dentro(b.dataBaixa, periodo)) continue;
+            pagoPorTitulo.set(b.tituloId, (pagoPorTitulo.get(b.tituloId) ?? 0) + Math.abs(b.valorCents));
+          }
+          return titulosAtivos(ctx, "RECEBER")
+            .filter((t) => pagoPorTitulo.has(t.id) && t.valorDocumentoCents > 0)
+            .map((t) => {
+              const fracao = Math.min(1, (pagoPorTitulo.get(t.id) ?? 0) / Math.abs(t.valorDocumentoCents));
+              const p = (v: number) => Math.round(v * fracao);
+              return {
+                ...t,
+                retencaoIssCents: p(t.retencaoIssCents),
+                retencaoPisCents: p(t.retencaoPisCents),
+                retencaoCofinsCents: p(t.retencaoCofinsCents),
+                retencaoCsllCents: p(t.retencaoCsllCents),
+                retencaoIrCents: p(t.retencaoIrCents),
+                retencaoInssCents: p(t.retencaoInssCents),
+              };
+            });
+        })()
+      : titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo));
   const soma = (campo: (t: (typeof receber)[number]) => number) => somar(receber, campo);
 
   const issCents = soma((t) => t.retencaoIssCents);
@@ -411,8 +444,14 @@ export function montarDre(
   classificacoes: Map<string, Classificacao>,
   // Somar as retenções na fonte às deduções da receita. Ver
   // `retencoesDoPeriodo` e a coluna `retencoesNasDeducoes` na configuração.
-  somarRetencoes = false
+  somarRetencoes = false,
+  // COMPETÊNCIA ou CAIXA. São perguntas diferentes sobre o mesmo mês:
+  // competência responde "a operação deu lucro?", caixa responde "sobrou
+  // dinheiro?". Um mês pode fechar no azul num e no vermelho no outro — é o
+  // descasamento entre faturar e receber, e é justamente o que se quer ver.
+  regime: "competencia" | "caixa" = "competencia"
 ): ResultadoDre {
+  const porTitulo = new Map(ctx.titulos.map((t) => [t.id, t]));
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
   // Movimento por categoria, nas duas janelas. Título cancelado fica fora: ele
@@ -420,6 +459,26 @@ export function montarDre(
   // não existe mais — que foi exatamente o erro das notas canceladas.
   const porCategoria = (p: Periodo) => {
     const mapa = new Map<string, number>();
+
+    if (regime === "caixa") {
+      // NO CAIXA O FATO É A BAIXA, não o título: o que conta é a data em que o
+      // dinheiro se moveu e o valor que se moveu. Um título de R$ 100 mil pago
+      // em três parcelas entra em três meses, pelo valor de cada uma.
+      //
+      // A categoria continua vindo do TÍTULO — a baixa não tem categoria
+      // própria, e é o título que diz do que aquele dinheiro se trata.
+      for (const b of ctx.baixas) {
+        if (!dentro(b.dataBaixa, p)) continue;
+        const t = porTitulo.get(b.tituloId);
+        // Baixa de título cancelado fica de fora, como o título ficaria: se o
+        // documento não existe, o resultado dele não é resultado.
+        if (!t || t.cancelado) continue;
+        const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+        mapa.set(chave, (mapa.get(chave) ?? 0) + b.valorCents);
+      }
+      return mapa;
+    }
+
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
       for (const t of titulosAtivos(ctx, natureza)) {
         if (!dentro(dataDeCompetencia(t), p)) continue;
@@ -454,6 +513,29 @@ export function montarDre(
   }
 
   const titulosPorCategoria = new Map<string, TituloDoDre[]>();
+  if (regime === "caixa") {
+    // O drill-down segue o regime: no caixa, quem abre a categoria quer ver os
+    // PAGAMENTOS que compõem o número, com a data e o valor de cada um. Mostrar
+    // o título cheio faria a soma da lista não bater com a linha, que é o jeito
+    // mais rápido de alguém perder a confiança na tela.
+    for (const b of ctx.baixas) {
+      if (!dentro(b.dataBaixa, periodo)) continue;
+      const t = porTitulo.get(b.tituloId);
+      if (!t || t.cancelado) continue;
+      const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+      const lista = titulosPorCategoria.get(chave) ?? [];
+      lista.push({
+        id: b.id,
+        natureza: t.natureza === "RECEBER" ? "RECEBER" : "PAGAR",
+        parceiro: t.parceiroNome ?? "(sem parceiro)",
+        documento: t.numeroDocumento,
+        data: b.dataBaixa,
+        valorCents: b.valorCents,
+        empresa: t.conexaoApelido,
+      });
+      titulosPorCategoria.set(chave, lista);
+    }
+  } else
   for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
       if (!dentro(dataDeCompetencia(t), periodo)) continue;
@@ -584,8 +666,8 @@ export function montarDre(
   // títulos de imposto — e se um dia passar a duplicar, a duplicidade fica
   // visível como duas entradas do mesmo tributo, em vez de um total que
   // simplesmente dobrou sem explicação.
-  const retencoes = retencoesDoPeriodo(ctx, periodo);
-  const retencoesAnteriores = retencoesDoPeriodo(ctx, periodoAnterior);
+  const retencoes = retencoesDoPeriodo(ctx, periodo, regime);
+  const retencoesAnteriores = retencoesDoPeriodo(ctx, periodoAnterior, regime);
   if (somarRetencoes && retencoes.totalCents > 0) {
     const lista = itensPorLinha.get("DEDUCOES") ?? [];
     lista.push({
@@ -649,5 +731,6 @@ export function montarDre(
     semCategoriaCents: semCategoria,
     retencoes,
     retencoesSomadas: somarRetencoes,
+    regime,
   };
 }

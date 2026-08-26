@@ -5,7 +5,7 @@ import { carregarContexto } from "@/lib/controladoria/contexto";
 import { LINHAS_DRE, montarDre, ROTULO_LINHA } from "@/lib/controladoria/dre";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { mesCompleto, rotuloMes } from "@/lib/controladoria/periodos";
-import { resolverEscopo, resolverPeriodo } from "@/app/(app)/_dados";
+import { resolverEscopo, resolverPeriodo, resolverRegime } from "@/app/(app)/_dados";
 
 // PLANILHA DE CONFERÊNCIA DA CLASSIFICAÇÃO DO DRE.
 //
@@ -31,6 +31,7 @@ export async function GET(req: NextRequest) {
 
   const escopo = await resolverEscopo(session.companyId, req.nextUrl.searchParams.get("empresa") ?? undefined);
   const periodo = resolverPeriodo(req.nextUrl.searchParams.get("competencia") ?? undefined);
+  const regime = resolverRegime(req.nextUrl.searchParams.get("regime") ?? undefined);
   const mes = mesCompleto(periodo.dataReferencia);
   const competencia = rotuloMes(periodo.dataReferencia);
 
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
     where: { companyId: session.companyId },
     select: { retencoesNasDeducoes: true },
   });
-  const dre = montarDre(ctx, mes, mesAnterior, classificacoes, config?.retencoesNasDeducoes ?? true);
+  const dre = montarDre(ctx, mes, mesAnterior, classificacoes, config?.retencoesNasDeducoes ?? true, regime);
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
   const empresa = escopo.apelido
@@ -75,7 +76,10 @@ export async function GET(req: NextRequest) {
       empresa,
       competencia,
       criterio:
-        "Competência pela data de emissão do documento. Ordem das linhas conforme o art. 187 da Lei 6.404/76. " +
+        (regime === "caixa"
+          ? "Regime de CAIXA: o que foi pago ou recebido no mês, pela data da baixa. "
+          : "Regime de COMPETÊNCIA, pela data de emissão do documento. ") +
+        "Ordem das linhas conforme o art. 187 da Lei 6.404/76. " +
         "As colunas 'Omie:' são o que o cadastro de categorias da Omie informa — é contra elas que se confere. " +
         (config?.retencoesNasDeducoes ?? true
           ? "Os tributos retidos na fonte pelos clientes ESTÃO somados às deduções, como item próprio."
