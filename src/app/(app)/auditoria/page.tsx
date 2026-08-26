@@ -7,6 +7,7 @@ import { AGENTES } from "@/lib/controladoria/registry";
 import { sessaoControladoria } from "../_dados";
 import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Secao } from "../_componentes";
 import TratativaForm from "./TratativaForm";
+import { larguraPainel } from "@/lib/ui";
 
 // AUDITORIA — a lista de achados e a tratativa de cada um.
 //
@@ -77,7 +78,7 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
   const agentesComAchado = new Set(achados.map((a) => a.agente));
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Auditoria e achados</h1>
         <p className="mt-1 text-sm text-slate-500">

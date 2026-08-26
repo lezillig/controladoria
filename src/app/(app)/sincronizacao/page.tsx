@@ -7,7 +7,7 @@ import { coberturaDeCamposNoBanco, volumeEspelhadoNoBanco } from "@/lib/controla
 import { progressoDaCarga } from "@/lib/controladoria/progresso";
 import { resumirSaldos, saldosPorConta } from "@/lib/controladoria/saldos";
 import { falhaDeVersaoAnterior, ultimasFalhas } from "@/lib/controladoria/falhas";
-import { badgeClass } from "@/lib/ui";
+import { badgeClass, larguraPainel } from "@/lib/ui";
 import { apenasNotas, janelasComFalha } from "@/lib/controladoria/janelasComFalha";
 import { ultimaMedicaoDaAuditoria } from "@/lib/controladoria/medicaoAuditoria";
 import { driftDoEsquema, ondeOBancoOlha, sobrasEmOutrosEsquemas } from "@/lib/controladoria/esquema";
@@ -118,7 +118,7 @@ export default async function SincronizacaoPage() {
   const travada = Boolean(emAndamento && diasEntre(emAndamento.iniciadoEm, new Date()) >= 1);
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Sincronização com a Omie</h1>
         <p className="mt-1 text-sm text-slate-500">

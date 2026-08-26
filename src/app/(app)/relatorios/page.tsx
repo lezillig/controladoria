@@ -8,6 +8,7 @@ import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import { sessaoControladoria } from "../_dados";
 import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
 import GerarRelatorioForm from "./GerarRelatorioForm";
+import { larguraPainel } from "@/lib/ui";
 
 // HISTÓRICO DE RELATÓRIOS.
 //
@@ -52,7 +53,7 @@ export default async function RelatoriosPage() {
   const dataPadrao = dataReferenciaPadrao().toISOString().slice(0, 10);
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Relatórios diários</h1>
         <p className="mt-1 text-sm text-slate-500">

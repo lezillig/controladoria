@@ -10,6 +10,7 @@ import { rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { competenciasDisponiveis, contextoDaPagina } from "./_dados";
 import { AvisoVazio, BadgeSeveridade, Barra, Farol, Kpi, Secao, Tabela, Variacao } from "./_componentes";
 import Filtros from "./Filtros";
+import { larguraPainel } from "@/lib/ui";
 
 // DASHBOARD FINANCEIRO — a tela de abertura do módulo.
 //
@@ -48,7 +49,7 @@ export default async function ControladoriaPage({
 
   if (!qualidade.temTitulos) {
     return (
-      <div className="max-w-6xl">
+      <div className={larguraPainel}>
         <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} />
         <AvisoVazio
           titulo="Nenhum dado da Omie ainda"
@@ -72,7 +73,7 @@ export default async function ControladoriaPage({
   const ruptura = panorama.projecao.find((p) => p.saldoProjetadoCents < 0);
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} />
 
       <Filtros

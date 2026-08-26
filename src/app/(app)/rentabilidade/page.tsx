@@ -7,6 +7,7 @@ import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 import VinculoForm, { type OpcaoDestino, type OpcaoOrigem } from "./VinculoForm";
 import { removerVinculo } from "./actions";
+import { larguraPainel } from "@/lib/ui";
 
 // RENTABILIDADE POR CONTRATO, VEÍCULO E FUNCIONÁRIO.
 //
@@ -70,7 +71,7 @@ export default async function RentabilidadePage({
   };
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Rentabilidade por contrato</h1>
         <p className="mt-1 text-sm text-slate-500">

@@ -6,6 +6,7 @@ import { sugerirAlcadas } from "@/lib/controladoria/agents/oportunidades";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
 import { Secao, Tabela } from "../_componentes";
 import ConfiguracaoForm from "./ConfiguracaoForm";
+import { larguraFormulario } from "@/lib/ui";
 
 // MODELO DE GESTÃO — os parâmetros que tornam as regras genéricas em política
 // desta empresa, mais a trilha de quem mexeu no módulo.
@@ -31,7 +32,7 @@ export default async function ConfiguracaoPage() {
   const emReais = (cents: number | null) => (cents === null ? "" : String(cents / 100).replace(".", ","));
 
   return (
-    <div className="max-w-4xl space-y-6">
+    <div className={`${larguraFormulario} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Modelo de gestão financeira</h1>
         <p className="mt-1 text-sm text-slate-500">

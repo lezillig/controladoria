@@ -11,6 +11,7 @@ import PageHeader from "@/components/ui/PageHeader";
 import { competenciasDisponiveis, resolverEscopo, resolverPeriodo, resolverRegime, sessaoControladoria } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
+import { larguraPainel } from "@/lib/ui";
 
 // RESULTADO MÊS A MÊS E COMPOSIÇÃO DO MÊS.
 //
@@ -182,7 +183,7 @@ export default async function ResultadosPage({
   );
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <PageHeader
         title="Resultado mês a mês"
         subtitle={

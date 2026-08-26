@@ -6,6 +6,7 @@ import { somarDias } from "@/lib/controladoria/periodos";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
+import { larguraPainel } from "@/lib/ui";
 
 // FLUXO DE CAIXA — a única tela do módulo que olha para frente.
 
@@ -47,7 +48,7 @@ export default async function FluxoCaixaPage({
   );
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Fluxo de caixa</h1>
         <p className="mt-1 text-sm text-slate-500">

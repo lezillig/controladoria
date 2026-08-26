@@ -30,6 +30,7 @@ import NovoApontamentoForm from "./NovoApontamentoForm";
 import TratativaApontamento from "./TratativaApontamento";
 import UploadForm from "./UploadForm";
 import { confirmarVinculo, descartarApontamento, excluirDocumento, removerVinculo, validarApontamento } from "./actions";
+import { larguraPainel } from "@/lib/ui";
 
 // CONFORMIDADE — o que a empresa recebe sobre si mesma.
 //
@@ -101,7 +102,7 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
   const comEmpresa = (extra: string) => (escopo.conexaoId ? `${extra}${extra.includes("?") ? "&" : "?"}empresa=${escopo.conexaoId}` : extra);
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Conformidade</h1>
         <p className="mt-1 text-sm text-slate-500">

@@ -5,7 +5,7 @@ import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
-import { secondaryButtonClass } from "@/lib/ui";
+import { larguraNota, larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import {
   anosDisponiveis,
   competenciasDisponiveis,
@@ -183,7 +183,7 @@ export default async function CustosPage({
        O TETO DE 1800px continua existindo: sem nenhum, num monitor
        ultralargo a primeira coluna e a última ficam a meio metro uma da
        outra. */
-    <div className="max-w-[1800px] space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
@@ -311,7 +311,7 @@ export default async function CustosPage({
       </div>
 
       {(dre.naoConfirmadoCents > 0 || dre.semCategoriaCents > 0) && (
-        <div className="max-w-4xl rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className={`${larguraNota} rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900`}>
           <strong>Este DRE ainda não foi conferido por inteiro.</strong>{" "}
           {dre.naoConfirmadoCents > 0 && (
             <>
@@ -355,7 +355,7 @@ export default async function CustosPage({
         )}
 
         {!anual && dre.retencoes.totalCents > 0 && (
-          <div className="mt-5 max-w-4xl rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <div className={`mt-5 ${larguraNota} rounded-lg border border-slate-200 bg-slate-50 p-4`}>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Retido na fonte pelos clientes — não somado acima
             </p>
@@ -397,14 +397,14 @@ export default async function CustosPage({
         )}
 
         {!anual && linhasOcultas > 0 && (
-          <p className="mt-3 max-w-4xl text-xs text-slate-500">
+          <p className={`mt-3 ${larguraNota} text-xs text-slate-500`}>
             {linhasOcultas} linha(s) da estrutura não aparecem por estarem zeradas e sem nenhuma categoria — entre elas,
             as que ainda não receberam classificação. Elas voltam sozinhas assim que houver movimento classificado ali,
             e continuam disponíveis no seletor de cada categoria.
           </p>
         )}
 
-        <p className="mt-4 max-w-4xl text-xs text-slate-500">
+        <p className={`mt-4 ${larguraNota} text-xs text-slate-500`}>
           <strong>IRPJ e CSLL entram como dedução da receita bruta</strong>, e não abaixo do resultado antes dos
           tributos. É uma escolha da empresa, com razão de negócio: no Lucro Presumido a base dos dois é uma presunção
           sobre a receita — 16% para transporte de passageiros, 12% de CSLL —, então eles se comportam como percentual
@@ -484,7 +484,7 @@ export default async function CustosPage({
                   </li>
                 ))}
             </ul>
-            <p className="mt-3 max-w-4xl text-xs text-slate-500">
+            <p className={`mt-3 ${larguraNota} text-xs text-slate-500`}>
               Corte linear (&quot;todos reduzem 10%&quot;) trata igual o que é desigual: corta o combustível que leva o
               passageiro na mesma proporção do contrato que ninguém usa. As categorias marcadas como &quot;acompanha a
               entrega&quot; devem ser atacadas por eficiência (custo por km, por hora), nunca por corte de valor absoluto.

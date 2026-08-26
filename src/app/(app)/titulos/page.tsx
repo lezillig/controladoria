@@ -5,6 +5,7 @@ import { resumoAging } from "@/lib/controladoria/agents/contasReceber";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
+import { larguraPainel } from "@/lib/ui";
 
 // CONTAS A PAGAR E A RECEBER numa tela só, alternada por querystring.
 //
@@ -47,7 +48,7 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
   const rotulo = natureza === "PAGAR" ? "a pagar" : "a receber";
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Contas {rotulo}</h1>
         <p className="mt-1 text-sm text-slate-500">

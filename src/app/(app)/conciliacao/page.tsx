@@ -5,6 +5,7 @@ import { inicioDoMes } from "@/lib/controladoria/periodos";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
+import { larguraPainel } from "@/lib/ui";
 
 // CONCILIAÇÃO BANCÁRIA — o controle que fecha o circuito do dinheiro.
 // Sem ele, todo número do módulo é uma declaração de intenção.
@@ -24,7 +25,7 @@ export default async function ConciliacaoPage({
 
   if (ctx.contasCorrentes.length === 0) {
     return (
-      <div className="max-w-5xl space-y-6">
+      <div className={`${larguraPainel} space-y-6`}>
         <Cabecalho />
 
       <Filtros
@@ -55,7 +56,7 @@ export default async function ConciliacaoPage({
   );
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <Cabecalho />
 
       <Filtros

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { canManageControladoria } from "@/lib/permissions";
-import { inputClass } from "@/lib/ui";
+import { inputClass, larguraPainel } from "@/lib/ui";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { medirBsc, PERSPECTIVAS, type IndicadorMedido } from "@/lib/controladoria/bsc";
 import { contextoDaPagina } from "../_dados";
@@ -35,7 +35,7 @@ export default async function BscPage() {
   const contagem = (farol: string) => medidos.filter((m) => m.farol === farol).length;
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Balanced Scorecard</h1>
         <p className="mt-1 text-sm text-slate-500">

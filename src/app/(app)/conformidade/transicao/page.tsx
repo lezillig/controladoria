@@ -14,6 +14,7 @@ import { ROTULO_AREA, ROTULO_NATUREZA } from "@/lib/conformidade/tipos";
 import { sessaoControladoria } from "../../_dados";
 import { Secao, Tabela } from "../../_componentes";
 import { criarApontamentoDaTransicao } from "../actions";
+import { larguraPainel } from "@/lib/ui";
 
 // TRANSIÇÃO PARA O LUCRO REAL — janeiro de 2027.
 //
@@ -47,7 +48,7 @@ export default async function TransicaoPage() {
   );
 
   return (
-    <div className="max-w-5xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <p className="text-xs font-medium uppercase tracking-wide text-blue-700">
           <Link href="/conformidade" className="hover:underline">

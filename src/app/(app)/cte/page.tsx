@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { sessaoControladoria } from "../_dados";
 import ConferenciaForm from "./ConferenciaForm";
+import { larguraPainel } from "@/lib/ui";
 
 // CONFERÊNCIA DE CT-e — a única entrada de dado desta tela é a lista colada.
 //
@@ -25,7 +26,7 @@ export default async function CtePage() {
   });
 
   return (
-    <div className="max-w-6xl space-y-6">
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Conferência de CT-e</h1>
         <p className="mt-1 text-sm text-slate-500">
