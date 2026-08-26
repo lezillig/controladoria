@@ -63,7 +63,7 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
     ...(filtros.regra ? { regra: filtros.regra } : {}),
   };
 
-  const [achados, contagens, porRegra] = await Promise.all([
+  const [achados, contagens, porRegra, porAgente] = await Promise.all([
     prisma.auditFinding.findMany({
       where,
       orderBy: [{ severidade: "asc" }, { impactoCents: "desc" }, { detectadoEm: "desc" }],
@@ -94,12 +94,22 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
       orderBy: { _count: { regra: "desc" } },
       take: 20,
     }),
+    // Quais agentes TÊM achado em aberto — sobre a base inteira, não sobre a
+    // página. Antes isto era deduzido da lista exibida, que traz 300 linhas
+    // ordenadas por severidade: um agente cujos achados ficassem fora dessa
+    // fatia perdia o link "ver achados". O link sumia exatamente quando havia
+    // muita coisa, que é quando ele mais serve.
+    prisma.auditFinding.groupBy({
+      by: ["agente"],
+      where: { companyId: session.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
+      _count: true,
+    }),
   ]);
 
   const totalEmAberto = contagens.reduce((acc, c) => acc + c._count, 0);
 
   const totalImpacto = achados.reduce((acc, a) => acc + (a.impactoCents ?? 0), 0);
-  const agentesComAchado = new Set(achados.map((a) => a.agente));
+  const agentesComAchado = new Map(porAgente.map((a) => [a.agente, a._count]));
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -260,7 +270,7 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
                   <span className="rounded-full bg-slate-100 px-2 py-0.5">{a.area}</span>
                   {agentesComAchado.has(a.id) && (
                     <Link href={`/auditoria?agente=${a.id}`} className="font-medium text-blue-700 hover:underline">
-                      ver achados
+                      ver {fmtNumero(agentesComAchado.get(a.id)!)} achado(s)
                     </Link>
                   )}
                 </span>
