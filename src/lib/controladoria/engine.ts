@@ -53,7 +53,13 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
 
   const anteriores = await prisma.auditFinding.findMany({
     where: { companyId: ctx.companyId },
-    select: { chave: true, status: true, severidade: true, ocorrencias: true, regra: true, id: true },
+    select: {
+      chave: true, status: true, severidade: true, ocorrencias: true,
+      regra: true, id: true,
+      // Agente e tipo vêm da LINHA, não da execução corrente. Ver o comentário
+      // do fechamento automático mais abaixo: era daqui que vinha o defeito.
+      agente: true, tipo: true,
+    },
   });
   const historico = new Map<string, HistoricoAchado>(
     anteriores.map((a) => [a.chave, { status: a.status, severidade: a.severidade, ocorrencias: a.ocorrencias }])
@@ -97,20 +103,27 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
     await persistirAchado(ctx, achado, agentePorRegra.get(achado.regra) ?? "desconhecido", resolverConexao(achado));
   }
 
-  // Fechamento automatico: achados de ESTADO que os agentes DELE pararam de
-  // emitir deixaram de existir na base (o titulo foi pago, a conta foi
-  // conciliada). Viram OBSOLETO — nunca RESOLVIDO, que e reservado a
-  // tratativa humana registrada. A distincao importa no indicador de controle
-  // interno: "resolvemos 40 achados" e diferente de "40 sumiram sozinhos".
-  const regrasDeEstado = new Set(revisao.aprovados.filter((a) => a.tipo === "ESTADO").map((a) => a.regra));
-
-  const fechaveis = anteriores.filter(
-    (a) =>
-      (a.status === "ABERTO" || a.status === "EM_ANALISE") &&
-      !chavesEmitidas.has(a.chave) &&
-      agentesOk.includes(agentePorRegra.get(a.regra) ?? "") &&
-      regrasDeEstado.has(a.regra)
-  );
+  // FECHAMENTO AUTOMÁTICO — achados de ESTADO que deixaram de existir na base
+  // (o título foi pago, a conta foi conciliada). Viram OBSOLETO, nunca
+  // RESOLVIDO: este último é reservado à tratativa humana registrada, e a
+  // distinção importa no indicador de controle interno — "resolvemos 40
+  // achados" é diferente de "40 sumiram sozinhos".
+  //
+  // ESTA CONDIÇÃO JÁ FOI IMPOSSÍVEL DE SATISFAZER NO CASO QUE MAIS IMPORTA, e
+  // vale registrar porque o defeito era invisível: tanto o tipo do achado
+  // quanto o agente dono da regra eram deduzidos do que fora EMITIDO naquela
+  // rodada. Para uma regra que parou de disparar — exatamente quando o
+  // fechamento deveria acontecer — não havia o que deduzir. Resultado: zero
+  // fechados em toda execução, e uma pilha que só crescia.
+  //
+  // Agora os dois vêm da própria linha, e a decisão passa a depender do que o
+  // achado É, não do que a execução de hoje produziu.
+  //
+  // O que NÃO mudou, e é o que impede o conserto de virar outro defeito: o
+  // agente dono precisa ter rodado sem erro. Se o agente quebrou, o silêncio
+  // dele não é prova de que o problema acabou — é ausência de informação, e
+  // fechar por ausência de informação é pior que não fechar.
+  const fechaveis = anteriores.filter((a) => podeFecharSozinho(a, chavesEmitidas, agentesOk));
 
   let fechadosAutomaticamente = 0;
   if (fechaveis.length > 0) {
@@ -162,6 +175,7 @@ async function persistirAchado(
 ): Promise<void> {
   const comum = {
     agente,
+    tipo: achado.tipo,
     conexaoId: conexao?.id ?? null,
     conexaoApelido: conexao?.apelido ?? null,
     regra: achado.regra,
@@ -214,4 +228,35 @@ export async function reabrirSeNecessario(companyId: string, chave: string): Pro
     data: { status: "ABERTO", resolvidoEm: null },
   });
   return true;
+}
+
+
+// A DECISÃO DE FECHAR, separada da execução de propósito.
+//
+// É uma regra com quatro condições que precisam valer juntas, e cada uma delas
+// evita um erro diferente — três dos quais já aconteceram ou quase. Dentro de
+// `executarAuditoria` ela só poderia ser exercitada com banco, contexto e doze
+// agentes em pé; aqui, com quatro objetos.
+export function podeFecharSozinho(
+  achado: { status: string; chave: string; tipo: string; agente: string },
+  chavesEmitidas: Set<string>,
+  agentesOk: string[]
+): boolean {
+  // 1. Tratado por gente não volta a ser mexido por máquina. RESOLVIDO e
+  //    IGNORADO carregam justificativa registrada; sobrescrevê-los apagaria o
+  //    trabalho de quem tratou.
+  if (achado.status !== "ABERTO" && achado.status !== "EM_ANALISE") return false;
+
+  // 2. Se a condição voltou a ser detectada agora, ela não deixou de existir.
+  if (chavesEmitidas.has(achado.chave)) return false;
+
+  // 3. Só ESTADO fecha sozinho. EVENTO é fato consumado — um pagamento em
+  //    duplicidade não deixa de ter acontecido porque não apareceu hoje.
+  if (achado.tipo !== "ESTADO") return false;
+
+  // 4. O agente dono precisa ter rodado sem erro. Agente que quebrou emite
+  //    silêncio, e silêncio não é prova de que o problema acabou. Fechar por
+  //    ausência de informação é pior que não fechar: some da lista sem nunca
+  //    ter sido resolvido.
+  return agentesOk.includes(achado.agente);
 }

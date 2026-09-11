@@ -1,0 +1,22 @@
+-- O TIPO DO ACHADO PASSA A SER GRAVADO.
+--
+-- O fechamento automático exigia que a regra ainda estivesse disparando na
+-- execução corrente para poder fechar os achados dela que sumiram — porque
+-- tanto o tipo (ESTADO/EVENTO) quanto o agente dono da regra eram deduzidos do
+-- que fora emitido naquela rodada.
+--
+-- A consequência: quando um problema era resolvido por completo e a regra
+-- silenciava, não havia o que deduzir, e os achados ficavam abertos para
+-- sempre. A pilha só crescia — 4.151 em aberto, 2.824 reincidentes, ZERO
+-- fechados automaticamente em toda execução observada.
+--
+-- Com o tipo gravado na linha, a decisão de fechar deixa de depender da
+-- execução atual e passa a depender do que o achado É.
+--
+-- O padrão ESTADO vale para as linhas que já existem: a grande maioria das 85
+-- regras é de estado, e o supervisor continua exigindo que o agente dono tenha
+-- rodado sem erro antes de fechar qualquer coisa. Um EVENTO antigo classificado
+-- como ESTADO por este padrão se corrige sozinho na primeira vez que a regra
+-- dele voltar a disparar.
+
+ALTER TABLE "AuditFinding" ADD COLUMN "tipo" TEXT NOT NULL DEFAULT 'ESTADO';

@@ -7,7 +7,7 @@ import {
   type SerieMensal,
 } from "../historico";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
-import { chaveAchado, chaveMes, materialidadeCents, severidadePorValor } from "./comum";
+import { chaveAchado, chaveMes, materialidadeCents, mediana, severidadePorValor } from "./comum";
 
 // AGENTE DE PADRÕES — o que só o histórico responde.
 //
@@ -213,11 +213,6 @@ export function reajusteSilencioso(
     const antigos = ordenados.slice(0, -3);
     if (antigos.length < MINIMO_DE_MESES) continue;
 
-    const mediana = (v: number[]) => {
-      const o = [...v].sort((a, b) => a - b);
-      const m = Math.floor(o.length / 2);
-      return o.length % 2 === 1 ? o[m] : Math.round((o[m - 1] + o[m]) / 2);
-    };
     const antes = mediana(antigos.map((l) => l.valorCents));
     const depois = mediana(recentes.map((l) => l.valorCents));
     if (antes <= 0) continue;

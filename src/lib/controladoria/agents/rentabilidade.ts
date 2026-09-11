@@ -2,7 +2,7 @@ import { fmtBRL, fmtPercent } from "../format";
 import { inicioDoMes, rotuloMes, type Periodo } from "../periodos";
 import { custoPorVeiculo, rentabilidadePorContrato } from "../unitEconomics";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
-import { chaveAchado, chaveMes, materialidadeCents, severidadePorValor } from "./comum";
+import { chaveAchado, chaveMes, materialidadeCents, mediana, severidadePorValor } from "./comum";
 
 // AGENTE DE RENTABILIDADE (unit economics)
 // Responde "qual contrato da lucro e qual da prejuizo" — e, antes disso,
@@ -134,10 +134,10 @@ function auditarRentabilidade(ctx: ContextoAuditoria): AchadoNovo[] {
   const porVeiculo = custoPorVeiculo(ctx, periodo);
   if (porVeiculo.linhas.length >= 5) {
     const valores = porVeiculo.linhas.map((l) => l.custoCents).sort((a, b) => a - b);
-    const mediana = valores[Math.floor(valores.length / 2)];
+    const tipico = mediana(valores);
     for (const linha of porVeiculo.linhas) {
-      if (mediana <= 0 || linha.custoCents < mediana * 2) continue;
-      const excedente = linha.custoCents - mediana;
+      if (tipico <= 0 || linha.custoCents < tipico * 2) continue;
+      const excedente = linha.custoCents - tipico;
       if (excedente < materialidade) continue;
 
       achados.push({
@@ -147,7 +147,7 @@ function auditarRentabilidade(ctx: ContextoAuditoria): AchadoNovo[] {
         categoria: "OPORTUNIDADE",
         titulo: `Veículo ${linha.nome} custa ${fmtBRL(linha.custoCents)} no mês`,
         descricao:
-          `Mais que o dobro da mediana da frota (${fmtBRL(mediana)}) — ${fmtBRL(excedente)} acima. ` +
+          `Mais que o dobro da mediana da frota (${fmtBRL(tipico)}) — ${fmtBRL(excedente)} acima. ` +
           `Custo considerado: ${linha.origens.join(", ")}.`,
         recomendacao:
           "Verificar se a diferença vem de manutenção corretiva concentrada, consumo de combustível fora do padrão " +
@@ -159,7 +159,7 @@ function auditarRentabilidade(ctx: ContextoAuditoria): AchadoNovo[] {
         entidadeTipo: "Vehicle",
         entidadeId: linha.id,
         entidadeRef: linha.nome,
-        evidencia: { custo: linha.custoCents, mediana, origens: linha.origens },
+        evidencia: { custo: linha.custoCents, mediana: tipico, origens: linha.origens },
         chave: chaveAchado("RE-VEICULO-CARO", linha.id, chaveMes(ctx.dataReferencia)),
       });
     }

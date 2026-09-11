@@ -10,6 +10,7 @@
     "teste:cte": "tsx scripts/teste-cte.ts",
     "teste:antifraude": "tsx scripts/teste-antifraude.ts",
     "teste:dre": "tsx scripts/teste-dre.ts",
+    "teste:engine": "tsx scripts/teste-engine.ts",
     "teste:acessos": "tsx scripts/teste-acessos.ts",
     "teste:historico": "tsx scripts/teste-historico.ts",
     "teste:padroes": "tsx scripts/teste-padroes.ts",

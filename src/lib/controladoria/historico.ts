@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
+import { mediana } from "./agents/comum";
 
 // A MEMÓRIA LONGA DA AUDITORIA.
 //
@@ -375,14 +376,6 @@ export type Baseline = {
   ultimaCompetencia: string;
 };
 
-function mediana(valores: number[]): number {
-  if (valores.length === 0) return 0;
-  const ordenado = [...valores].sort((a, b) => a - b);
-  const meio = Math.floor(ordenado.length / 2);
-  return ordenado.length % 2 === 1
-    ? ordenado[meio]
-    : Math.round((ordenado[meio - 1] + ordenado[meio]) / 2);
-}
 
 // O PADRÃO DE CADA CHAVE, a partir das séries já lidas.
 //

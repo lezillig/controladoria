@@ -7,6 +7,7 @@ import {
   chaveMes,
   chaveParceiro,
   materialidadeCents,
+  mediana,
   nomeParceiro,
   refTitulo,
   severidadePorValor,
@@ -233,13 +234,12 @@ function valorForaDoPadrao(ctx: ContextoAuditoria, materialidade: number): Achad
     const historicos = grupo.filter((t) => t.dataVencimento < inicioMes);
     if (historicos.length < MINIMO_HISTORICO_OUTLIER) continue;
 
-    const valores = historicos.map((t) => t.valorDocumentoCents).sort((a, b) => a - b);
-    const mediana = valores[Math.floor(valores.length / 2)];
-    if (mediana <= 0) continue;
+    const tipico = mediana(historicos.map((t) => t.valorDocumentoCents));
+    if (tipico <= 0) continue;
 
     for (const t of grupo.filter((x) => x.dataVencimento >= inicioMes)) {
-      if (t.valorDocumentoCents < mediana * FATOR_OUTLIER) continue;
-      const excedente = t.valorDocumentoCents - mediana;
+      if (t.valorDocumentoCents < tipico * FATOR_OUTLIER) continue;
+      const excedente = t.valorDocumentoCents - tipico;
       if (excedente < materialidade) continue;
 
       achados.push({
@@ -249,7 +249,7 @@ function valorForaDoPadrao(ctx: ContextoAuditoria, materialidade: number): Achad
         categoria: "RISCO_FINANCEIRO",
         titulo: `Valor fora do padrão — ${nomeParceiro(ctx, t)}`,
         descricao:
-          `Título de ${fmtBRL(t.valorDocumentoCents)} contra uma mediana histórica de ${fmtBRL(mediana)} ` +
+          `Título de ${fmtBRL(t.valorDocumentoCents)} contra uma mediana histórica de ${fmtBRL(tipico)} ` +
           `para esse fornecedor (${historicos.length} títulos anteriores) — ${FATOR_OUTLIER}x acima do usual.`,
         recomendacao:
           "Conferir a nota antes do pagamento: escopo maior, reajuste, cobrança acumulada de meses anteriores ou erro de digitação. " +
@@ -260,7 +260,7 @@ function valorForaDoPadrao(ctx: ContextoAuditoria, materialidade: number): Achad
         entidadeTipo: "OmieTitulo",
         entidadeId: t.id,
         entidadeRef: t.numeroDocumento ?? t.codigoLancamento,
-        evidencia: { fornecedor: nomeParceiro(ctx, t), valor: t.valorDocumentoCents, mediana, historico: historicos.length },
+        evidencia: { fornecedor: nomeParceiro(ctx, t), valor: t.valorDocumentoCents, mediana: tipico, historico: historicos.length },
         chave: chaveAchado("CU-OUTLIER", refTitulo(t)),
       });
     }

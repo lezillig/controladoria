@@ -123,3 +123,24 @@ export function chaveAchado(regra: string, ...partes: (string | number | null | 
 export function chaveMes(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
+
+
+// MEDIANA — uma implementação, quatro lugares que a usavam.
+//
+// Estavam escritas à mão em historico.ts, padroes.ts, custos.ts e
+// rentabilidade.ts, e três delas tratavam o caso PAR como se fosse ímpar:
+// numa série de seis meses devolviam o quarto valor em vez da média do
+// terceiro com o quarto. Não produzia erro visível — produzia uma mediana
+// levemente alta, sempre para o mesmo lado.
+//
+// Mediana e não média, aqui e nos agentes de padrão, pelo motivo de sempre
+// nesta base: a média é puxada pelo próprio valor extremo que se está
+// procurando.
+export function mediana(valores: number[]): number {
+  if (valores.length === 0) return 0;
+  const ordenado = [...valores].sort((a, b) => a - b);
+  const meio = Math.floor(ordenado.length / 2);
+  return ordenado.length % 2 === 1
+    ? ordenado[meio]
+    : Math.round((ordenado[meio - 1] + ordenado[meio]) / 2);
+}

@@ -646,6 +646,18 @@ model AuditFinding {
   conexaoApelido      String?
   agente              String
   regra               String
+  // ESTADO ou EVENTO — gravado, e não deduzido da execução corrente.
+  //
+  // Estado descreve uma situação que pode deixar de existir (título vencido,
+  // conta não conciliada) e por isso pode ser fechada sozinha quando some.
+  // Evento descreve um fato consumado (pagamento em duplicidade) — some da
+  // lista só por tratativa humana, porque ter acontecido não se desfaz.
+  //
+  // Ficava implícito: o fechamento automático deduzia o tipo dos achados
+  // EMITIDOS naquela rodada. Para uma regra que parou de disparar — que é
+  // justamente o caso em que o fechamento deveria acontecer — não havia o que
+  // deduzir, e nada fechava nunca.
+  tipo                String          @default("ESTADO")
   severidade          AuditSeveridade
   categoria           AuditCategoria
   titulo              String
