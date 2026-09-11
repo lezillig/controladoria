@@ -14,9 +14,12 @@ import InvestigacaoForm from "./InvestigacaoForm";
 // "por que o vencido a receber dobrou?". Os agentes respondem perguntas
 // fixas todo dia; aqui a pergunta é de quem está olhando.
 
-// Uma investigação encadeia até doze consultas ao banco com uma chamada de
-// modelo entre cada uma. Cabe com folga em cinco minutos e não cabe em um.
-export const maxDuration = 300;
+// Uma investigação encadeia consultas ao banco com uma chamada de modelo entre
+// cada uma. Sessenta segundos é o teto que esta hospedagem aceita hoje (o
+// mesmo da sincronização e da conferência de CT-e); pedir mais faria o deploy
+// ser recusado. Com Fluid Compute ligado na Vercel este valor pode subir para
+// 300, e o teto de consultas do investigador acompanha.
+export const maxDuration = 60;
 
 export default async function InvestigarPage() {
   const session = await exigirPermissao("investigar");

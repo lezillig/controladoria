@@ -46,10 +46,11 @@ export function isInvestigadorDisponivel(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-// Teto de idas e vindas entre o modelo e as consultas. Doze consultas
-// respondem qualquer pergunta que caiba numa tela; acima disso é o modelo
-// vagando, e cada volta custa tempo da pessoa que espera e dinheiro.
-const MAXIMO_DE_CONSULTAS = 12;
+// Teto de idas e vindas entre o modelo e as consultas. Oito cabem no teto de
+// sessenta segundos da tela (ver maxDuration em auditoria/investigar/page.tsx)
+// e respondem qualquer pergunta específica; acima disso é o modelo vagando,
+// e cada volta custa tempo da pessoa que espera e dinheiro.
+const MAXIMO_DE_CONSULTAS = 8;
 const LIMITE_DE_LINHAS = 50;
 
 const SEVERIDADES: AuditSeveridade[] = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
