@@ -200,10 +200,43 @@ export function avaliarQualidadeDaBase(ctx: ContextoAuditoria): QualidadeDaBase 
 
 export type HistoricoAchado = { status: AuditStatus; severidade: AuditSeveridade; ocorrencias: number };
 
+// A chave pela qual uma tratativa humana é reconhecida QUANDO A CHAVE DO ACHADO
+// MUDA. As regras de padrão histórico (HI-*) e outras que olham "este mês"
+// carregam a competência na chave — de propósito, para que setembro não seja
+// confundido com agosto. O efeito colateral era que "não se aplica" marcado
+// em agosto não valia em setembro: o mesmo fornecedor, a mesma regra, e o
+// achado voltava com severidade cheia como se ninguém o tivesse julgado.
+//
+// Regra + entidade é o que uma pessoa quer dizer quando marca "não se aplica":
+// "este fornecedor, para esta regra, não me interessa". Não é "esta linha".
+export function chaveDeTratativa(a: { regra: string; entidadeId?: string | null; entidadeRef?: string | null }): string | null {
+  const entidade = a.entidadeId ?? a.entidadeRef ?? null;
+  return entidade ? `${a.regra}|${entidade}` : null;
+}
+
+// Decide qual tratativa anterior vale para o achado: a da chave exata, se
+// houver; senão, a de mesma regra sobre a mesma entidade — e só se ela for um
+// julgamento humano (IGNORADO). Estado automático (OBSOLETO) e "resolvido" de
+// outra competência não migram: resolvido em agosto não diz nada sobre
+// setembro, e obsoleto é a máquina falando, não uma pessoa.
+export function tratativaAnterior(
+  a: { chave: string; regra: string; entidadeId?: string | null; entidadeRef?: string | null },
+  historico: Map<string, HistoricoAchado>,
+  historicoPorEntidade: Map<string, HistoricoAchado>
+): { anterior: HistoricoAchado; herdada: boolean } | null {
+  const exata = historico.get(a.chave);
+  if (exata) return { anterior: exata, herdada: false };
+  const chave = chaveDeTratativa(a);
+  const porEntidade = chave ? historicoPorEntidade.get(chave) : undefined;
+  if (porEntidade && porEntidade.status === "IGNORADO") return { anterior: porEntidade, herdada: true };
+  return null;
+}
+
 export function supervisionar(
   ctx: ContextoAuditoria,
   achados: AchadoNovo[],
-  historico: Map<string, HistoricoAchado>
+  historico: Map<string, HistoricoAchado>,
+  historicoPorEntidade: Map<string, HistoricoAchado> = new Map()
 ): ResultadoSupervisao {
   const observacoes: string[] = [];
   const suprimidos: AchadoSuprimido[] = [];
@@ -269,15 +302,20 @@ export function supervisionar(
   // Achado marcado como IGNORADO por uma pessoa nao volta gritando. Volta
   // rebaixado e com nota — respeita o julgamento de quem conhece o negocio,
   // sem apagar o fato de que a condicao persiste.
+  let herdadas = 0;
   for (const a of candidatos) {
-    const anterior = historico.get(a.chave);
-    if (!anterior) continue;
+    const tratativa = tratativaAnterior(a, historico, historicoPorEntidade);
+    if (!tratativa) continue;
+    const { anterior, herdada } = tratativa;
 
     if (anterior.status === "IGNORADO") {
       a.severidade = "INFO";
       a.confianca = Math.min(a.confianca, 40);
-      a.notaSupervisor =
-        "Já marcado como ignorado por um usuário anteriormente. Mantido apenas como registro, sem alerta.";
+      a.notaSupervisor = herdada
+        ? `Um usuário marcou "não se aplica" para esta regra sobre ${a.entidadeRef ?? "esta entidade"} em outra competência. ` +
+          "Mantido apenas como registro, sem alerta — se a situação mudou, reabra o achado anterior."
+        : "Já marcado como ignorado por um usuário anteriormente. Mantido apenas como registro, sem alerta.";
+      if (herdada) herdadas++;
       continue;
     }
     if (anterior.status === "RESOLVIDO" && a.tipo === "ESTADO") {
@@ -289,6 +327,9 @@ export function supervisionar(
     if (anterior.ocorrencias >= 10 && a.severidade !== "CRITICA") {
       a.notaSupervisor = `Recorrente: detectado em ${anterior.ocorrencias} execuções. Sugere causa estrutural, não caso isolado.`;
     }
+  }
+  if (herdadas > 0) {
+    observacoes.push(`${herdadas} achado(s) rebaixado(s) por tratativa "não se aplica" da mesma regra e entidade em outra competência.`);
   }
 
   // ---- Controle 4: consolidação entre agentes ----

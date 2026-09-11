@@ -38,6 +38,7 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
   const session = await exigirPermissao("auditoria");
   const filtros = await searchParams;
   const podeTratar = await podeAcao(session, "tratar-achado");
+  const podeInvestigar = await podeAcao(session, "investigar");
 
   const statusFiltro = filtros.status ?? "ABERTOS";
   const where: Prisma.AuditFindingWhereInput = {
@@ -113,12 +114,22 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">Auditoria e achados</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Cada achado traz a evidência que o originou, o valor em jogo e o que fazer. São indícios que exigem verificação —
-          não conclusões.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">Auditoria e achados</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Cada achado traz a evidência que o originou, o valor em jogo e o que fazer. São indícios que exigem verificação —
+            não conclusões.
+          </p>
+        </div>
+        {podeInvestigar && (
+          <Link
+            href="/auditoria/investigar"
+            className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800 hover:bg-blue-100"
+          >
+            Investigar com a IA
+          </Link>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2">

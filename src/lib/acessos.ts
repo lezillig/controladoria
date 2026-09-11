@@ -40,6 +40,7 @@ export const PERMISSOES = [
   { chave: "conexoes", rotulo: "Conexões Omie", grupo: "Telas" },
 
   { chave: "tratar-achado", rotulo: "Tratar achado de auditoria", grupo: "Ações" },
+  { chave: "investigar", rotulo: "Investigar com a IA (cada pergunta tem custo)", grupo: "Ações" },
   { chave: "classificar-dre", rotulo: "Classificar categorias do DRE", grupo: "Ações" },
   { chave: "conferir-cte", rotulo: "Conferir lista de CT-e", grupo: "Ações" },
   { chave: "gerir-bsc", rotulo: "Definir metas do Balanced Scorecard", grupo: "Ações" },

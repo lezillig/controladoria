@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { achadosSemTratativa } from "./agents/administrativo";
 import { AGENTES } from "./registry";
-import { supervisionar, type AchadoRevisado, type HistoricoAchado, type QualidadeDaBase } from "./supervisor";
+import { chaveDeTratativa, supervisionar, type AchadoRevisado, type HistoricoAchado, type QualidadeDaBase } from "./supervisor";
 import type { AchadoNovo, ContextoAuditoria } from "./types";
 
 // MOTOR DE AUDITORIA
@@ -59,13 +59,33 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
       // Agente e tipo vêm da LINHA, não da execução corrente. Ver o comentário
       // do fechamento automático mais abaixo: era daqui que vinha o defeito.
       agente: true, tipo: true,
+      entidadeId: true, entidadeRef: true,
+      resolvidoEm: true,
     },
   });
   const historico = new Map<string, HistoricoAchado>(
     anteriores.map((a) => [a.chave, { status: a.status, severidade: a.severidade, ocorrencias: a.ocorrencias }])
   );
 
-  const revisao = supervisionar(ctx, emitidos, historico);
+  // A tratativa humana também é lembrada por regra + entidade, para as regras
+  // cuja chave muda todo mês (ver chaveDeTratativa no supervisor). Quando a
+  // mesma pessoa julgou o mesmo fornecedor mais de uma vez, vale o julgamento
+  // mais recente — é a única leitura que respeita "mudei de ideia".
+  const historicoPorEntidade = new Map<string, HistoricoAchado & { tratadoEm: Date | null }>();
+  for (const a of anteriores) {
+    // Entram os dois julgamentos humanos, para que um "resolvido" posterior
+    // sobreponha um "não se aplica" anterior; o supervisor só herda IGNORADO.
+    if (a.status !== "IGNORADO" && a.status !== "RESOLVIDO") continue;
+    const chave = chaveDeTratativa(a);
+    if (!chave) continue;
+    const atual = historicoPorEntidade.get(chave);
+    if (atual && (atual.tratadoEm?.getTime() ?? 0) > (a.resolvidoEm?.getTime() ?? 0)) continue;
+    historicoPorEntidade.set(chave, {
+      status: a.status, severidade: a.severidade, ocorrencias: a.ocorrencias, tratadoEm: a.resolvidoEm,
+    });
+  }
+
+  const revisao = supervisionar(ctx, emitidos, historico, historicoPorEntidade);
 
   // De qual empresa é cada achado. Os agentes não precisam se preocupar com
   // isso: quando o achado aponta para um título, a conexão é deduzida dele.

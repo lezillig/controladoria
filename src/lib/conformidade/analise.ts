@@ -184,20 +184,40 @@ export async function lerDocumento(params: {
   try {
     const client = new Anthropic({ apiKey });
     const message = await client.beta.messages.parse({
-      model: "claude-opus-5",
-      max_tokens: 16000,
-      // Esforço alto, diferente do relatório diário: esta leitura acontece uma
-      // vez por documento, fora da janela do cron, e o custo de errar é alto —
-      // um apontamento perdido aqui é um risco que ninguém mais vai ver.
-      output_config: { effort: "high" },
+      model: "claude-fable-5-1",
+      max_tokens: 32000,
+      // Esforço alto, e o mesmo modelo do analista do relatório diário: esta
+      // leitura acontece uma vez por documento, fora da janela do cron, e o
+      // custo de errar é alto — um apontamento perdido aqui é um risco que
+      // ninguém mais vai ver. Relatório de consultoria é denso (tabela,
+      // carimbo, imagem de baixa qualidade), que é onde este modelo lê melhor.
+      output_config: { effort: "high", format: betaZodOutputFormat(LeituraSchema) },
+      // Documento de risco fiscal e trabalhista pode esbarrar num classificador
+      // de segurança por engano. Com o fallback, a API refaz a leitura em outro
+      // modelo em vez de devolver o documento sem apontamentos.
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
       system: SYSTEM_PROMPT,
-      output_format: betaZodOutputFormat(LeituraSchema),
       messages: [
         { role: "user", content: mensagemDeFundamentacao() },
         { role: "assistant", content: "Catálogo recebido. Envie o documento." },
         { role: "user", content: [...blocosDoDocumento(formato, params, textoExtraido), { type: "text", text: instrucao }] },
       ],
     });
+
+    // Recusa vem como HTTP 200 com stop_reason próprio, possivelmente sem
+    // conteúdo. Conferida antes de ler o resultado, e explicada na tela: a
+    // pessoa precisa saber que o documento não foi lido, e por quê.
+    if (message.stop_reason === "refusal") {
+      return {
+        ok: false,
+        erro: `A leitura automática foi recusada pelo modelo (categoria ${message.stop_details?.category ?? "não informada"}). Cadastre os apontamentos manualmente.`,
+        textoExtraido,
+      };
+    }
+    if (message.stop_reason === "max_tokens") {
+      return { ok: false, erro: "O documento é longo demais para uma leitura só — divida-o e envie as partes.", textoExtraido };
+    }
 
     const leitura = message.parsed_output;
     if (!leitura) return { ok: false, erro: "A leitura automática não devolveu um resultado utilizável.", textoExtraido };

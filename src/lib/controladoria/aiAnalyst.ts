@@ -38,6 +38,12 @@ const NarrativaSchema = z.object({
       z.object({
         titulo: z.string(),
         porQueImporta: z.string(),
+        // Códigos das regras (CP-VENCIDO, CR-OS-NAO-FATURADA, ...) dos achados
+        // que sustentam o ponto. É o que torna a leitura CONFERÍVEL: cada
+        // afirmação da IA aponta para a lista de achados que a originou, e a
+        // tela de auditoria abre filtrada naquela regra. Ponto sem regra é
+        // interpretação dos números, e a lista vazia diz isso.
+        regras: z.array(z.string()).max(6),
       })
     )
     .max(5),
@@ -68,15 +74,27 @@ Regras invioláveis:
 - Apontamento externo que se repete há três meses ou mais é falha de processo, não incidente do mês. Trate-o assim.
 - Nada de linguagem motivacional, superlativos ou jargão de consultoria.
 
+Como auditar, e não só resumir:
+- Puxe o fio. Quando dois ou mais achados de regras diferentes apontam para o mesmo fornecedor, cliente, ordem de serviço ou período, diga isso e diga o que a coincidência sugere. Um fornecedor novo, com valor alto, fora do padrão histórico e sem nota fiscal é um caso, não quatro.
+- Separe o que é dinheiro parado (vencido, não faturado, não cobrado) do que é dinheiro perdido (juros, multa, desconto) e do que é indício de fraude ou erro de processo. São três conversas diferentes com pessoas diferentes.
+- Em cada ponto de atenção, liste em "regras" os códigos das regras dos achados que o sustentam, copiados exatamente como aparecem entre colchetes na lista. Ponto que nasce só dos números (sem achado) leva lista vazia.
+- Se os achados não sustentam uma conclusão, não a tire. Silêncio é uma resposta válida; conclusão sem base não é.
+
+Estilo: comece pelo que aconteceu, não pelo contexto. Frases completas, sem abreviações inventadas, sem cadeias de setas. Ser legível importa mais que ser curto; para encurtar, escolha melhor o que entra, não comprima a escrita.
+
 Escreva em português do Brasil.`;
 
 type EntradaAnalista = {
   dataReferencia: Date;
   panorama: PanoramaFinanceiro;
   achados: {
+    regra: string;
     severidade: string;
     categoria: string;
     titulo: string;
+    // Quem é o outro lado (fornecedor, cliente, OS). É o que permite à IA
+    // cruzar achados de regras diferentes sobre a mesma entidade.
+    entidadeRef: string | null;
     valorCents: number | null;
     impactoCents: number | null;
     recomendacao: string | null;
@@ -85,6 +103,10 @@ type EntradaAnalista = {
   limitacoesDaBase: string[];
   conformidade: PanoramaConformidade;
 };
+
+// Os achados vão ordenados por severidade e impacto (é assim que o relatório os
+// carrega); a IA vê os primeiros. Mais que isso vira lista que ninguém cruza.
+const LIMITE_DE_ACHADOS = 40;
 
 // Monta o texto que vai para a IA. Formatado como relatorio legivel, e nao
 // como JSON cru, de proposito: o modelo interpreta melhor "Receita do mês: R$
@@ -156,10 +178,11 @@ function montarBriefing(entrada: EntradaAnalista): string {
   }
 
   linhas.push("");
-  linhas.push(`## Achados de auditoria validados (${achados.length})`);
-  for (const a of achados.slice(0, 25)) {
+  linhas.push(`## Achados de auditoria validados (${achados.length}${achados.length > LIMITE_DE_ACHADOS ? `, os ${LIMITE_DE_ACHADOS} mais graves abaixo` : ""})`);
+  for (const a of achados.slice(0, LIMITE_DE_ACHADOS)) {
     linhas.push(
-      `- [${a.severidade}/${a.categoria}] ${a.titulo}` +
+      `- [${a.regra}] (${a.severidade}/${a.categoria}) ${a.titulo}` +
+        (a.entidadeRef ? ` — ${a.entidadeRef}` : "") +
         (a.valorCents ? ` — valor ${fmtBRL(a.valorCents)}` : "") +
         (a.impactoCents ? `, impacto estimado ${fmtBRL(a.impactoCents)}` : "")
     );
@@ -196,6 +219,11 @@ function montarBriefing(entrada: EntradaAnalista): string {
   return linhas.join("\n");
 }
 
+// O modelo do analista. Fable 5.1 é o mais capaz para cruzar fatos e sustentar
+// uma conclusão com evidência — que é exatamente o que se pede aqui. Custa
+// mais por chamada; são uma ou duas chamadas por dia.
+export const MODELO_ANALISTA = "claude-fable-5-1";
+
 export async function gerarNarrativa(entrada: EntradaAnalista): Promise<Narrativa | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
@@ -204,14 +232,20 @@ export async function gerarNarrativa(entrada: EntradaAnalista): Promise<Narrativ
 
   try {
     const message = await client.beta.messages.parse({
-      model: "claude-opus-5",
-      max_tokens: 8000,
-      // O relatorio diario e uma tarefa de sintese com prazo (roda dentro do
-      // teto de execucao do cron): esforco medio da a leitura sem gastar o
-      // orcamento de tempo do restante da rotina.
-      output_config: { effort: "medium" },
+      model: MODELO_ANALISTA,
+      max_tokens: 16000,
+      // Esforço alto: a leitura roda uma vez por dia e o que se quer dela é
+      // justamente o cruzamento entre achados, que esforço baixo não faz. O
+      // raciocínio fica por conta do modelo (sempre ligado neste modelo; não
+      // há parâmetro de thinking a passar).
+      output_config: { effort: "high", format: betaZodOutputFormat(NarrativaSchema) },
+      // Recusa por classificador de segurança é rara neste domínio, mas não é
+      // impossível (texto de fraude, vazamento, senha em título de fornecedor).
+      // Com o fallback, a API refaz a mesma chamada num modelo de cobertura
+      // mais ampla em vez de deixar o relatório sem leitura.
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
       system: SYSTEM_PROMPT,
-      output_format: betaZodOutputFormat(NarrativaSchema),
       messages: [
         {
           role: "user",
@@ -222,11 +256,38 @@ Escreva a leitura executiva deste relatório.`,
       ],
     });
 
-    return message.parsed_output ?? null;
-  } catch {
+    // A recusa chega como resposta bem-sucedida (HTTP 200) com stop_reason
+    // próprio — e conteúdo possivelmente vazio. Tem de ser verificada ANTES
+    // de ler o resultado, ou o relatório sairia com uma narrativa cortada no
+    // meio parecendo completa.
+    if (message.stop_reason === "refusal") {
+      console.warn(
+        `[analista] leitura recusada pelo modelo (categoria ${message.stop_details?.category ?? "não informada"}); relatório sai sem narrativa.`
+      );
+      return null;
+    }
+    if (message.stop_reason === "max_tokens") {
+      console.warn("[analista] resposta cortada por tamanho; relatório sai sem narrativa.");
+      return null;
+    }
+
+    const narrativa = message.parsed_output ?? null;
+    if (!narrativa) console.warn("[analista] o modelo respondeu, mas o resultado não passou no esquema; relatório sai sem narrativa.");
+    return narrativa;
+  } catch (e) {
     // Falha da IA nunca impede o relatorio: ele sai com todos os numeros e
     // achados, apenas sem a secao de narrativa. O e-mail diario e o
     // compromisso; a leitura executiva e o complemento.
+    //
+    // Mas a falha fica registrada, com o status da API quando houver: "sem
+    // narrativa há três dias" precisa ter uma causa consultável, e engolir o
+    // erro em silêncio foi o que escondeu, por semanas, que nenhum achado
+    // fechava sozinho.
+    if (e instanceof Anthropic.APIError) {
+      console.warn(`[analista] API respondeu ${e.status ?? "sem status"}: ${e.message.slice(0, 300)}`);
+    } else {
+      console.warn(`[analista] falha ao gerar a leitura: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}`);
+    }
     return null;
   }
 }

@@ -72,9 +72,11 @@ export async function gerarEEnviarRelatorio(
     dataReferencia: ctx.dataReferencia,
     panorama,
     achados: achadosParaIa.map((a) => ({
+      regra: a.regra,
       severidade: a.severidade,
       categoria: a.categoria,
       titulo: a.titulo,
+      entidadeRef: a.entidadeRef,
       valorCents: a.valorCents,
       impactoCents: a.impactoCents,
       recomendacao: a.recomendacao,

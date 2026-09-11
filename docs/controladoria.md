@@ -89,7 +89,11 @@ certeza" do que calculou, mas não consegue saber:
 2. **se outro agente já apontou o mesmo fato** — consolida e mantém o segundo
    como corroboração, rebaixado;
 3. **se o achado já foi julgado inaplicável por uma pessoa** — volta como INFO,
-   com nota, respeitando a tratativa anterior;
+   com nota, respeitando a tratativa anterior. A tratativa é reconhecida pela
+   chave exata e também por **regra + entidade**: as regras de padrão
+   histórico carregam a competência na chave, e sem isso "não se aplica"
+   marcado em agosto voltava gritando em setembro. Só o julgamento humano
+   (`IGNORADO`) atravessa a competência; `RESOLVIDO` e `OBSOLETO` não;
 4. **se está gritando "crítico" mais alto que os outros 40** — calibra: no
    máximo 5 críticos por execução, priorizados por impacto financeiro.
 
@@ -101,11 +105,41 @@ Quando intervém, escreve o porquê em `notaSupervisor`, visível ao lado do ach
 
 ### Camada 3 — Analista (IA)
 
-`src/lib/controladoria/aiAnalyst.ts`, usando `claude-opus-5`. Lê **apenas** os
-números já calculados e os achados já validados, e escreve a leitura executiva.
-Não cria, não apaga e não altera achado nenhum: se pudesse produzir os próprios
-"fatos", o relatório deixaria de ser auditável. Sem `ANTHROPIC_API_KEY`, o
-relatório sai completo, apenas sem essa seção.
+`src/lib/controladoria/aiAnalyst.ts`, usando `claude-fable-5-1` (o mesmo
+modelo lê os relatórios de consultoria em `src/lib/conformidade/analise.ts`).
+Lê **apenas** os números já calculados e os achados já validados, e escreve a
+leitura executiva. Não cria, não apaga e não altera achado nenhum: se pudesse
+produzir os próprios "fatos", o relatório deixaria de ser auditável. Sem
+`ANTHROPIC_API_KEY`, o relatório sai completo, apenas sem essa seção.
+
+Cada ponto de atenção da leitura cita os **códigos das regras** dos achados que
+o sustentam, e o e-mail liga cada código à tela de auditoria filtrada. É o que
+torna a interpretação conferível em um toque. Ponto sem regra é leitura dos
+números, e a lista vazia diz isso.
+
+Duas proteções da chamada: recusa por classificador de segurança chega como
+resposta bem-sucedida com `stop_reason: "refusal"` e é verificada antes de ler
+o resultado; e a chamada leva `fallbacks: "default"`, que faz a API refazer a
+mesma requisição num modelo de cobertura mais ampla quando o principal recusa
+— o relatório não fica sem leitura por um falso positivo. Falhas da IA são
+registradas no log da função (status da API e motivo), nunca engolidas.
+
+### Investigador (IA, sob demanda)
+
+`src/lib/controladoria/investigador.ts`, tela **Auditoria → Investigar com a
+IA** (`/auditoria/investigar`, permissão `investigar`). É a segunda forma de IA
+do módulo, com fronteira diferente: o analista recebe o relatório pronto; o
+investigador recebe uma **pergunta** de uma pessoa e vai buscar a resposta na
+base, através de um conjunto fechado de sete consultas — achados, detalhe de
+achado, títulos de um parceiro, um título com as baixas, série mensal, cadastro
+do parceiro e ordem de serviço. Todas de leitura, todas restritas à empresa da
+sessão (o escopo vem da sessão por fechamento; o modelo não escolhe de que
+empresa lê).
+
+Cada consulta feita fica registrada e aparece embaixo da resposta: a pessoa vê
+o que a IA olhou e o que não olhou. A pergunta e a lista de consultas vão para
+a trilha de auditoria (`INVESTIGACAO_IA`). Teto de doze consultas por pergunta;
+a tela tem `maxDuration` de cinco minutos. Cada pergunta é uma chamada paga.
 
 ---
 

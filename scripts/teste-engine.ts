@@ -11,6 +11,7 @@
 // emissões da rodada atual. Para uma regra que parou de disparar, que é
 // justamente quando o fechamento deveria acontecer, não havia o que consultar.
 import { podeFecharSozinho } from "../src/lib/controladoria/engine";
+import { chaveDeTratativa, tratativaAnterior, type HistoricoAchado } from "../src/lib/controladoria/supervisor";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -84,6 +85,35 @@ for (const status of ["RESOLVIDO", "IGNORADO", "OBSOLETO"]) {
   // haver tratativa registrada. Não há trabalho humano a preservar — há um
   // achado que deixou de existir.
   conferir("em análise fecha se a condição sumiu", podeFecharSozinho(achado({ status: "EM_ANALISE" }), NENHUMA, TODOS_OK), true);
+}
+
+// ------------------------------------------------- 4. tratativa que atravessa a competência
+console.log("\n4. 'Não se aplica' vale para a mesma regra e entidade em outra competência");
+{
+  // O caso real: HI-* carrega a competência na chave. Marcado "não se aplica"
+  // em agosto, setembro chegava com chave nova e severidade cheia.
+  const ignorado: HistoricoAchado = { status: "IGNORADO", severidade: "ALTA", ocorrencias: 3 };
+  const resolvido: HistoricoAchado = { status: "RESOLVIDO", severidade: "ALTA", ocorrencias: 3 };
+  const agosto = { chave: "HI-FORA-DO-PADRAO|forn-1|2026-08", regra: "HI-FORA-DO-PADRAO", entidadeRef: "Posto X" };
+  const setembro = { chave: "HI-FORA-DO-PADRAO|forn-1|2026-09", regra: "HI-FORA-DO-PADRAO", entidadeRef: "Posto X" };
+  const outroFornecedor = { chave: "HI-FORA-DO-PADRAO|forn-2|2026-09", regra: "HI-FORA-DO-PADRAO", entidadeRef: "Posto Y" };
+  const outraRegra = { chave: "HI-REAJUSTE|forn-1|2026-09", regra: "HI-REAJUSTE", entidadeRef: "Posto X" };
+
+  const porChave = new Map<string, HistoricoAchado>([[agosto.chave, ignorado]]);
+  const porEntidade = new Map<string, HistoricoAchado>([[chaveDeTratativa(agosto)!, ignorado]]);
+
+  conferir("chave exata vem primeiro", tratativaAnterior(agosto, porChave, porEntidade), { anterior: ignorado, herdada: false });
+  conferir("mês seguinte herda o 'não se aplica'", tratativaAnterior(setembro, porChave, porEntidade), { anterior: ignorado, herdada: true });
+  conferir("outro fornecedor não herda", tratativaAnterior(outroFornecedor, porChave, porEntidade), null);
+  conferir("outra regra do mesmo fornecedor não herda", tratativaAnterior(outraRegra, porChave, porEntidade), null);
+
+  // RESOLVIDO não atravessa: resolvido em agosto não diz nada sobre setembro.
+  const porEntidadeResolvido = new Map<string, HistoricoAchado>([[chaveDeTratativa(agosto)!, resolvido]]);
+  conferir("resolvido em outra competência não herda", tratativaAnterior(setembro, new Map(), porEntidadeResolvido), null);
+
+  // Achado sem entidade não tem por onde herdar — e não pode herdar de "nada".
+  conferir("achado sem entidade não gera chave", chaveDeTratativa({ regra: "FC-SALDO-NEGATIVO" }), null);
+  conferir("id vale mais que a referência textual", chaveDeTratativa({ regra: "CP-VENCIDO", entidadeId: "t1", entidadeRef: "Posto X" }), "CP-VENCIDO|t1");
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);

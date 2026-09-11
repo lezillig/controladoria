@@ -269,11 +269,32 @@ export function montarHtml(dados: DadosRelatorio): string {
 
   // ---- Leitura executiva (IA) ----
   if (narrativa) {
+    // Os pontos de atenção vão logo abaixo do resumo, com as regras que os
+    // sustentam ligadas à tela de auditoria filtrada. É o que faz a leitura
+    // ser conferível em um toque: a frase da IA e a lista de achados que a
+    // originou, lado a lado.
+    const pontos = narrativa.pontosDeAtencao
+      .map((p) => {
+        const regras = (p.regras ?? [])
+          .map((r) =>
+            dados.urlSistema
+              ? `<a href="${esc(dados.urlSistema)}/auditoria?regra=${encodeURIComponent(r)}" style="color:${AZUL};text-decoration:none;font:600 11px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;">${esc(r)}</a>`
+              : `<span style="font:600 11px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_SUAVE};">${esc(r)}</span>`
+          )
+          .join(" · ");
+        return `<div style="padding:10px 0;border-top:1px solid ${BORDA};">
+          <div style="font:600 14px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_TEXTO};">${esc(p.titulo)}</div>
+          <div style="font:400 13px/1.6 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_TEXTO};margin-top:2px;">${esc(p.porQueImporta)}</div>
+          ${regras ? `<div style="margin-top:4px;">${regras}</div>` : ""}
+        </div>`;
+      })
+      .join("");
     partes.push(
       secao(
         "Leitura executiva",
         `<div style="background:#ffffff;border:1px solid ${BORDA};border-radius:10px;padding:14px 16px;">
-          <div style="font:400 14px/1.65 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_TEXTO};">${esc(narrativa.resumoExecutivo)}</div>
+          <div style="font:400 14px/1.65 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_TEXTO};${pontos ? "padding-bottom:10px;" : ""}">${esc(narrativa.resumoExecutivo)}</div>
+          ${pontos}
         </div>`
       )
     );
@@ -596,6 +617,9 @@ export function montarTexto(dados: DadosRelatorio): string {
   if (dados.narrativa) {
     linhas.push("LEITURA EXECUTIVA");
     linhas.push(dados.narrativa.resumoExecutivo);
+    for (const p of dados.narrativa.pontosDeAtencao) {
+      linhas.push(`- ${p.titulo}: ${p.porQueImporta}${p.regras?.length ? ` (${p.regras.join(", ")})` : ""}`);
+    }
     linhas.push("");
   }
 
