@@ -229,3 +229,72 @@ export async function maioresTitulosDoPeriodo(params: {
     },
   });
 }
+
+// ROTULOS DOS TIPOS DE DOCUMENTO da Omie, para a tela falar a língua da
+// pessoa ("CT-e", "NFS-e") e não a do ERP ("CTE", "NFS"). Código
+// desconhecido aparece como veio — inventar rótulo para sigla que ninguém
+// confirmou seria esconder justamente o que precisa ser perguntado.
+const ROTULO_TIPO_DOCUMENTO: Record<string, string> = {
+  CTE: "CT-e",
+  "CT-E": "CT-e",
+  CTRC: "CT-e",
+  NFS: "NFS-e",
+  NFSE: "NFS-e",
+  RPS: "NFS-e (RPS)",
+  NF: "NF-e",
+  NFE: "NF-e",
+  FAT: "Fatura",
+  FATURA: "Fatura",
+  BOL: "Boleto",
+  DUP: "Duplicata",
+  REC: "Recibo",
+  DEB: "Débito automático",
+  PARI: "Parcelamento",
+  TRF: "Transferência",
+  "SEM TIPO": "Sem tipo",
+};
+
+export function rotuloTipoDocumento(codigo: string): string {
+  const chave = codigo.trim().toUpperCase();
+  return ROTULO_TIPO_DOCUMENTO[chave] ?? codigo;
+}
+
+export type FatiaComposicao = { rotulo: string; valorCents: number; quantidade: number; participacaoPercent: number };
+
+// A composição vem por (categoria, tipo, conta); a tela do painel quer uma
+// dimensão por vez. Somar aqui, e não no banco, custa nada — são dezenas de
+// linhas — e mantém uma consulta só para as duas leituras.
+export function agruparComposicao(
+  comp: ComposicaoDoPeriodo,
+  dimensao: "tipo" | "categoria" | "conta",
+  maximo = 8
+): FatiaComposicao[] {
+  const somas = new Map<string, { valorCents: number; quantidade: number }>();
+  for (const l of comp.linhas) {
+    const chave = dimensao === "tipo" ? rotuloTipoDocumento(l.tipo) : l[dimensao];
+    const atual = somas.get(chave) ?? { valorCents: 0, quantidade: 0 };
+    atual.valorCents += l.valorCents;
+    atual.quantidade += l.quantidade;
+    somas.set(chave, atual);
+  }
+  const fatias = [...somas.entries()]
+    .map(([rotulo, s]) => ({
+      rotulo,
+      ...s,
+      participacaoPercent: comp.totalCents !== 0 ? (s.valorCents / comp.totalCents) * 100 : 0,
+    }))
+    .sort((a, b) => b.valorCents - a.valorCents);
+
+  if (fatias.length <= maximo) return fatias;
+  // O resto vira UMA linha, com a contagem do que ficou dentro dela — "outros
+  // (12)" diz que há doze categorias ali, e não uma.
+  const cabeca = fatias.slice(0, maximo - 1);
+  const resto = fatias.slice(maximo - 1);
+  cabeca.push({
+    rotulo: `Outros (${resto.length})`,
+    valorCents: resto.reduce((a, f) => a + f.valorCents, 0),
+    quantidade: resto.reduce((a, f) => a + f.quantidade, 0),
+    participacaoPercent: resto.reduce((a, f) => a + f.participacaoPercent, 0),
+  });
+  return cabeca;
+}

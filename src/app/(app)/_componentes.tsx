@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { badgeClass, cardClass } from "@/lib/ui";
-import { fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtBRLCompacto, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 
 // Peças visuais compartilhadas pelas telas da Controladoria. São componentes
 // de servidor (sem "use client"): nenhuma delas tem estado — o que mantém o
@@ -240,6 +240,192 @@ export function SeletorEmpresa({
       {conexoes.map((c) =>
         item(`${rota}${rota.includes("?") ? "&" : "?"}empresa=${c.id}`, c.apelido, ativa === c.id, c.nome)
       )}
+    </div>
+  );
+}
+
+// KPI QUE ABRE. O número em cima é o resumo; o detalhe embaixo é a composição
+// que o sustenta — e fica escondido até um clique, para a primeira leitura do
+// painel continuar sendo quatro números e não quatro tabelas. É um <details>
+// nativo: abre sem JavaScript, e o estado de aberto/fechado é do navegador.
+export function KpiExpansivel({
+  rotulo,
+  valor,
+  apoio,
+  tom = "neutro",
+  icone,
+  children,
+}: {
+  rotulo: string;
+  valor: string;
+  apoio?: string;
+  tom?: "neutro" | "bom" | "atencao" | "ruim";
+  icone?: ReactNode;
+  children: ReactNode;
+}) {
+  const cor = {
+    neutro: "text-slate-900",
+    bom: "text-emerald-700",
+    atencao: "text-amber-700",
+    ruim: "text-red-700",
+  }[tom];
+
+  return (
+    <details className={`${cardClass} group`}>
+      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-xs font-medium text-slate-500">{rotulo}</p>
+          <span className="flex items-center gap-1 text-slate-400">
+            {icone}
+            <span className="text-[10px] transition-transform group-open:rotate-180" aria-hidden>
+              ▼
+            </span>
+          </span>
+        </div>
+        <p className={`mt-2 text-2xl font-semibold break-words ${cor}`}>{valor}</p>
+        {apoio && <p className="mt-1 text-xs text-slate-500">{apoio}</p>}
+      </summary>
+      <div className="mt-3 border-t border-slate-100 pt-3">{children}</div>
+    </details>
+  );
+}
+
+// Lista compacta de fatias (rótulo, valor, %) para dentro de um KPI aberto.
+export function Fatias({
+  fatias,
+  vazio = "Nada no período.",
+}: {
+  fatias: { rotulo: string; valorCents: number; quantidade: number; participacaoPercent: number }[];
+  vazio?: string;
+}) {
+  if (fatias.length === 0) return <p className="text-xs text-slate-500">{vazio}</p>;
+  return (
+    <ul className="space-y-1.5">
+      {fatias.map((f) => (
+        <li key={f.rotulo} className="text-xs">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="truncate text-slate-700">{f.rotulo}</span>
+            <span className="shrink-0 tabular-nums text-slate-900">
+              {fmtBRLCompacto(f.valorCents)}
+              <span className="ml-1 text-slate-400">{fmtPercent(f.participacaoPercent, 0)}</span>
+            </span>
+          </div>
+          <div className="mt-0.5 h-1 rounded bg-slate-100">
+            <div
+              className="h-1 rounded bg-blue-600"
+              style={{ width: `${Math.max(0, Math.min(100, f.participacaoPercent))}%` }}
+            />
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// EVIDÊNCIA DE UM ACHADO, legível.
+//
+// Cada agente anexa ao achado o que o originou — lista de títulos, de baixas,
+// contagens, valores — num objeto livre, porque cada regra tem forma própria.
+// Esta peça o mostra sem exigir que ninguém leia JSON: tabela quando é lista
+// de registros, pares rótulo/valor quando é objeto, dinheiro em reais quando
+// o nome do campo diz que é dinheiro. É o "de onde veio isso" que faz a
+// diferença entre confiar num achado e aceitá-lo em bloco.
+const CHAVE_DE_DINHEIRO = /cents$|^(saldo|valor|impacto|total|juros|multa|desconto|tarifa|pago|recebido|diferenca|media|maximo|minimo)/i;
+const MAXIMO_DE_LINHAS = 50;
+const MAXIMO_DE_COLUNAS = 12;
+
+function rotuloDeChave(chave: string): string {
+  return chave
+    .replace(/Cents$/, "")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .toLowerCase();
+}
+
+function valorLegivel(chave: string, valor: unknown): string {
+  if (valor === null || valor === undefined || valor === "") return "—";
+  if (typeof valor === "boolean") return valor ? "sim" : "não";
+  if (typeof valor === "number") {
+    return CHAVE_DE_DINHEIRO.test(chave) && Number.isInteger(valor) ? fmtBRL(valor) : fmtNumero(valor, Number.isInteger(valor) ? 0 : 2);
+  }
+  if (typeof valor === "string") {
+    if (/^\d{4}-\d{2}-\d{2}T/.test(valor)) {
+      const d = new Date(valor);
+      return Number.isNaN(d.getTime()) ? valor : fmtData(d);
+    }
+    return valor;
+  }
+  if (Array.isArray(valor)) return valor.map((v) => valorLegivel(chave, v)).join(", ");
+  return JSON.stringify(valor);
+}
+
+function ehListaDeRegistros(v: unknown): v is Record<string, unknown>[] {
+  return Array.isArray(v) && v.length > 0 && v.every((x) => x && typeof x === "object" && !Array.isArray(x));
+}
+
+export function Evidencia({ dados }: { dados: unknown }) {
+  if (!dados || typeof dados !== "object" || Array.isArray(dados)) {
+    return <p className="text-xs text-slate-500">Sem evidência anexada.</p>;
+  }
+  const entradas = Object.entries(dados as Record<string, unknown>);
+  const escalares = entradas.filter(([, v]) => !ehListaDeRegistros(v) && !(v && typeof v === "object" && !Array.isArray(v)));
+  const listas = entradas.filter((e): e is [string, Record<string, unknown>[]] => ehListaDeRegistros(e[1]));
+  const objetos = entradas.filter(([, v]) => v && typeof v === "object" && !Array.isArray(v));
+
+  return (
+    <div className="space-y-3">
+      {escalares.length > 0 && (
+        <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3">
+          {escalares.map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-3 border-b border-slate-100 py-0.5">
+              <dt className="text-slate-500">{rotuloDeChave(k)}</dt>
+              <dd className="text-right tabular-nums text-slate-800">{valorLegivel(k, v)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {objetos.map(([k, v]) => (
+        <div key={k}>
+          <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{rotuloDeChave(k)}</p>
+          <Evidencia dados={v} />
+        </div>
+      ))}
+      {listas.map(([k, lista]) => {
+        const colunas = [...new Set(lista.flatMap((r) => Object.keys(r)))].slice(0, MAXIMO_DE_COLUNAS);
+        const linhas = lista.slice(0, MAXIMO_DE_LINHAS);
+        return (
+          <div key={k}>
+            <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+              {rotuloDeChave(k)} ({fmtNumero(lista.length)}
+              {lista.length > MAXIMO_DE_LINHAS ? `, ${MAXIMO_DE_LINHAS} exibidos` : ""})
+            </p>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-slate-500">
+                    {colunas.map((c) => (
+                      <th key={c} className="py-1 pr-3 font-medium">
+                        {rotuloDeChave(c)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {linhas.map((r, i) => (
+                    <tr key={i} className="border-b border-slate-100">
+                      {colunas.map((c) => (
+                        <td key={c} className="py-1 pr-3 tabular-nums text-slate-800">
+                          {valorLegivel(c, r[c])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

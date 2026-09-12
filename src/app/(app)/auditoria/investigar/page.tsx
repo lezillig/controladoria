@@ -29,9 +29,9 @@ const STATUS_ROTULO: Record<string, string> = {
   ERRO: "Falhou",
 };
 
-export default async function InvestigarPage({ searchParams }: { searchParams: Promise<{ id?: string }> }) {
+export default async function InvestigarPage({ searchParams }: { searchParams: Promise<{ id?: string; pergunta?: string }> }) {
   const session = await exigirPermissao("investigar");
-  const { id } = await searchParams;
+  const { id, pergunta } = await searchParams;
 
   const [conexoes, inicial, historico] = await Promise.all([
     prisma.omieConexao.findMany({
@@ -61,7 +61,7 @@ export default async function InvestigarPage({ searchParams }: { searchParams: P
       </div>
 
       {isInvestigadorDisponivel() ? (
-        <InvestigacaoForm key={inicial?.id ?? "nova"} conexoes={conexoes} inicial={inicial} />
+        <InvestigacaoForm key={inicial?.id ?? pergunta ?? "nova"} conexoes={conexoes} inicial={inicial} perguntaInicial={pergunta?.slice(0, 2000) ?? ""} />
       ) : (
         <AvisoVazio
           titulo="Investigação indisponível"

@@ -2,13 +2,14 @@ import Link from "next/link";
 import { AlertTriangle, Banknote, Landmark, Lightbulb, TrendingDown, TrendingUp } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { montarPanorama } from "@/lib/controladoria/analytics";
+import { agruparComposicao, composicaoDoPeriodo } from "@/lib/controladoria/composicao";
 import { medirBsc, PERSPECTIVAS } from "@/lib/controladoria/bsc";
-import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtNumero, fmtPercent, fmtVariacao } from "@/lib/controladoria/format";
 import { avaliarQualidadeDaBase } from "@/lib/controladoria/supervisor";
 import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { competenciasDisponiveis, contextoDaPagina } from "./_dados";
-import { AvisoVazio, BadgeSeveridade, Barra, Farol, Kpi, Secao, Tabela, Variacao } from "./_componentes";
+import { AvisoVazio, BadgeSeveridade, Barra, Farol, Fatias, Kpi, KpiExpansivel, Secao, Tabela, Variacao } from "./_componentes";
 import Filtros from "./Filtros";
 import { larguraPainel } from "@/lib/ui";
 
@@ -33,7 +34,10 @@ export default async function ControladoriaPage({
   const qualidade = avaliarQualidadeDaBase(ctx);
   const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);
 
-  const [achados, bsc, ultimoRelatorio] = await Promise.all([
+  // A composição dos dois primeiros números do painel: de onde vem cada
+  // real. Somada no banco, no mesmo recorte de empresa e mês do comparativo.
+  const escopoComposicao = { companyId: ctx.companyId, conexaoId: escopo.conexaoId, periodo: c.janelas.mesAtual };
+  const [achados, bsc, ultimoRelatorio, receitaComp, despesaComp, contagemAchados] = await Promise.all([
     prisma.auditFinding.findMany({
       where: { companyId: ctx.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
       orderBy: [{ severidade: "asc" }, { impactoCents: "desc" }],
@@ -45,7 +49,22 @@ export default async function ControladoriaPage({
       orderBy: { dataReferencia: "desc" },
       select: { dataReferencia: true, status: true, enviadoEm: true },
     }),
+    composicaoDoPeriodo({ ...escopoComposicao, natureza: "RECEBER" }),
+    composicaoDoPeriodo({ ...escopoComposicao, natureza: "PAGAR" }),
+    // Contagens sobre a BASE, não sobre a página. A lista acima traz 200
+    // linhas para as seções de achados; o cartão "em aberto" dizia 200 quando
+    // havia 2.954 — o número certo é o que a base tem, contado no banco.
+    prisma.auditFinding.groupBy({
+      by: ["severidade", "categoria"],
+      where: { companyId: ctx.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
+      _count: true,
+    }),
   ]);
+  const totalEmAberto = contagemAchados.reduce((acc, g) => acc + g._count, 0);
+  const totalCriticosAltos = contagemAchados
+    .filter((g) => g.severidade === "CRITICA" || g.severidade === "ALTA")
+    .reduce((acc, g) => acc + g._count, 0);
+  const totalFraude = contagemAchados.filter((g) => g.categoria === "FRAUDE").reduce((acc, g) => acc + g._count, 0);
 
   if (!qualidade.temTitulos) {
     return (
@@ -68,7 +87,6 @@ export default async function ControladoriaPage({
   const perdas = achados
     .filter((a) => a.categoria === "PERDA_FINANCEIRA")
     .reduce((acc, a) => acc + (a.valorCents ?? 0), 0);
-  const indiciosFraude = achados.filter((a) => a.categoria === "FRAUDE").length;
 
   const ruptura = panorama.projecao.find((p) => p.saldoProjetadoCents < 0);
 
@@ -98,18 +116,40 @@ export default async function ControladoriaPage({
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi
+        {/* Clicar abre a composição: por tipo de documento (CT-e, NFS-e,
+            fatura...) e por categoria. "Receita" aqui é todo título a receber
+            do mês, e a categoria é o que separa serviço prestado de aporte,
+            empréstimo ou estorno — a pergunta "e outras receitas?" se responde
+            ali. A composição completa, com conta e maiores títulos, está em
+            Resultado mês a mês. */}
+        <KpiExpansivel
           rotulo="Receita do mês"
           valor={fmtBRL(c.mesAtual.receitaCents)}
-          apoio={`${c.mesAtual.titulosReceber} título(s) · vs. mês anterior`}
+          apoio={`${c.mesAtual.titulosReceber} título(s) · ${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior · clique para abrir`}
           icone={<TrendingUp className="h-4 w-4" />}
-        />
-        <Kpi
+        >
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por tipo de documento</p>
+          <Fatias fatias={agruparComposicao(receitaComp, "tipo", 6)} />
+          <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por categoria</p>
+          <Fatias fatias={agruparComposicao(receitaComp, "categoria", 6)} />
+          <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+            Composição completa e maiores títulos →
+          </Link>
+        </KpiExpansivel>
+        <KpiExpansivel
           rotulo="Despesa do mês"
           valor={fmtBRL(c.mesAtual.despesaCents)}
-          apoio={`${c.mesAtual.titulosPagar} título(s) · vs. mês anterior`}
+          apoio={`${c.mesAtual.titulosPagar} título(s) · ${fmtVariacao(c.variacoes.despesaMesVsAnterior)} vs. mês anterior · clique para abrir`}
           icone={<TrendingDown className="h-4 w-4" />}
-        />
+        >
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por categoria</p>
+          <Fatias fatias={agruparComposicao(despesaComp, "categoria", 8)} />
+          <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por tipo de documento</p>
+          <Fatias fatias={agruparComposicao(despesaComp, "tipo", 6)} />
+          <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+            Composição completa e maiores títulos →
+          </Link>
+        </KpiExpansivel>
         <Kpi
           rotulo="Resultado do mês"
           valor={fmtBRL(c.mesAtual.resultadoCents)}
@@ -141,9 +181,9 @@ export default async function ControladoriaPage({
         />
         <Kpi
           rotulo="Achados em aberto"
-          valor={fmtNumero(achados.length)}
-          apoio={`${criticos.length} crítico(s)/alto(s) · ${indiciosFraude} indício(s) de fraude`}
-          tom={criticos.length > 0 ? "atencao" : "bom"}
+          valor={fmtNumero(totalEmAberto)}
+          apoio={`${fmtNumero(totalCriticosAltos)} crítico(s)/alto(s) · ${fmtNumero(totalFraude)} indício(s) de fraude`}
+          tom={totalCriticosAltos > 0 ? "atencao" : "bom"}
           icone={<AlertTriangle className="h-4 w-4" />}
         />
         <Kpi

@@ -17,18 +17,22 @@ const EXEMPLOS = [
 export default function InvestigacaoForm({
   conexoes,
   inicial,
+  perguntaInicial,
 }: {
   conexoes: { id: string; apelido: string; nome: string }[];
   // Uma investigação já gravada, para reabrir pelo histórico. Se ainda estiver
   // em andamento (a aba foi fechada no meio), a tela retoma as rodadas.
   inicial: EstadoInvestigacao | null;
+  // Pergunta pré-preenchida por um link de outra tela (o botão "Investigar
+  // este achado" na auditoria). Só preenche; a pessoa ainda clica em Investigar.
+  perguntaInicial?: string;
 }) {
   const [estado, setEstado] = useState<EstadoInvestigacao | null>(inicial);
   const [erro, setErro] = useState<string | null>(null);
   // Controlado pelo mesmo motivo da conferência de CT-e: o React limpa o
   // formulário depois da action, e a pessoa quer refinar a pergunta, não
   // digitá-la de novo.
-  const [pergunta, setPergunta] = useState(inicial?.pergunta ?? "");
+  const [pergunta, setPergunta] = useState(inicial?.pergunta ?? perguntaInicial ?? "");
   const [processando, iniciarTransicao] = useTransition();
   const router = useRouter();
 

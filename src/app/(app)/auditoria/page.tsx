@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { AGENTES } from "@/lib/controladoria/registry";
 import { exigirPermissao, podeAcao } from "../_dados";
-import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Secao, Tabela } from "../_componentes";
+import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Evidencia, Secao, Tabela } from "../_componentes";
 import TratativaForm from "./TratativaForm";
 import { larguraPainel } from "@/lib/ui";
 
@@ -87,13 +87,15 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
     // aberto, e nenhuma forma de ver na tela que a maior parte vinha de uma ou
     // duas regras. Uma lista que ninguém consegue triar é, na prática, uma
     // lista vazia.
+    // Por CATEGORIA E REGRA juntas: é o que faz cada cartão de categoria abrir
+    // e mostrar de quais regras vêm os seus números. "495 indícios de fraude"
+    // não é informação; "dos 495, 400 são baixa em dia não útil" é.
     prisma.auditFinding.groupBy({
-      by: ["regra"],
+      by: ["categoria", "regra"],
       where: { companyId: session.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
       _count: true,
       _sum: { impactoCents: true },
       orderBy: { _count: { regra: "desc" } },
-      take: 20,
     }),
     // Quais agentes TÊM achado em aberto — sobre a base inteira, não sobre a
     // página. Antes isto era deduzido da lista exibida, que traz 300 linhas
@@ -132,20 +134,49 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
         )}
       </div>
 
+      {/* Cada cartão de categoria ABRE ao clique e mostra as regras que o
+          compõem, com contagem e impacto; cada regra é um link para a lista
+          filtrada. O total continua clicável pelo link "ver todos". */}
       <div className="flex flex-wrap gap-2">
-        {contagens.map((c) => (
-          <Link
-            key={c.categoria}
-            href={`/auditoria?categoria=${c.categoria}`}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-blue-300"
-          >
-            <span className="block text-xs text-slate-500">{c.categoria.replace(/_/g, " ").toLowerCase()}</span>
-            <span className="text-sm font-semibold text-slate-900">{c._count}</span>
-            {c._sum.impactoCents ? (
-              <span className="ml-2 text-xs text-emerald-700">{fmtBRL(c._sum.impactoCents)}</span>
-            ) : null}
-          </Link>
-        ))}
+        {contagens.map((c) => {
+          const regrasDaCategoria = porRegra
+            .filter((r) => r.categoria === c.categoria)
+            .sort((a, b) => b._count - a._count);
+          return (
+            <details key={c.categoria} className="group rounded-lg border border-slate-200 bg-white open:border-blue-300">
+              <summary className="cursor-pointer list-none px-3 py-2 [&::-webkit-details-marker]:hidden">
+                <span className="block text-xs text-slate-500">
+                  {c.categoria.replace(/_/g, " ").toLowerCase()}
+                  <span className="ml-1 text-[10px] text-slate-400 transition-transform group-open:inline-block group-open:rotate-180" aria-hidden>
+                    ▼
+                  </span>
+                </span>
+                <span className="text-sm font-semibold text-slate-900">{c._count}</span>
+                {c._sum.impactoCents ? (
+                  <span className="ml-2 text-xs text-emerald-700">{fmtBRL(c._sum.impactoCents)}</span>
+                ) : null}
+              </summary>
+              <div className="border-t border-slate-100 px-3 py-2">
+                <ul className="space-y-1">
+                  {regrasDaCategoria.map((r) => (
+                    <li key={r.regra} className="flex items-baseline justify-between gap-3 text-xs">
+                      <Link href={`/auditoria?categoria=${c.categoria}&regra=${encodeURIComponent(r.regra)}`} className="font-mono text-blue-700 hover:underline">
+                        {r.regra}
+                      </Link>
+                      <span className="shrink-0 tabular-nums text-slate-700">
+                        {r._count}
+                        {r._sum.impactoCents ? <span className="ml-1.5 text-emerald-700">{fmtBRL(r._sum.impactoCents)}</span> : null}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <Link href={`/auditoria?categoria=${c.categoria}`} className="mt-2 block text-xs font-medium text-slate-500 hover:underline">
+                  ver todos os {c._count} →
+                </Link>
+              </div>
+            </details>
+          );
+        })}
       </div>
 
       <Secao
@@ -231,6 +262,40 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
                     {agente && <span>responsável: {agente.area}</span>}
                   </p>
 
+                  {/* A ORIGEM DO ACHADO, a um clique: a evidência que o agente
+                      anexou (os títulos, as baixas, os números) e um atalho para
+                      perguntar à IA sobre este caso específico. Avaliar um
+                      indício sem ver de onde ele veio é aceitar ou rejeitar em
+                      bloco — e nenhum dos dois é auditoria. */}
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <details className="group w-full">
+                      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+                        Ver evidência
+                        <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-180" aria-hidden>
+                          ▼
+                        </span>
+                      </summary>
+                      <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3">
+                        <Evidencia dados={a.evidencia} />
+                        <p className="mt-2 flex flex-wrap gap-x-3 text-[11px] text-slate-400">
+                          {a.entidadeTipo && <span>entidade: {a.entidadeTipo}{a.entidadeRef ? ` · ${a.entidadeRef}` : ""}</span>}
+                          {a.conexaoApelido && <span>empresa: {a.conexaoApelido}</span>}
+                          <span>chave: {a.chave}</span>
+                        </p>
+                        {podeInvestigar && (
+                          <Link
+                            href={`/auditoria/investigar?pergunta=${encodeURIComponent(
+                              `Explique o achado ${a.regra} "${a.titulo}" (id ${a.id}): o que o sustenta, quais títulos, baixas ou parceiros estão envolvidos, se há outros achados sobre a mesma entidade, e o que uma pessoa precisa verificar para confirmar ou descartar.`
+                            )}`}
+                            className="mt-3 inline-block rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-800 hover:bg-blue-100"
+                          >
+                            Investigar este achado com a IA
+                          </Link>
+                        )}
+                      </div>
+                    </details>
+                  </div>
+
                   {podeTratar && (
                     <TratativaForm achadoId={a.id} statusAtual={a.status} observacaoAtual={a.observacaoTratativa} />
                   )}
@@ -252,7 +317,7 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
           <Tabela
             colunas={["Regra", "Achados", "% do total", "Valor em jogo", ""]}
             alinharDireita={[1, 2, 3]}
-            linhas={porRegra.map((r) => [
+            linhas={porRegra.slice(0, 20).map((r) => [
               <span key="r" className="font-mono text-xs text-slate-700">
                 {r.regra}
               </span>,
