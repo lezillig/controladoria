@@ -306,8 +306,8 @@ export function montarHtml(dados: DadosRelatorio): string {
       "Resultado do mês",
       `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
         <tr>
-          ${cartaoKpi("Receita do mês", fmtBRL(c.mesAtual.receitaCents), `${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior`)}
-          ${cartaoKpi("Despesa do mês", fmtBRL(c.mesAtual.despesaCents), `${fmtVariacao(c.variacoes.despesaMesVsAnterior)} vs. mês anterior`)}
+          ${cartaoKpi("Títulos a receber do mês", fmtBRL(c.mesAtual.receitaCents), `${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior`)}
+          ${cartaoKpi("Títulos a pagar do mês", fmtBRL(c.mesAtual.despesaCents), `${fmtVariacao(c.variacoes.despesaMesVsAnterior)} vs. mês anterior`)}
         </tr>
         <tr>
           ${cartaoKpi(

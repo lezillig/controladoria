@@ -123,7 +123,7 @@ export default async function ControladoriaPage({
             ali. A composição completa, com conta e maiores títulos, está em
             Resultado mês a mês. */}
         <KpiExpansivel
-          rotulo="Receita do mês"
+          rotulo="Títulos a receber do mês"
           valor={fmtBRL(c.mesAtual.receitaCents)}
           apoio={`${c.mesAtual.titulosReceber} título(s) · ${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior · clique para abrir`}
           icone={<TrendingUp className="h-4 w-4" />}
@@ -137,7 +137,7 @@ export default async function ControladoriaPage({
           </Link>
         </KpiExpansivel>
         <KpiExpansivel
-          rotulo="Despesa do mês"
+          rotulo="Títulos a pagar do mês"
           valor={fmtBRL(c.mesAtual.despesaCents)}
           apoio={`${c.mesAtual.titulosPagar} título(s) · ${fmtVariacao(c.variacoes.despesaMesVsAnterior)} vs. mês anterior · clique para abrir`}
           icone={<TrendingDown className="h-4 w-4" />}
