@@ -5,7 +5,14 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fmtBRL, fmtData } from "./format";
 import { AGENTES } from "./registry";
-import { MODELO_ANALISTA } from "./aiAnalyst";
+
+// O investigador roda num modelo mais barato que o analista do relatório
+// diário, de propósito. O relatório é uma chamada por dia e é onde o
+// cruzamento fino entre achados vale mais; a investigação é interativa, pode
+// ser feita dezenas de vezes por semana, e o que decide a qualidade dela é a
+// consulta certa — que o Sonnet 5 faz tão bem quanto os maiores, a um quinto
+// do preço por token (US$ 2/10 contra US$ 10/50 por milhão).
+export const MODELO_INVESTIGADOR = "claude-sonnet-5";
 
 // INVESTIGADOR — a IA que CONSULTA a base para responder uma pergunta de
 // auditoria, com a trilha do que consultou.
@@ -500,12 +507,13 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
   try {
     while (true) {
       const runner = client.beta.messages.toolRunner({
-        model: MODELO_ANALISTA,
+        model: MODELO_INVESTIGADOR,
         max_tokens: 16000,
-        // Esforço médio: é uma conversa com alguém esperando na tela. O que
-        // decide a qualidade aqui é a consulta certa, não a deliberação longa —
-        // e o modelo faz isso bem mesmo em esforço médio.
-        output_config: { effort: "medium" },
+        // Esforço alto, e não médio como no modelo maior: o Sonnet respeita o
+        // nível à risca e em esforço baixo tende a responder menos do que a
+        // pergunta pede. Se uma resposta parecer rasa, o ajuste é subir para
+        // xhigh — não trocar de modelo.
+        output_config: { effort: "high" },
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         system: SYSTEM_PROMPT,

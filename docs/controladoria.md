@@ -134,7 +134,10 @@ base, através de um conjunto fechado de sete consultas — achados, detalhe de
 achado, títulos de um parceiro, um título com as baixas, série mensal, cadastro
 do parceiro e ordem de serviço. Todas de leitura, todas restritas à empresa da
 sessão (o escopo vem da sessão por fechamento; o modelo não escolhe de que
-empresa lê).
+empresa lê). Roda em `claude-sonnet-5` com esforço alto — um quinto do preço
+por token do modelo do relatório diário, para um uso que é interativo e
+frequente; se uma resposta parecer rasa, o ajuste é subir o esforço para
+`xhigh`, não trocar de modelo.
 
 Cada consulta feita fica registrada e aparece embaixo da resposta: a pessoa vê
 o que a IA olhou e o que não olhou. A pergunta vai para a trilha de auditoria
