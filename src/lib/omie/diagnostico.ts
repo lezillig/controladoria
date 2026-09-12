@@ -83,6 +83,14 @@ export type ResultadoEndpoint = {
   // ficou vazio. É aqui que um nome de campo divergente aparece.
   camposMapeados: string[];
   camposVazios: string[];
+  // VALORES de amostra dos campos que parecem categóricos (status, tipo,
+  // origem, natureza...): os valores distintos vistos nos registros da
+  // amostra, por campo. Nome de campo diz que a informação existe; só o valor
+  // diz o que ela significa — "cStatus" pode ser LIQUIDADO, CONCILIADO ou
+  // qualquer coisa, e é essa diferença que decide se a conciliação está ou
+  // não ao alcance da API. Nunca inclui valores longos (nome, documento,
+  // observação): o relatório continua seguro de colar em qualquer lugar.
+  valoresDeAmostra: Record<string, string[]>;
   erro: string | null;
   duracaoMs: number;
 };
@@ -113,6 +121,70 @@ type Alvo = {
   // dizer que o mapeamento não reconheceu o registro.
   normalizar: (bruto: Record<string, unknown>) => Record<string, unknown> | null;
 };
+
+// Janela LARGA para as sondas de extrato: se a empresa importa extrato só de
+// tempos em tempos, noventa dias podem cair num buraco. Um ano não cai.
+const DIAS_DE_SONDA = 365;
+
+type Sonda = {
+  rotulo: string;
+  endpoint: OmieEndpoint;
+  param: (de: string, ate: string, conta: string | null) => Record<string, unknown> | readonly Record<string, unknown>[];
+};
+
+const SONDAS: Sonda[] = [
+  {
+    // Saldo por conta como a Omie o conhece — inclui o efeito da conciliação
+    // feita lá dentro, se houver.
+    rotulo: "Sonda: resumo/saldo das contas correntes",
+    endpoint: {
+      path: "geral/contacorrente/",
+      call: "ListarResumoContasCorrentes",
+      callsAlternativos: ["ResumoContasCorrentes", "ListarSaldoContasCorrentes"],
+      listKey: ["conta_corrente_lista", "ListarResumoContasCorrentes", "contaCorrenteLista", "resumo"],
+    },
+    param: () => ({ pagina: 1, registros_por_pagina: 10, apenas_importado_api: "N" }),
+  },
+  {
+    // O extrato de novo, agora com um ano de janela e outras grafias de
+    // operação e de filtro. Se continuar vazio aqui, a conta NÃO tem extrato
+    // acessível por esta API — e a conversa muda de "como buscar" para "por
+    // onde o contador tira".
+    rotulo: "Sonda: extrato bancário (12 meses, variantes)",
+    endpoint: {
+      path: "financas/extrato/",
+      call: "ListarExtrato",
+      callsAlternativos: ["ListarExtratoCC", "ObterExtrato", "ConsultarExtrato"],
+      listKey: ["listaExtrato", "extrato", "extratoLista", "lancamentos"],
+    },
+    param: (_de, ate, conta) => {
+      const inicio = new Date();
+      inicio.setDate(inicio.getDate() - DIAS_DE_SONDA);
+      const deLargo = formatarDataOmie(inicio);
+      const cc = conta ? Number(conta) : undefined;
+      return [
+        { nCodCC: cc, dPeriodoInicial: deLargo, dPeriodoFinal: ate },
+        { nCodCC: cc, dDtInicial: deLargo, dDtFinal: ate },
+        { nCodCC: cc, dPeriodoInicial: deLargo, dPeriodoFinal: ate, cExibirDetalhes: "S" },
+        { dPeriodoInicial: deLargo, dPeriodoFinal: ate },
+      ];
+    },
+  },
+  {
+    rotulo: "Sonda: conciliação bancária",
+    endpoint: {
+      path: "financas/conciliacao/",
+      call: "ListarConciliacoes",
+      callsAlternativos: ["ListarConciliacao", "ListarMovimentosConciliados", "ListarLancamentosConciliados"],
+      listKey: ["conciliacoes", "lista", "lancamentos", "movimentos"],
+    },
+    param: (de, ate, conta) => [
+      { nCodCC: conta ? Number(conta) : undefined, dPeriodoInicial: de, dPeriodoFinal: ate },
+      { nPagina: 1, nRegPorPagina: 10, dDtInicial: de, dDtFinal: ate },
+      { nPagina: 1, nRegPorPagina: 10 },
+    ],
+  },
+];
 
 export async function diagnosticarConexao(conexaoId: string, companyId: string): Promise<ResultadoDiagnostico> {
   const conexao = await prisma.omieConexao.findFirst({
@@ -225,7 +297,10 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
         chave: "movimentos",
         rotulo: "Movimentação da conta corrente",
         endpoint: OMIE_ENDPOINTS.movimentos,
-        param: paramsMovimentos(1, REGISTROS_DE_AMOSTRA, de, ate),
+        // Amostra maior que a dos outros endpoints, de propósito: com três
+        // registros, um campo de status mostraria um valor só e a pergunta
+        // "existe CONCILIADO aqui?" ficaria sem resposta.
+        param: paramsMovimentos(1, 40, de, ate),
         normalizar: normalizarMovimentoFinanceiro,
       },
       conexao.credencialRef
@@ -260,6 +335,7 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
       camposRecebidos: [],
       camposMapeados: [],
       camposVazios: [],
+      valoresDeAmostra: {},
       erro: "Nenhuma conta corrente foi obtida — o extrato é consultado por conta e não pôde ser testado.",
       duracaoMs: 0,
     });
@@ -314,6 +390,31 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
     )
   );
 
+  // SONDAS — endpoints que PODEM existir e trariam o lado do banco.
+  //
+  // A contabilidade extrai o extrato de dentro da Omie (Painel do Contador),
+  // então o dado está lá. O que não se sabe é por qual operação da API ele
+  // sai. Estas chamadas existem para responder isso da única forma que
+  // funciona com a Omie: perguntando à conta. "Method not exists" é resposta
+  // tão útil quanto dados — fecha uma hipótese sem custar um deploy.
+  //
+  // Nada daqui entra no sync. Sonda descobre; o sync usa o que foi descoberto.
+  for (const sonda of SONDAS) {
+    endpoints.push(
+      await testar(
+        {
+          chave: `sonda:${sonda.endpoint.path}${sonda.endpoint.call}`,
+          rotulo: sonda.rotulo,
+          endpoint: sonda.endpoint,
+          param: sonda.param(de, ate, contasParaTestar[0] ?? null),
+          normalizar: () => null,
+        },
+        conexao.credencialRef
+      )
+    );
+    await sleep(OMIE_PACE_MS);
+  }
+
   return {
     conexao: { id: conexao.id, nome: conexao.nome, apelido: conexao.apelido },
     executadoEm: new Date(),
@@ -355,6 +456,7 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
     camposRecebidos: [] as string[],
     camposMapeados: [] as string[],
     camposVazios: [] as string[],
+    valoresDeAmostra: {} as Record<string, string[]>,
     erro: null as string | null,
   };
 
@@ -394,6 +496,7 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
         camposRecebidos: nomesDeCampos(primeiro),
         camposMapeados: mapeado ? preenchidos(mapeado) : [],
         camposVazios: mapeado ? ausentes(mapeado) : ["registro descartado pelo mapeamento"],
+        valoresDeAmostra: valoresCategoricos(itens),
         duracaoMs: Date.now() - inicio,
       };
     } catch (e) {
@@ -513,6 +616,41 @@ function nomesDeCampos(registro: Record<string, unknown>, profundidade = 2): str
 
   visitar(registro, "", profundidade);
   return nomes.sort();
+}
+
+// Campos cujo valor é curto e se repete entre registros são categóricos —
+// status, tipo, origem, natureza, sim/não. É neles que mora a resposta para
+// "a API diz se está conciliado?". Um valor com mais de 24 caracteres, ou com
+// dígitos demais, é nome, documento, data ou dinheiro, e fica de fora: o
+// relatório é colado em chat e não pode carregar dado de terceiro.
+const VALOR_CATEGORICO = /^[A-Za-zÀ-ú _\-\/]{1,24}$/;
+const MAXIMO_DE_VALORES = 8;
+
+function valoresCategoricos(itens: Record<string, unknown>[]): Record<string, string[]> {
+  const vistos = new Map<string, Set<string>>();
+  const visitar = (obj: Record<string, unknown>, prefixo: string, resta: number) => {
+    for (const [chave, valor] of Object.entries(obj)) {
+      const caminho = prefixo ? `${prefixo}.${chave}` : chave;
+      if (valor && typeof valor === "object" && !Array.isArray(valor)) {
+        if (resta > 0) visitar(valor as Record<string, unknown>, caminho, resta - 1);
+        continue;
+      }
+      if (typeof valor === "boolean") {
+        (vistos.get(caminho) ?? vistos.set(caminho, new Set()).get(caminho)!).add(String(valor));
+        continue;
+      }
+      if (typeof valor !== "string" || !VALOR_CATEGORICO.test(valor.trim()) || valor.trim() === "") continue;
+      (vistos.get(caminho) ?? vistos.set(caminho, new Set()).get(caminho)!).add(valor.trim());
+    }
+  };
+  for (const item of itens) visitar(item, "", 2);
+
+  const resultado: Record<string, string[]> = {};
+  for (const [campo, valores] of [...vistos.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    if (valores.size > MAXIMO_DE_VALORES) continue;
+    resultado[campo] = [...valores].sort();
+  }
+  return resultado;
 }
 
 function preenchidos(mapeado: Record<string, unknown>): string[] {

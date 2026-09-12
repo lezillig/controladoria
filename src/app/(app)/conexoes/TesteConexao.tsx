@@ -70,6 +70,10 @@ function relatorioEmTexto(r: ResultadoDiagnostico): string {
     }
     if (e.erro) linhas.push(`   ERRO: ${e.erro}`);
     if (e.camposVazios.length > 0) linhas.push(`   NÃO PREENCHIDOS: ${e.camposVazios.join(", ")}`);
+    const valores = Object.entries(e.valoresDeAmostra ?? {});
+    if (valores.length > 0) {
+      linhas.push(`   VALORES VISTOS: ${valores.map(([campo, v]) => `${campo}=${v.join("|")}`).join(" · ")}`);
+    }
     if (e.camposRecebidos.length > 0) {
       linhas.push(`   CAMPOS CRUS (${e.camposRecebidos.length}): ${e.camposRecebidos.join(" · ")}`);
     }
@@ -171,6 +175,19 @@ export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
                       <strong>Não preenchidos pelo mapeamento:</strong> {e.camposVazios.join(", ")}
                     </p>
                   )
+                )}
+
+                {Object.keys(e.valoresDeAmostra ?? {}).length > 0 && (
+                  <details className="mt-1.5">
+                    <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">
+                      valores vistos nos campos de status/tipo ({Object.keys(e.valoresDeAmostra).length})
+                    </summary>
+                    <p className="mt-1 font-mono text-xs leading-relaxed text-slate-500">
+                      {Object.entries(e.valoresDeAmostra)
+                        .map(([campo, v]) => `${campo}=${v.join("|")}`)
+                        .join(" · ")}
+                    </p>
+                  </details>
                 )}
 
                 {e.camposRecebidos.length > 0 && (
