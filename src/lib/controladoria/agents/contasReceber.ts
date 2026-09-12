@@ -128,42 +128,58 @@ function inadimplenciaPorCliente(
 // CR-PERDA-PROVAVEL — credito velho demais. Nao e so cobranca: e ajuste
 // contabil (provisao) que a empresa precisa fazer para o balanco parar de
 // mostrar um ativo que nao existe.
+//
+// UM ACHADO POR CLIENTE, como a inadimplência — e não um só para a empresa
+// inteira, como era. O agregado escondia o cliente: a Cajamar tinha R$ 1,19
+// milhão vencido há mais de seis meses dentro de um achado "R$ X a receber
+// vencidos há mais de 180 dias" sem entidade, e quem investigava a Cajamar
+// não o encontrava. A recomendação ("classificar caso a caso") já era por
+// cliente; o achado agora também é.
 function perdaProvavel(
   ctx: ContextoAuditoria,
   titulos: ReturnType<typeof titulosAtivos>,
   materialidade: number
 ): AchadoNovo[] {
   const antigos = titulos.filter((t) => emAberto(t) && diasDeAtraso(t, ctx.dataReferencia) > DIAS_PERDA_PROVAVEL);
-  if (antigos.length === 0) return [];
+  const porCliente = agrupar(antigos, (t) => chaveParceiro(t));
 
-  const valor = somar(antigos, saldoAberto);
-  return [
-    {
+  const achados: AchadoNovo[] = [];
+  for (const [codigo, grupo] of porCliente) {
+    const valor = somar(grupo, saldoAberto);
+    // Sem piso de materialidade: crédito velho é ajuste contábil, e o balanço
+    // não tem "pequeno demais para provisionar".
+    const atrasoMaximo = Math.max(...grupo.map((t) => diasDeAtraso(t, ctx.dataReferencia)));
+    achados.push({
       regra: "CR-PERDA-PROVAVEL",
       tipo: "ESTADO",
       severidade: agravar(severidadePorValor(valor, materialidade)),
       categoria: "RISCO_FINANCEIRO",
-      titulo: `${fmtBRL(valor)} a receber vencidos há mais de ${DIAS_PERDA_PROVAVEL} dias`,
+      titulo: `${nomeParceiro(ctx, grupo[0])} com ${fmtBRL(valor)} vencidos há mais de ${DIAS_PERDA_PROVAVEL} dias`,
       descricao:
-        `${antigos.length} título(s) vencidos há mais de seis meses seguem no ativo como se fossem recebíveis. ` +
+        `${grupo.length} título(s) vencidos há mais de seis meses (o mais antigo há ${atrasoMaximo} dias) seguem no ativo como se fossem recebíveis. ` +
         `Sem provisão, o resultado do período está superestimado nesse valor e a decisão baseada nele fica errada.`,
       recomendacao:
-        "Classificar caso a caso: em cobrança judicial, negociação ativa ou perda. O que for perda deve ser provisionado " +
+        "Classificar: em cobrança judicial, negociação ativa ou perda. O que for perda deve ser provisionado " +
         "(e, atendidos os requisitos da Lei 9.430/96, deduzido) — decidir com a contabilidade antes do fechamento do trimestre.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieParceiro",
+      entidadeRef: nomeParceiro(ctx, grupo[0]),
       evidencia: {
-        titulos: antigos.slice(0, 50).map((t) => ({
-          cliente: nomeParceiro(ctx, t),
+        cliente: nomeParceiro(ctx, grupo[0]),
+        titulos: grupo.slice(0, 50).map((t) => ({
           lancamento: t.codigoLancamento,
+          documento: t.numeroDocumento,
+          vencimento: t.dataVencimento.toISOString(),
           saldo: saldoAberto(t),
           atraso: diasDeAtraso(t, ctx.dataReferencia),
         })),
-        total: antigos.length,
+        total: grupo.length,
       },
-      chave: chaveAchado("CR-PERDA-PROVAVEL", "atual"),
-    },
-  ];
+      chave: chaveAchado("CR-PERDA-PROVAVEL", codigo),
+    });
+  }
+  return achados;
 }
 
 // CR-DESCONTO — desconto concedido no recebimento. Sozinho nao e problema

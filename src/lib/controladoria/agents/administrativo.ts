@@ -32,8 +32,58 @@ function auditarAdministrativo(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...erroNoUltimoSync(ctx));
   achados.push(...cadastroIncompleto(ctx));
   achados.push(...contaSemMovimento(ctx));
+  achados.push(...datasIncoerentes(ctx));
 
   return achados;
+}
+
+// AD-DATA-INCOERENTE — título emitido DEPOIS de vencer.
+//
+// Apareceu numa investigação: documento 1012 da Cajamar, emissão 14/08/2025
+// e vencimento 01/08/2025. Não é fraude nem inadimplência; é dado que não
+// pode ser verdade, e dado assim contamina tudo que o usa — o prazo médio de
+// recebimento, a faixa de atraso, a competência do DRE. Um achado para o
+// conjunto, com a lista na evidência: o conserto é campo a campo na Omie, e
+// a pergunta é "quantos são" antes de "qual é".
+function datasIncoerentes(ctx: ContextoAuditoria): AchadoNovo[] {
+  const incoerentes = ctx.titulos.filter(
+    (t) => !t.cancelado && t.dataEmissao !== null && t.dataEmissao.getTime() > t.dataVencimento.getTime()
+  );
+  if (incoerentes.length === 0) return [];
+
+  const valor = somar(incoerentes, (t) => t.valorDocumentoCents);
+  return [
+    {
+      regra: "AD-DATA-INCOERENTE",
+      tipo: "ESTADO",
+      severidade: incoerentes.length > 20 ? "MEDIA" : "BAIXA",
+      categoria: "ERRO_PROCESSO",
+      titulo: `${incoerentes.length} título(s) com emissão posterior ao vencimento (${fmtBRL(valor)})`,
+      descricao:
+        `Título emitido depois da data de vencimento não descreve um fato possível: ou a emissão está errada, ou o vencimento. ` +
+        `Enquanto estiver assim, o atraso, o prazo médio e a competência desses títulos estão calculados sobre uma data falsa.`,
+      recomendacao:
+        "Conferir na Omie, título a título, qual das duas datas está errada e corrigir — começando pelos de maior valor.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      evidencia: {
+        total: incoerentes.length,
+        titulos: incoerentes
+          .sort((a, b) => b.valorDocumentoCents - a.valorDocumentoCents)
+          .slice(0, 50)
+          .map((t) => ({
+            empresa: t.conexaoApelido,
+            natureza: t.natureza,
+            parceiro: t.parceiroNome,
+            documento: t.numeroDocumento,
+            emissao: fmtData(t.dataEmissao),
+            vencimento: fmtData(t.dataVencimento),
+            valor: t.valorDocumentoCents,
+          })),
+      },
+      chave: chaveAchado("AD-DATA-INCOERENTE", "atual"),
+    },
+  ];
 }
 
 // AD-SYNC-ATRASADO — o compromisso de D-1 nao esta sendo cumprido.

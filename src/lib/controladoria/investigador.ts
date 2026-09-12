@@ -93,6 +93,8 @@ Como trabalhar:
 - Comece pela consulta mais específica que a pergunta permite. Não varra a base inteira quando um nome, um número ou uma regra já foi dado.
 - Cruze fontes. Se um achado fala de um fornecedor, olhe os títulos dele e a série mensal dele antes de concluir. O que vale é a coincidência entre fontes independentes.
 - Cite o dado. Número do título, código da regra, nome do parceiro, competência, valor exato. Uma afirmação sem dado citável não entra na resposta.
+- Algumas regras emitem UM achado para o conjunto, sem entidade (ex.: FR-BAIXA-*, CP-SEM-CATEGORIA, FI-RECEITA-SEM-NOTA, OP-JUROS-ANO). O parceiro só aparece na evidência desses achados: antes de dizer que "não há achado sobre X", liste os achados da regra relevante e abra a evidência com detalhar_achado.
+- Diferencie "não encontrei" de "não existe". Se a sua busca pode ter deixado algo de fora, diga isso e diga o que faltou buscar.
 - Diga o que NÃO dá para saber com esta base. O espelho não tem extrato bancário, não tem CT-e emitido, e a janela dos agentes é o ano corrente mais os títulos em aberto. Se a resposta depende de algo fora disso, diga que depende e do quê.
 - Nunca conclua fraude. Aponte o indício, a hipótese e o que uma pessoa precisa verificar para confirmar ou descartar. Indício não é conclusão.
 - Você não altera nada e não deve prometer alteração: não trata achado, não corrige título, não fala com a Omie. Se a pessoa pedir isso, diga onde ela faz.
@@ -129,13 +131,30 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
         ...(input.regra ? { regra: input.regra } : {}),
         ...(input.agente ? { agente: input.agente } : {}),
         ...(input.severidade && SEVERIDADES.includes(input.severidade) ? { severidade: input.severidade } : {}),
-        ...(input.entidade ? { entidadeRef: { contains: input.entidade, mode: "insensitive" } } : {}),
+        // O nome pode estar na entidade OU no texto: achado agregado (um por
+        // regra, falando do conjunto) não tem entidade, e o cliente aparece só
+        // na descrição ou na evidência. Buscar nos dois lugares é o que evita
+        // concluir "não há achado sobre X" quando há — dentro de um agregado.
+        ...(input.entidade
+          ? {
+              OR: [
+                { entidadeRef: { contains: input.entidade, mode: "insensitive" } },
+                { titulo: { contains: input.entidade, mode: "insensitive" } },
+                { descricao: { contains: input.entidade, mode: "insensitive" } },
+              ],
+            }
+          : {}),
       };
       // Achado do grupo (conexão nula) entra em qualquer recorte de empresa:
       // ele fala das duas, e omiti-lo faria a empresa parecer mais tranquila.
       if (escopo.conexaoId) {
         delete (where as { conexaoId?: unknown }).conexaoId;
-        where.OR = [{ conexaoId: escopo.conexaoId }, { conexaoId: null }];
+        const porTexto = where.OR;
+        where.OR = undefined;
+        where.AND = [
+          { OR: [{ conexaoId: escopo.conexaoId }, { conexaoId: null }] },
+          ...(porTexto ? [{ OR: porTexto }] : []),
+        ];
       }
       const [linhas, total] = await Promise.all([
         prisma.auditFinding.findMany({

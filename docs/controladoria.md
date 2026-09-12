@@ -71,7 +71,7 @@ nem API, não escrevem nada. São onze porque cada um responde a uma pergunta co
 | `fluxo-caixa` | Tesouraria | Projeção 7/15/30/60/90 dias, descasamento da semana, ciclo financeiro (PMR/PMP) |
 | `rentabilidade` | Controladoria | Margem por contrato, contrato no prejuízo, veículo fora do padrão, cobertura do rateio |
 | `oportunidades` | Controladoria | **Onde reduzir custo** (seção 5), juros evitáveis anualizados, tarifas, consolidação de fornecedores, política de alçadas sugerida |
-| `administrativo` | Administrativo | Sync atrasado ou com erro, cadastro incompleto, conta sem extrato, achados críticos sem tratativa |
+| `administrativo` | Administrativo | Sync atrasado ou com erro, cadastro incompleto, conta sem extrato, título emitido depois de vencer, achados críticos sem tratativa |
 | `conformidade` | Controladoria | Prazo estourado, risco grave sem responsável, apontamento externo reincidente, apontamento confirmado pelos dados, proposta de leitura não conferida, relatório mensal não recebido, ponto cego do sistema |
 
 Um agente que quebra **não derruba os outros dez**.
