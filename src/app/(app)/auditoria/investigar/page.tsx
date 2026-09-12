@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { isInvestigadorDisponivel } from "@/lib/controladoria/investigador";
+import { isInvestigadorDisponivel, lerInvestigacao, listarInvestigacoes } from "@/lib/controladoria/investigador";
+import { fmtDataHora } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
 import { exigirPermissao } from "../../_dados";
-import { AvisoVazio } from "../../_componentes";
+import { AvisoVazio, Secao, Tabela } from "../../_componentes";
 import InvestigacaoForm from "./InvestigacaoForm";
 
 // INVESTIGAR COM A IA — uma pergunta, uma resposta com evidência e a trilha
@@ -13,22 +14,31 @@ import InvestigacaoForm from "./InvestigacaoForm";
 // acontecendo com este fornecedor?", "esta OS foi paga e não faturada?",
 // "por que o vencido a receber dobrou?". Os agentes respondem perguntas
 // fixas todo dia; aqui a pergunta é de quem está olhando.
-
-// Uma investigação encadeia consultas ao banco com uma chamada de modelo entre
-// cada uma. Sessenta segundos é o teto que esta hospedagem aceita hoje (o
-// mesmo da sincronização e da conferência de CT-e); pedir mais faria o deploy
-// ser recusado. Com Fluid Compute ligado na Vercel este valor pode subir para
-// 300, e o teto de consultas do investigador acompanha.
+//
+// A investigação anda em rodadas curtas conduzidas pelo navegador, e cada
+// rodada grava o progresso (ver investigador.ts). Por isso o teto por
+// requisição é o mesmo das outras telas, e não precisa ser maior.
 export const maxDuration = 60;
 
-export default async function InvestigarPage() {
-  const session = await exigirPermissao("investigar");
+const STATUS_ROTULO: Record<string, string> = {
+  EXECUTANDO: "Em andamento",
+  CONCLUIDA: "Concluída",
+  ERRO: "Falhou",
+};
 
-  const conexoes = await prisma.omieConexao.findMany({
-    where: { companyId: session.companyId, ativa: true },
-    orderBy: { ordem: "asc" },
-    select: { id: true, apelido: true, nome: true },
-  });
+export default async function InvestigarPage({ searchParams }: { searchParams: Promise<{ id?: string }> }) {
+  const session = await exigirPermissao("investigar");
+  const { id } = await searchParams;
+
+  const [conexoes, inicial, historico] = await Promise.all([
+    prisma.omieConexao.findMany({
+      where: { companyId: session.companyId, ativa: true },
+      orderBy: { ordem: "asc" },
+      select: { id: true, apelido: true, nome: true },
+    }),
+    id ? lerInvestigacao(id, session.companyId) : Promise.resolve(null),
+    listarInvestigacoes(session.companyId, 12),
+  ]);
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -48,7 +58,7 @@ export default async function InvestigarPage() {
       </div>
 
       {isInvestigadorDisponivel() ? (
-        <InvestigacaoForm conexoes={conexoes} />
+        <InvestigacaoForm key={inicial?.id ?? "nova"} conexoes={conexoes} inicial={inicial} />
       ) : (
         <AvisoVazio
           titulo="Investigação indisponível"
@@ -56,6 +66,47 @@ export default async function InvestigarPage() {
           acaoHref="/auditoria"
           acaoLabel="Voltar aos achados"
         />
+      )}
+
+      {historico.length > 0 && (
+        <Secao
+          titulo="Investigações anteriores"
+          descricao="Toda pergunta fica gravada com a resposta e as consultas feitas — é a trilha do que a IA olhou."
+        >
+          <Tabela
+            colunas={["Quando", "Quem", "Pergunta", "Recorte", "Consultas", "Situação"]}
+            alinharDireita={[4]}
+            linhas={historico.map((h) => [
+              <span key="q" className="whitespace-nowrap text-xs text-slate-600">
+                {fmtDataHora(h.criadoEm)}
+              </span>,
+              <span key="u" className="text-xs text-slate-600">
+                {h.userNome ?? "—"}
+              </span>,
+              <Link key="p" href={`/auditoria/investigar?id=${h.id}`} className="text-blue-700 hover:underline">
+                {h.pergunta.length > 90 ? `${h.pergunta.slice(0, 90)}…` : h.pergunta}
+              </Link>,
+              <span key="e" className="text-xs text-slate-600">
+                {h.empresa}
+              </span>,
+              <span key="c" className="tabular-nums text-xs text-slate-600">
+                {h.consultas.length}
+              </span>,
+              <span
+                key="s"
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  h.status === "CONCLUIDA"
+                    ? "bg-emerald-100 text-emerald-700"
+                    : h.status === "ERRO"
+                      ? "bg-red-100 text-red-700"
+                      : "bg-amber-100 text-amber-800"
+                }`}
+              >
+                {STATUS_ROTULO[h.status] ?? h.status}
+              </span>,
+            ])}
+          />
+        </Secao>
       )}
 
       <p className="text-xs text-slate-500">

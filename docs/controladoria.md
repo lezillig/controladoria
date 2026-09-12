@@ -137,9 +137,18 @@ sessão (o escopo vem da sessão por fechamento; o modelo não escolhe de que
 empresa lê).
 
 Cada consulta feita fica registrada e aparece embaixo da resposta: a pessoa vê
-o que a IA olhou e o que não olhou. A pergunta e a lista de consultas vão para
-a trilha de auditoria (`INVESTIGACAO_IA`). Teto de doze consultas por pergunta;
-a tela tem `maxDuration` de cinco minutos. Cada pergunta é uma chamada paga.
+o que a IA olhou e o que não olhou. A pergunta vai para a trilha de auditoria
+(`INVESTIGACAO_IA`); a conversa inteira, as consultas e a resposta ficam na
+tabela `Investigacao`, listada na própria tela como histórico.
+
+A investigação anda em **rodadas**, como a sincronização: uma investigação são
+várias chamadas ao modelo, cada uma de dezenas de segundos, e a hospedagem
+corta a requisição em sessenta. Cada rodada faz as chamadas que cabem no
+orçamento (uma chamada nova só começa com folga para terminar), grava a
+conversa e devolve o estado; o navegador de quem perguntou chama a rodada
+seguinte até o status sair de EXECUTANDO. Fechar a aba não perde nada —
+reabrir pelo histórico retoma. Teto de oito consultas por pergunta. Cada
+pergunta é uma chamada paga.
 
 ---
 

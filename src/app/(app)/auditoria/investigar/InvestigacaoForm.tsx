@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
-import type { ResultadoInvestigacao } from "@/lib/controladoria/investigador";
+import type { EstadoInvestigacao } from "@/lib/controladoria/investigador";
 import { Secao } from "../../_componentes";
-import { perguntarAoInvestigador } from "./actions";
+import { avancar, iniciar } from "./actions";
 
 const EXEMPLOS = [
   "O que está acontecendo com os títulos vencidos da Cajamar? Quanto é, desde quando, e há tratativa registrada?",
@@ -13,13 +14,54 @@ const EXEMPLOS = [
   "Os achados de juros deste mês se concentram em algum fornecedor ou em alguma data de pagamento?",
 ];
 
-export default function InvestigacaoForm({ conexoes }: { conexoes: { id: string; apelido: string; nome: string }[] }) {
-  const [resultado, setResultado] = useState<ResultadoInvestigacao | null>(null);
+export default function InvestigacaoForm({
+  conexoes,
+  inicial,
+}: {
+  conexoes: { id: string; apelido: string; nome: string }[];
+  // Uma investigação já gravada, para reabrir pelo histórico. Se ainda estiver
+  // em andamento (a aba foi fechada no meio), a tela retoma as rodadas.
+  inicial: EstadoInvestigacao | null;
+}) {
+  const [estado, setEstado] = useState<EstadoInvestigacao | null>(inicial);
+  const [erro, setErro] = useState<string | null>(null);
   // Controlado pelo mesmo motivo da conferência de CT-e: o React limpa o
   // formulário depois da action, e a pessoa quer refinar a pergunta, não
   // digitá-la de novo.
-  const [pergunta, setPergunta] = useState("");
-  const [processando, iniciar] = useTransition();
+  const [pergunta, setPergunta] = useState(inicial?.pergunta ?? "");
+  const [processando, iniciarTransicao] = useTransition();
+  const router = useRouter();
+
+  // Encadeia as rodadas até a investigação terminar. Cada rodada é uma
+  // requisição curta; o servidor grava o progresso entre elas, então fechar a
+  // aba não perde nada — reabrir pelo histórico retoma.
+  const conduzir = (id: string) => {
+    iniciarTransicao(async () => {
+      while (true) {
+        let r: Awaited<ReturnType<typeof avancar>>;
+        try {
+          r = await avancar(id);
+        } catch (e) {
+          setErro(
+            "Perdi a conexão com o servidor no meio de uma rodada. A investigação continua gravada — recarregue a página e ela retoma. Detalhe: " +
+              (e instanceof Error ? e.message : String(e))
+          );
+          return;
+        }
+        if (r.erro) {
+          setErro(r.erro);
+          return;
+        }
+        if (r.estado) setEstado(r.estado);
+        if (!r.estado || r.estado.status !== "EXECUTANDO") {
+          router.refresh();
+          return;
+        }
+      }
+    });
+  };
+
+  const ultimaConsulta = estado?.consultas[estado.consultas.length - 1];
 
   return (
     <div className="space-y-6">
@@ -27,19 +69,23 @@ export default function InvestigacaoForm({ conexoes }: { conexoes: { id: string;
         <form
           className="space-y-4"
           action={(formData) => {
-            setResultado(null);
-            iniciar(async () => {
+            setErro(null);
+            setEstado(null);
+            iniciarTransicao(async () => {
+              let r: Awaited<ReturnType<typeof iniciar>>;
               try {
-                setResultado(await perguntarAoInvestigador(formData));
+                r = await iniciar(formData);
               } catch (e) {
-                setResultado({
-                  ok: false,
-                  erro:
-                    "Não consegui falar com o servidor. Se a pergunta exigir muitas consultas, o tempo limite da hospedagem pode ter cortado a resposta — tente algo mais específico. Detalhe: " +
-                    (e instanceof Error ? e.message : String(e)),
-                  consultas: [],
-                });
+                setErro("Não consegui falar com o servidor. Detalhe: " + (e instanceof Error ? e.message : String(e)));
+                return;
               }
+              if (r.erro || !r.estado) {
+                setErro(r.erro ?? "Não consegui registrar a pergunta.");
+                return;
+              }
+              setEstado(r.estado);
+              window.history.replaceState(null, "", `/auditoria/investigar?id=${r.estado.id}`);
+              conduzir(r.estado.id);
             });
           }}
         >
@@ -90,30 +136,52 @@ export default function InvestigacaoForm({ conexoes }: { conexoes: { id: string;
 
           <div className="flex flex-wrap items-center gap-3">
             <button type="submit" disabled={processando || pergunta.trim().length < 8} className={primaryButtonClass}>
-              {processando ? "Investigando... pode levar um ou dois minutos" : "Investigar"}
+              {processando ? "Investigando..." : "Investigar"}
             </button>
             <span className="text-xs text-slate-500">Cada pergunta é uma chamada paga à IA.</span>
           </div>
         </form>
+
+        {estado && estado.status === "EXECUTANDO" && !processando && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <span>Esta investigação ficou no meio — {estado.consultas.length} consulta(s) feitas.</span>
+            <button type="button" onClick={() => conduzir(estado.id)} className="text-sm font-semibold text-amber-900 underline">
+              Retomar
+            </button>
+          </div>
+        )}
       </Secao>
 
-      {resultado && !resultado.ok && (
-        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{resultado.erro}</p>
+      {erro && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{erro}</p>}
+
+      {processando && estado && (
+        <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          {estado.consultas.length === 0
+            ? "Lendo a pergunta e decidindo por onde começar..."
+            : `${estado.consultas.length} consulta(s) feitas — última: ${ultimaConsulta?.ferramenta} (${ultimaConsulta?.resumo}). Continuando...`}
+        </p>
       )}
 
-      {resultado && resultado.ok && (
-        <Secao titulo="Resposta" descricao={`${resultado.iteracoes} consulta(s) à base · modelo ${resultado.modelo}`}>
-          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{resultado.resposta}</div>
+      {estado && estado.status === "ERRO" && estado.erro && (
+        <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">{estado.erro}</p>
+      )}
+
+      {estado && estado.status === "CONCLUIDA" && estado.resposta && (
+        <Secao
+          titulo="Resposta"
+          descricao={`${estado.consultas.length} consulta(s) à base · ${estado.empresa} · modelo ${estado.modelo ?? "—"}`}
+        >
+          <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{estado.resposta}</div>
         </Secao>
       )}
 
-      {resultado && resultado.consultas.length > 0 && (
+      {estado && estado.consultas.length > 0 && (
         <Secao
           titulo="O que a IA consultou"
           descricao="Na ordem em que consultou. O que não está aqui, ela não viu — e a resposta não pode se apoiar nisso."
         >
           <ol className="space-y-2 text-xs">
-            {resultado.consultas.map((c, i) => (
+            {estado.consultas.map((c, i) => (
               <li key={i} className="rounded-lg border border-slate-200 px-3 py-2">
                 <span className="font-mono font-semibold text-slate-700">{c.ferramenta}</span>
                 <span className="ml-2 font-mono text-slate-500">{JSON.stringify(c.entrada)}</span>

@@ -38,9 +38,23 @@ export type ConsultaFeita = {
   resumo: string;
 };
 
-export type ResultadoInvestigacao =
-  | { ok: true; resposta: string; consultas: ConsultaFeita[]; modelo: string; iteracoes: number }
-  | { ok: false; erro: string; consultas: ConsultaFeita[] };
+export type StatusInvestigacao = "EXECUTANDO" | "CONCLUIDA" | "ERRO";
+
+// O retrato de uma investigação, do jeito que a tela mostra — em andamento,
+// concluída ou com erro. É o que cada rodada devolve e o que o histórico lista.
+export type EstadoInvestigacao = {
+  id: string;
+  status: StatusInvestigacao;
+  pergunta: string;
+  empresa: string;
+  resposta: string | null;
+  erro: string | null;
+  consultas: ConsultaFeita[];
+  iteracoes: number;
+  modelo: string | null;
+  criadoEm: Date;
+  userNome: string | null;
+};
 
 export function isInvestigadorDisponivel(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
@@ -387,73 +401,177 @@ function mascarar(documento: string | null): string | null {
   return documento;
 }
 
-export async function investigar(params: {
-  companyId: string;
-  conexaoId: string | null;
-  pergunta: string;
-  // Rótulo da empresa para o modelo saber que recorte está vendo.
-  empresa: string;
-}): Promise<ResultadoInvestigacao> {
-  const consultas: ConsultaFeita[] = [];
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return { ok: false, erro: "Investigação indisponível: ANTHROPIC_API_KEY não configurada.", consultas };
+// RODADAS. Uma investigação são várias chamadas ao modelo, cada uma de dezenas
+// de segundos, e a hospedagem corta a requisição em sessenta. Então nenhuma
+// requisição tenta fazer a investigação inteira: cada uma avança as chamadas
+// que cabem no orçamento, grava a conversa e as consultas, e a próxima continua
+// de onde parou. Quem encadeia as rodadas é o navegador de quem perguntou, como
+// na sincronização.
+//
+// Uma chamada nova só começa se ainda houver folga para ela terminar dentro do
+// teto. O orçamento é conservador de propósito: estourar o teto no meio de uma
+// chamada perde a rodada inteira, e o modelo em esforço médio com ferramentas
+// costuma levar de dez a trinta segundos por resposta.
+const ORCAMENTO_DA_RODADA_MS = 22_000;
 
-  const client = new Anthropic({ apiKey });
-  const hoje = new Date();
-
-  try {
-    const runner = client.beta.messages.toolRunner({
-      model: MODELO_ANALISTA,
-      max_tokens: 16000,
-      // Esforço médio: é uma conversa com alguém esperando na tela, dentro do
-      // teto de execução da hospedagem. O que decide a qualidade aqui é a
-      // consulta certa, não a deliberação longa — e o modelo faz isso bem
-      // mesmo em esforço médio.
-      output_config: { effort: "medium" },
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      max_iterations: MAXIMO_DE_CONSULTAS,
-      system: SYSTEM_PROMPT,
-      tools: ferramentas({ companyId: params.companyId, conexaoId: params.conexaoId }, consultas),
-      messages: [
-        {
-          role: "user",
-          content: `Recorte: ${params.empresa}. Hoje é ${fmtData(hoje)}.
+function mensagemInicial(params: { empresa: string; pergunta: string }): Anthropic.Beta.BetaMessageParam {
+  return {
+    role: "user",
+    content: `Recorte: ${params.empresa}. Hoje é ${fmtData(new Date())}.
 
 Pergunta da controladoria:
 ${params.pergunta.trim()}`,
-        },
-      ],
-    });
+  };
+}
 
-    const final = await runner.runUntilDone();
+function estadoDe(row: {
+  id: string; status: string; pergunta: string; empresa: string; resposta: string | null; erro: string | null;
+  consultas: unknown; iteracoes: number; modelo: string | null; criadoEm: Date; userNome: string | null;
+}): EstadoInvestigacao {
+  return {
+    id: row.id,
+    status: row.status as StatusInvestigacao,
+    pergunta: row.pergunta,
+    empresa: row.empresa,
+    resposta: row.resposta,
+    erro: row.erro,
+    consultas: Array.isArray(row.consultas) ? (row.consultas as ConsultaFeita[]) : [],
+    iteracoes: row.iteracoes,
+    modelo: row.modelo,
+    criadoEm: row.criadoEm,
+    userNome: row.userNome,
+  };
+}
 
-    if (final.stop_reason === "refusal") {
-      return {
-        ok: false,
-        erro: `O modelo recusou esta investigação (categoria ${final.stop_details?.category ?? "não informada"}). Reformule a pergunta ou faça a consulta pelas telas.`,
-        consultas,
-      };
+export async function iniciarInvestigacao(params: {
+  companyId: string;
+  conexaoId: string | null;
+  empresa: string;
+  pergunta: string;
+  userId: string | null;
+  userNome: string | null;
+}): Promise<EstadoInvestigacao> {
+  const row = await prisma.investigacao.create({
+    data: {
+      companyId: params.companyId,
+      conexaoId: params.conexaoId,
+      empresa: params.empresa,
+      pergunta: params.pergunta.trim(),
+      userId: params.userId,
+      userNome: params.userNome,
+      mensagens: [mensagemInicial(params)] as unknown as Prisma.InputJsonValue,
+      consultas: [],
+    },
+  });
+  return estadoDe(row);
+}
+
+export async function lerInvestigacao(id: string, companyId: string): Promise<EstadoInvestigacao | null> {
+  const row = await prisma.investigacao.findFirst({ where: { id, companyId } });
+  return row ? estadoDe(row) : null;
+}
+
+export async function listarInvestigacoes(companyId: string, limite = 10): Promise<EstadoInvestigacao[]> {
+  const rows = await prisma.investigacao.findMany({
+    where: { companyId },
+    orderBy: { criadoEm: "desc" },
+    take: limite,
+  });
+  return rows.map(estadoDe);
+}
+
+// Avança uma investigação em andamento pelo que couber no orçamento da rodada.
+// Idempotente por construção: se duas rodadas disputarem a mesma investigação,
+// a segunda lê o estado gravado pela primeira e continua dali.
+export async function avancarInvestigacao(id: string, companyId: string): Promise<EstadoInvestigacao> {
+  const row = await prisma.investigacao.findFirst({ where: { id, companyId } });
+  if (!row) throw new Error("investigação não encontrada");
+  if (row.status !== "EXECUTANDO") return estadoDe(row);
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return encerrar(row.id, { erro: "Investigação indisponível: ANTHROPIC_API_KEY não configurada." });
+
+  const client = new Anthropic({ apiKey });
+  const consultas: ConsultaFeita[] = Array.isArray(row.consultas) ? (row.consultas as ConsultaFeita[]) : [];
+  let mensagens = row.mensagens as unknown as Anthropic.Beta.BetaMessageParam[];
+  let iteracoes = row.iteracoes;
+  const inicio = Date.now();
+
+  try {
+    while (true) {
+      const runner = client.beta.messages.toolRunner({
+        model: MODELO_ANALISTA,
+        max_tokens: 16000,
+        // Esforço médio: é uma conversa com alguém esperando na tela. O que
+        // decide a qualidade aqui é a consulta certa, não a deliberação longa —
+        // e o modelo faz isso bem mesmo em esforço médio.
+        output_config: { effort: "medium" },
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        system: SYSTEM_PROMPT,
+        tools: ferramentas({ companyId: row.companyId, conexaoId: row.conexaoId }, consultas),
+        messages: mensagens,
+      });
+
+      // UMA chamada ao modelo por volta do laço. O runner faria o ciclo inteiro
+      // sozinho; aqui ele é interrompido depois da primeira resposta, e as
+      // ferramentas que ela pediu são executadas explicitamente, para que a
+      // conversa possa ser gravada entre uma chamada e outra.
+      let message: Anthropic.Beta.BetaMessage | null = null;
+      for await (const m of runner) {
+        message = m;
+        break;
+      }
+      if (!message) throw new Error("o modelo não devolveu resposta");
+      iteracoes++;
+
+      if (message.stop_reason === "refusal") {
+        return encerrar(row.id, {
+          erro: `O modelo recusou esta investigação (categoria ${message.stop_details?.category ?? "não informada"}). Reformule a pergunta ou faça a consulta pelas telas.`,
+          mensagens, consultas, iteracoes,
+        });
+      }
+
+      if (message.stop_reason === "tool_use") {
+        const respostaDasFerramentas = await runner.generateToolResponse();
+        mensagens = [
+          ...mensagens,
+          { role: "assistant", content: message.content },
+          ...(respostaDasFerramentas ? [respostaDasFerramentas] : []),
+        ];
+
+        if (iteracoes >= MAXIMO_DE_CONSULTAS) {
+          return encerrar(row.id, {
+            erro: `A investigação atingiu o limite de ${MAXIMO_DE_CONSULTAS} consultas sem fechar uma resposta. Faça uma pergunta mais específica.`,
+            mensagens, consultas, iteracoes,
+          });
+        }
+
+        const parcial = await prisma.investigacao.update({
+          where: { id: row.id },
+          data: {
+            mensagens: mensagens as unknown as Prisma.InputJsonValue,
+            consultas: consultas as unknown as Prisma.InputJsonValue,
+            iteracoes,
+          },
+        });
+        if (Date.now() - inicio > ORCAMENTO_DA_RODADA_MS) return estadoDe(parcial);
+        continue;
+      }
+
+      // end_turn (ou max_tokens): o modelo fechou a resposta.
+      const texto = message.content
+        .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+        .map((b) => b.text)
+        .join("\n")
+        .trim();
+      mensagens = [...mensagens, { role: "assistant", content: message.content }];
+
+      if (!texto) {
+        return encerrar(row.id, { erro: "O modelo não devolveu texto.", mensagens, consultas, iteracoes });
+      }
+      return encerrar(row.id, { resposta: texto, modelo: message.model, mensagens, consultas, iteracoes });
     }
-
-    const texto = final.content
-      .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
-
-    if (!texto) {
-      return {
-        ok: false,
-        erro:
-          final.stop_reason === "tool_use"
-            ? `A investigação atingiu o limite de ${MAXIMO_DE_CONSULTAS} consultas sem fechar uma resposta. Faça uma pergunta mais específica.`
-            : "O modelo não devolveu texto.",
-        consultas,
-      };
-    }
-
-    return { ok: true, resposta: texto, consultas, modelo: final.model, iteracoes: consultas.length };
   } catch (e) {
     const erro =
       e instanceof Anthropic.APIError
@@ -461,6 +579,33 @@ ${params.pergunta.trim()}`,
         : e instanceof Error
           ? e.message.slice(0, 300)
           : "erro desconhecido";
-    return { ok: false, erro: `A investigação não completou: ${erro}`, consultas };
+    return encerrar(row.id, { erro: `A investigação não completou: ${erro}`, mensagens, consultas, iteracoes });
   }
+}
+
+async function encerrar(
+  id: string,
+  fim: {
+    resposta?: string;
+    modelo?: string;
+    erro?: string;
+    mensagens?: Anthropic.Beta.BetaMessageParam[];
+    consultas?: ConsultaFeita[];
+    iteracoes?: number;
+  }
+): Promise<EstadoInvestigacao> {
+  const row = await prisma.investigacao.update({
+    where: { id },
+    data: {
+      status: fim.erro ? "ERRO" : "CONCLUIDA",
+      resposta: fim.resposta ?? null,
+      modelo: fim.modelo ?? null,
+      erro: fim.erro ?? null,
+      ...(fim.mensagens ? { mensagens: fim.mensagens as unknown as Prisma.InputJsonValue } : {}),
+      ...(fim.consultas ? { consultas: fim.consultas as unknown as Prisma.InputJsonValue } : {}),
+      ...(fim.iteracoes !== undefined ? { iteracoes: fim.iteracoes } : {}),
+      concluidaEm: new Date(),
+    },
+  });
+  return estadoDe(row);
 }

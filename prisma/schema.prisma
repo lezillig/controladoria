@@ -1314,3 +1314,39 @@ model HistoricoMensal {
   @@index([companyId, dimensao, chave, competencia])
   @@index([companyId, competencia])
 }
+
+// UMA INVESTIGAÇÃO DA IA, gravada passo a passo.
+//
+// A conversa entre o modelo e as consultas fica aqui, e não na memória de uma
+// função, por dois motivos. O primeiro é o teto de execução da hospedagem: uma
+// investigação inteira (várias chamadas ao modelo, cada uma de dezenas de
+// segundos) não cabe numa requisição só — então cada requisição avança o que
+// cabe, grava onde parou, e a seguinte continua. É a mesma máquina de estados
+// da sincronização. O segundo é auditoria: o que a IA consultou para chegar a
+// uma resposta precisa ser consultável depois, por quem não estava na tela.
+model Investigacao {
+  id           String    @id @default(cuid())
+  companyId    String
+  conexaoId    String?
+  // Rótulo do recorte, como o modelo o viu ("Azul", "grupo (as duas empresas)").
+  empresa      String
+  userId       String?
+  userNome     String?
+  pergunta     String
+  // EXECUTANDO | CONCLUIDA | ERRO
+  status       String    @default("EXECUTANDO")
+  // A conversa até aqui, no formato que a API recebe de volta — inclusive os
+  // blocos de raciocínio, que o modelo exige intactos.
+  mensagens    Json
+  // As consultas feitas, na ordem: ferramenta, entrada e uma linha de resumo.
+  consultas    Json
+  iteracoes    Int       @default(0)
+  resposta     String?
+  erro         String?
+  modelo       String?
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+  concluidaEm  DateTime?
+
+  @@index([companyId, criadoEm])
+}
