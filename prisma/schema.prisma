@@ -694,6 +694,10 @@ model AuditFinding {
   atualizadoEm        DateTime        @updatedAt
   ultimaOcorrencia    DateTime        @default(now())
   ocorrencias         Int             @default(1)
+  // Quando este achado saiu num alerta por exceção. Nulo = nunca alertado.
+  // É o que garante que cada achado crítico interrompe alguém UMA vez — no
+  // dia em que surge — e não todo dia enquanto estiver aberto.
+  alertadoEm          DateTime?
   resolvidoEm         DateTime?
   tratadoPorUserId    String?
   observacaoTratativa String?
@@ -776,6 +780,14 @@ model ControladoriaConfig {
   // quando a empresa lança o imposto cheio e abate a retenção ao recolher (o
   // título já contém o valor, e somar duplicaria).
   retencoesNasDeducoes                Boolean  @default(true)
+  // ALERTA POR EXCEÇÃO: e-mail só quando surge achado crítico novo ou o caixa
+  // projetado fica negativo. É o oposto do relatório diário — que existe
+  // para ser lido todo dia — e os dois podem coexistir ou não.
+  alertaPorExcecao                    Boolean  @default(false)
+  // Última vez que o alerta de caixa foi enviado. O caixa negativo é um
+  // estado, não um evento: sem esta marca ele mandaria e-mail todo dia até
+  // alguém resolver — e e-mail diário é o que o alerta existe para evitar.
+  ultimoAlertaCaixaEm                 DateTime?
   atualizadoEm                        DateTime @updatedAt
 }
 

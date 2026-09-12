@@ -15,6 +15,7 @@ export type ValoresConfig = {
   diasAtrasoCritico: string;
   limiteConcentracao: string;
   relatorioAutomatico: boolean;
+  alertaPorExcecao: boolean;
   retencoesNasDeducoes: boolean;
 };
 
@@ -60,6 +61,22 @@ export default function ConfiguracaoForm({
             className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
           />
           Gerar o relatório diário ao fim de cada ciclo
+        </label>
+      </Campo>
+
+      <Campo
+        rotulo="Alerta por exceção"
+        ajuda="O contrário do relatório diário: fica em silêncio enquanto nada muda, e manda um e-mail curto no dia em que surge um achado crítico novo ou o caixa projetado fica negativo. Cada achado alerta uma vez, no dia em que aparece; o caixa negativo repete no máximo a cada três dias. Usa os mesmos destinatários do relatório. Pode ficar ligado com o relatório diário desligado — é o modo recomendado enquanto a leitura executiva ainda está sendo avaliada."
+      >
+        <label className="flex items-center gap-2.5 text-sm text-slate-700">
+          <input
+            name="alertaPorExcecao"
+            type="checkbox"
+            value="1"
+            defaultChecked={valores.alertaPorExcecao}
+            className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-600"
+          />
+          Enviar e-mail só quando surgir achado crítico ou o caixa projetado ficar negativo
         </label>
       </Campo>
 

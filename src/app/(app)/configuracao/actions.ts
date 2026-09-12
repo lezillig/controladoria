@@ -63,6 +63,7 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
   // simplesmente não envia o campo.
   const relatorioAutomatico = formData.get("relatorioAutomatico") === "1";
   const retencoesNasDeducoes = formData.get("retencoesNasDeducoes") === "1";
+  const alertaPorExcecao = formData.get("alertaPorExcecao") === "1";
 
   if (toleranciaVariacaoPercent < 0 || limiteConcentracaoFornecedorPercent <= 0 || diasAtrasoCritico < 1) {
     return { erro: "Os parâmetros percentuais e de prazo precisam ser positivos." };
@@ -81,6 +82,7 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
       limiteConcentracaoFornecedorPercent,
       relatorioAutomatico,
       retencoesNasDeducoes,
+      alertaPorExcecao,
     },
   });
 
@@ -104,6 +106,7 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
       limiteConcentracaoFornecedorPercent: anterior.limiteConcentracaoFornecedorPercent,
       relatorioAutomatico: anterior.relatorioAutomatico,
       retencoesNasDeducoes: anterior.retencoesNasDeducoes,
+      alertaPorExcecao: anterior.alertaPorExcecao,
     },
     depois: {
       emails: atualizada.emailsRelatorio,
@@ -116,6 +119,7 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
       limiteConcentracaoFornecedorPercent: atualizada.limiteConcentracaoFornecedorPercent,
       relatorioAutomatico: atualizada.relatorioAutomatico,
       retencoesNasDeducoes: atualizada.retencoesNasDeducoes,
+      alertaPorExcecao: atualizada.alertaPorExcecao,
     },
   });
 

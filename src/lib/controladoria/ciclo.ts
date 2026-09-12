@@ -6,6 +6,7 @@ import { executarFase, FASES, proximaFase, type FaseSync } from "@/lib/omie/sync
 import { carregarContexto, garantirConfig, janelaDeAuditoria } from "./contexto";
 import { executarAuditoria } from "./engine";
 import { gerarEEnviarRelatorio } from "./relatorio";
+import { enviarAlertaPorExcecao } from "./alerta";
 import { fimDoDia, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
 import { competenciasDaJanela, recalcularHistorico } from "./historico";
 
@@ -281,6 +282,24 @@ export async function executarPasso(params: {
     // ligaria o relatório de hoje aos achados de ontem.
     const conciliacao = await conciliarConformidade(companyId);
 
+    // ALERTA POR EXCEÇÃO — depois da auditoria, antes do relatório, e
+    // independente dele: é o e-mail que sai só quando surge achado crítico
+    // novo ou o caixa projetado fica negativo. Falha aqui não pode derrubar o
+    // ciclo — o alerta é um canal a mais, e a auditoria já está gravada.
+    let alerta: string | null = null;
+    if (config.alertaPorExcecao) {
+      try {
+        const r = await enviarAlertaPorExcecao(ctx);
+        alerta = r.enviado
+          ? `Alerta por exceção ${r.motivo}: ${r.achados} achado(s) crítico(s)${r.caixa ? " e caixa projetado negativo" : ""}.`
+          : r.achados > 0 || r.caixa
+            ? `Alerta por exceção NÃO enviado (${r.motivo}) — havia ${r.achados} achado(s) crítico(s)${r.caixa ? " e caixa negativo" : ""} a alertar.`
+            : null;
+      } catch (e) {
+        alerta = `Alerta por exceção falhou: ${e instanceof Error ? e.message.slice(0, 200) : "erro desconhecido"}`;
+      }
+    }
+
     // Com o relatório automático desligado — o padrão durante a integração —
     // o ciclo termina aqui. A auditoria continua rodando: é o achado que
     // revela o que ficou faltando no espelho, e é justamente o que se quer
@@ -314,6 +333,7 @@ export async function executarPasso(params: {
         `${resultado.fechadosAutomaticamente} fechado(s) automaticamente, ${resultado.suprimidos} suprimido(s) pelo supervisor. ` +
         `${resultado.totalAbertos} em aberto (${resultado.criticos} crítico(s)).`
     );
+    if (alerta) detalhes.push(alerta);
     if (conciliacao.apontamentosComVinculo + conciliacao.apontamentosSemVinculo > 0) {
       detalhes.push(
         `Conformidade: ${conciliacao.apontamentosComVinculo} apontamento(s) com achado correspondente, ` +

@@ -54,6 +54,7 @@ export default async function ConfiguracaoPage() {
             limiteConcentracao: String(config.limiteConcentracaoFornecedorPercent).replace(".", ","),
             relatorioAutomatico: config.relatorioAutomatico,
             retencoesNasDeducoes: config.retencoesNasDeducoes,
+            alertaPorExcecao: config.alertaPorExcecao,
           }}
           alcadaSugerida={
             sugestao

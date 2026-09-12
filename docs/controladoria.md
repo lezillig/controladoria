@@ -441,6 +441,17 @@ como se confere o resultado antes de ligar o automático.
 Cada invocação trabalha ~42s, grava onde parou e dispara a próxima via
 `waitUntil` — o plano Hobby da Vercel tem 60s de teto duro por invocação.
 
+**Alerta por exceção.** O contrário do relatório: fica em silêncio enquanto
+nada muda e manda um e-mail curto, logo depois da auditoria, no dia em que
+surge um achado **crítico novo** ou o **caixa projetado** (pelos títulos em
+aberto) fica negativo. Cada achado alerta uma vez — `AuditFinding.alertadoEm`
+— e o caixa negativo repete no máximo a cada três dias
+(`ControladoriaConfig.ultimoAlertaCaixaEm`). Liga-se em Modelo de gestão,
+independente do relatório diário; usa os mesmos destinatários. Sem canal de
+e-mail configurado, nada é marcado como alertado: o que ficou represado sai
+quando o canal existir. Regra de decisão pura em `alerta.ts`, testada em
+`teste:alerta`.
+
 **Carga histórica (backfill)** usa a mesma máquina, mês a mês, por empresa, sem
 gerar relatório (disparar um e-mail por mês carregado seria absurdo).
 
