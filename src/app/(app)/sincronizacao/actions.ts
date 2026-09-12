@@ -6,6 +6,12 @@ import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { recalcularPendentes } from "@/lib/controladoria/historico";
+import {
+  limparBaseAntiga as limpar,
+  medirBaseAntiga as medir,
+  type MedidaDaBaseAntiga,
+  type ResultadoDaLimpeza,
+} from "@/lib/controladoria/limpezaHistorica";
 import { registrarEvento } from "../auditoria/actions";
 import { exigirPermissao } from "../_dados";
 
@@ -499,4 +505,58 @@ export async function reabrirAuditoria(): Promise<{ mensagens: string[] }> {
             "Não havia consolidação concluída hoje — a auditoria já vai rodar no próximo Sincronizar agora.",
           ],
   };
+}
+
+// LIMPAR A BASE ATÉ 31/12/2024 — ver src/lib/controladoria/limpezaHistorica.ts.
+//
+// Permissão de MODELO, não de sincronização: mover a data de início da base é
+// alterar o modelo de gestão, e apagar quatro anos de espelho é uma decisão de
+// quem responde pelo módulo. Quem só dispara a carga não deve conseguir.
+
+export async function medirBaseAntiga(): Promise<{ medida?: MedidaDaBaseAntiga; erro?: string }> {
+  const session = await exigirPermissao("gerir-modelo");
+  try {
+    return { medida: await medir(session.companyId) };
+  } catch (e) {
+    return { erro: `Não consegui medir: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}` };
+  }
+}
+
+export async function limparBaseAntiga(confirmacao: string): Promise<{ resultado?: ResultadoDaLimpeza; erro?: string }> {
+  const session = await exigirPermissao("gerir-modelo");
+  if (confirmacao !== "LIMPAR") return { erro: "Digite LIMPAR para confirmar." };
+
+  // Carga em andamento e limpeza ao mesmo tempo é receita para base pela
+  // metade: a carga grava títulos do período que a limpeza está apagando.
+  const emAndamento = await prisma.omieSyncRun.findFirst({
+    where: { companyId: session.companyId, status: "EXECUTANDO" },
+    select: { id: true },
+  });
+  if (emAndamento) return { erro: "Há uma sincronização em andamento. Espere terminar (ou encerre-a) antes de limpar." };
+
+  const antes = await medir(session.companyId);
+  let resultado: ResultadoDaLimpeza;
+  try {
+    resultado = await limpar(session.companyId);
+  } catch (e) {
+    return { erro: `A limpeza falhou e nada foi apagado: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}` };
+  }
+
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "BASE_ANTIGA_LIMPA",
+    descricao:
+      `Base limpa até 31/12/2024: ${resultado.titulosApagados} títulos, ${resultado.movimentosApagados} movimentos, ` +
+      `${resultado.notasApagadas} notas, ${resultado.resumoMensalApagado} linhas de resumo mensal, ` +
+      `${resultado.janelasApagadas} janelas de carga e ${resultado.achadosOrfaosApagados} achados órfãos apagados; ` +
+      `${resultado.titulosEmAbertoPreservados} títulos antigos em aberto preservados.`,
+    antes: { ...antes, emAbertoMaiores: undefined },
+    depois: resultado,
+  });
+
+  revalidatePath("/sincronizacao");
+  return { resultado };
 }

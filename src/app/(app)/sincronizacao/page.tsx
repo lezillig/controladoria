@@ -20,6 +20,7 @@ import { exigirPermissao, podeAcao } from "../_dados";
 import { Barra, Kpi, Secao, Tabela } from "../_componentes";
 import SyncButton from "./SyncButton";
 import ResumoMensalButton, { ReabrirAuditoriaButton } from "./ResumoMensalButton";
+import LimparBaseButton from "./LimparBaseButton";
 import RelerJanelaButton from "./RelerJanelaButton";
 import RelerPeriodoForm from "./RelerPeriodoForm";
 
@@ -31,7 +32,9 @@ import RelerPeriodoForm from "./RelerPeriodoForm";
 // respondem 200 —, então o padrão da hospedagem hoje é suficiente. A linha
 // existe para o orçamento não ficar dependendo de um padrão que pode mudar sem
 // aviso, e para o teto ficar escrito onde a rota do cron já escreve o dela.
-export const maxDuration = 60;
+// Com Fluid Compute ligado, 300 é o teto do plano — e a limpeza da base
+// antiga (dezenas de milhares de linhas numa transação) precisa da folga.
+export const maxDuration = 300;
 
 // SINCRONIZAÇÃO — o estado de saúde do módulo.
 //
@@ -54,6 +57,7 @@ export const maxDuration = 60;
 export default async function SincronizacaoPage() {
   const session = await exigirPermissao("sincronizacao");
   const podeSincronizar = await podeAcao(session, "sincronizar");
+  const podeGerirModelo = await podeAcao(session, "gerir-modelo");
 
   const config = await prisma.controladoriaConfig.findUnique({
     where: { companyId: session.companyId },
@@ -334,6 +338,23 @@ export default async function SincronizacaoPage() {
             </p>
             <ReabrirAuditoriaButton />
           </div>
+
+          {/* A limpeza da base antiga mora aqui, e não em Configuração, porque
+              é a esta tela que a pessoa volta para conferir o efeito — volume
+              espelhado, carga histórica, resumo mensal. Ver limpezaHistorica.ts
+              para a ordem dos passos e por que ela decide tudo. */}
+          {podeGerirModelo && (
+            <div className="mt-4 border-t border-slate-100 pt-4">
+              <p className="text-xs font-medium text-slate-700">Limpar a base até 31/12/2024</p>
+              <p className="mb-2 mt-0.5 text-xs text-slate-500">
+                Apaga do espelho os títulos liquidados ou cancelados, os movimentos, as notas e o resumo mensal
+                anteriores a 2025, e move a data de início da base para 01/01/2025 antes disso — senão a carga
+                histórica rebaixaria tudo na noite seguinte. Título antigo ainda em aberto fica. Não é perda
+                definitiva: a Omie continua com tudo, e mover a data para trás traz de volta.
+              </p>
+              <LimparBaseButton />
+            </div>
+          )}
           {travada && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
               Existe uma execução iniciada em {fmtData(emAndamento!.iniciadoEm)} ainda marcada como em andamento. Enquanto

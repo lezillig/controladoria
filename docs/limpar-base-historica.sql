@@ -5,6 +5,12 @@
 -- Remove do ESPELHO os lançamentos até 31/12/2024, mantendo 2025 e 2026.
 -- Rode conectado ao banco da CONTROLADORIA (não ao da gestão).
 --
+-- PREFIRA O BOTÃO. A mesma sequência existe na tela Sincronização → "Limpar
+-- a base até 31/12/2024" (permissão de alterar o modelo de gestão), com a
+-- medida antes, a ordem garantida pelo código, transação única e trilha de
+-- auditoria. Este arquivo fica como referência do que o botão faz e para o
+-- caso de precisar rodar por fora — com o schema certo no search_path.
+--
 -- ---------------------------------------------------------------------------
 -- LEIA ISTO ANTES, PORQUE A ORDEM DECIDE SE O TRABALHO SERVE PARA ALGUMA COISA
 -- ---------------------------------------------------------------------------
