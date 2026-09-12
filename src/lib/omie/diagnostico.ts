@@ -134,6 +134,21 @@ type Sonda = {
 
 const SONDAS: Sonda[] = [
   {
+    // A movimentação SEM filtro de pagamento. Com `dDtPagtoDe/Ate` só vem o
+    // que foi pago — e o que se quer saber é o conjunto de valores de
+    // `cStatus`: se existe um CONCILIADO distinto de PAGO, e como aparecem os
+    // atrasados e os a vencer. Cem registros por variante, para haver
+    // variedade; a primeira variante que trouxer linha vence.
+    rotulo: "Sonda: movimentação sem filtro de pagamento (valores de status)",
+    endpoint: OMIE_ENDPOINTS.movimentos,
+    param: (de, ate) => [
+      { nPagina: 1, nRegPorPagina: 100, dDtVencDe: de, dDtVencAte: ate },
+      { nPagina: 1, nRegPorPagina: 100, dDtIncDe: de, dDtIncAte: ate },
+      { nPagina: 1, nRegPorPagina: 100, dDtEmisDe: de, dDtEmisAte: ate },
+      { nPagina: 1, nRegPorPagina: 100 },
+    ],
+  },
+  {
     // Saldo por conta como a Omie o conhece — inclui o efeito da conciliação
     // feita lá dentro, se houver.
     rotulo: "Sonda: resumo/saldo das contas correntes",
