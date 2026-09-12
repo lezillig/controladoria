@@ -67,11 +67,10 @@ export function isInvestigadorDisponivel(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-// Teto de idas e vindas entre o modelo e as consultas. Oito cabem no teto de
-// sessenta segundos da tela (ver maxDuration em auditoria/investigar/page.tsx)
-// e respondem qualquer pergunta específica; acima disso é o modelo vagando,
-// e cada volta custa tempo da pessoa que espera e dinheiro.
-const MAXIMO_DE_CONSULTAS = 8;
+// Teto de idas e vindas entre o modelo e as consultas. Doze respondem qualquer
+// pergunta que caiba numa tela; acima disso é o modelo vagando, e cada volta
+// custa tempo da pessoa que espera e dinheiro.
+const MAXIMO_DE_CONSULTAS = 12;
 const LIMITE_DE_LINHAS = 50;
 
 const SEVERIDADES: AuditSeveridade[] = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
@@ -409,17 +408,19 @@ function mascarar(documento: string | null): string | null {
 }
 
 // RODADAS. Uma investigação são várias chamadas ao modelo, cada uma de dezenas
-// de segundos, e a hospedagem corta a requisição em sessenta. Então nenhuma
-// requisição tenta fazer a investigação inteira: cada uma avança as chamadas
-// que cabem no orçamento, grava a conversa e as consultas, e a próxima continua
-// de onde parou. Quem encadeia as rodadas é o navegador de quem perguntou, como
-// na sincronização.
+// de segundos, e a hospedagem corta a requisição num teto (300 segundos na
+// tela de investigar, com Fluid Compute ligado). Então nenhuma requisição
+// tenta fazer a investigação inteira: cada uma avança as chamadas que cabem no
+// orçamento, grava a conversa e as consultas, e a próxima continua de onde
+// parou. Quem encadeia as rodadas é o navegador de quem perguntou, como na
+// sincronização.
 //
 // Uma chamada nova só começa se ainda houver folga para ela terminar dentro do
-// teto. O orçamento é conservador de propósito: estourar o teto no meio de uma
-// chamada perde a rodada inteira, e o modelo em esforço médio com ferramentas
-// costuma levar de dez a trinta segundos por resposta.
-const ORCAMENTO_DA_RODADA_MS = 22_000;
+// teto. O orçamento fica bem abaixo dele de propósito: estourar o teto no meio
+// de uma chamada perde a rodada inteira, e o modelo com ferramentas costuma
+// levar de dez a sessenta segundos por resposta. Com 90 segundos de orçamento
+// e uma chamada de até um minuto em curso, a rodada fecha em menos de três.
+const ORCAMENTO_DA_RODADA_MS = 90_000;
 
 function mensagemInicial(params: { empresa: string; pergunta: string }): Anthropic.Beta.BetaMessageParam {
   return {

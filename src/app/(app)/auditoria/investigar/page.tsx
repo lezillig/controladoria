@@ -15,10 +15,13 @@ import InvestigacaoForm from "./InvestigacaoForm";
 // "por que o vencido a receber dobrou?". Os agentes respondem perguntas
 // fixas todo dia; aqui a pergunta é de quem está olhando.
 //
-// A investigação anda em rodadas curtas conduzidas pelo navegador, e cada
-// rodada grava o progresso (ver investigador.ts). Por isso o teto por
-// requisição é o mesmo das outras telas, e não precisa ser maior.
-export const maxDuration = 60;
+// A investigação anda em rodadas conduzidas pelo navegador, e cada rodada
+// grava o progresso (ver investigador.ts). Com Fluid Compute ligado no projeto
+// da Vercel, o teto por requisição pode ir a 300 segundos mesmo no plano
+// Hobby — e uma rodada mais longa significa menos idas e vindas para a mesma
+// pergunta. A primeira versão desta tela pedia 60 por cautela e foi justamente
+// o que cortou a primeira investigação no meio.
+export const maxDuration = 300;
 
 const STATUS_ROTULO: Record<string, string> = {
   EXECUTANDO: "Em andamento",

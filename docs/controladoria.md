@@ -150,7 +150,7 @@ corta a requisição em sessenta. Cada rodada faz as chamadas que cabem no
 orçamento (uma chamada nova só começa com folga para terminar), grava a
 conversa e devolve o estado; o navegador de quem perguntou chama a rodada
 seguinte até o status sair de EXECUTANDO. Fechar a aba não perde nada —
-reabrir pelo histórico retoma. Teto de oito consultas por pergunta. Cada
+reabrir pelo histórico retoma. Teto de doze consultas por pergunta; a tela tem `maxDuration` de 300 segundos (Fluid Compute). Cada
 pergunta é uma chamada paga.
 
 ---
