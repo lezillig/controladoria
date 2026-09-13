@@ -3,6 +3,7 @@ import { saldoAtualCents } from "@/lib/controladoria/agents/conciliacao";
 import { HORIZONTES_DIAS, calcularCiclo, horizonteValido, projetarFluxoCaixa } from "@/lib/controladoria/agents/fluxoCaixa";
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { somarDias } from "@/lib/controladoria/periodos";
+import { preverRecebimentosDoContexto } from "@/lib/controladoria/previsaoCaixa";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
@@ -22,6 +23,12 @@ export default async function FluxoCaixaPage({
   const saldo = saldoAtualCents(ctx);
   const projecao = projetarFluxoCaixa(ctx);
   const ciclo = calcularCiclo(ctx);
+  // A leitura REALISTA: cada cliente pelo próprio atraso típico, e o vencido
+  // além do padrão fora da conta. Ver previsaoCaixa.ts.
+  const previsao = preverRecebimentosDoContexto(ctx);
+  const realistaPorDias = new Map(previsao.porHorizonte.map((p) => [p.dias, p.realistaCents]));
+  const previsto30 = realistaPorDias.get(30) ?? 0;
+  const contratual30 = previsao.porHorizonte.find((p) => p.dias === 30)?.contratualCents ?? 0;
 
   const pagarAberto = titulosAtivos(ctx, "PAGAR").filter(emAberto);
   const receberAberto = titulosAtivos(ctx, "RECEBER").filter(emAberto);
@@ -99,7 +106,11 @@ export default async function FluxoCaixaPage({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi rotulo="Saldo atual" valor={fmtBRL(saldo)} apoio="Soma das contas correntes ativas" tom={saldo >= 0 ? "neutro" : "ruim"} />
         <Kpi rotulo="A pagar em aberto" valor={fmtBRL(somar(pagarAberto, saldoAberto))} apoio={`Vencido: ${fmtBRL(vencidoPagar)}`} />
-        <Kpi rotulo="A receber em aberto" valor={fmtBRL(somar(receberAberto, saldoAberto))} apoio={`${fmtNumero(receberAberto.length)} título(s)`} />
+        <Kpi
+          rotulo="A receber em aberto"
+          valor={fmtBRL(somar(receberAberto, saldoAberto))}
+          apoio={`${fmtNumero(receberAberto.length)} título(s) · realista 30d ${fmtBRL(previsto30)} (contratual ${fmtBRL(contratual30)})`}
+        />
         <Kpi
           rotulo="Ciclo financeiro"
           valor={`${fmtNumero(ciclo.cicloFinanceiroDias)} dias`}
@@ -121,20 +132,71 @@ export default async function FluxoCaixaPage({
         </div>
       )}
 
-      <Secao titulo="Projeção por horizonte">
+      <Secao
+        titulo="Projeção por horizonte"
+        descricao={
+          "Contratual: cada recebível entra no vencimento. Realista: cada cliente entra quando costuma pagar, pelo histórico dele, " +
+          `e o vencido além do padrão fica de fora (${fmtBRL(previsao.incertoTotalCents)} hoje). A diferença entre as duas colunas é o otimismo embutido na primeira.`
+        }
+      >
         <Tabela
-          colunas={["Horizonte", "Data", "Entradas previstas", "Saídas previstas", "Saldo projetado"]}
-          alinharDireita={[2, 3, 4]}
-          linhas={projecao.map((p) => [
-            `${p.dias} dias`,
-            fmtData(p.data),
-            fmtBRL(p.entradasCents),
-            fmtBRL(p.saidasCents),
-            <span key="s" className={`font-semibold ${p.saldoProjetadoCents < 0 ? "text-red-700" : "text-emerald-700"}`}>
-              {fmtBRL(p.saldoProjetadoCents)}
+          colunas={["Horizonte", "Data", "Entradas contratuais", "Entradas realistas", "Saídas previstas", "Saldo contratual", "Saldo realista"]}
+          alinharDireita={[2, 3, 4, 5, 6]}
+          linhas={projecao.map((p) => {
+            const realista = realistaPorDias.get(p.dias) ?? 0;
+            const saldoRealista = saldo + realista - p.saidasCents;
+            return [
+              `${p.dias} dias`,
+              fmtData(p.data),
+              fmtBRL(p.entradasCents),
+              fmtBRL(realista),
+              fmtBRL(p.saidasCents),
+              <span key="s" className={`font-semibold ${p.saldoProjetadoCents < 0 ? "text-red-700" : "text-emerald-700"}`}>
+                {fmtBRL(p.saldoProjetadoCents)}
+              </span>,
+              <span key="r" className={`font-semibold ${saldoRealista < 0 ? "text-red-700" : "text-emerald-700"}`}>
+                {fmtBRL(saldoRealista)}
+              </span>,
+            ];
+          })}
+        />
+      </Secao>
+
+      <Secao
+        titulo="Previsão por contrato"
+        descricao={
+          `Cada cliente pelo próprio padrão: mediana do atraso entre vencimento e recebimento, e a frequência com que pagou no prazo. ` +
+          `Sem amostra de ${3} baixas, usa o padrão do conjunto (${fmtNumero(previsao.atrasoPadraoDias)} dias)` +
+          (previsao.clientesSemPadrao > 0 ? ` — é o caso de ${fmtNumero(previsao.clientesSemPadrao)} cliente(s).` : ".") +
+          ` "Incerto" é o vencido além do padrão do cliente: precisa de cobrança, não de espera.`
+        }
+      >
+        <Tabela
+          colunas={["Cliente", "Em aberto", "Vencido", "Incerto", "Atraso típico", "Pontual", "Previsto 30d", "60d", "90d"]}
+          alinharDireita={[1, 2, 3, 4, 5, 6, 7, 8]}
+          vazio="Nenhum título a receber em aberto."
+          linhas={previsao.clientes.slice(0, 30).map((c) => [
+            <span key="n">
+              {c.nome}
+              {ctx.conexoes.length > 1 && <span className="block text-xs text-slate-400">{c.empresa}</span>}
             </span>,
+            fmtBRL(c.emAbertoCents),
+            c.vencidoCents > 0 ? <span key="v" className="text-amber-700">{fmtBRL(c.vencidoCents)}</span> : "—",
+            c.incertoCents > 0 ? <span key="i" className="font-medium text-red-700">{fmtBRL(c.incertoCents)}</span> : "—",
+            c.atrasoMedianoDias === null ? (
+              <span key="a" className="text-slate-400">padrão geral</span>
+            ) : (
+              `${fmtNumero(c.atrasoMedianoDias)} dia(s)`
+            ),
+            c.pontualidadePercent === null ? "—" : `${fmtNumero(c.pontualidadePercent)}%`,
+            fmtBRL(c.previstoPorHorizonte[30] ?? 0),
+            fmtBRL(c.previstoPorHorizonte[60] ?? 0),
+            fmtBRL(c.previstoPorHorizonte[90] ?? 0),
           ])}
         />
+        {previsao.clientes.length > 30 && (
+          <p className="mt-2 text-xs text-slate-500">Os 30 maiores em aberto, de {fmtNumero(previsao.clientes.length)} clientes.</p>
+        )}
       </Secao>
 
       <Secao

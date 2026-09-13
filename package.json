@@ -17,6 +17,7 @@
     "teste:sql": "tsx scripts/teste-sql.ts",
     "teste:limpeza": "tsx scripts/teste-limpeza.ts",
     "teste:alerta": "tsx scripts/teste-alerta.ts",
+    "teste:previsao": "tsx scripts/teste-previsao.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

@@ -441,6 +441,16 @@ como se confere o resultado antes de ligar o automático.
 Cada invocação trabalha ~42s, grava onde parou e dispara a próxima via
 `waitUntil` — o plano Hobby da Vercel tem 60s de teto duro por invocação.
 
+**Previsão de caixa por contrato** (tela Fluxo de caixa,
+`src/lib/controladoria/previsaoCaixa.ts`). A projeção por horizonte é
+**contratual** — cada recebível entra no vencimento. Ao lado dela, a leitura
+**realista**: cada cliente pelo próprio padrão (mediana do atraso entre
+vencimento e baixa, e a frequência com que pagou no prazo), data prevista =
+vencimento + atraso típico; sem 3 baixas de amostra, vale o padrão do
+conjunto. Título vencido **além do padrão do cliente** não entra na previsão:
+vai para a coluna "incerto", que é a lista de cobrança. Regras puras, testadas
+em `teste:previsao`.
+
 **Alerta por exceção.** O contrário do relatório: fica em silêncio enquanto
 nada muda e manda um e-mail curto, logo depois da auditoria, no dia em que
 surge um achado **crítico novo** ou o **caixa projetado** (pelos títulos em
