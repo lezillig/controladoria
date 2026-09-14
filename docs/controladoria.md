@@ -113,6 +113,20 @@ o caso legítimo que preserva (`scripts/teste-desvios.ts`):
 | `CB-ENTRADA-SEM-TITULO` | Crédito no extrato sem título a receber nem baixa casável — receita que o sistema não conhece | Transferência entre contas do grupo (par débito/crédito em ±1 dia), resgate, rendimento, estorno, tarifa |
 | `CR-JUROS-NAO-COBRADOS` | Cliente que pagou 30+ dias depois do vencimento com juros e multa zerados; um achado por cliente e trimestre; impacto = custo do atraso a 1% a.m.; cita a Lei 14.133 (art. 92 V) para tomador público | Atraso com encargo cobrado, juros abaixo de ¼ da materialidade |
 | `HI-FORNECEDOR-DORMENTE` | Relação antiga (3+ meses ativos), 12+ meses sem título, volta no mês corrente ou anterior com valor ≥ materialidade | Quem acordou há mais de um mês, quem nunca teve relação |
+| `FR-CNPJ-IRREGULAR` | CNPJ que a Receita registra como BAIXADA, INAPTA, SUSPENSA ou NULA (ou que a base pública não conhece) com pagamento nos últimos 12 meses ou título em aberto; mínimo MÉDIA, ALTA com título em aberto | CNPJ ATIVA; "não encontrada" fica em MÉDIA, porque a base pública atrasa para empresa recém-aberta |
+| `FR-CNPJ-RECENTE` | Empresa aberta há menos de 6 meses na data do primeiro título a pagar, com total ≥ 2× materialidade; capital social < R$ 10 mil, porte MEI/ME e título anterior à abertura agravam (dois agravantes sobem um degrau) | Empresa antiga cadastrada agora na Omie (isso é `FR-FORNECEDOR-NOVO-ALTO`), volume abaixo de 2× |
+| `FR-CNAE-INCOMPATIVEL` | CNAE principal de família incompatível com a categoria paga, pela tabela de famílias em `antifraudeReceita.ts` (posto cobrando "consultoria", loja de roupas cobrando "manutenção de veículos"); forte = MÉDIA (BAIXA abaixo da materialidade), fraca = INFO | Par fora da tabela (plausível), categoria de vale/benefício/reembolso/tributo, CNAE sem família |
+| `FR-SOCIO-FUNCIONARIO` | Sócio (ou titular do MEI/empresário individual, pela razão social) com o nome inteiro igual ao de motorista da folha — 2+ palavras, 3 quando o sobrenome é muito comum; CRÍTICA, pede conferir parentesco/vínculo | Só primeiro nome, "Fulano Silva", fornecedor sem título a pagar |
+| `FR-MEI-ACIMA-DO-TETO` | MEI que recebeu do grupo mais de R$ 81 mil em 12 meses (teto anual da LC 123): INFO até 20% acima, BAIXA além | MEI abaixo do teto, fornecedor que não é MEI |
+
+Estas cinco leem `ParceiroReceita` — o cadastro público da Receita Federal
+(situação, abertura, CNAE, porte, capital, sócios), consultado pela BrasilAPI
+sem chave, ~15 s por ciclo e pelo botão **Consultar Receita agora** da tela de
+sincronização, em ordem de maior valor pago (`src/lib/receita/`). A tabela
+**não tem `companyId`** de propósito: é dado público por CNPJ, igual para a
+Azul e a MCZ — a mesma exceção consciente ao multi-tenant que a gestão faz com
+`AnpPrecoReferencia`. Todas ficam caladas para o CNPJ que ainda não foi
+consultado.
 | `FR-EDITADO-APOS-BAIXA` | Título a pagar liquidado e alterado na Omie mais de 2 dias depois da baixa, com o usuário que alterou (bloco `info`, pedido com `lDadosCad`) | Alteração no dia da baixa, título sem usuário de alteração (a conta não devolve o bloco) |
 | `FR-LANCAMENTO-MANUAL` | Títulos a pagar de origem manual (`cOrigem` MANP) sem número de nota, por usuário e mês, somando ≥ materialidade | Título nascido de nota (NFEP) ou de extrato, manual com número de nota |
 
@@ -570,10 +584,13 @@ Uma única rota agendada, como máquina de estados com cursor persistido:
 
 ```
 por empresa:  cadastros → títulos → movimentos → notas
-depois:       auditoria → conciliação da conformidade → relatório*    (grupo inteiro)
+depois:       receita** → auditoria → conciliação da conformidade → relatório*    (grupo inteiro)
 
 * só com "Relatório diário automático" ligado no modelo de gestão — nasce
   desligado, e sem ele o ciclo encerra depois da auditoria.
+** ~15 s de consultas ao cadastro público da Receita Federal (ParceiroReceita),
+  num passo próprio para não disputar o teto da função com os agentes; falha
+  ali vira linha de detalhe e a auditoria roda do mesmo jeito.
 ```
 
 **Por que o relatório nasce desligado.** Durante a integração o que se quer é

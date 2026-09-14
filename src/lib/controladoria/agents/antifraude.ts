@@ -11,6 +11,7 @@ import {
   notaSequencial,
   valoresRedondos,
 } from "./antifraudeFornecedor";
+import { cnaeIncompativel, cnpjIrregular, cnpjRecente, meiAcimaDoTeto, socioQueEFuncionario } from "./antifraudeReceita";
 import {
   agravar,
   agrupar,
@@ -94,6 +95,15 @@ export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   // lançamento manual sem documento.
   achados.push(...editadoAposBaixa(ctx, materialidade));
   achados.push(...lancamentoManualSemDocumento(ctx, materialidade));
+  // O que a Receita Federal diz do CNPJ (antifraudeReceita.ts): situação
+  // irregular, empresa recém-aberta, CNAE incompatível com o que se paga,
+  // sócio com nome de motorista da folha, MEI acima do teto. Caladas sem
+  // consulta (ctx.receita).
+  achados.push(...cnpjIrregular(ctx, materialidade));
+  achados.push(...cnpjRecente(ctx, materialidade));
+  achados.push(...cnaeIncompativel(ctx, materialidade));
+  achados.push(...socioQueEFuncionario(ctx, materialidade));
+  achados.push(...meiAcimaDoTeto(ctx, materialidade));
 
   return achados;
 }
