@@ -9,7 +9,7 @@ import { prismaGestao } from "./cliente";
 // A conexão usada aqui é a de `./cliente`, que aponta para o banco da gestão —
 // separado do banco desta aplicação quando `GESTAO_DATABASE_URL` está
 // configurada, e o mesmo banco quando não está. Ela deve usar um papel SOMENTE
-// LEITURA, com permissão apenas nas seis tabelas lidas neste arquivo (ver
+// LEITURA, com permissão apenas nas nove tabelas lidas neste arquivo (ver
 // docs/papel-leitura-gestao.sql): assim a fronteira é uma propriedade do
 // banco, e não uma promessa de quem escreve o código.
 //
@@ -45,6 +45,12 @@ export type VeiculoGestao = {
   plate: string;
   status: string;
   currentMileage: number;
+  // Modelo e tipo entram para o antifraude de frota: o volume plausível de
+  // um abastecimento é o do MODELO (um Sprinter não enche 300 litros), e o
+  // tipo separa ônibus de utilitário quando o veículo ainda tem pouca
+  // história própria.
+  model: string;
+  type: string;
 };
 
 export type ClienteGestao = {
@@ -62,6 +68,46 @@ export type AbastecimentoGestao = {
   volumeLitros: number;
   kmRodados: number | null;
   placaOriginal: string;
+  // Os campos do extrato do cartão que sustentam o antifraude de frota
+  // (src/lib/controladoria/agents/frota.ts): produto, posto, praça, hodômetro
+  // e o nome do motorista como veio da planilha. Nulos quando o extrato
+  // importado não os traz — cada regra decide o que faz sem eles.
+  combustivel: string | null;
+  posto: string | null;
+  cidade: string | null;
+  uf: string | null;
+  hodometro: number | null;
+  motoristaOriginal: string | null;
+  modeloOriginal: string | null;
+};
+
+// Uso real de veículo (check-in/check-out com quilometragem) e escala
+// planejada. Juntos dizem se o veículo tinha o que fazer no dia em que o
+// cartão abasteceu — abastecimento em dia sem escala nem uso é o indício
+// clássico de combustível indo para outro tanque.
+export type UsoDeVeiculoGestao = {
+  vehicleId: string;
+  driverId: string;
+  checkInAt: Date;
+  checkOutAt: Date | null;
+  kmInicial: number;
+  kmFinal: number | null;
+};
+
+export type EscalaGestao = {
+  vehicleId: string;
+  driverId: string;
+  date: Date;
+};
+
+// Preço médio de revenda da ANP por UF, produto e semana — referência pública
+// que a gestão já baixa (não tem companyId de propósito, ver o schema dela).
+export type PrecoAnpGestao = {
+  uf: string;
+  produto: string;
+  semanaInicio: Date;
+  semanaFim: Date;
+  precoMedioCents: number;
 };
 
 // Marca se a última leitura encontrou o schema da gestão. Consultado pela tela
@@ -104,11 +150,67 @@ export async function lerMotoristas(companyId: string): Promise<MotoristaGestao[
 export async function lerVeiculos(companyId: string): Promise<VeiculoGestao[]> {
   return ler(
     () => prismaGestao.$queryRaw<VeiculoGestao[]>`
-      SELECT id, plate, status::text AS status, "currentMileage"
+      SELECT id, plate, status::text AS status, "currentMileage", model, type
       FROM public."Vehicle"
       WHERE "companyId" = ${companyId}
     `,
     "os veículos"
+  );
+}
+
+// Leituras OPCIONAIS: tabelas que entraram depois do papel somente-leitura ter
+// sido criado (ver docs/papel-leitura-gestao.sql). Se a permissão ainda não foi
+// concedida, a consulta falha — e a falha NÃO pode derrubar a disponibilidade
+// da gestão inteira, porque os cruzamentos antigos (CPF de motorista, custo
+// por veículo, combustível x Omie) continuam válidos. Devolve lista vazia e
+// registra o motivo à parte, para a tela de sincronização mostrar o que falta.
+let leiturasOpcionaisIndisponiveis: string[] = [];
+
+export function leiturasOpcionaisPendentes(): string[] {
+  return leiturasOpcionaisIndisponiveis;
+}
+
+async function lerOpcional<T>(consulta: () => Promise<T[]>, rotulo: string): Promise<T[]> {
+  try {
+    const linhas = await consulta();
+    leiturasOpcionaisIndisponiveis = leiturasOpcionaisIndisponiveis.filter((r) => r !== rotulo);
+    return linhas;
+  } catch {
+    if (!leiturasOpcionaisIndisponiveis.includes(rotulo)) leiturasOpcionaisIndisponiveis.push(rotulo);
+    return [];
+  }
+}
+
+export async function lerUsosDeVeiculo(companyId: string, desde: Date): Promise<UsoDeVeiculoGestao[]> {
+  return lerOpcional(
+    () => prismaGestao.$queryRaw<UsoDeVeiculoGestao[]>`
+      SELECT "vehicleId", "driverId", "checkInAt", "checkOutAt", "kmInicial", "kmFinal"
+      FROM public."VehicleUsageLog"
+      WHERE "companyId" = ${companyId} AND "checkInAt" >= ${desde}
+    `,
+    "o uso dos veículos (VehicleUsageLog)"
+  );
+}
+
+export async function lerEscalas(companyId: string, desde: Date): Promise<EscalaGestao[]> {
+  return lerOpcional(
+    () => prismaGestao.$queryRaw<EscalaGestao[]>`
+      SELECT "vehicleId", "driverId", date
+      FROM public."Escala"
+      WHERE "companyId" = ${companyId} AND date >= ${desde}
+    `,
+    "as escalas (Escala)"
+  );
+}
+
+export async function lerPrecosAnp(desde: Date): Promise<PrecoAnpGestao[]> {
+  return lerOpcional(
+    () => prismaGestao.$queryRaw<PrecoAnpGestao[]>`
+      SELECT uf, produto, "semanaInicio", "semanaFim", "precoMedioCents"
+      FROM public."AnpPrecoReferencia"
+      WHERE "semanaFim" >= ${desde}
+    `,
+    "os preços de referência da ANP (AnpPrecoReferencia)"
   );
 }
 
@@ -130,7 +232,8 @@ export async function lerAbastecimentos(companyId: string, desde: Date): Promise
   return ler(
     () => prismaGestao.$queryRaw<AbastecimentoGestao[]>`
       SELECT id, "vehicleId", "driverId", "dataHora", "valorCents", "volumeLitros",
-             "kmRodados", "placaOriginal"
+             "kmRodados", "placaOriginal", combustivel, posto, cidade, uf, hodometro,
+             "motoristaOriginal", "modeloOriginal"
       FROM public."FuelTransaction"
       WHERE "companyId" = ${companyId} AND "dataHora" >= ${desde}
     `,

@@ -54,10 +54,10 @@ entregaria acesso ao ERP financeiro do grupo.
 
 A escolha por **três camadas** é o que dá confiança ao resultado:
 
-### Camada 1 — Onze agentes de domínio
+### Camada 1 — Treze agentes de domínio
 
 Determinísticos e puros: recebem o mesmo retrato dos dados, não consultam banco
-nem API, não escrevem nada. São onze porque cada um responde a uma pergunta com
+nem API, não escrevem nada. São treze porque cada um responde a uma pergunta com
 **dono diferente na empresa** — o que torna o achado endereçável a alguém.
 
 | Agente | Área | O que procura |
@@ -65,8 +65,10 @@ nem API, não escrevem nada. São onze porque cada um responde a uma pergunta co
 | `contas-pagar` | Financeiro | Juros e multa por atraso, duplicidade, pagamento acima do documento, títulos vencidos e "fantasma", antecipação sem desconto, falta de classificação |
 | `contas-receber` | Financeiro | Inadimplência por cliente, aging, descontos concedidos, recebimento a menor, concentração de receita, atraso recorrente |
 | `conciliacao-bancaria` | Financeiro | Movimentos não conciliados, saída sem título, baixa sem dinheiro no extrato, débito duplicado, saldo abaixo do mínimo |
-| `antifraude` | Controladoria | Troca de conta bancária de fornecedor, fracionamento de alçada, fornecedor que é funcionário, documento inválido, cadastro duplicado, pagamento em dia não útil, Lei de Benford |
+| `antifraude` | Controladoria | Troca de conta bancária de fornecedor, fracionamento de alçada, fornecedor que é funcionário, documento inválido, cadastro duplicado, pagamento em dia não útil, Lei de Benford; por onde o dinheiro saiu (conta escondida, baixa desviada, sem conta, em título cancelado, antes da emissão, no futuro, repetida) |
+| `frota` | Operações | Antifraude do combustível, transação a transação no extrato do cartão: abastecimento maior que o tanque ou dois tanques em 12 h, consumo que despenca ou hodômetro que anda para trás, abastecimento em dia sem escala nem uso do veículo, placa fora da frota ou veículo inativo, produto que o motor não usa, posto acima da frota e da ANP, motorista abastecendo vários veículos no dia |
 | `custos` | Controladoria | Variação por categoria, despesa nova, gasto recorrente, valor fora do padrão, divergência combustível Omie × cartão de frota |
+| `padroes` | Controladoria | Cada fornecedor contra o histórico DELE (24 meses): valor fora do padrão, fornecedor efêmero, reajuste silencioso, prazo antecipado |
 | `fiscal` | Contabilidade | Nota cancelada com título ativo, receita sem nota, nota sem título, carga tributária fora da faixa do Lucro Presumido, falha de sequência |
 | `fluxo-caixa` | Tesouraria | Projeção 7/15/30/60/90 dias, descasamento da semana, ciclo financeiro (PMR/PMP) |
 | `rentabilidade` | Controladoria | Margem por contrato, contrato no prejuízo, veículo fora do padrão, cobertura do rateio |
@@ -74,7 +76,27 @@ nem API, não escrevem nada. São onze porque cada um responde a uma pergunta co
 | `administrativo` | Administrativo | Sync atrasado ou com erro, cadastro incompleto, conta sem extrato, título emitido depois de vencer, achados críticos sem tratativa |
 | `conformidade` | Controladoria | Prazo estourado, risco grave sem responsável, apontamento externo reincidente, apontamento confirmado pelos dados, proposta de leitura não conferida, relatório mensal não recebido, ponto cego do sistema |
 
-Um agente que quebra **não derruba os outros dez**.
+Um agente que quebra **não derruba os outros doze**.
+
+**Frota e combustível — o que cada regra precisa e quando fica calada.** O
+agente lê o extrato do cartão (`FuelTransaction` da gestão) e cruza com escala
+(`Escala`), uso real (`VehicleUsageLog`), cadastro da frota e preço ANP
+(`AnpPrecoReferencia`) — três tabelas a mais no papel de leitura
+(`docs/papel-leitura-gestao.sql`). Toda regra é agregada por veículo e mês (um
+achado, a lista na evidência), e toda regra tem uma condição de silêncio:
+
+| Regra | Aponta | Fica calada quando |
+|---|---|---|
+| `FR-COMBUSTIVEL-VOLUME` | Abastecimento acima de 1,5× o percentil 90 do veículo (ou do modelo), ou dois em 12 h que somados passam disso — com 20 L de folga | Veículo com menos de 8 abastecimentos e modelo com menos de 15 |
+| `FR-COMBUSTIVEL-CONSUMO` | Intervalo entre abastecimentos com km/L abaixo da metade do típico do veículo, ou hodômetro que anda para trás | Menos de 6 intervalos com hodômetro |
+| `FR-COMBUSTIVEL-SEM-OPERACAO` | Abastecimento em dia sem escala nem check-in do veículo | A operação registra escala/uso para menos de 70% dos abastecimentos do mês |
+| `FR-COMBUSTIVEL-FORA-DA-FROTA` | Placa que não casa com veículo cadastrado (ESTADO: some ao cadastrar); veículo INATIVO abastecendo nos últimos 30 dias | Menos de 80% do extrato vinculado a veículo (cadastro incompleto) |
+| `FR-COMBUSTIVEL-PRODUTO` | Gasolina/etanol num veículo que abastece diesel em 80% de ≥ 6 registros (e vice-versa; Arla é à parte) | Sem produto dominante |
+| `FR-COMBUSTIVEL-PRECO` | Posto com mediana ≥ 8% acima da frota (mesmo produto, mesmo mês, outros postos) e acima da ANP + 10% quando há referência | Menos de 10 abastecimentos em 3 postos no mês, ou posto com menos de 3 |
+| `FR-COMBUSTIVEL-MOTORISTA` | Pessoa que abastece 3+ veículos no mesmo dia (INFO quando é rotina de pátio) | — |
+
+A severidade sobe pela **recorrência** no mês (3+ casos = MÉDIA), não só pelo
+valor: um abastecimento sozinho nunca chega à materialidade da empresa.
 
 ### Camada 2 — Supervisor
 
@@ -560,6 +582,23 @@ quando o canal existir. Regra de decisão pura em `alerta.ts`, testada em
 **Carga histórica (backfill)** usa a mesma máquina, mês a mês, por empresa, sem
 gerar relatório (disparar um e-mail por mês carregado seria absurdo).
 
+**Auditoria retroativa — auditar o passado** (Sincronização → "Auditar o
+passado", `src/lib/controladoria/retroativa.ts`). O ciclo protege o presente:
+audita o ano corrente, todo dia. Um desvio que começou em 2024 não aparece nele,
+e "isso já vinha acontecendo?" é a primeira pergunta diante de um achado. A
+varredura carrega um ano fechado inteiro (títulos, baixas, notas, extrato e
+cartão de frota daquele ano) e roda os mesmos agentes, no **modo retroativo do
+motor**: só fatos datados (EVENTO) são gravados — ESTADO descreve o "agora", e
+calculado sobre 2024 seria um agora falso sobrescrevendo o verdadeiro — e nada
+de ESTADO é fechado. Os achados entram na mesma fila, com a mesma tratativa.
+Um ano por vez, sob demanda, dentro dos 300 s da tela.
+
+Consequência no fechamento automático: um EVENTO só fecha sozinho quando a
+auditoria **reavaliou o período em que ele aconteceu** (a data do fato cai na
+janela lida) e o agente não o reencontrou. O ciclo diário de 2026 não fecha
+mais um fato de 2024 "porque saiu do alcance" — quem reavalia 2024 é outra
+varredura de 2024.
+
 **Agendamento:** `10 6 * * *` UTC = 03:10 de Brasília, depois do fechamento
 bancário e antes do expediente.
 
@@ -588,7 +627,7 @@ bancário e antes do expediente.
   filtrado por empresa.
 - **Leitura da gestão é só leitura**, por consultas explícitas num arquivo só.
   Para endurecer mais, `prisma/seguranca-banco.sql` cria um usuário Postgres com
-  escrita apenas no schema próprio e leitura apenas nas 6 tabelas necessárias.
+  escrita apenas no schema próprio e leitura apenas nas 9 tabelas necessárias.
 - **Documento de conformidade sai por um caminho só:** a rota de download, com
   `Content-Disposition: attachment`, `nosniff`, CSP `sandbox` e filtro por
   empresa. Nenhuma tela, contexto de auditoria ou relatório carrega o binário —

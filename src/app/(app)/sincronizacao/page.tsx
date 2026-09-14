@@ -23,6 +23,9 @@ import ResumoMensalButton, { ReabrirAuditoriaButton } from "./ResumoMensalButton
 import LimparBaseButton from "./LimparBaseButton";
 import RelerJanelaButton from "./RelerJanelaButton";
 import RelerPeriodoForm from "./RelerPeriodoForm";
+import AuditoriaRetroativaForm from "./AuditoriaRetroativaForm";
+import { achadosAbertosPorAno, anosAuditaveis } from "@/lib/controladoria/retroativa";
+import { leiturasOpcionaisPendentes } from "@/lib/gestao/leitura";
 
 // Teto de duração das Server Actions desta tela, declarado por precaução e não
 // por diagnóstico.
@@ -126,10 +129,12 @@ export default async function SincronizacaoPage() {
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
   const janelasSemNotas = apenasNotas(janelasRuins);
   const versao = versaoPublicada();
+  const abertosPorAno = Object.fromEntries(await achadosAbertosPorAno(session.companyId));
 
   // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
   // leitura da gestão, então só faz sentido consultá-la quando ela já rodou.
   const gestao = disponibilidadeGestao();
+  const leiturasPendentes = leiturasOpcionaisPendentes();
 
   const ultimoDiario = execucoes.find((e) => e.status === "CONCLUIDO" && !e.backfill);
   const atrasoDias = ultimoDiario ? diasEntre(ultimoDiario.finalizadoEm ?? ultimoDiario.iniciadoEm, new Date()) : null;
@@ -339,6 +344,18 @@ export default async function SincronizacaoPage() {
             <ReabrirAuditoriaButton />
           </div>
 
+          {/* O ciclo protege o presente; esta seção olha para trás. Um desvio
+              que começou em 2024 não aparece no ciclo de 2026 — e "isso já
+              vinha acontecendo?" é a primeira pergunta diante de um achado. */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="text-xs font-medium text-slate-700">Auditar o passado</p>
+            <p className="mb-2 mt-0.5 text-xs text-slate-500">
+              Roda os mesmos agentes sobre um ano fechado da base — títulos, baixas, notas, extrato e cartão de frota
+              daquele ano — para achar desvios que já aconteceram. Um ano por vez.
+            </p>
+            <AuditoriaRetroativaForm anos={anosAuditaveis(dataInicioBase)} abertosPorAno={abertosPorAno} />
+          </div>
+
           {/* A limpeza da base antiga mora aqui, e não em Configuração, porque
               é a esta tela que a pessoa volta para conferir o efeito — volume
               espelhado, carga histórica, resumo mensal. Ver limpezaHistorica.ts
@@ -388,6 +405,12 @@ export default async function SincronizacaoPage() {
         </p>
         {!gestao.disponivel && gestao.erro && (
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{gestao.erro}</p>
+        )}
+        {leiturasPendentes.length > 0 && (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            O antifraude de frota não conseguiu ler {leiturasPendentes.join(", ")}. Conceda SELECT ao papel de leitura
+            (ver docs/papel-leitura-gestao.sql, seção 3); até lá, as regras que dependem disso ficam caladas.
+          </p>
         )}
       </Secao>
 

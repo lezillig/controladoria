@@ -69,10 +69,17 @@ console.log("\n2. O que não pode fechar sozinho");
   const janela = { desde: new Date("2025-01-01") };
   const dentro = achado({ tipo: "EVENTO", dataReferencia: new Date("2026-03-10") });
   conferir("evento dentro da janela reavaliada fecha", podeFecharSozinho(dentro, NENHUMA, TODOS_OK, janela), true);
-  // Fato que ficou para trás da janela: nenhum agente vai reencontrá-lo, e
-  // pendência que ninguém reavalia não é controle — fecha.
+  // Fato que ficou para trás da janela: ninguém o reavaliou nesta rodada. Um
+  // desvio de 2024 achado pela auditoria retroativa não pode ser fechado pelo
+  // ciclo diário de 2026 só porque o ciclo não olha 2024 — quem fecha é outra
+  // varredura de 2024.
   const fora = achado({ tipo: "EVENTO", dataReferencia: new Date("2024-11-10") });
-  conferir("evento fora da janela fecha (saiu do alcance)", podeFecharSozinho(fora, NENHUMA, TODOS_OK, janela), true);
+  conferir("evento anterior à janela NÃO fecha (não foi reavaliado)", podeFecharSozinho(fora, NENHUMA, TODOS_OK, janela), false);
+  // A varredura retroativa de 2024 informa a janela fechada dos dois lados:
+  // fecha o que está nela e deixa em paz o que veio depois.
+  const janela2024 = { desde: new Date("2024-01-01"), ate: new Date("2024-12-31T23:59:59.999") };
+  conferir("varredura de 2024 fecha evento de 2024 que sumiu", podeFecharSozinho(fora, NENHUMA, TODOS_OK, janela2024), true);
+  conferir("varredura de 2024 não fecha evento de 2026", podeFecharSozinho(dentro, NENHUMA, TODOS_OK, janela2024), false);
   const semData = achado({ tipo: "EVENTO", dataReferencia: null });
   conferir("evento sem data de referência fecha com janela", podeFecharSozinho(semData, NENHUMA, TODOS_OK, janela), true);
   conferir("evento dentro da janela ainda detectado não fecha", podeFecharSozinho(dentro, new Set([dentro.chave]), TODOS_OK, janela), false);

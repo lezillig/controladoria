@@ -57,6 +57,16 @@ GRANT SELECT ON public."Vehicle"         TO controladoria_leitura;  -- custo por
 GRANT SELECT ON public."Cliente"         TO controladoria_leitura;  -- rentabilidade por contrato
 GRANT SELECT ON public."FuelTransaction" TO controladoria_leitura;  -- combustível do cartão x título do posto
 
+-- Antifraude de frota (src/lib/controladoria/agents/frota.ts): o abastecimento
+-- é cruzado com a escala e o uso real do veículo, e o preço do litro com a
+-- referência pública da ANP que a gestão já baixa. Sem estas três permissões
+-- nada quebra: as regras que dependem delas ficam caladas e a tela de
+-- sincronização lista o que falta.
+
+GRANT SELECT ON public."VehicleUsageLog"    TO controladoria_leitura;  -- abastecimento em dia sem uso do veículo
+GRANT SELECT ON public."Escala"             TO controladoria_leitura;  -- abastecimento em dia sem escala
+GRANT SELECT ON public."AnpPrecoReferencia" TO controladoria_leitura;  -- preço do litro x média ANP da praça
+
 -- ---------------------------------------------------------------------------
 -- 4. Garantir que continue somente leitura no futuro
 -- ---------------------------------------------------------------------------
@@ -69,7 +79,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM controladori
 -- ---------------------------------------------------------------------------
 -- 5. Conferir — antes de confiar
 -- ---------------------------------------------------------------------------
--- Deve listar exatamente as seis tabelas, todas com privilege_type = SELECT.
+-- Deve listar exatamente as nove tabelas, todas com privilege_type = SELECT.
 -- Qualquer INSERT, UPDATE ou DELETE nesta lista é erro.
 
 SELECT table_name, privilege_type

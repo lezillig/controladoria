@@ -16,6 +16,7 @@ import {
 } from "@/lib/controladoria/limpezaHistorica";
 import { registrarEvento } from "@/lib/controladoria/trilha";
 import { redigir } from "@/lib/controladoria/falhas";
+import { executarAuditoriaRetroativa } from "@/lib/controladoria/retroativa";
 import { exigirPermissao } from "../_dados";
 
 // Sincronização manual. O ciclo normal é o agendamento diário; este botão
@@ -519,6 +520,57 @@ export async function reabrirAuditoria(): Promise<{ mensagens: string[] }> {
             `Não havia consolidação para a referência ${fmtData(janelaFim)} — a auditoria já vai rodar no próximo Sincronizar agora.`,
           ],
   };
+}
+
+// AUDITORIA RETROATIVA — ver src/lib/controladoria/retroativa.ts.
+//
+// Um ano por clique. Roda dentro desta ação (não no ciclo), porque é uma
+// varredura sob demanda sobre um período fechado, e o teto de 300 s da tela
+// comporta um ano de base. Não disputa com o ciclo: recusa rodar enquanto
+// houver execução em andamento, e grava só fatos datados daquele ano.
+export async function auditarAnoPassado(formData: FormData): Promise<ResultadoSync> {
+  const session = await exigirPermissao("sincronizar");
+  const ano = Number(String(formData.get("ano") ?? ""));
+  if (!Number.isInteger(ano) || ano < 2000 || ano > 2100) return { erro: "Informe o ano a auditar." };
+
+  const emAndamento = await prisma.omieSyncRun.findFirst({
+    where: { companyId: session.companyId, status: "EXECUTANDO" },
+    select: { id: true },
+  });
+  if (emAndamento) {
+    return { erro: "Há uma execução em andamento. Espere ela terminar antes de auditar o passado." };
+  }
+
+  try {
+    const r = await executarAuditoriaRetroativa(session.companyId, ano);
+    await registrarEvento({
+      companyId: session.companyId,
+      userId: session.userId,
+      userNome: session.name,
+      userEmail: session.email,
+      acao: "AUDITORIA_RETROATIVA",
+      descricao:
+        `Auditoria retroativa de ${ano}: ${r.resultado.novos} novo(s), ${r.resultado.reincidentes} reincidente(s), ` +
+        `${r.resultado.fechadosAutomaticamente} fechado(s), ${r.resultado.reabertos} reaberto(s) — ` +
+        `${r.titulos} títulos, ${r.baixas} baixas, ${r.abastecimentos} abastecimentos lidos.`,
+    });
+    revalidatePath("/sincronizacao");
+    revalidatePath("/auditoria");
+    const erros = r.resultado.errosPorAgente.map((e) => `${e.agente}: ${redigir(e.erro).slice(0, 200)}`);
+    return {
+      concluido: true,
+      mensagens: [
+        `Auditoria de ${ano} concluída: ${r.resultado.novos} achado(s) novo(s), ${r.resultado.reincidentes} já conhecido(s), ` +
+          `${r.resultado.fechadosAutomaticamente} fechado(s) por não aparecerem mais, ${r.resultado.reabertos} reaberto(s).`,
+        `Base lida: ${r.titulos} títulos, ${r.baixas} baixas e ${r.abastecimentos} abastecimentos de ${ano} ` +
+          `(${Math.round(r.msContexto / 1000)} s de leitura, ${Math.round(r.msAuditoria / 1000)} s de agentes).`,
+        ...(erros.length > 0 ? [`Agente(s) com erro nesta varredura: ${erros.join("; ")}.`] : []),
+        "Os achados estão na tela de auditoria — filtre pelo período para ver só os daquele ano.",
+      ],
+    };
+  } catch (e) {
+    return { erro: `A auditoria de ${ano} falhou: ${redigir(e instanceof Error ? e.message : String(e)).slice(0, 400)}` };
+  }
 }
 
 // LIMPAR A BASE ATÉ 31/12/2024 — ver src/lib/controladoria/limpezaHistorica.ts.

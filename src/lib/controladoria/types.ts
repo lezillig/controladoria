@@ -19,7 +19,10 @@ import type {
   AbastecimentoGestao,
   ClienteGestao,
   DisponibilidadeGestao,
+  EscalaGestao,
   MotoristaGestao,
+  PrecoAnpGestao,
+  UsoDeVeiculoGestao,
   VeiculoGestao,
 } from "@/lib/gestao/leitura";
 import type { DadosConformidade } from "@/lib/conformidade/panorama";
@@ -65,6 +68,9 @@ export type ContextoAuditoria = {
   // registrada aqui para que ninguém conclua "não há título em 2025" quando o
   // correto é "2025 não foi carregado nesta leitura".
   janelaDesde: Date;
+  // Fim da janela, quando a leitura é um período fechado (auditoria
+  // retroativa de um ano). Nulo/ausente no ciclo diário: "até hoje".
+  janelaAte?: Date | null;
 
   titulos: OmieTitulo[];
   baixas: OmieBaixa[];
@@ -95,6 +101,14 @@ export type ContextoAuditoria = {
   veiculos: VeiculoGestao[];
   abastecimentos: AbastecimentoGestao[];
   gestao: DisponibilidadeGestao;
+  // Uso real, escala e preço de referência da ANP: só o antifraude de frota
+  // (agents/frota.ts) os lê. Opcionais porque são leituras que dependem de
+  // permissão concedida depois do papel somente-leitura original — e porque
+  // os testes montam o contexto à mão. Ausentes, as regras que dependem deles
+  // ficam caladas; nunca inventam.
+  usosDeVeiculo?: UsoDeVeiculoGestao[];
+  escalas?: EscalaGestao[];
+  precosAnp?: PrecoAnpGestao[];
 
   // O que veio de fora: relatorios de consultoria, contabilidade e auditoria
   // externa, ja transformados em apontamentos rastreaveis, mais as ligacoes

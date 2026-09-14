@@ -196,6 +196,16 @@ export function avaliarQualidadeDaBase(ctx: ContextoAuditoria): QualidadeDaBase 
       "Nenhuma nota fiscal nesta leitura — confira a empresa e a competência selecionadas. As análises fiscais ficam suspensas."
     );
   }
+  // A gestão indisponível não custa ponto no score — o espelho da Omie está
+  // íntegro —, mas precisa ficar escrito: sem ela, o cruzamento fornecedor x
+  // motorista, o custo por veículo e todo o antifraude de frota ficam calados,
+  // e silêncio sem aviso se lê como "está tudo certo".
+  if (ctx.gestao && !ctx.gestao.disponivel) {
+    limitacoes.push(
+      `Sistema de gestão indisponível nesta leitura (${ctx.gestao.erro ?? "sem detalhe"}): os cruzamentos com ` +
+        "motoristas, veículos e cartão de frota ficam suspensos nesta rodada."
+    );
+  }
   if (syncAtrasadoDias === null) {
     score -= 10;
     limitacoes.push("Sem registro de sincronização concluída — os dados podem não refletir D-1.");

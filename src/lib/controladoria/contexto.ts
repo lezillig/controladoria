@@ -5,12 +5,15 @@ import {
   disponibilidadeGestao,
   lerAbastecimentos,
   lerClientes,
+  lerEscalas,
   lerMotoristas,
+  lerPrecosAnp,
+  lerUsosDeVeiculo,
   lerVeiculos,
 } from "@/lib/gestao/leitura";
 import { carregarConformidade } from "@/lib/conformidade/panorama";
 import type { ContextoAuditoria } from "./types";
-import { inicioDoAno, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
+import { fimDoDia, inicioDoAno, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
 
 // Data a partir da qual a base histórica é carregada.
 //
@@ -70,7 +73,13 @@ export async function carregarContexto(
   // 60 segundos da função, e o ciclo parou de fechar. Quem chama informa o
   // recorte de que precisa (ver `janelaDeAuditoria`), em vez de esta função
   // adivinhar.
-  opcoes?: { desde?: Date }
+  //
+  // `ate` fecha a janela pelo outro lado (auditoria retroativa de um ano):
+  // títulos com vencimento ou emissão dentro de [desde, ate], mais todo título
+  // em aberto. `operacaoCompleta` faz movimentos e abastecimentos acompanharem
+  // a janela em vez do corte de 400 dias — é o que a varredura do passado
+  // precisa para olhar o cartão de frota de 2024.
+  opcoes?: { desde?: Date; ate?: Date; operacaoCompleta?: boolean }
 ): Promise<ContextoAuditoria> {
   const config = await garantirConfig(companyId);
   const inicioDaBase = inicioDoDia(config.dataInicioBase);
@@ -78,11 +87,14 @@ export async function carregarContexto(
   // Nunca antes do início da base: pedir mais história do que existe só
   // produziria varredura sem retorno.
   const desde = pedida && pedida > inicioDaBase ? pedida : inicioDaBase;
+  const ate = opcoes?.ate ? fimDoDia(opcoes.ate) : null;
   // Movimento e abastecimento só interessam em janelas recentes (conciliação,
   // custo do mês, comparativo com o mês anterior). Carregá-los desde o início
   // da base seria peso morto no maior volume da tabela.
   const desdeRecente = somarDias(inicioDoDia(dataReferencia), -400);
-  const corteRecente = desdeRecente > desde ? desdeRecente : desde;
+  const corteRecente = opcoes?.operacaoCompleta ? desde : desdeRecente > desde ? desdeRecente : desde;
+  const recorteDeData = ate ? { gte: desde, lte: ate } : { gte: desde };
+  const recorteDeMovimento = ate ? { gte: corteRecente, lte: ate } : { gte: corteRecente };
 
   const escopo = conexaoId ? { companyId, conexaoId } : { companyId };
 
@@ -106,6 +118,9 @@ export async function carregarContexto(
     veiculos,
     abastecimentos,
     conformidade,
+    usosDeVeiculo,
+    escalas,
+    precosAnp,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -118,8 +133,8 @@ export async function carregarContexto(
       where: {
         ...escopo,
         OR: [
-          { dataVencimento: { gte: desde } },
-          { dataEmissao: { gte: desde } },
+          { dataVencimento: recorteDeData },
+          { dataEmissao: recorteDeData },
           { liquidado: false, cancelado: false },
         ],
       },
@@ -135,16 +150,16 @@ export async function carregarContexto(
         ...escopo,
         titulo: {
           OR: [
-            { dataVencimento: { gte: desde } },
-            { dataEmissao: { gte: desde } },
+            { dataVencimento: recorteDeData },
+            { dataEmissao: recorteDeData },
             { liquidado: false, cancelado: false },
           ],
         },
       },
       orderBy: { dataBaixa: "asc" },
     }),
-    prisma.omieMovimento.findMany({ where: { ...escopo, data: { gte: corteRecente } }, orderBy: { data: "asc" } }),
-    prisma.omieNota.findMany({ where: { ...escopo, dataEmissao: { gte: desde } }, orderBy: { dataEmissao: "asc" } }),
+    prisma.omieMovimento.findMany({ where: { ...escopo, data: recorteDeMovimento }, orderBy: { data: "asc" } }),
+    prisma.omieNota.findMany({ where: { ...escopo, dataEmissao: recorteDeData }, orderBy: { dataEmissao: "asc" } }),
     prisma.omieParceiro.findMany({ where: escopo }),
     prisma.omieCategoria.findMany({ where: escopo }),
     prisma.omieDepartamento.findMany({ where: escopo }),
@@ -175,8 +190,13 @@ export async function carregarContexto(
     lerMotoristas(companyId),
     lerClientes(companyId),
     lerVeiculos(companyId),
-    lerAbastecimentos(companyId, corteRecente),
+    // A leitura da gestão só recorta por início; o fim da janela é aplicado
+    // aqui, para a varredura de 2024 não auditar o cartão de 2026 de novo.
+    lerAbastecimentos(companyId, corteRecente).then((lista) => (ate ? lista.filter((a) => a.dataHora <= ate) : lista)),
     carregarConformidade(companyId, conexaoId),
+    lerUsosDeVeiculo(companyId, corteRecente),
+    lerEscalas(companyId, corteRecente),
+    lerPrecosAnp(corteRecente),
   ]);
 
   return {
@@ -200,6 +220,9 @@ export async function carregarContexto(
     veiculos,
     abastecimentos,
     conformidade,
+    usosDeVeiculo,
+    escalas,
+    precosAnp,
     // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
     // leitura (ver src/lib/gestao/leitura.ts), então só faz sentido consultá-la
     // quando as quatro já rodaram.
@@ -210,6 +233,7 @@ export async function carregarContexto(
     baixadoEm12MesesCents: baixadoEm12Meses,
     conexaoId: conexaoId ?? null,
     janelaDesde: desde,
+    janelaAte: ate,
   };
 }
 

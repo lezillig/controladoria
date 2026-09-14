@@ -7,6 +7,7 @@ import { agenteContasReceber } from "./agents/contasReceber";
 import { agenteCustos } from "./agents/custos";
 import { agenteFiscal } from "./agents/fiscal";
 import { agenteFluxoCaixa } from "./agents/fluxoCaixa";
+import { agenteFrota } from "./agents/frota";
 import { agenteOportunidades } from "./agents/oportunidades";
 import { agentePadroes } from "./agents/padroes";
 import { agenteRentabilidade } from "./agents/rentabilidade";
@@ -45,6 +46,11 @@ export const AGENTES: Agente[] = [
   agenteContasReceber,
   agenteConciliacao,
   agenteAntifraude,
+  // Frota logo depois do antifraude: é o antifraude do combustível, com o
+  // extrato do cartão no lugar dos títulos. Área própria (Operações) porque
+  // quem confere escala, hodômetro e cupom de posto é a operação, não o
+  // financeiro.
+  agenteFrota,
   agenteCustos,
   // Logo depois de custos, e não no fim: os dois olham a mesma despesa, e a
   // diferença é o eixo. Custos compara com o mês anterior e com a tolerância

@@ -50,7 +50,7 @@ jobs:
         run: |
           set -e
           falhas=0
-          for t in cte acessos antifraude dre engine historico padroes sql limpeza alerta previsao calibragem; do
+          for t in cte acessos antifraude dre engine historico padroes sql limpeza alerta previsao calibragem frota; do
             echo "::group::teste:$t"
             if ! npm run -s "teste:$t"; then
               echo "::error::teste:$t falhou"

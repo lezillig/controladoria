@@ -26,7 +26,25 @@ export type ResultadoAuditoria = {
   errosPorAgente: { agente: string; erro: string }[];
 };
 
-export async function executarAuditoria(ctx: ContextoAuditoria): Promise<ResultadoAuditoria> {
+// MODO RETROATIVO — a auditoria olhando para trás.
+//
+// O ciclo diário audita o ano corrente. A auditoria retroativa (ver
+// retroativa.ts) carrega um período passado e roda os mesmos agentes sobre
+// ele, para achar o que já aconteceu. Duas coisas mudam no motor, e só elas:
+//
+//   - Só achados de EVENTO são persistidos. ESTADO descreve "agora" (título
+//     vencido hoje, concentração dos últimos 3 meses) e, calculado sobre um
+//     recorte de 2024 com a data de referência de hoje, seria um "agora"
+//     falso sobrescrevendo o verdadeiro que o ciclo diário gravou.
+//   - Nada de ESTADO é fechado. O fechamento automático de ESTADO se apoia em
+//     "o agente releu a base de hoje e não viu" — e a leitura retroativa não
+//     é a base de hoje.
+//
+// EVENTO dentro do período reavaliado continua fechando quando o agente não
+// o reencontra (regra recalibrada, dado corrigido), como no ciclo diário.
+export type OpcoesDaAuditoria = { retroativa?: boolean };
+
+export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDaAuditoria = {}): Promise<ResultadoAuditoria> {
   const emitidos: AchadoNovo[] = [];
   const errosPorAgente: { agente: string; erro: string }[] = [];
   // Agentes que rodaram sem excecao. So as regras DELES podem fechar achados
@@ -121,6 +139,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
   const chavesEmitidas = new Set<string>();
 
   for (const achado of revisao.aprovados) {
+    if (opcoes.retroativa && achado.tipo === "ESTADO") continue;
     chavesEmitidas.add(achado.chave);
     const existente = historico.has(achado.chave);
     if (existente) reincidentes++;
@@ -148,7 +167,10 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
   // agente dono precisa ter rodado sem erro. Se o agente quebrou, o silêncio
   // dele não é prova de que o problema acabou — é ausência de informação, e
   // fechar por ausência de informação é pior que não fechar.
-  const fechaveis = anteriores.filter((a) => podeFecharSozinho(a, chavesEmitidas, agentesOk, { desde: ctx.janelaDesde }));
+  const janela = { desde: ctx.janelaDesde, ate: ctx.janelaAte ?? undefined };
+  const fechaveis = anteriores.filter(
+    (a) => !(opcoes.retroativa && a.tipo === "ESTADO") && podeFecharSozinho(a, chavesEmitidas, agentesOk, janela)
+  );
 
   let fechadosAutomaticamente = 0;
   if (fechaveis.length > 0) {
@@ -180,10 +202,12 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
     select: { severidade: true, detectadoEm: true, titulo: true, impactoCents: true },
   });
 
-  const meta = achadosSemTratativa(
-    abertos.map((a) => ({ severidade: a.severidade, detectadoEm: a.detectadoEm, titulo: a.titulo })),
-    ctx.agora
-  );
+  const meta = opcoes.retroativa
+    ? null
+    : achadosSemTratativa(
+        abertos.map((a) => ({ severidade: a.severidade, detectadoEm: a.detectadoEm, titulo: a.titulo })),
+        ctx.agora
+      );
   if (meta) {
     await persistirAchado(ctx, { ...meta, confianca: 100, notaSupervisor: null, chaveRelacionada: null }, "administrativo", null);
     // O meta-achado é persistido DEPOIS do fechamento, então na execução
@@ -295,8 +319,8 @@ export function podeFecharSozinho(
   chavesEmitidas: Set<string>,
   agentesOk: string[],
   // Janela que os agentes acabaram de reavaliar. Sem ela, vale a regra
-  // estrita: EVENTO nunca fecha sozinho.
-  janela?: { desde: Date }
+  // estrita: EVENTO nunca fecha sozinho. `ate` aberto significa "até hoje".
+  janela?: { desde: Date; ate?: Date }
 ): boolean {
   // 1. Tratado por gente não volta a ser mexido por máquina. RESOLVIDO e
   //    IGNORADO carregam justificativa registrada; sobrescrevê-los apagaria o
@@ -309,27 +333,32 @@ export function podeFecharSozinho(
 
   // 3. ESTADO fecha sozinho. EVENTO é fato consumado — um pagamento em
   //    duplicidade não deixa de ter acontecido porque não apareceu hoje — e
-  //    só fecha quando uma auditoria COMPLETA acabou de rodar (a janela vem
-  //    informada) e o agente dono, sem erro, não o apontou. Dois motivos
-  //    possíveis, e os dois encerram o achado:
+  //    só fecha quando uma auditoria COMPLETA acabou de reavaliar o período
+  //    em que ele aconteceu (a janela vem informada e a data do fato cai
+  //    dentro dela) e o agente dono, sem erro, não o apontou: ou o dado foi
+  //    corrigido na Omie (a baixa errada foi refeita) ou a regra foi
+  //    recalibrada e deixou de considerar aquilo um problema. O achado antigo
+  //    descreve algo que a auditoria, olhando o mesmo dado, não vê mais.
   //
-  //    - o fato está dentro da janela e o agente o releu: ou o dado foi
-  //      corrigido na Omie (a baixa errada foi refeita) ou a regra foi
-  //      recalibrada e deixou de considerar aquilo um problema. O achado
-  //      antigo descreve algo que a auditoria de hoje, olhando o mesmo dado,
-  //      não vê mais.
-  //    - o fato ficou para trás da janela (nenhum agente olha além do início
-  //      do ano corrente): saiu do alcance da auditoria, nunca mais será
-  //      reavaliado, e um achado que ninguém tratou nem vai reencontrar é
-  //      pendência eterna, não controle. Catorze cotas de consórcio de
-  //      dezembro ficaram abertas assim — a regra corrigida não as via, e o
-  //      fechamento também não.
+  //    Fato FORA da janela reavaliada fica como está. A versão anterior
+  //    fechava também esses ("saiu do alcance, ninguém vai reencontrar") — e
+  //    isso deixou de ser verdade no dia em que a auditoria retroativa passou
+  //    a existir: um desvio de 2024 achado numa varredura do passado não pode
+  //    ser fechado pelo ciclo diário de 2026 só porque o ciclo não olha 2024.
+  //    Quem reavalia 2024 é outra varredura de 2024 — e é ela que fecha.
   //
   //    A regra estrita ("EVENTO nunca fecha") custou caro: 766 recebimentos a
   //    menor e 850 duplicidades continuaram abertos DEPOIS de a regra ter
   //    sido corrigida, porque nada os fechava. Sem janela informada (chamada
-  //    fora de uma auditoria completa), vale a regra estrita.
-  if (achado.tipo !== "ESTADO" && !janela) return false;
+  //    fora de uma auditoria completa), vale a regra estrita. Achado sem data
+  //    do fato conta como dentro da janela: não há como saber que ficou para
+  //    trás.
+  if (achado.tipo !== "ESTADO") {
+    if (!janela) return false;
+    const data = achado.dataReferencia ?? null;
+    if (data && data < janela.desde) return false;
+    if (data && janela.ate && data > janela.ate) return false;
+  }
 
   // 4. O agente dono precisa ter rodado sem erro. Agente que quebrou emite
   //    silêncio, e silêncio não é prova de que o problema acabou. Fechar por
