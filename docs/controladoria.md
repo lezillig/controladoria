@@ -238,7 +238,19 @@ real, e o teste (`npm run teste:calibragem`) fixa o caso:
 
 A tabela "Concentração por regra" mostra, por regra, quantos achados são
 apenas informativos, e o cabeçalho separa "a triar" de "informativos". A
-calibragem levou a lista de 2.977 achados em aberto para 396, com 183 a triar.
+calibragem levou a lista de 2.977 achados em aberto para 396, com 168 a triar.
+
+**Triagem** — cada achado aceita responsável (texto livre) e prazo; prazo
+vencido em achado aberto aparece em vermelho. Com a lista filtrada por regra,
+"Tratar os N em lote" aplica a mesma decisão e justificativa a todos os achados
+em aberto da regra (opcionalmente só os informativos), com um evento na trilha
+dizendo quem, quando, o recorte e a quantidade. O lote exige a regra: não existe
+"encerrar tudo". "Exportar CSV" baixa o recorte da tela, sem a evidência, para
+virar lista de trabalho do RH, do jurídico e do financeiro
+(`/api/exportar/achados`).
+
+**Testes a cada push** — `.github/workflows/testes.yml` roda tipos, lint e os
+doze conjuntos em todo push e pull request para `main`.
 
 **Chave determinística** — o mesmo fato, reavaliado amanhã, produz a mesma chave
 e reencontra o achado, preservando a tratativa que alguém escreveu nele.

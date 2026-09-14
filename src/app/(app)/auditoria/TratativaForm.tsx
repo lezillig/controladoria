@@ -20,10 +20,15 @@ export default function TratativaForm({
   achadoId,
   statusAtual,
   observacaoAtual,
+  responsavelAtual = null,
+  prazoAtual = null,
 }: {
   achadoId: string;
   statusAtual: string;
   observacaoAtual: string | null;
+  responsavelAtual?: string | null;
+  // AAAA-MM-DD, o formato do <input type="date">.
+  prazoAtual?: string | null;
 }) {
   const [aberto, setAberto] = useState(false);
   const [status, setStatus] = useState(statusAtual === "ABERTO" ? "EM_ANALISE" : statusAtual);
@@ -78,6 +83,23 @@ export default function TratativaForm({
         ))}
       </select>
       {opcaoSelecionada && <p className="mt-1 text-xs text-slate-500">{opcaoSelecionada.ajuda}</p>}
+
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div>
+          <label className="block text-xs font-medium text-slate-700">Responsável</label>
+          <input
+            name="responsavel"
+            defaultValue={responsavelAtual ?? ""}
+            maxLength={120}
+            placeholder="Ex.: Financeiro, RH, Ana"
+            className={`${inputClass} mt-1`}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-700">Prazo</label>
+          <input type="date" name="prazo" defaultValue={prazoAtual ?? ""} className={`${inputClass} mt-1`} />
+        </div>
+      </div>
 
       <label className="mt-3 block text-xs font-medium text-slate-700">
         O que foi verificado

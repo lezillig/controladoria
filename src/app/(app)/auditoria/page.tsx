@@ -6,7 +6,14 @@ import { AGENTES } from "@/lib/controladoria/registry";
 import { exigirPermissao, podeAcao } from "../_dados";
 import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Evidencia, Secao, Tabela } from "../_componentes";
 import TratativaForm from "./TratativaForm";
+import LoteForm from "./LoteForm";
 import { larguraPainel } from "@/lib/ui";
+
+// AAAA-MM-DD para o <input type="date">, pela data local — as datas do módulo
+// são gravadas à meia-noite local, e formatar por UTC devolveria o dia anterior.
+function dataParaInput(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 // AUDITORIA — a lista de achados e a tratativa de cada um.
 //
@@ -133,6 +140,27 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
   const totalImpacto = achados.reduce((acc, a) => acc + (a.impactoCents ?? 0), 0);
   const agentesComAchado = new Map(porAgente.map((a) => [a.agente, a._count]));
 
+  // O recorte da tratativa em lote, contado na base inteira (não na página de
+  // 300): quantos achados em aberto a regra filtrada tem, e quantos deles são
+  // informativos. É o número que o formulário mostra antes de gravar.
+  const recorteDaRegra = porRegra
+    .filter(
+      (r) =>
+        r.regra === filtros.regra &&
+        (!CATEGORIAS.includes(filtros.categoria as AuditCategoria) || r.categoria === filtros.categoria) &&
+        (!SEVERIDADES.includes(filtros.severidade as AuditSeveridade) || r.severidade === filtros.severidade)
+    )
+    .reduce(
+      (acc, r) => ({ total: acc.total + r._count, informativos: acc.informativos + (r.severidade === "INFO" ? r._count : 0) }),
+      { total: 0, informativos: 0 }
+    );
+
+  // A querystring da tela, reproduzida na exportação.
+  const consultaAtual = new URLSearchParams(
+    Object.entries({ status: filtros.status, severidade: filtros.severidade, categoria: filtros.categoria, agente: filtros.agente, regra: filtros.regra })
+      .filter((e): e is [string, string] => typeof e[1] === "string" && e[1] !== "")
+  ).toString();
+
   return (
     <div className={`${larguraPainel} space-y-6`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -202,14 +230,33 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
         titulo={`${achados.length} achado(s)`}
         descricao={totalImpacto > 0 ? `Impacto estimado somado: ${fmtBRL(totalImpacto)}` : undefined}
         acao={
-          <div className="flex flex-wrap gap-1 text-xs">
+          <div className="flex flex-wrap items-center gap-1 text-xs">
             <FiltroLink rotulo="Em aberto" href="/auditoria" ativo={statusFiltro === "ABERTOS" && !filtros.categoria && !filtros.agente} />
             <FiltroLink rotulo="Resolvidos" href="/auditoria?status=RESOLVIDO" ativo={statusFiltro === "RESOLVIDO"} />
             <FiltroLink rotulo="Não se aplica" href="/auditoria?status=IGNORADO" ativo={statusFiltro === "IGNORADO"} />
             <FiltroLink rotulo="Todos" href="/auditoria?status=TODOS" ativo={statusFiltro === "TODOS"} />
+            {/* A lista de triagem em planilha, no mesmo recorte da tela: é
+                como o RH, o jurídico e o financeiro recebem o que é deles. */}
+            <a
+              href={`/api/exportar/achados?${consultaAtual}`}
+              className="ml-2 rounded-lg border border-slate-300 px-2.5 py-1 font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Exportar CSV
+            </a>
           </div>
         }
       >
+        {podeTratar && filtros.regra && statusFiltro === "ABERTOS" && recorteDaRegra.total > 0 && (
+          <div className="mb-4">
+            <LoteForm
+              regra={filtros.regra}
+              categoria={CATEGORIAS.includes(filtros.categoria as AuditCategoria) ? (filtros.categoria as string) : null}
+              severidade={SEVERIDADES.includes(filtros.severidade as AuditSeveridade) ? (filtros.severidade as string) : null}
+              total={recorteDaRegra.total}
+              informativos={recorteDaRegra.informativos}
+            />
+          </div>
+        )}
         {achados.length === 0 ? (
           <AvisoVazio
             titulo="Nenhum achado com esses filtros"
@@ -315,8 +362,26 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
                     </details>
                   </div>
 
+                  {(a.responsavel || a.prazo) && (
+                    <p className="mt-2 text-xs text-slate-600">
+                      {a.responsavel && <span>Responsável: <strong>{a.responsavel}</strong></span>}
+                      {a.responsavel && a.prazo && " · "}
+                      {a.prazo && (
+                        <span className={a.prazo < new Date() && (a.status === "ABERTO" || a.status === "EM_ANALISE") ? "font-medium text-red-700" : ""}>
+                          Prazo: {fmtData(a.prazo)}
+                        </span>
+                      )}
+                    </p>
+                  )}
+
                   {podeTratar && (
-                    <TratativaForm achadoId={a.id} statusAtual={a.status} observacaoAtual={a.observacaoTratativa} />
+                    <TratativaForm
+                      achadoId={a.id}
+                      statusAtual={a.status}
+                      observacaoAtual={a.observacaoTratativa}
+                      responsavelAtual={a.responsavel}
+                      prazoAtual={a.prazo ? dataParaInput(a.prazo) : null}
+                    />
                   )}
                 </li>
               );

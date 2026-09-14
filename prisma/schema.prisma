@@ -701,6 +701,11 @@ model AuditFinding {
   resolvidoEm         DateTime?
   tratadoPorUserId    String?
   observacaoTratativa String?
+  // Quem trata e até quando. Texto livre: o RH e o jurídico recebem a lista
+  // exportada, não fazem login. Sem alguém e uma data, "em análise" é onde os
+  // achados envelhecem.
+  responsavel         String?
+  prazo               DateTime?
 
   // Apontamentos de conformidade que este achado confirma. É a ponte entre o
   // que a consultoria escreveu no relatório mensal e o que os agentes veem

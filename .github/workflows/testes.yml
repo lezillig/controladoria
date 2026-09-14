@@ -1,0 +1,61 @@
+# TESTES A CADA PUSH — o que eu rodava à mão antes de publicar, agora roda
+# sozinho e fica registrado.
+#
+# Os conjuntos abaixo são puros: exercitam agentes, supervisor, motor,
+# calibragem e previsão com objetos em memória, sem banco e sem Omie. O único
+# conjunto que precisa de Postgres (teste:sql) se auto-pula quando
+# TESTE_DATABASE_URL não existe, e é por isso que ele pode ficar na lista.
+#
+# Falhou aqui, não vai para o ar sem alguém ver.
+
+name: Testes
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: testes-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  testes:
+    name: Tipos, lint e testes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # O postinstall roda `prisma generate`, que só precisa do schema — a URL
+      # não é usada para conectar, mas o Prisma exige que exista.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=controladoria
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Tipos
+        run: npx tsc --noEmit -p .
+
+      - name: Lint
+        run: npx eslint src scripts
+
+      - name: Testes
+        run: |
+          set -e
+          falhas=0
+          for t in cte acessos antifraude dre engine historico padroes sql limpeza alerta previsao calibragem; do
+            echo "::group::teste:$t"
+            if ! npm run -s "teste:$t"; then
+              echo "::error::teste:$t falhou"
+              falhas=$((falhas + 1))
+            fi
+            echo "::endgroup::"
+          done
+          test "$falhas" -eq 0
