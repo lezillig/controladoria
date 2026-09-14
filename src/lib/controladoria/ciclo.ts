@@ -335,7 +335,8 @@ export async function executarPasso(params: {
 
     detalhes.push(
       `Auditoria: ${resultado.novos} novo(s), ${resultado.reincidentes} reincidente(s), ` +
-        `${resultado.fechadosAutomaticamente} fechado(s) automaticamente, ${resultado.suprimidos} suprimido(s) pelo supervisor. ` +
+        `${resultado.fechadosAutomaticamente} fechado(s) automaticamente, ${resultado.reabertos} reaberto(s), ` +
+        `${resultado.suprimidos} suprimido(s) pelo supervisor. ` +
         `${resultado.totalAbertos} em aberto (${resultado.criticos} crítico(s)).`
     );
     if (alerta) detalhes.push(alerta);

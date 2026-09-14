@@ -104,6 +104,13 @@ export type ContextoAuditoria = {
   conformidade: DadosConformidade;
 
   ultimoSyncConcluido: OmieSyncRun | null;
+  // A última execução diária de cada conexão ativa (mesma ordem de
+  // `conexoes`), com qualquer status. Opcional para os testes, que montam o
+  // contexto à mão.
+  ultimaExecucaoPorConexao?: (OmieSyncRun | null)[];
+  // Baixado nos últimos 12 meses fechados, do resumo mensal. Base da
+  // materialidade quando o ano corrente ainda é curto.
+  baixadoEm12MesesCents?: number | null;
 };
 
 // Um achado emitido por um agente. Ainda nao e o registro do banco: o motor

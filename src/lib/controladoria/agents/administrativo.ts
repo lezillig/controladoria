@@ -30,6 +30,7 @@ function auditarAdministrativo(ctx: ContextoAuditoria): AchadoNovo[] {
 
   achados.push(...syncDesatualizado(ctx));
   achados.push(...erroNoUltimoSync(ctx));
+  achados.push(...syncPorConexao(ctx));
   achados.push(...cadastroIncompleto(ctx));
   achados.push(...contaSemMovimento(ctx));
   achados.push(...datasIncoerentes(ctx));
@@ -84,6 +85,52 @@ function datasIncoerentes(ctx: ContextoAuditoria): AchadoNovo[] {
       chave: chaveAchado("AD-DATA-INCOERENTE", "atual"),
     },
   ];
+}
+
+// AD-SYNC-CONEXAO — uma conexão falhando enquanto a outra conclui.
+//
+// A regra geral abaixo olha a última execução concluída de QUALQUER conexão.
+// Com duas contas Omie, a Azul pode falhar todo dia e a MCZ concluir: a
+// "última concluída" é sempre da MCZ, o ciclo considera a Azul "já rodou"
+// (ERRO conta como rodou) e a consolidação sai sobre um espelho velho da
+// Azul sem nenhum achado dizer isso. Aqui, uma linha por conexão cuja última
+// execução terminou em erro ou está velha.
+function syncPorConexao(ctx: ContextoAuditoria): AchadoNovo[] {
+  const execucoes = ctx.ultimaExecucaoPorConexao;
+  if (!execucoes) return [];
+  const achados: AchadoNovo[] = [];
+  ctx.conexoes.forEach((conexao, i) => {
+    const ultima = execucoes[i];
+    if (!ultima) return;
+    const referencia = ultima.finalizadoEm ?? ultima.iniciadoEm;
+    const atraso = diasEntre(referencia, ctx.agora);
+    const comErro = ultima.status === "ERRO";
+    if (!comErro && atraso <= DIAS_TOLERANCIA_SYNC) return;
+    achados.push({
+      regra: "AD-SYNC-CONEXAO",
+      tipo: "ESTADO",
+      severidade: comErro && atraso > 2 ? "ALTA" : "MEDIA",
+      categoria: "CONFORMIDADE",
+      titulo: comErro
+        ? `Sincronização da ${conexao.apelido} terminou em erro`
+        : `Sincronização da ${conexao.apelido} parada há ${fmtNumero(atraso)} dias`,
+      descricao: comErro
+        ? `A última execução da conexão ${conexao.apelido} (${fmtData(referencia)}) terminou com erro: ` +
+          `${(ultima.erro ?? "").slice(0, 300)}. Enquanto isso, a consolidação segue rodando sobre o espelho antigo dela — ` +
+          `os números dessa empresa nas telas param no dia da última carga boa.`
+        : `A conexão ${conexao.apelido} não sincroniza desde ${fmtData(referencia)}. Os títulos, baixas e notas dela ` +
+          `estão congelados nessa data.`,
+      recomendacao:
+        "Abrir Controladoria → Sincronização e ver a fase que falhou nessa conexão. Credencial expirada e limite de " +
+        "consumo da API são as causas mais comuns; corrigido, rodar a sincronização manual.",
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieConexao",
+      entidadeRef: conexao.apelido,
+      evidencia: { conexao: conexao.apelido, status: ultima.status, fase: ultima.fase, ultimaExecucao: referencia.toISOString(), erro: (ultima.erro ?? "").slice(0, 500) },
+      chave: chaveAchado("AD-SYNC-CONEXAO", conexao.apelido),
+    });
+  });
+  return achados;
 }
 
 // AD-SYNC-ATRASADO — o compromisso de D-1 nao esta sendo cumprido.

@@ -15,6 +15,8 @@ export type ResultadoAuditoria = {
   novos: number;
   reincidentes: number;
   fechadosAutomaticamente: number;
+  // Fechados sozinhos antes e re-detectados agora: voltaram à fila.
+  reabertos: number;
   suprimidos: number;
   totalAbertos: number;
   criticos: number;
@@ -157,6 +159,19 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
     fechadosAutomaticamente = resultado.count;
   }
 
+  // REABERTURA — o oposto do fechamento, e que faltava. Um achado fechado
+  // sozinho (OBSOLETO) cuja condição VOLTOU precisa voltar à fila: o título
+  // estornado que reabre, o evento fechado por recalibragem que a regra
+  // corrigida volta a emitir, o meta-achado de tratativa parada que se
+  // repete. O upsert de cima não toca no status de propósito (é da pessoa que
+  // tratou), então ele nunca reabria nada — e o achado re-detectado ficava
+  // OBSOLETO para sempre, com `ocorrencias` crescendo em silêncio. Só o
+  // OBSOLETO reabre: RESOLVIDO e IGNORADO são julgamento humano.
+  const reabertos = await prisma.auditFinding.updateMany({
+    where: { companyId: ctx.companyId, chave: { in: [...chavesEmitidas] }, status: "OBSOLETO" },
+    data: { status: "ABERTO", resolvidoEm: null },
+  });
+
   // Meta-controle: achados criticos parados. Roda DEPOIS da persistencia,
   // sobre o estado final — auditar a si mesmo no meio da propria execucao
   // daria um retrato do qual o proprio ato de auditar ainda nao faz parte.
@@ -171,6 +186,13 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
   );
   if (meta) {
     await persistirAchado(ctx, { ...meta, confianca: 100, notaSupervisor: null, chaveRelacionada: null }, "administrativo", null);
+    // O meta-achado é persistido DEPOIS do fechamento, então na execução
+    // seguinte ele estava na lista de anteriores sem estar nas chaves
+    // emitidas — e fechava. Reaberto aqui pelo mesmo caminho dos demais.
+    await prisma.auditFinding.updateMany({
+      where: { companyId: ctx.companyId, chave: meta.chave, status: "OBSOLETO" },
+      data: { status: "ABERTO", resolvidoEm: null },
+    });
   }
 
   const criticos = abertos.filter((a) => a.severidade === "CRITICA").length;
@@ -180,6 +202,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
     novos,
     reincidentes,
     fechadosAutomaticamente,
+    reabertos: reabertos.count,
     suprimidos: revisao.suprimidos.length,
     totalAbertos: abertos.length,
     criticos,
@@ -260,8 +283,15 @@ export async function reabrirSeNecessario(companyId: string, chave: string): Pro
 // evita um erro diferente — três dos quais já aconteceram ou quase. Dentro de
 // `executarAuditoria` ela só poderia ser exercitada com banco, contexto e doze
 // agentes em pé; aqui, com quatro objetos.
+// Regras que só emitem dentro de uma janela própria, mais curta que a da
+// auditoria: a troca de conta bancária seguida de pagamento só é apontada por
+// 45 dias. Passado o prazo, o silêncio da regra não é reavaliação — é o
+// relógio dela. Sem esta lista, o indício de fraude mais grave do agente
+// sumia sozinho no 46º dia, sem ninguém ter olhado.
+const REGRAS_SEM_FECHAMENTO_AUTOMATICO = new Set(["FR-CONTA-ALTERADA"]);
+
 export function podeFecharSozinho(
-  achado: { status: string; chave: string; tipo: string; agente: string; dataReferencia?: Date | null },
+  achado: { status: string; chave: string; tipo: string; agente: string; regra?: string; dataReferencia?: Date | null },
   chavesEmitidas: Set<string>,
   agentesOk: string[],
   // Janela que os agentes acabaram de reavaliar. Sem ela, vale a regra
@@ -275,6 +305,7 @@ export function podeFecharSozinho(
 
   // 2. Se a condição voltou a ser detectada agora, ela não deixou de existir.
   if (chavesEmitidas.has(achado.chave)) return false;
+  if (achado.regra && REGRAS_SEM_FECHAMENTO_AUTOMATICO.has(achado.regra)) return false;
 
   // 3. ESTADO fecha sozinho. EVENTO é fato consumado — um pagamento em
   //    duplicidade não deixa de ter acontecido porque não apareceu hoje — e

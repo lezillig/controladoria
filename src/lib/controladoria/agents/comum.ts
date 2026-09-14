@@ -48,15 +48,23 @@ export function somar<T>(itens: T[], valor: (item: T) => number): number {
 // que encolhe — e, pior, encheria a tela de achado irrelevante no primeiro
 // mes de uso, que e como um sistema de auditoria morre.
 //
-// 0,5% do total pago no ano corrente, com piso de R$ 500 (abaixo disso o
-// custo de investigar supera o valor em risco).
+// 0,5% do total baixado, com piso de R$ 500 (abaixo disso o custo de
+// investigar supera o valor em risco).
+//
+// A base é o MAIOR entre o ano corrente e os últimos 12 meses fechados do
+// resumo mensal. Só o ano corrente fazia a materialidade cair ao piso em
+// janeiro: com dois dias de baixas, um título de R$ 5 mil virava crítico, a
+// projeção anual de juros multiplicava por 180, e o relatório de janeiro
+// saía gritando — e em dezembro, com o ano inteiro na conta, o mesmo título
+// era baixo. A materialidade de uma empresa não muda de um dia para o outro.
 export function materialidadeCents(ctx: ContextoAuditoria): number {
   const inicio = inicioDoAno(ctx.dataReferencia);
   const pagoNoAno = somar(
     ctx.baixas.filter((b) => b.dataBaixa >= inicio),
     (b) => Math.abs(b.valorCents)
   );
-  return Math.max(50_000, Math.round(pagoNoAno * 0.005));
+  const base = Math.max(pagoNoAno, ctx.baixadoEm12MesesCents ?? 0);
+  return Math.max(50_000, Math.round(base * 0.005));
 }
 
 export function severidadePorValor(valorCents: number, materialidade: number): AuditSeveridade {

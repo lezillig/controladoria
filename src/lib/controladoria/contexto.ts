@@ -99,6 +99,8 @@ export async function carregarContexto(
     contasCorrentes,
     vinculos,
     ultimoSyncConcluido,
+    execucoesRecentes,
+    baixadoEm12Meses,
     motoristas,
     clientes,
     veiculos,
@@ -123,7 +125,24 @@ export async function carregarContexto(
       },
       orderBy: { dataVencimento: "asc" },
     }),
-    prisma.omieBaixa.findMany({ where: { ...escopo, dataBaixa: { gte: desde } }, orderBy: { dataBaixa: "asc" } }),
+    // AS BAIXAS DOS TÍTULOS CARREGADOS, e não "as baixas desde a janela". Um
+    // título de fevereiro pago em parte em dezembro tinha só a baixa de
+    // janeiro aqui, e a regra de divergência lia "falta baixa no espelho". A
+    // baixa acompanha o título: se ele entrou no contexto, todas as baixas
+    // dele entram junto — inclusive as de título antigo ainda em aberto.
+    prisma.omieBaixa.findMany({
+      where: {
+        ...escopo,
+        titulo: {
+          OR: [
+            { dataVencimento: { gte: desde } },
+            { dataEmissao: { gte: desde } },
+            { liquidado: false, cancelado: false },
+          ],
+        },
+      },
+      orderBy: { dataBaixa: "asc" },
+    }),
     prisma.omieMovimento.findMany({ where: { ...escopo, data: { gte: corteRecente } }, orderBy: { data: "asc" } }),
     prisma.omieNota.findMany({ where: { ...escopo, dataEmissao: { gte: desde } }, orderBy: { dataEmissao: "asc" } }),
     prisma.omieParceiro.findMany({ where: escopo }),
@@ -139,6 +158,20 @@ export async function carregarContexto(
       where: { companyId, status: "CONCLUIDO", backfill: false },
       orderBy: { finalizadoEm: "desc" },
     }),
+    // A ÚLTIMA EXECUÇÃO DE CADA CONEXÃO, com qualquer status. A regra de
+    // saúde da sincronização olhava uma execução só — a última concluída de
+    // qualquer conexão —, e uma conexão falhando todo dia enquanto a outra
+    // concluía ficava invisível: a consolidação rodava sobre um espelho velho
+    // e nenhum achado dizia isso. Cinquenta linhas cobrem semanas das duas.
+    prisma.omieSyncRun.findMany({
+      where: { companyId, backfill: false, conexaoId: { not: null } },
+      orderBy: { iniciadoEm: "desc" },
+      take: 50,
+    }),
+    // Base da materialidade: o baixado nos últimos 12 meses pelo resumo
+    // mensal. Sem ela, em janeiro a materialidade caía ao piso de R$ 500 e
+    // um título de R$ 5 mil virava crítico.
+    baseDeMaterialidade(companyId, conexaoId ?? null, dataReferencia),
     lerMotoristas(companyId),
     lerClientes(companyId),
     lerVeiculos(companyId),
@@ -172,9 +205,28 @@ export async function carregarContexto(
     // quando as quatro já rodaram.
     gestao: disponibilidadeGestao(),
     ultimoSyncConcluido,
+    // Uma por conexão ativa: a mais recente, seja qual for o status.
+    ultimaExecucaoPorConexao: conexoes.map((c) => execucoesRecentes.find((r) => r.conexaoId === c.id) ?? null),
+    baixadoEm12MesesCents: baixadoEm12Meses,
     conexaoId: conexaoId ?? null,
     janelaDesde: desde,
   };
+}
+
+// Soma do baixado (pago e recebido) nos últimos 12 meses fechados, pelo
+// resumo mensal na dimensão PARCEIRO — cada título conta uma vez. É a base
+// que segura a materialidade em janeiro. Nulo quando o resumo ainda não
+// existe (carga histórica não rodou): aí vale só o ano corrente, como antes.
+async function baseDeMaterialidade(companyId: string, conexaoId: string | null, referencia: Date): Promise<number | null> {
+  const ate = `${referencia.getFullYear()}-${String(referencia.getMonth() + 1).padStart(2, "0")}`;
+  const inicio = new Date(referencia.getFullYear(), referencia.getMonth() - 12, 1);
+  const de = `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, "0")}`;
+  const linhas = await prisma.historicoMensal.aggregate({
+    _sum: { valorBaixadoCents: true },
+    _count: true,
+    where: { companyId, dimensao: "PARCEIRO", competencia: { gte: de, lt: ate }, ...(conexaoId ? { conexaoId } : {}) },
+  });
+  return linhas._count > 0 ? (linhas._sum.valorBaixadoCents ?? 0) : null;
 }
 
 // A janela que a AUDITORIA e as TELAS precisam — e não mais que isso.

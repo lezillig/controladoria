@@ -26,12 +26,12 @@ const achado = (over: Partial<Parameters<typeof podeFecharSozinho>[0]> = {}) => 
   status: "ABERTO",
   chave: "CP-VENCIDO|titulo-1",
   tipo: "ESTADO",
-  agente: "contasPagar",
+  agente: "contas-pagar",
   ...over,
 });
 
 const NENHUMA = new Set<string>();
-const TODOS_OK = ["contasPagar", "contasReceber", "conciliacao"];
+const TODOS_OK = ["contas-pagar", "contas-receber", "conciliacao"];
 
 // ------------------------------------------------- 1. o caso que estava quebrado
 console.log("\n1. O caso que a versão anterior nunca fechava");
@@ -83,7 +83,7 @@ console.log("\n2. O que não pode fechar sozinho");
   // AGENTE QUEBRADO. O silêncio dele não é prova de que o problema acabou — é
   // ausência de informação. Fechar aqui apagaria da tela um problema vivo, que
   // é o erro mais caro que esta regra pode cometer.
-  const semOAgente = ["contasReceber", "conciliacao"];
+  const semOAgente = ["contas-receber", "conciliacao"];
   conferir("agente que falhou não fecha nada", podeFecharSozinho(achado(), NENHUMA, semOAgente), false);
 }
 {

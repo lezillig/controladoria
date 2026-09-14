@@ -56,7 +56,10 @@ const DOCUMENTO_SEM_DIGITO = /^[^\d]+$/;
 const DOCUMENTO_DE_PREVISAO = /previs[aã]o|provis[aã]o|estimativa|or[cç]amento|simula[cç][aã]o|projec[aã]o/i;
 
 export function ehTituloDePrevisao(t: { numeroDocumento: string | null }): boolean {
-  return DOCUMENTO_DE_PREVISAO.test(t.numeroDocumento ?? "");
+  const doc = t.numeroDocumento ?? "";
+  // "Orçamento 4521" é um orçamento numerado do fornecedor, não previsão:
+  // texto de previsão de verdade não traz número.
+  return DOCUMENTO_DE_PREVISAO.test(doc) && !/\d/.test(doc);
 }
 
 function documentoInformado(numero: string | null): string {
@@ -73,7 +76,7 @@ function documentoInformado(numero: string | null): string {
 // diferentes; o que ela pode fazer é não gritar: o achado fica, informativo,
 // com a leitura provável escrita nele.
 const COBRADOR_POR_VEICULO =
-  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|securitizadora|cooperativa de cr|sicredi|sicoob|detran|denatran|tr[aâ]nsito|ipva|licenciamento|segur|rastrea|monitoramento|ped[aá]gio|sem parar|conectcar|veloe|dpvat)\b/i;
+  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|securitizadora|cooperativa de cr|sicredi|sicoob|detran|denatran|tr[aâ]nsito|ipva|licenciamento|segur|rastrea|monitoramento|ped[aá]gio|sem parar|conectcar|veloe|dpvat)/i;
 
 export const agenteContasPagar: Agente = {
   id: "contas-pagar",

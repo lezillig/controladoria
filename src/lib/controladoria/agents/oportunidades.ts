@@ -23,6 +23,8 @@ export const agenteOportunidades: Agente = {
   executar: buscarOportunidades,
 };
 
+const DIAS_MINIMOS_PARA_ANUALIZAR = 30;
+
 export function buscarOportunidades(ctx: ContextoAuditoria): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
   const materialidade = materialidadeCents(ctx);
@@ -122,7 +124,9 @@ function jurosEvitaveisNoAno(ctx: ContextoAuditoria, materialidade: number): Ach
   // Projecao linear pelo ritmo do ano corrente. Simples de propósito: uma
   // projecao sofisticada nao mudaria a decisao, e uma regra de tres e
   // conferivel de cabeca por quem le o relatorio.
-  const diaDoAno = Math.max(1, Math.round((ctx.dataReferencia.getTime() - inicio.getTime()) / 86_400_000) + 1);
+  // Nunca antes de 30 dias de ano: em 2 de janeiro a regra de três
+  // multiplicava por 182 o juro de dois dias.
+  const diaDoAno = Math.max(DIAS_MINIMOS_PARA_ANUALIZAR, Math.round((ctx.dataReferencia.getTime() - inicio.getTime()) / 86_400_000) + 1);
   const projecaoAnual = Math.round((encargos / diaDoAno) * 365);
   const titulosComEncargo = titulosAtivos(ctx, "PAGAR").filter((t) => t.jurosCents + t.multaCents > 0).length;
 
@@ -159,7 +163,7 @@ function tarifasBancarias(ctx: ContextoAuditoria, materialidade: number): Achado
   );
   if (tarifas < materialidade) return [];
 
-  const diaDoAno = Math.max(1, Math.round((ctx.dataReferencia.getTime() - inicio.getTime()) / 86_400_000) + 1);
+  const diaDoAno = Math.max(DIAS_MINIMOS_PARA_ANUALIZAR, Math.round((ctx.dataReferencia.getTime() - inicio.getTime()) / 86_400_000) + 1);
   const anual = Math.round((tarifas / diaDoAno) * 365);
 
   return [
@@ -192,7 +196,7 @@ const MINIMO_FORNECEDORES_PARA_CONSOLIDAR = 4;
 // lida como compra pulverizada — cada funcionário um "fornecedor". Não há
 // cotação única para salário.
 const CATEGORIA_NAO_NEGOCIAVEL =
-  /sal[aá]rio|folha|pessoal|pr[oó]-labore|prolabore|rescis|f[eé]rias|13|banco de horas|hora extra|inss|fgts|encargo|imposto|tribut|taxa|contribui|iss\b|icms|pis|cofins|csll|irpj|irrf|simples|multa|juros|empr[eé]stimo|financiamento|cons[oó]rcio|leasing|parcelamento|judicial|processo|acordo|indeniza|dep[oó]sito|transfer[eê]ncia|aplica[cç][aã]o|resgate|distribui[cç][aã]o de lucro|dividendo/i;
+  /sal[aá]rio|folha|com pessoal|pr[oó]-labore|prolabore|rescis|f[eé]rias|13[ºo°]|d[eé]cimo|banco de horas|hora extra|inss|fgts|encargo|imposto|tribut|taxa|contribui|\biss\b|icms|\bpis\b|cofins|csll|irpj|irrf|simples|multa|juros|empr[eé]stimo|financiamento|cons[oó]rcio|leasing|parcelamento|judicial|\bprocesso\b|\bacordo\b|indeniza|transfer[eê]ncia|aplica[cç][aã]o|resgate|distribui[cç][aã]o de lucro|dividendo/i;
 // Acima desta fatia, o maior fornecedor JÁ é a consolidação: 80% do
 // combustível num cartão de abastecimento não é volume pulverizado, é
 // exatamente o que a recomendação pediria. O que sobra para negociar é a

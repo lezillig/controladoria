@@ -297,6 +297,9 @@ const ALIQUOTAS_DE_RETENCAO = new Set([65, 100, 120, 150, 200, 300, 350, 465, 48
 // acima de 20% é glosa, desconto ou erro — e isso PRECISA aparecer.
 const RETENCAO_MINIMA = 50;
 const RETENCAO_MAXIMA = 2000;
+// Abaixo disto o passo de 0,01 ponto é menor que um centavo e qualquer
+// diferença vira "percentual limpo": título pequeno não classifica retenção.
+const DEVIDO_MINIMO_PARA_RETENCAO = 1_000_00;
 // Cada imposto é arredondado separadamente pelo pagador; a soma pode
 // desviar alguns centavos do percentual exato.
 const TOLERANCIA_DE_ARREDONDAMENTO = 5;
@@ -323,7 +326,7 @@ function apurarFalta(t: ReturnType<typeof titulosAtivos>[number]): FaltaApurada 
   const falta = devido - t.valorPagoCents;
 
   let pontos: number | null = null;
-  if (devido > 0 && falta > 0) {
+  if (devido >= DEVIDO_MINIMO_PARA_RETENCAO && falta > 0) {
     const candidato = Math.round((falta * 10000) / devido);
     const esperado = Math.round((devido * candidato) / 10000);
     if (

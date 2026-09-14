@@ -314,7 +314,7 @@ function canceladoComBaixa(ctx: ContextoAuditoria, materialidade: number): Achad
 // disso é ordem invertida que precisa de explicação.
 const DIAS_DE_ATRASO_DE_LANCAMENTO = 7;
 const DEBITO_AUTOMATICO =
-  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|sicredi|sicoob|caixa econ|ticket|sodexo|alelo|vr\b|flash|sem parar|conectcar|veloe|detran|ipva|receita federal|inss|fgts|sefaz|prefeitura)\b/i;
+  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|sicredi|sicoob|caixa econ|ticket|sodexo|alelo|\bvr\b|flash|sem parar|conectcar|veloe|detran|ipva|receita federal|inss|fgts|sefaz|prefeitura)/i;
 
 function baixaAntesDaEmissao(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const porId = new Map(ctx.titulos.map((t) => [t.id, t]));
@@ -546,7 +546,7 @@ function fracionamentoDeAlcada(ctx: ContextoAuditoria, materialidade: number): A
 // interesse tem o tamanho de um serviço contratado.
 const TETO_DE_REEMBOLSO = 1_000_00;
 const CATEGORIA_DE_ROTINA_DE_MOTORISTA =
-  /di[aá]ria|adiantamento|reembolso|ped[aá]gio|viagem|despesa de viagem|acerto|vale|ajuda de custo|sal[aá]rio|folha|rescis|f[eé]rias|13|pr[oó]-labore|prolabore|banco de horas|hora[s]? extra|bonifica|premia|pr[eê]mio|comiss|gratifica|benef[ií]cio|plano de sa[uú]de|conv[eê]nio|uniforme|exame|treinamento|cesta|pessoal|recursos humanos|\brh\b|encargos|inss|fgts|pens[aã]o|estagi/i;
+  /di[aá]ria|adiantamento|reembolso|ped[aá]gio|viagem|despesa de viagem|acerto|\bvale\b|ajuda de custo|sal[aá]rio|folha|rescis|f[eé]rias|13[ºo°]|d[eé]cimo terceiro|pr[oó]-labore|prolabore|banco de horas|hora[s]? extra|bonifica|premia|pr[eê]mio|comiss|gratifica|benef[ií]cio|plano de sa[uú]de|conv[eê]nio|uniforme|exame|treinamento|cesta|com pessoal|recursos humanos|\brh\b|encargos|inss|fgts|pens[aã]o|estagi/i;
 
 function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const cpfsFuncionarios = new Map(
@@ -632,7 +632,9 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     // reembolso; o conflito que a regra procura tem o tamanho de um serviço
     // contratado, não de uma nota de papelaria.
     const maiorTitulo = Math.max(...g.linhas.map((l) => l.maiorTitulo));
-    const reembolso = maiorTitulo <= TETO_DE_REEMBOLSO;
+    // Por título E por pessoa: quarenta títulos de R$ 950 para a mesma pessoa
+    // em "Serviços de Terceiros" são R$ 38 mil — fracionamento, não reembolso.
+    const reembolso = maiorTitulo <= TETO_DE_REEMBOLSO && g.linhas.every((l) => l.valor <= TETO_DE_REEMBOLSO * 3);
     const categoriaDeRotina = CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.caminho);
     const rotina = categoriaDeRotina || reembolso;
     // RESCISÃO PAGA A QUEM AINDA CONSTA ATIVO. A evidência real: sete
@@ -648,12 +650,12 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     // é CLT. Não é fraude de uma pessoa, é passivo trabalhista da empresa —
     // cada real pago assim reflete em férias, 13º, FGTS e INSS, e uma
     // reclamação trabalhista cobra o retroativo com o dobro.
-    const porFora = !rotina && /free ?lancer|aut[oô]nomo|\brpa\b|extra|bico|avulso|tempor[aá]rio|di[aá]rista/i.test(g.caminho);
+    const porFora = !rotina && /free ?lancer|aut[oô]nomo|\brpa\b|\bextras?\b|\bbico\b|avulso|tempor[aá]rio|di[aá]rista/i.test(g.caminho);
     // ACORDO JUDICIAL PAGO A QUEM CONTINUA NA FOLHA. Doze parcelas de
     // "Processo Judicial" para um motorista ativo: acordo trabalhista com
     // quem não saiu. Não é conflito de interesse nem fraude — é o RH que
     // precisa saber que a pessoa que processou a empresa continua nela.
-    const judicial = /judicial|processo|acordo|indeniza/i.test(g.caminho);
+    const judicial = /judicial|\bprocesso\b|\bacordo\b|indeniza/i.test(g.caminho);
     const ativosComAcordo = judicial ? g.linhas.filter((l) => l.funcionario.active) : [];
 
     achados.push({

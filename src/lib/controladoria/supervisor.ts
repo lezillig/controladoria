@@ -220,7 +220,12 @@ export type HistoricoAchado = { status: AuditStatus; severidade: AuditSeveridade
 // "este fornecedor, para esta regra, não me interessa". Não é "esta linha".
 export function chaveDeTratativa(a: { regra: string; entidadeId?: string | null; entidadeRef?: string | null }): string | null {
   const entidade = a.entidadeId ?? a.entidadeRef ?? null;
-  return entidade ? `${a.regra}|${entidade}` : null;
+  if (entidade) return `${a.regra}|${entidade}`;
+  // Regra agregada sem entidade (fala do conjunto do mês: baixas em dia não
+  // útil, títulos sem categoria): "não se aplica" vale para a regra inteira.
+  // Era exatamente o caso de chave que muda todo mês para o qual a herança
+  // foi feita — e ficava de fora por não ter entidade.
+  return REGRAS_AGREGADAS.has(a.regra) ? `${a.regra}|*` : null;
 }
 
 // Decide qual tratativa anterior vale para o achado: a da chave exata, se
@@ -389,7 +394,12 @@ export function supervisionar(
     // vez de descartar: o dado continua na tela, so nao ocupa o alerta.
     const ordenados = [...grupo].sort((a, b) => (b.valorCents ?? 0) - (a.valorCents ?? 0));
     for (const a of ordenados.slice(MAXIMO_ACHADOS_POR_REGRA)) {
-      a.severidade = rebaixar(a.severidade, 2);
+      // Um degrau, com piso em BAIXA. Dois degraus levavam MÉDIA a INFO, e a
+      // tela conta INFO como "informativo" — o que só faz sentido para o que o
+      // agente emitiu como informativo de propósito (parcela de banco, diária
+      // de motorista). Achado rebaixado por volume continua sendo achado.
+      const rebaixada = rebaixar(a.severidade, 1);
+      a.severidade = rebaixada === "INFO" ? "BAIXA" : rebaixada;
       a.confianca = Math.min(a.confianca, 70);
       a.notaSupervisor =
         `A regra ${regra} disparou ${grupo.length} vezes nesta execução. Volume desse tamanho costuma indicar uma causa ` +

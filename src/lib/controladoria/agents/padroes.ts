@@ -445,7 +445,7 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
 // contrato de fornecimento, e nenhuma das quatro perguntas deste agente se
 // aplica a eles.
 const NAO_E_FORNECEDOR =
-  /\b(banco|bco|financeira|cons[oó]rcio|leasing|arrendamento|fomento|fidc|securitizadora|sicredi|sicoob|caixa econ|receita federal|prefeitura|secretaria da fazenda|sefaz|inss|fgts|detran|uni[aã]o)\b/i;
+  /\b(banco|bco|financeira|cons[oó]rcio|leasing|arrendamento|fomento|fidc|securitizadora|sicredi|sicoob|caixa econ|receita federal|prefeitura|secretaria da fazenda|sefaz|inss|fgts|detran)/i;
 
 export function somenteFornecedores(
   series: SerieMensal[],
@@ -453,14 +453,23 @@ export function somenteFornecedores(
 ): SerieMensal[] {
   const cnpjsDoGrupo = new Set(ctx.conexoes.map((c) => (c.cnpj ?? "").replace(/\D/g, "")).filter(Boolean));
   const nomesDoGrupo = ctx.conexoes.map((c) => normalizarRazaoSocial(c.nome)).filter((n) => n.length >= 6);
-  const parceiroPorCodigo = new Map(ctx.parceiros.map((p) => [p.codigoOmie, p]));
-  const foraDeEscopo = (chave: string, rotulo: string | null): boolean => {
-    const p = parceiroPorCodigo.get(chave);
-    const documento = (p?.documento ?? "").replace(/\D/g, "");
+  // O mesmo código existe nas duas contas Omie com parceiros diferentes, e a
+  // série do resumo vem por código. Todos os parceiros do código entram na
+  // decisão: a série só sai quando TODOS estão fora de escopo — na dúvida, o
+  // fornecedor fica.
+  const parceirosPorCodigo = new Map<string, ContextoAuditoria["parceiros"]>();
+  for (const p of ctx.parceiros) parceirosPorCodigo.set(p.codigoOmie, [...(parceirosPorCodigo.get(p.codigoOmie) ?? []), p]);
+  const parceiroForaDeEscopo = (nomeBruto: string | null, documentoBruto: string | null): boolean => {
+    const documento = (documentoBruto ?? "").replace(/\D/g, "");
     if (documento && cnpjsDoGrupo.has(documento)) return true;
-    const nome = normalizarRazaoSocial(p?.nome ?? rotulo ?? "");
+    const nome = normalizarRazaoSocial(nomeBruto ?? "");
     if (nome && nomesDoGrupo.some((n) => n === nome || nome.startsWith(n))) return true;
-    return NAO_E_FORNECEDOR.test(p?.nome ?? rotulo ?? "");
+    return NAO_E_FORNECEDOR.test(nomeBruto ?? "");
+  };
+  const foraDeEscopo = (chave: string, rotulo: string | null): boolean => {
+    const candidatos = parceirosPorCodigo.get(chave) ?? [];
+    if (candidatos.length === 0) return parceiroForaDeEscopo(rotulo, null);
+    return candidatos.every((p) => parceiroForaDeEscopo(p.nome, p.documento));
   };
   const excluidas = new Set(
     [...porChave(series)].filter(([chave, linhas]) => foraDeEscopo(chave, rotuloDe(linhas, chave))).map(([chave]) => chave)
@@ -476,7 +485,11 @@ function crescimentoRecenteDaReceita(ctx: ContextoAuditoria, competenciaAtual: s
   for (const t of ctx.titulos) {
     if (t.natureza !== "RECEBER" || t.cancelado) continue;
     const comp = competenciaDe(t.dataEmissao ?? t.dataVencimento);
-    if (comp > competenciaAtual) continue;
+    // Só meses inteiros DENTRO da janela: fora dela o contexto tem apenas os
+    // títulos ainda em aberto, e um mês antigo com um título só puxaria a
+    // mediana para baixo e inventaria crescimento. O mês corrente, parcial,
+    // fica de fora pelo mesmo motivo.
+    if (comp >= competenciaAtual || comp < competenciaDe(ctx.janelaDesde)) continue;
     porMes.set(comp, (porMes.get(comp) ?? 0) + t.valorDocumentoCents);
   }
   const meses = [...porMes.entries()].filter(([, v]) => v > 0).sort(([a], [b]) => a.localeCompare(b));

@@ -43,7 +43,15 @@ export async function gerarRelatorioAgora(formData: FormData): Promise<Resultado
     // Roda a auditoria antes de montar o relatório: gerar o relatório sobre
     // achados de ontem, com dados de hoje, produziria um documento que não
     // corresponde a nenhum momento real da empresa.
-    await executarAuditoria(ctx);
+    //
+    // SÓ PARA A REFERÊNCIA DE HOJE. A auditoria PERSISTE: grava achados, fecha
+    // os que não reapareceram e reabre os que voltaram. Rodá-la sobre uma
+    // data passada avaliava os títulos com a régua daquele dia (o que venceu
+    // depois não estava vencido) e fechava em massa os achados de hoje que
+    // aquela data não via. Para uma data passada, o relatório sai sobre os
+    // achados já persistidos, que é o que se sabia — e continua sendo.
+    const ehReferenciaDoDia = dataReferencia.getTime() === dataReferenciaPadrao().getTime();
+    if (ehReferenciaDoDia) await executarAuditoria(ctx);
     // Mesma ordem do ciclo diário (ver ciclo.ts): a conciliação com os
     // apontamentos da consultoria depende dos achados já persistidos.
     await conciliarConformidade(session.companyId);

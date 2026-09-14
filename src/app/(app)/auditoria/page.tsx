@@ -186,9 +186,17 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
           filtrada. O total continua clicável pelo link "ver todos". */}
       <div className="flex flex-wrap gap-2">
         {contagens.map((c) => {
-          const regrasDaCategoria = porRegra
+          // Somado por regra: o agrupamento traz uma linha por severidade, e
+          // sem esta soma a mesma regra aparecia duas vezes no cartão.
+          const regrasDaCategoria = [...porRegra
             .filter((r) => r.categoria === c.categoria)
-            .sort((a, b) => b._count - a._count);
+            .reduce((mapa, r) => {
+              const atual = mapa.get(r.regra) ?? { regra: r.regra, _count: 0, _sum: { impactoCents: 0 } };
+              atual._count += r._count;
+              atual._sum.impactoCents += r._sum.impactoCents ?? 0;
+              return mapa.set(r.regra, atual);
+            }, new Map<string, { regra: string; _count: number; _sum: { impactoCents: number } }>())
+            .values()].sort((a, b) => b._count - a._count);
           return (
             <details key={c.categoria} className="group rounded-lg border border-slate-200 bg-white open:border-blue-300">
               <summary className="cursor-pointer list-none px-3 py-2 [&::-webkit-details-marker]:hidden">
