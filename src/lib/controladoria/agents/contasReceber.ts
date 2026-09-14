@@ -1,5 +1,6 @@
 import { fmtBRL, fmtPercent } from "../format";
 import { diasEntre, inicioDoMes } from "../periodos";
+import { retencaoIndevida } from "./contasReceberRetencao";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import {
   agravar,
@@ -65,6 +66,8 @@ export function auditarContasReceber(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...concentracaoDeReceita(ctx, titulos, materialidade));
   achados.push(...atrasoRecorrente(ctx, titulos, materialidade));
   achados.push(...jurosNaoCobrados(ctx, titulos, materialidade));
+  achados.push(...retencaoIndevida(ctx, titulos, materialidade));
+  achados.push(...lapping(ctx, titulos, materialidade));
   // Esta última não olha os títulos a RECEBER — olha os que não existem. Por
   // isso recebe o contexto inteiro e não a lista filtrada acima.
   achados.push(...osComCustoSemFaturamento(ctx, materialidade));
@@ -763,5 +766,80 @@ export function osComCustoSemFaturamento(
     });
   }
 
+  return achados;
+}
+
+// CR-LAPPING — o pagamento de um título aplicado em outro.
+//
+// "Lapping" é o esquema clássico de quem tem acesso aos recebimentos: o
+// dinheiro do cliente A é desviado, e o pagamento seguinte (de A ou de outro
+// cliente) é lançado como baixa do título de A para esconder o buraco — que
+// vai sendo empurrado de título em título. O sinal no espelho: uma baixa cujo
+// valor não é o do título baixado, mas é EXATAMENTE o valor de outro título
+// em aberto do mesmo cliente. Um por cliente e mês; a maioria é erro de
+// aplicação — e erro de aplicação também precisa ser corrigido.
+const TOLERANCIA_DE_LAPPING = 100; // R$ 1,00
+
+function lapping(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulosAtivos>, materialidade: number): AchadoNovo[] {
+  const achados: AchadoNovo[] = [];
+  const porCliente = agrupar(titulos, chaveParceiro);
+  const baixasPorTitulo = agrupar(ctx.baixas, (b) => b.tituloId);
+  type Caso = { data: Date; baixadoEm: string; valor: number; deveriaSer: string; ref: string };
+  const casos: { cliente: string; caso: Caso }[] = [];
+
+  for (const [cliente, lista] of porCliente) {
+    if (lista.length < 2) continue;
+    const abertos = lista.filter(emAberto);
+    if (abertos.length === 0) continue;
+    for (const t of lista) {
+      for (const b of baixasPorTitulo.get(t.id) ?? []) {
+        if (b.valorCents <= 0) continue;
+        if (Math.abs(b.valorCents - t.valorDocumentoCents) <= TOLERANCIA_DE_LAPPING) continue;
+        if (b.valorCents < materialidade / 2) continue;
+        const outro = abertos.find((o) => o.id !== t.id && Math.abs(o.valorDocumentoCents - b.valorCents) <= TOLERANCIA_DE_LAPPING);
+        if (!outro) continue;
+        casos.push({
+          cliente,
+          caso: { data: b.dataBaixa, baixadoEm: referenciaTitulo(t), valor: b.valorCents, deveriaSer: referenciaTitulo(outro), ref: outro.id },
+        });
+      }
+    }
+  }
+
+  for (const [chave, lista] of agrupar(casos, (c) => `${c.cliente}|${chaveMes(c.caso.data)}`)) {
+    const [cliente, mes] = [chave.slice(0, chave.lastIndexOf("|")), chave.slice(chave.lastIndexOf("|") + 1)];
+    const t = porCliente.get(cliente)?.[0];
+    if (!t) continue;
+    const nome = nomeParceiro(ctx, t);
+    const valor = somar(lista, (c) => c.caso.valor);
+    achados.push({
+      regra: "CR-LAPPING",
+      tipo: "EVENTO",
+      severidade: lista.length >= 3 ? "MEDIA" : "BAIXA",
+      categoria: "FRAUDE",
+      titulo: `${nome}: ${lista.length} recebimento(s) com o valor de outro título em aberto (${mes})`,
+      descricao:
+        `${fmtBRL(valor)} recebidos e baixados em títulos cujo valor não é esse — enquanto outro título do mesmo cliente, ` +
+        `em aberto, tem exatamente esse valor. Pode ser aplicação errada do recebimento; é também o desenho do "lapping", em que ` +
+        `o dinheiro de um título cobre o buraco de outro.`,
+      recomendacao:
+        "Conferir no extrato qual título o cliente quis pagar (o boleto ou a referência do PIX) e reaplicar a baixa no título " +
+        "certo. Se a aplicação errada se repete com a mesma pessoa lançando, apurar.",
+      valorCents: valor,
+      dataReferencia: lista[lista.length - 1].caso.data,
+      entidadeTipo: "OmieParceiro",
+      entidadeRef: nome,
+      evidencia: {
+        cliente: nome,
+        casos: lista.map((c) => ({
+          data: c.caso.data.toISOString().slice(0, 10),
+          baixadoEm: c.caso.baixadoEm,
+          valor: c.caso.valor,
+          tituloComEsseValor: c.caso.deveriaSer,
+        })),
+      },
+      chave: chaveAchado("CR-LAPPING", cliente, mes),
+    });
+  }
   return achados;
 }

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import type { TituloNormalizado } from "./types";
 import {
   OMIE_ENDPOINTS,
   OMIE_PACE_MS,
@@ -19,6 +20,7 @@ import {
   normalizarNfe,
   normalizarNfse,
   normalizarParceiro,
+  ehTrocaDeConta,
   normalizarProjeto,
   normalizarTitulo,
 } from "./mapping";
@@ -90,6 +92,49 @@ async function gravarEmLotes<T>(operacoes: T[], executar: (lote: T[]) => Promise
   for (let i = 0; i < operacoes.length; i += OPERACOES_POR_LOTE) {
     await executar(operacoes.slice(i, i + OPERACOES_POR_LOTE));
   }
+}
+
+// Campos do título cuja mudança entre duas sincronizações é registrada como
+// versão. Status, baixas e valores pagos mudam por natureza (o título é pago)
+// e ficam de fora: versão é EDIÇÃO, não vida do título.
+const CAMPOS_VERSIONADOS = ["parceiroCodigo", "valorDocumentoCents", "categoriaCodigo", "contaCorrenteCodigo", "dataVencimento", "numeroDocumento"] as const;
+
+type TituloExistente = {
+  id: string;
+  codigoLancamento: string;
+  parceiroCodigo: string | null;
+  valorDocumentoCents: number;
+  categoriaCodigo: string | null;
+  contaCorrenteCodigo: string | null;
+  dataVencimento: Date;
+  numeroDocumento: string | null;
+};
+
+function textoDeCampo(valor: unknown): string | null {
+  if (valor === null || valor === undefined) return null;
+  if (valor instanceof Date) return valor.toISOString().slice(0, 10);
+  return String(valor);
+}
+
+export function detectarVersoes(
+  existentes: TituloExistente[],
+  novos: Pick<TituloNormalizado, "codigoLancamento" | "parceiroCodigo" | "valorDocumentoCents" | "categoriaCodigo" | "contaCorrenteCodigo" | "dataVencimento" | "numeroDocumento">[],
+  companyId: string
+): { companyId: string; tituloId: string; campo: string; de: string | null; para: string | null }[] {
+  const porCodigo = new Map(existentes.map((e) => [e.codigoLancamento, e]));
+  const versoes: { companyId: string; tituloId: string; campo: string; de: string | null; para: string | null }[] = [];
+  for (const n of novos) {
+    const e = porCodigo.get(n.codigoLancamento);
+    if (!e) continue;
+    for (const campo of CAMPOS_VERSIONADOS) {
+      const de = textoDeCampo(e[campo]);
+      const para = textoDeCampo(n[campo]);
+      // Campo que a Omie deixou de informar (para nulo) não é edição.
+      if (para === null || de === para) continue;
+      versoes.push({ companyId, tituloId: e.id, campo, de, para });
+    }
+  }
+  return versoes;
 }
 
 // As baixas são gravadas em tabela própria, então saem do objeto do título
@@ -250,11 +295,15 @@ async function gravarCadastros(
     });
     const hashAnterior = new Map(anteriores.map((a) => [a.codigoOmie, a.contaBancariaHash]));
 
+    // Cada troca vira uma linha do histórico (append-only), além do carimbo
+    // no cadastro: é a sequência de trocas que o antifraude precisa ver.
+    const trocas: { codigoOmie: string; hashAnterior: string; hashNovo: string }[] = [];
     await gravarEmLotes(parceiros, (lote) =>
       prisma.$transaction(
         lote.map((p) => {
           const antes = hashAnterior.get(p.codigoOmie) ?? null;
-          const trocou = antes !== null && p.contaBancariaHash !== null && antes !== p.contaBancariaHash;
+          const trocou = ehTrocaDeConta(antes, p.contaBancariaHash);
+          if (trocou) trocas.push({ codigoOmie: p.codigoOmie, hashAnterior: antes as string, hashNovo: p.contaBancariaHash as string });
           return prisma.omieParceiro.upsert({
             where: { conexaoId_codigoOmie: { conexaoId, codigoOmie: p.codigoOmie } },
             // `primeiraVezEm` só no create, e é o ponto inteiro dela: no update
@@ -276,6 +325,11 @@ async function gravarCadastros(
         })
       )
     );
+    if (trocas.length > 0) {
+      await prisma.omieParceiroContaHistorico.createMany({
+        data: trocas.map((t) => ({ companyId, conexaoId, ...t, detectadoEm: agora })),
+      });
+    }
     return parceiros.length;
   }
 
@@ -547,6 +601,21 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
       // cada baixa encontra o seu título. Acumular lote a lote preserva essa
       // ordem — o que a versão de transação única dava de graça e passa a ser
       // responsabilidade daqui.
+      // O QUE MUDOU nos títulos já espelhados. Uma consulta por página, pelos
+      // campos que importam ao antifraude (fornecedor, valor, categoria, conta,
+      // vencimento, documento); cada diferença vira uma linha de versão, com o
+      // valor de antes e o de depois. Sem isto, a edição de um título pago
+      // sobrescrevia o passado em silêncio.
+      const existentes = await prisma.omieTitulo.findMany({
+        where: { conexaoId: ctx.conexaoId, natureza: passo.natureza, codigoLancamento: { in: comNome.map((t) => t.codigoLancamento) } },
+        select: {
+          id: true, codigoLancamento: true, parceiroCodigo: true, valorDocumentoCents: true, categoriaCodigo: true,
+          contaCorrenteCodigo: true, dataVencimento: true, numeroDocumento: true,
+        },
+      });
+      const versoes = detectarVersoes(existentes, comNome, ctx.companyId);
+      if (versoes.length > 0) await prisma.omieTituloVersao.createMany({ data: versoes });
+
       const gravados: { id: string }[] = [];
       await gravarEmLotes(comNome, async (lote) => {
         const parcial = await prisma.$transaction(

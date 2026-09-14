@@ -250,6 +250,69 @@ export function fornecedorDormente(
 }
 
 // ---------------------------------------------------------------------------
+// HI-REAJUSTE-VENCIDO — o cliente que fatura o mesmo valor há mais de um ano.
+//
+// O espelho de HI-REAJUSTE-SILENCIOSO, do lado de quem vende. Contrato de
+// fretamento com valor mensal estável por 13+ meses e sem nenhum aumento é
+// contrato sem reajuste — e a Lei 14.133 (art. 25 §7/§8, art. 92 §4) garante
+// ao contratado o reajuste anual pela data-base; para tomador privado, é o
+// contrato. Enquanto a folha e o diesel sobem (a reoneração 2025–27 sobe a
+// folha sem que o preço acompanhe), cada mês sem reajuste é margem que
+// desaparece. Só clientes de valor ESTÁVEL (coeficiente de variação < 15%
+// nos últimos 12 meses): contrato por quilômetro varia com o volume e não
+// tem "valor a reajustar". O impacto é uma ESTIMATIVA declarada: 12 meses
+// da mediana a 4% — ordem de grandeza para priorizar, não o número a cobrar.
+// ---------------------------------------------------------------------------
+const MESES_SEM_REAJUSTE = 13;
+const VARIACAO_MAXIMA_PARA_ESTAVEL = 0.15;
+const REAJUSTE_ESTIMADO = 0.04;
+
+export function reajusteVencido(series: SerieMensal[], competenciaAtual: string, materialidade: number): ItemDePadrao[] {
+  const achados: ItemDePadrao[] = [];
+  for (const [chave, linhas] of porChave(series)) {
+    const ativos = linhas.filter((l) => l.valorCents > 0 && l.competencia < competenciaAtual).sort((a, b) => a.competencia.localeCompare(b.competencia));
+    if (ativos.length < MESES_SEM_REAJUSTE) continue;
+    // Consecutivos até o mês anterior ao corrente (no máximo um buraco).
+    const ultimos = ativos.slice(-MESES_SEM_REAJUSTE);
+    const span = mesesEntreCompetencias(ultimos[0].competencia, ultimos[ultimos.length - 1].competencia) + 1;
+    if (span > MESES_SEM_REAJUSTE + 1) continue;
+    if (mesesEntreCompetencias(ultimos[ultimos.length - 1].competencia, competenciaAtual) > 2) continue;
+
+    const valores = ultimos.map((l) => l.valorCents);
+    const med = mediana(valores);
+    if (med <= 0) continue;
+    const desvios = valores.map((v) => Math.abs(v - med));
+    const mad = mediana(desvios);
+    if (mad / med > VARIACAO_MAXIMA_PARA_ESTAVEL) continue;
+    const primeiros = mediana(valores.slice(0, 3));
+    const recentes = mediana(valores.slice(-3));
+    // Qualquer aumento entre o início e o fim do período já é reajuste.
+    if (recentes > primeiros * 1.01) continue;
+    const impacto = Math.round(med * 12 * REAJUSTE_ESTIMADO);
+    if (impacto < materialidade) continue;
+
+    achados.push({
+      chave,
+      rotulo: rotuloDe(linhas, chave),
+      valorCents: impacto,
+      descricao:
+        `Fatura ${fmtBRL(med)} por mês há ${ativos.length} meses, sem nenhum aumento entre ${ultimos[0].competencia} e ` +
+        `${ultimos[ultimos.length - 1].competencia}. Um ano sem reajuste com folha e combustível subindo é margem que some: a 4% ` +
+        `ao ano, são ${fmtBRL(impacto)} em doze meses (estimativa para priorizar, não o número a cobrar).`,
+      evidencia: {
+        valorMensalTipico: med,
+        mesesSemReajuste: ultimos.length,
+        de: ultimos[0].competencia,
+        ate: ultimos[ultimos.length - 1].competencia,
+        impactoEstimadoAnual: impacto,
+        premissaDeReajuste: "4% ao ano",
+      },
+    });
+  }
+  return achados;
+}
+
+// ---------------------------------------------------------------------------
 // HI-REAJUSTE-SILENCIOSO — contrato recorrente que subiu de degrau e ficou.
 //
 // Diferente de HI-FORA-DO-PADRAO de propósito: aquele acha o PICO, este acha o
@@ -414,6 +477,20 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
   //     é a recomendação, não faz sentido para nenhum deles.
   const seriesDeFornecedores = somenteFornecedores(series, ctx);
 
+  // A série de CLIENTES, para o reajuste vencido. Mesma janela, natureza
+  // RECEBER; a própria empresa e bancos saem pelo mesmo filtro.
+  const seriesDeClientes = somenteFornecedores(
+    await lerSeries({
+      companyId: ctx.companyId,
+      conexaoId: ctx.conexaoId,
+      dimensao: "PARCEIRO",
+      natureza: "RECEBER",
+      de: competenciaAnterior(competenciaAtual, MESES_DE_JANELA),
+      ate: competenciaAtual,
+    }),
+    ctx
+  );
+
   const achados: AchadoNovo[] = [];
   const montar = (
     regra: string,
@@ -500,6 +577,27 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
       "retroativa da diferença — o valor do achado é o custo projetado em doze meses.",
     reajustes
   );
+
+  for (const i of reajusteVencido(seriesDeClientes, competenciaAtual, materialidade)) {
+    achados.push({
+      regra: "HI-REAJUSTE-VENCIDO",
+      tipo: "ESTADO",
+      severidade: i.valorCents >= materialidade * 3 ? "MEDIA" : "BAIXA",
+      categoria: "OPORTUNIDADE",
+      titulo: `${i.rotulo} fatura o mesmo valor há mais de um ano — reajuste vencido`,
+      descricao: i.descricao,
+      recomendacao:
+        "Localizar a data-base do contrato e a cláusula de reajuste (tomador público: art. 25 §7/§8 e art. 92 §4 da Lei 14.133). " +
+        "Pedir o reajuste pelo índice do contrato desde a data-base; sem cláusula, negociar e incluir na renovação.",
+      valorCents: i.valorCents,
+      impactoCents: i.valorCents,
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieParceiro",
+      entidadeRef: i.rotulo,
+      evidencia: { cliente: i.rotulo, ...i.evidencia },
+      chave: chaveAchado("HI-REAJUSTE-VENCIDO", i.chave),
+    });
+  }
 
   montar(
     "HI-PRAZO-ANTECIPADO",

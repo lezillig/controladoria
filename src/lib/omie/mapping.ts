@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, createHmac } from "crypto";
 import type {
   BaixaNormalizada,
   CategoriaNormalizada,
@@ -213,10 +213,30 @@ export function normalizeDocumento(valor: string | null): string | null {
 
 // Hash dos dados bancarios do fornecedor. Ver comentario em
 // OmieParceiro.contaBancariaHash (schema): guarda-se o hash, nunca a conta.
+// HMAC com chave em variável de ambiente, quando ela existe.
+//
+// SHA-256 puro de banco+agência+conta é pseudonimização, não anonimização: o
+// espaço de contas é pequeno o bastante para ser enumerado, então o hash
+// continua sendo dado pessoal (LGPD, art. 13 §4º). Com uma chave que só a
+// hospedagem conhece (CONTROLADORIA_HASH_KEY), o hash deixa de ser
+// reversível por quem tem só o banco. A transição é marcada pelo prefixo
+// "h1:" — o sync sabe que um hash antigo (sem prefixo) virando "h1:" é a
+// migração, não uma troca de conta (ver sincronizarCadastros).
 export function hashContaBancaria(banco: string | null, agencia: string | null, conta: string | null): string | null {
   const partes = [banco, agencia, conta].map((p) => (p ?? "").replace(/\D/g, ""));
   if (partes.every((p) => p === "")) return null;
+  const chave = process.env.CONTROLADORIA_HASH_KEY;
+  if (chave) return `h1:${createHmac("sha256", chave).update(partes.join("|")).digest("hex")}`;
   return createHash("sha256").update(partes.join("|")).digest("hex");
+}
+
+// Troca de conta de verdade, e não a migração de formato do hash.
+export function ehTrocaDeConta(antes: string | null, depois: string | null): boolean {
+  if (!antes || !depois || antes === depois) return false;
+  const antesComChave = antes.startsWith("h1:");
+  const depoisComChave = depois.startsWith("h1:");
+  if (antesComChave !== depoisComChave) return false;
+  return true;
 }
 
 export function obj(bruto: Bruto, ...keys: string[]): Bruto | null {

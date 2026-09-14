@@ -11,7 +11,9 @@ import type {
   OmieMovimento,
   OmieNota,
   OmieParceiro,
+  OmieParceiroContaHistorico,
   OmieSyncRun,
+  OmieTituloVersao,
   OmieTitulo,
   OmieVinculoCentroCusto,
 } from "@prisma/client";
@@ -109,6 +111,11 @@ export type ContextoAuditoria = {
   usosDeVeiculo?: UsoDeVeiculoGestao[];
   escalas?: EscalaGestao[];
   precosAnp?: PrecoAnpGestao[];
+  // Trocas de conta bancária dos últimos 12 meses (append-only, do sync) e
+  // as versões de título vistas na janela — o que mudou em títulos já
+  // espelhados. Opcionais pelo mesmo motivo dos demais.
+  contaHistorico?: OmieParceiroContaHistorico[];
+  versoesDeTitulo?: OmieTituloVersao[];
 
   // O que veio de fora: relatorios de consultoria, contabilidade e auditoria
   // externa, ja transformados em apontamentos rastreaveis, mais as ligacoes

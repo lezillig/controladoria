@@ -463,7 +463,7 @@ export async function reabrirSeNecessario(companyId: string, chave: string): Pro
 // 45 dias. Passado o prazo, o silêncio da regra não é reavaliação — é o
 // relógio dela. Sem esta lista, o indício de fraude mais grave do agente
 // sumia sozinho no 46º dia, sem ninguém ter olhado.
-const REGRAS_SEM_FECHAMENTO_AUTOMATICO = new Set(["FR-CONTA-ALTERADA"]);
+const REGRAS_SEM_FECHAMENTO_AUTOMATICO = new Set(["FR-CONTA-ALTERADA", "FR-CONTA-ALTERADA-REPETIDA"]);
 
 export function podeFecharSozinho(
   achado: { status: string; chave: string; tipo: string; agente: string; regra?: string; dataReferencia?: Date | null },

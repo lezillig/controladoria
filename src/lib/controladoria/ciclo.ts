@@ -9,6 +9,7 @@ import { gerarEEnviarRelatorio } from "./relatorio";
 import { enviarAlertaPorExcecao } from "./alerta";
 import { fimDoDia, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
 import { competenciasDaJanela, recalcularHistorico } from "./historico";
+import { aplicarRetencao } from "./retencao";
 
 // CICLO DIÁRIO DA CONTROLADORIA
 //
@@ -286,6 +287,18 @@ export async function executarPasso(params: {
     // os achados do dia já precisam existir com os ids definitivos. Rodar antes
     // ligaria o relatório de hoje aos achados de ontem.
     const conciliacao = await conciliarConformidade(companyId);
+
+    // RETENÇÃO DE DADOS (LGPD) — a política de prazos, aplicada aqui porque é
+    // o único ponto que roda todo dia com certeza. Best-effort: nunca derruba
+    // o ciclo.
+    try {
+      const r = await aplicarRetencao(companyId);
+      if (r.trilhaAnonimizada + r.loginsAnonimizados + r.investigacoesApagadas + r.falhasApagadas > 0) {
+        console.log(`[retencao] trilha ${r.trilhaAnonimizada}, logins ${r.loginsAnonimizados}, investigações ${r.investigacoesApagadas}, falhas ${r.falhasApagadas}`);
+      }
+    } catch (e) {
+      console.warn(`[retencao] falhou: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}`);
+    }
 
     // ALERTA POR EXCEÇÃO — depois da auditoria, antes do relatório, e
     // independente dele: é o e-mail que sai só quando surge achado crítico

@@ -488,7 +488,8 @@ model OmieTitulo {
   ordemServicoCodigo String?
   sincronizadoEm DateTime  @default(now())
 
-  baixas OmieBaixa[]
+  baixas  OmieBaixa[]
+  versoes OmieTituloVersao[]
 
   @@unique([conexaoId, natureza, codigoLancamento])
   @@index([companyId, natureza, dataVencimento])
@@ -538,6 +539,47 @@ model OmieBaixa {
   @@unique([conexaoId, chave])
   @@index([companyId, dataBaixa])
   @@index([tituloId])
+}
+
+// HISTÓRICO DE TROCAS DE CONTA BANCÁRIA — append-only.
+//
+// OmieParceiro guarda só a ÚLTIMA troca (contaBancariaAlteradaEm). O padrão
+// que interessa ao antifraude é a SEQUÊNCIA: trocar, receber, voltar à conta
+// anterior — ou trocar duas vezes no ano. Cada linha aqui é uma troca vista
+// pelo sync, com os dois hashes (nunca os dados em claro). Nada apaga.
+model OmieParceiroContaHistorico {
+  id           String   @id @default(cuid())
+  companyId    String
+  conexaoId    String
+  codigoOmie   String
+  hashAnterior String
+  hashNovo     String
+  detectadoEm  DateTime @default(now())
+
+  @@index([companyId, detectadoEm])
+  @@index([conexaoId, codigoOmie])
+}
+
+// VERSÕES DO TÍTULO — o que mudou, campo a campo, entre duas sincronizações.
+//
+// O espelho é upsert: a versão anterior de um título editado na Omie se perdia,
+// e "alterado depois de pago" sabia quem e quando (bloco info), nunca o quê.
+// Quando o sync vê um título já espelhado com fornecedor, valor, categoria,
+// conta, vencimento ou documento diferentes, grava uma linha por campo
+// alterado, com o valor de antes e o de depois. Só campos de dinheiro e de
+// destino: status e datas de baixa mudam por natureza e não são edição.
+model OmieTituloVersao {
+  id        String     @id @default(cuid())
+  companyId String
+  tituloId  String
+  titulo    OmieTitulo @relation(fields: [tituloId], references: [id], onDelete: Cascade)
+  vistoEm   DateTime   @default(now())
+  campo     String
+  de        String?
+  para      String?
+
+  @@index([tituloId])
+  @@index([companyId, vistoEm])
 }
 
 // Base da conciliação bancária: o que de fato entrou e saiu da conta,

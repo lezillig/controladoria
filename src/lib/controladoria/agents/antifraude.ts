@@ -1,9 +1,10 @@
-import { fmtBRL, fmtData, fmtDocumento, fmtPercent } from "../format";
+import { fmtBRL, fmtData, fmtDocumento } from "../format";
 import { diasEntre, ehDiaNaoUtil, inicioDoMes } from "../periodos";
 import { documentoValido, ehPessoaFisica, normalizarRazaoSocial } from "../documento";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import {
   cadastradoEPago,
+  contaAlteradaRepetida,
   contaBancariaCompartilhada,
   editadoAposBaixa,
   lancamentoManualSemDocumento,
@@ -11,6 +12,7 @@ import {
   notaSequencial,
   valoresRedondos,
 } from "./antifraudeFornecedor";
+import { desvioDeBenford, kickbackPorCategoria } from "./antifraudeEstatistica";
 import {
   agravar,
   agrupar,
@@ -43,9 +45,6 @@ const DIAS_JANELA_TROCA_CONTA = 45;
 // classica de teste em auditoria de compras.
 const FAIXA_FRACIONAMENTO = 0.8;
 const DIAS_JANELA_FRACIONAMENTO = 30;
-// Benford so tem poder estatistico com amostra razoavel. Abaixo disso o teste
-// acusa desvio em qualquer base pequena e vira ruido.
-const MINIMO_AMOSTRA_BENFORD = 150;
 
 export const agenteAntifraude: Agente = {
   id: "antifraude",
@@ -94,6 +93,8 @@ export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   // lançamento manual sem documento.
   achados.push(...editadoAposBaixa(ctx, materialidade));
   achados.push(...lancamentoManualSemDocumento(ctx, materialidade));
+  achados.push(...kickbackPorCategoria(ctx, materialidade));
+  achados.push(...contaAlteradaRepetida(ctx, materialidade));
 
   return achados;
 }
@@ -1028,87 +1029,7 @@ function fornecedorNovoComValorAlto(ctx: ContextoAuditoria, materialidade: numbe
   return achados;
 }
 
-// FR-BENFORD — Lei de Benford (Newcomb-Benford) aplicada ao primeiro digito
-// dos valores pagos. Em conjuntos financeiros naturais, o digito 1 aparece em
-// ~30,1% dos valores, o 2 em ~17,6%, e assim por diante decrescendo. Valores
-// inventados por pessoas nao seguem essa curva — e por isso o teste e padrao
-// em auditoria forense desde os anos 1990.
-//
-// Importante: desvio de Benford NAO e prova de nada. E um sinal de onde
-// olhar. O achado diz isso explicitamente, e a recomendacao aponta a
-// verificacao concreta.
-const PROPORCOES_BENFORD = [0.301, 0.176, 0.125, 0.097, 0.079, 0.067, 0.058, 0.051, 0.046];
-
-export function testeBenford(valoresCents: number[]): {
-  amostra: number;
-  desvioMaximo: number;
-  digitoSuspeito: number | null;
-  distribuicao: { digito: number; esperado: number; observado: number }[];
-} {
-  const digitos = valoresCents
-    .map((v) => Math.abs(v))
-    .filter((v) => v >= 1000) // abaixo de R$ 10 o primeiro digito perde sentido economico
-    .map((v) => Number(String(v)[0]))
-    .filter((d) => d >= 1 && d <= 9);
-
-  const total = digitos.length;
-  const distribuicao = PROPORCOES_BENFORD.map((esperado, i) => {
-    const digito = i + 1;
-    const observado = total > 0 ? digitos.filter((d) => d === digito).length / total : 0;
-    return { digito, esperado: esperado * 100, observado: observado * 100 };
-  });
-
-  let desvioMaximo = 0;
-  let digitoSuspeito: number | null = null;
-  for (const linha of distribuicao) {
-    const desvio = linha.observado - linha.esperado;
-    if (Math.abs(desvio) > Math.abs(desvioMaximo)) {
-      desvioMaximo = desvio;
-      digitoSuspeito = linha.digito;
-    }
-  }
-
-  return { amostra: total, desvioMaximo, digitoSuspeito, distribuicao };
-}
-
-// Acima de 8 pontos percentuais de desvio num digito, com amostra suficiente,
-// e o ponto em que a literatura de auditoria forense sugere investigar.
-const DESVIO_BENFORD_RELEVANTE = 8;
-
-function desvioDeBenford(ctx: ContextoAuditoria): AchadoNovo[] {
-  const pagamentos = titulosAtivos(ctx, "PAGAR")
-    .filter((t) => t.valorPagoCents > 0)
-    .map((t) => t.valorPagoCents);
-
-  const resultado = testeBenford(pagamentos);
-  if (resultado.amostra < MINIMO_AMOSTRA_BENFORD) return [];
-  if (Math.abs(resultado.desvioMaximo) < DESVIO_BENFORD_RELEVANTE) return [];
-
-  const digito = resultado.digitoSuspeito!;
-  const linha = resultado.distribuicao.find((d) => d.digito === digito)!;
-
-  return [
-    {
-      regra: "FR-BENFORD",
-      tipo: "ESTADO",
-      severidade: "MEDIA",
-      categoria: "FRAUDE",
-      titulo: `Distribuição de valores foge do padrão esperado (dígito ${digito})`,
-      descricao:
-        `Entre ${resultado.amostra} pagamentos analisados, ${fmtPercent(linha.observado)} começam com o dígito ${digito}, ` +
-        `contra ${fmtPercent(linha.esperado)} esperados pela Lei de Benford — desvio de ${fmtPercent(
-          Math.abs(resultado.desvioMaximo)
-        )}. Valores gerados naturalmente seguem essa curva; valores escolhidos por pessoas, não. ` +
-        `Isso não prova irregularidade: pode refletir contratos de valor fixo, parcelas iguais ou concentração em um fornecedor.`,
-      recomendacao:
-        `Listar os pagamentos que começam com ${digito} e verificar se há concentração em um fornecedor, um aprovador ` +
-        `ou uma faixa de valor logo abaixo de alguma alçada. Se a explicação for contrato de valor fixo, documentar e ignorar o alerta.`,
-      dataReferencia: ctx.dataReferencia,
-      evidencia: { amostra: resultado.amostra, distribuicao: resultado.distribuicao, digitoSuspeito: digito },
-      chave: chaveAchado("FR-BENFORD", chaveMes(ctx.dataReferencia)),
-    },
-  ];
-}
+// FR-BENFORD mora em antifraudeEstatistica.ts (método de Nigrini).
 
 // ---------------------------------------------------------------------------
 // O QUE SUMIU DO LADO DE RECEBER

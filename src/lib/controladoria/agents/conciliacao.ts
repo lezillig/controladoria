@@ -31,6 +31,7 @@ function auditarConciliacao(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...movimentosNaoConciliados(ctx, materialidade));
   achados.push(...saidaSemTitulo(ctx, materialidade));
   achados.push(...entradaSemTitulo(ctx, materialidade));
+  achados.push(...transferenciaEntreEmpresas(ctx, materialidade));
   achados.push(...baixaSemMovimento(ctx, materialidade));
   achados.push(...debitosDuplicados(ctx, materialidade));
   achados.push(...movimentoSemCategoria(ctx, materialidade));
@@ -388,4 +389,61 @@ export function saldoAtualCents(ctx: ContextoAuditoria): number {
     (m) => m.valorCents
   );
   return inicial + movimentado;
+}
+
+// CB-TRANSFERENCIA-INTERGRUPO — dinheiro que passou de uma empresa para a outra
+//
+// Um débito na conta da Azul e um crédito de mesmo valor na conta da MCZ
+// (ou vice-versa), no mesmo dia ou no seguinte, sem título de nenhum dos
+// dois lados. Mútuo, aporte, folha paga pela matriz — legítimo quase
+// sempre, e por isso INFO. Mas é dinheiro que muda de CNPJ sem documento:
+// precisa de contrato de mútuo ou de nota, senão vira problema fiscal e
+// esconde qualquer coisa no meio. As duas regras de "sem título" já excluem
+// esse par para não apontar em dobro; esta é a lista dele. Um por mês.
+function transferenciaEntreEmpresas(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const movimentos = movimentosDoPeriodo(ctx).filter((m) => !m.tituloCodigo);
+  const creditos = movimentos.filter((m) => m.valorCents > 0);
+  const debitos = movimentos.filter((m) => m.valorCents < 0);
+  const usados = new Set<string>();
+  const pares: { data: Date; de: string; para: string; valor: number }[] = [];
+  for (const c of creditos) {
+    const d = debitos.find(
+      (x) =>
+        !usados.has(x.id) &&
+        x.conexaoId !== c.conexaoId &&
+        Math.abs(Math.abs(x.valorCents) - c.valorCents) <= TOLERANCIA_CENTAVOS &&
+        Math.abs(diasEntre(x.data, c.data)) <= 1
+    );
+    if (!d) continue;
+    usados.add(d.id);
+    pares.push({ data: c.data, de: d.conexaoApelido, para: c.conexaoApelido, valor: c.valorCents });
+  }
+  if (pares.length === 0) return [];
+  const achados: AchadoNovo[] = [];
+  for (const [mes, lista] of agrupar(pares, (p) => chaveMes(p.data))) {
+    const valor = somar(lista, (p) => p.valor);
+    if (valor < materialidade) continue;
+    achados.push({
+      regra: "CB-TRANSFERENCIA-INTERGRUPO",
+      tipo: "EVENTO",
+      severidade: "INFO",
+      categoria: "RISCO_FINANCEIRO",
+      titulo: `${lista.length} transferência(s) entre empresas do grupo sem título em ${mes}: ${fmtBRL(valor)}`,
+      descricao:
+        `Débito numa empresa e crédito de mesmo valor na outra, sem título a pagar nem a receber de nenhum dos lados. ` +
+        `Mútuo e aporte são legítimos, mas dinheiro que muda de CNPJ sem documento precisa de contrato de mútuo ou nota — ` +
+        `é exigência fiscal e é o que impede a transferência de esconder outra coisa.`,
+      recomendacao:
+        "Registrar cada transferência com o documento que a sustenta (contrato de mútuo, aporte, rateio de folha) e lançar " +
+        "os títulos correspondentes nas duas empresas.",
+      valorCents: valor,
+      dataReferencia: lista[lista.length - 1].data,
+      evidencia: {
+        transferencias: lista.map((p) => ({ data: p.data.toISOString().slice(0, 10), de: p.de, para: p.para, valor: p.valor })),
+        soma: valor,
+      },
+      chave: chaveAchado("CB-TRANSFERENCIA-INTERGRUPO", mes),
+    });
+  }
+  return achados;
 }

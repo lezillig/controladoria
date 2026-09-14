@@ -121,6 +121,8 @@ export async function carregarContexto(
     usosDeVeiculo,
     escalas,
     precosAnp,
+    contaHistorico,
+    versoesDeTitulo,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -197,6 +199,14 @@ export async function carregarContexto(
     lerUsosDeVeiculo(companyId, corteRecente),
     lerEscalas(companyId, corteRecente),
     lerPrecosAnp(corteRecente),
+    prisma.omieParceiroContaHistorico.findMany({
+      where: { companyId, ...(conexaoId ? { conexaoId } : {}), detectadoEm: { gte: somarDias(inicioDoDia(dataReferencia), -365) } },
+      orderBy: { detectadoEm: "asc" },
+    }),
+    prisma.omieTituloVersao.findMany({
+      where: { companyId, vistoEm: ate ? { gte: desde, lte: ate } : { gte: desde } },
+      orderBy: { vistoEm: "asc" },
+    }),
   ]);
 
   return {
@@ -223,6 +233,8 @@ export async function carregarContexto(
     usosDeVeiculo,
     escalas,
     precosAnp,
+    contaHistorico,
+    versoesDeTitulo,
     // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
     // leitura (ver src/lib/gestao/leitura.ts), então só faz sentido consultá-la
     // quando as quatro já rodaram.

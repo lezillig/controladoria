@@ -421,18 +421,23 @@ const DIAS_DE_FOLGA_APOS_BAIXA = 2;
 
 export function editadoAposBaixa(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
-  const editados = titulosAtivos(ctx, "PAGAR").filter(
-    (t) =>
-      t.liquidado &&
-      t.dataUltimaBaixa !== null &&
-      t.alteradoEmOmie !== null &&
-      t.usuarioAlteracao !== null &&
-      diasEntre(t.dataUltimaBaixa, t.alteradoEmOmie) > DIAS_DE_FOLGA_APOS_BAIXA &&
-      t.valorPagoCents >= materialidade / 2
-  );
+  // Duas fontes: o bloco `info` (quem e quando) e as versões gravadas pelo
+  // sync (o quê). Com versão depois da baixa a regra dispara mesmo sem o
+  // bloco info; com as duas, diz quem mudou o quê.
+  const versoesPorTitulo = agrupar(ctx.versoesDeTitulo ?? [], (v) => v.tituloId);
+  const editados = titulosAtivos(ctx, "PAGAR").filter((t) => {
+    if (!t.liquidado || t.dataUltimaBaixa === null || t.valorPagoCents < materialidade / 2) return false;
+    const pelaInfo =
+      t.alteradoEmOmie !== null && t.usuarioAlteracao !== null && diasEntre(t.dataUltimaBaixa, t.alteradoEmOmie) > DIAS_DE_FOLGA_APOS_BAIXA;
+    const pelasVersoes = (versoesPorTitulo.get(t.id) ?? []).some((v) => diasEntre(t.dataUltimaBaixa as Date, v.vistoEm) > DIAS_DE_FOLGA_APOS_BAIXA);
+    return pelaInfo || pelasVersoes;
+  });
   for (const t of editados) {
-    const dias = diasEntre(t.dataUltimaBaixa as Date, t.alteradoEmOmie as Date);
+    const versoes = (versoesPorTitulo.get(t.id) ?? []).filter((v) => diasEntre(t.dataUltimaBaixa as Date, v.vistoEm) > DIAS_DE_FOLGA_APOS_BAIXA);
+    const quando = t.alteradoEmOmie && t.usuarioAlteracao ? t.alteradoEmOmie : versoes[versoes.length - 1]?.vistoEm ?? (t.alteradoEmOmie as Date);
+    const dias = diasEntre(t.dataUltimaBaixa as Date, quando);
     const nome = nomeParceiro(ctx, t);
+    const mudancas = versoes.map((v) => `${v.campo}: ${v.de ?? "—"} → ${v.para ?? "—"}`);
     achados.push({
       regra: "FR-EDITADO-APOS-BAIXA",
       tipo: "EVENTO",
@@ -441,8 +446,9 @@ export function editadoAposBaixa(ctx: ContextoAuditoria, materialidade: number):
       titulo: `${referenciaTitulo(t)} (${nome}) alterado ${dias} dias depois de pago`,
       descricao:
         `O título foi baixado em ${fmtData(t.dataUltimaBaixa)} (${fmtBRL(t.valorPagoCents)}) e alterado na Omie em ` +
-        `${fmtData(t.alteradoEmOmie)} por ${t.usuarioAlteracao}. Título pago é fato encerrado: o que muda depois ` +
-        `(fornecedor, valor, categoria, conta) precisa de motivo registrado.`,
+        `${fmtData(quando)}${t.usuarioAlteracao ? ` por ${t.usuarioAlteracao}` : ""}.` +
+        (mudancas.length > 0 ? ` O que mudou: ${mudancas.join("; ")}.` : "") +
+        ` Título pago é fato encerrado: o que muda depois (fornecedor, valor, categoria, conta) precisa de motivo registrado.`,
       recomendacao:
         "Abrir o histórico do título na Omie e ver o que foi alterado. Se foi o beneficiário ou o valor, comparar com o " +
         "comprovante do pagamento; se foi a categoria, confirmar com quem aprovou. Registrar a justificativa.",
@@ -454,13 +460,14 @@ export function editadoAposBaixa(ctx: ContextoAuditoria, materialidade: number):
       evidencia: {
         fornecedor: nome,
         pagoEm: fmtData(t.dataUltimaBaixa),
-        alteradoEm: fmtData(t.alteradoEmOmie),
+        alteradoEm: fmtData(quando),
         diasDepois: dias,
-        alteradoPor: t.usuarioAlteracao,
+        alteradoPor: t.usuarioAlteracao ?? "—",
+        mudancas,
         incluidoPor: t.usuarioInclusao ?? "—",
         valor: t.valorPagoCents,
       },
-      chave: chaveAchado("FR-EDITADO-APOS-BAIXA", t.conexaoApelido, t.codigoLancamento, (t.alteradoEmOmie as Date).toISOString().slice(0, 10)),
+      chave: chaveAchado("FR-EDITADO-APOS-BAIXA", t.conexaoApelido, t.codigoLancamento, quando.toISOString().slice(0, 10)),
     });
   }
   return achados;
@@ -525,6 +532,71 @@ export function lancamentoManualSemDocumento(ctx: ContextoAuditoria, materialida
         })),
       },
       chave: chaveAchado("FR-LANCAMENTO-MANUAL", empresa, usuario, competencia),
+    });
+  }
+  return achados;
+}
+
+// ---------------------------------------------------------------------------
+// FR-CONTA-ALTERADA-REPETIDA — trocou, recebeu, voltou
+// ---------------------------------------------------------------------------
+// FR-CONTA-ALTERADA vê uma troca de cada vez. O esquema clássico é a
+// sequência: muda a conta, recebe um pagamento, volta à conta de antes — e o
+// cadastro fica igual ao original, como se nada tivesse acontecido. Ou duas
+// trocas no mesmo ano, cada uma "confirmada por e-mail". O histórico
+// append-only do sync guarda a sequência; aqui ela é lida.
+const TROCAS_POR_ANO_PARA_APONTAR = 2;
+
+export function contaAlteradaRepetida(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const historico = ctx.contaHistorico ?? [];
+  if (historico.length === 0) return [];
+  const achados: AchadoNovo[] = [];
+  const parceiros = new Map(ctx.parceiros.map((p) => [`${p.conexaoId}|${p.codigoOmie}`, p]));
+  const pagarPorParceiro = agrupar(
+    titulosAtivos(ctx, "PAGAR").filter((t) => t.parceiroCodigo && t.valorPagoCents > 0),
+    (t) => `${t.conexaoId}|${t.parceiroCodigo}`
+  );
+
+  for (const [chave, trocas] of agrupar(historico, (h) => `${h.conexaoId}|${h.codigoOmie}`)) {
+    const ordenadas = [...trocas].sort((a, b) => a.detectadoEm.getTime() - b.detectadoEm.getTime());
+    const hashesVistos = new Set(ordenadas.map((t) => t.hashAnterior));
+    const voltou = ordenadas.some((t, i) => i > 0 && ordenadas.slice(0, i).some((x) => x.hashAnterior === t.hashNovo));
+    if (ordenadas.length < TROCAS_POR_ANO_PARA_APONTAR && !voltou) continue;
+
+    const p = parceiros.get(chave);
+    const nome = p?.nome ?? chave;
+    const primeira = ordenadas[0].detectadoEm;
+    const pagoDesde = somar(
+      (pagarPorParceiro.get(chave) ?? []).filter((t) => t.dataUltimaBaixa && t.dataUltimaBaixa >= primeira),
+      (t) => t.valorPagoCents
+    );
+    achados.push({
+      regra: "FR-CONTA-ALTERADA-REPETIDA",
+      tipo: "ESTADO",
+      severidade: voltou ? "ALTA" : agravar(severidadePorValor(pagoDesde, materialidade)),
+      categoria: "FRAUDE",
+      titulo: voltou
+        ? `${nome}: conta bancária trocada e depois devolvida à anterior`
+        : `${nome}: ${ordenadas.length} trocas de conta bancária em 12 meses`,
+      descricao:
+        `${ordenadas.length} troca(s) de conta desde ${fmtData(primeira)}` +
+        (voltou ? ", e uma delas VOLTOU a uma conta usada antes — o cadastro fica igual ao original, como se nada tivesse acontecido. " : ". ") +
+        (pagoDesde > 0 ? `${fmtBRL(pagoDesde)} pagos desde a primeira troca. ` : "") +
+        `Trocar, receber e voltar é o desenho do desvio de pagamento por conta falsa; duas trocas no ano "confirmadas por e-mail" também.`,
+      recomendacao:
+        "Levantar cada pagamento feito entre as trocas e conferir no banco a titularidade da conta que recebeu. Confirmar as " +
+        "trocas por telefone em número já cadastrado e registrar quem as autorizou na Omie.",
+      valorCents: pagoDesde > 0 ? pagoDesde : undefined,
+      dataReferencia: ordenadas[ordenadas.length - 1].detectadoEm,
+      entidadeTipo: "OmieParceiro",
+      entidadeId: p?.id ?? chave,
+      entidadeRef: nome,
+      evidencia: {
+        fornecedor: nome,
+        trocas: ordenadas.map((t) => ({ em: fmtData(t.detectadoEm), voltouAConta: hashesVistos.has(t.hashNovo) && t.hashNovo !== t.hashAnterior })),
+        pagoDesdeAPrimeiraTroca: pagoDesde,
+      },
+      chave: chaveAchado("FR-CONTA-ALTERADA-REPETIDA", chave),
     });
   }
   return achados;

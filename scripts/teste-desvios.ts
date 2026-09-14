@@ -12,7 +12,9 @@ import { auditarFraude } from "../src/lib/controladoria/agents/antifraude";
 import { numeroDaNota } from "../src/lib/controladoria/agents/antifraudeFornecedor";
 import { agenteConciliacao } from "../src/lib/controladoria/agents/conciliacao";
 import { auditarContasReceber } from "../src/lib/controladoria/agents/contasReceber";
-import { fornecedorDormente } from "../src/lib/controladoria/agents/padroes";
+import { fornecedorDormente, reajusteVencido } from "../src/lib/controladoria/agents/padroes";
+import { testeBenfordNigrini } from "../src/lib/controladoria/agents/antifraudeEstatistica";
+import { tipoDeTomador } from "../src/lib/controladoria/agents/contasReceberRetencao";
 import type { SerieMensal } from "../src/lib/controladoria/historico";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 
@@ -63,6 +65,12 @@ const titulo = (p: Partial<Titulo> = {}): Titulo =>
     multaCents: 0,
     descontoCents: 0,
     tarifaCents: 0,
+    retencaoIrCents: 0,
+    retencaoIssCents: 0,
+    retencaoPisCents: 0,
+    retencaoCofinsCents: 0,
+    retencaoCsllCents: 0,
+    retencaoInssCents: 0,
     ...p,
   }) as Titulo;
 
@@ -526,6 +534,193 @@ function serie(chave: string, meses: { competencia: string; valor: number }[]): 
     { competencia: "2026-03", valor: 900_00 },
   ]);
   conferir("quem acordou há cinco meses já não é notícia", fornecedorDormente(s, "2026-08", MATERIALIDADE).length, 0);
+}
+
+// -------------------------------------------------------------- FR-BENFORD
+console.log("\nFR-BENFORD — método de Nigrini (MAD + qui-quadrado)");
+{
+  // Amostra que segue Benford: 2000 valores log-uniformes.
+  let semente = 42;
+  const aleatorio = () => {
+    semente = (semente * 1103515245 + 12345) % 2147483648;
+    return semente / 2147483648;
+  };
+  const conformes = Array.from({ length: 2000 }, () => Math.round(10 ** (3 + aleatorio() * 4)));
+  const r1 = testeBenfordNigrini(conformes, 1)!;
+  conferir("base log-uniforme é conforme no 1º dígito", r1.naoConforme, false);
+  conferir("MAD abaixo do limite de Nigrini", r1.mad < 0.015, true);
+  // Amostra inventada: tudo começa com 5 ou 9.
+  const inventados = Array.from({ length: 2000 }, (_, i) => (i % 2 === 0 ? 5_000_00 + i * 37 : 9_000_00 + i * 53));
+  const r2 = testeBenfordNigrini(inventados, 1)!;
+  conferir("valores escolhidos são não conformes", r2.naoConforme, true);
+  conferir("o dígito em excesso aparece primeiro", [5, 9].includes(r2.excessos[0].digito), true);
+  conferir("amostra vazia devolve nulo", testeBenfordNigrini([], 1), null);
+}
+{
+  // Na regra: 600 títulos inventados (todos começando com 9) numa categoria
+  // disparam; 600 títulos log-uniformes não.
+  let semente = 7;
+  const aleatorio = () => {
+    semente = (semente * 1103515245 + 12345) % 2147483648;
+    return semente / 2147483648;
+  };
+  const conformes = Array.from({ length: 600 }, (_, i) =>
+    titulo({ parceiroCodigo: `B${i % 40}`, parceiroDocumento: `${String(20_000_000 + (i % 40)).padStart(8, "0")}000100`, valorDocumentoCents: Math.round(10 ** (3 + aleatorio() * 4)), categoriaCodigo: "2.01", categoriaDescricao: "Manutenção" })
+  );
+  const ctx = contexto({ titulos: conformes });
+  conferir("categoria conforme não gera achado", rodarFraude(ctx, "FR-BENFORD").length, 0);
+  const inventados = Array.from({ length: 600 }, (_, i) =>
+    titulo({ parceiroCodigo: `B${i % 40}`, parceiroDocumento: `${String(20_000_000 + (i % 40)).padStart(8, "0")}000100`, valorDocumentoCents: 9_000_00 + i * 37, categoriaCodigo: "2.02", categoriaDescricao: "Serviços" })
+  );
+  const ctx2 = contexto({ titulos: inventados });
+  const r = rodarFraude(ctx2, "FR-BENFORD");
+  conferir("categoria com valores escolhidos gera um achado", r.length, 1);
+  conferir("a evidência lista os fornecedores nos dígitos em excesso", (r[0]?.evidencia?.fornecedoresNosDigitosEmExcesso as unknown[]).length > 0, true);
+}
+
+// -------------------------------------------------------- FR-KICKBACK-CATEGORIA
+console.log("\nFR-KICKBACK-CATEGORIA — um fornecedor toma a categoria enquanto o custo sobe");
+{
+  const HOJE_JANELA = contexto({}); // janelaDesde 2026-01-01, referência 2026-08-25 → meses inteiros jan..jul
+  void HOJE_JANELA;
+  const lista: Titulo[] = [];
+  // Jan–Mar: três fornecedores dividindo R$ 30 mil/mês. Mai–Jul: um só com R$ 45 mil/mês.
+  for (const m of [1, 2, 3]) for (const f of ["K1", "K2", "K3"]) lista.push(titulo({ parceiroCodigo: f, parceiroNome: `FORN ${f}`, parceiroDocumento: `${f}${f}${f}${f}00000100`.slice(0, 14), categoriaCodigo: "3.01", categoriaDescricao: "Pneus", departamentoCodigo: "D1", dataEmissao: d(`2026-0${m}-10`), dataVencimento: d(`2026-0${m}-20`), valorDocumentoCents: 10_000_00, valorPagoCents: 10_000_00 }));
+  for (const m of [4]) for (const f of ["K1", "K2"]) lista.push(titulo({ parceiroCodigo: f, parceiroNome: `FORN ${f}`, parceiroDocumento: `${f}${f}${f}${f}00000100`.slice(0, 14), categoriaCodigo: "3.01", categoriaDescricao: "Pneus", departamentoCodigo: "D1", dataEmissao: d(`2026-0${m}-10`), dataVencimento: d(`2026-0${m}-20`), valorDocumentoCents: 15_000_00, valorPagoCents: 15_000_00 }));
+  for (const m of [5, 6, 7]) lista.push(titulo({ parceiroCodigo: "K1", parceiroNome: "FORN K1", parceiroDocumento: "K1K1K1K100000100".slice(0, 14), categoriaCodigo: "3.01", categoriaDescricao: "Pneus", departamentoCodigo: "D1", dataEmissao: d(`2026-0${m}-10`), dataVencimento: d(`2026-0${m}-20`), valorDocumentoCents: 45_000_00, valorPagoCents: 45_000_00 }));
+  const ctx = contexto({ titulos: [...fundo(), ...lista] });
+  const r = rodarFraude(ctx, "FR-KICKBACK-CATEGORIA");
+  conferir("concentração de 33% → 100% com custo +50% e sem receita é achado", r.length, 1);
+  conferir("nomeia o fornecedor que tomou a categoria", r[0]?.entidadeRef, "FORN K1");
+}
+{
+  // Mesma concentração, mas a receita cresceu junto: é operação, não comissão.
+  const lista: Titulo[] = [];
+  for (const m of [1, 2, 3]) for (const f of ["K1", "K2", "K3"]) lista.push(titulo({ parceiroCodigo: f, parceiroDocumento: `${f}${f}${f}${f}00000100`.slice(0, 14), categoriaCodigo: "3.01", departamentoCodigo: "D1", dataEmissao: d(`2026-0${m}-10`), dataVencimento: d(`2026-0${m}-20`), valorDocumentoCents: 10_000_00 }));
+  for (const m of [4]) lista.push(titulo({ parceiroCodigo: "K2", parceiroDocumento: "K2K2K2K200000100".slice(0, 14), categoriaCodigo: "3.01", departamentoCodigo: "D1", dataEmissao: d(`2026-0${m}-10`), dataVencimento: d(`2026-0${m}-20`), valorDocumentoCents: 10_000_00 }));
+  for (const m of [5, 6, 7]) lista.push(titulo({ parceiroCodigo: "K1", parceiroDocumento: "K1K1K1K100000100".slice(0, 14), categoriaCodigo: "3.01", departamentoCodigo: "D1", dataEmissao: d(`2026-0${m}-10`), dataVencimento: d(`2026-0${m}-20`), valorDocumentoCents: 45_000_00 }));
+  for (const m of [1, 2, 3]) lista.push(titulo({ natureza: "RECEBER", parceiroCodigo: "C1", dataEmissao: d(`2026-0${m}-05`), dataVencimento: d(`2026-0${m}-25`), valorDocumentoCents: 100_000_00 }));
+  for (const m of [5, 6, 7]) lista.push(titulo({ natureza: "RECEBER", parceiroCodigo: "C1", dataEmissao: d(`2026-0${m}-05`), dataVencimento: d(`2026-0${m}-25`), valorDocumentoCents: 200_000_00 }));
+  const ctx = contexto({ titulos: [...fundo(), ...lista] });
+  conferir("receita que dobrou explica o custo: não é achado", rodarFraude(ctx, "FR-KICKBACK-CATEGORIA").length, 0);
+}
+
+// ------------------------------------------------------ CR-RETENCAO-INDEVIDA
+console.log("\nCR-RETENCAO-INDEVIDA — o tomador reteve o que a lei não manda");
+conferir("prefeitura é público", tipoDeTomador("PREFEITURA MUNICIPAL DE CAJAMAR"), "publico");
+conferir("universidade federal é federal", tipoDeTomador("UNIVERSIDADE FEDERAL DE SAO CARLOS"), "federal");
+conferir("empresa é privado", tipoDeTomador("INDUSTRIA DE PAPEL LTDA"), "privado");
+{
+  // Privado retendo 4,65% de PCC sobre R$ 50 mil: R$ 2.325 indevidos.
+  const t = titulo({ natureza: "RECEBER", parceiroNome: "INDUSTRIA DE PAPEL LTDA", parceiroDocumento: "99999999000199", parceiroCodigo: "R1", valorDocumentoCents: 50_000_00, valorPagoCents: 47_675_00, retencaoPisCents: 325_00, retencaoCofinsCents: 1_500_00, retencaoCsllCents: 500_00 });
+  const ctx = contexto({ titulos: [...fundo(), t] });
+  const r = rodarReceber(ctx, "CR-RETENCAO-INDEVIDA");
+  conferir("PCC retido por privado é achado", r.length, 1);
+  conferir("com o valor retido", r[0]?.valorCents, 2_325_00);
+  conferir("é oportunidade de recuperação", r[0]?.categoria, "OPORTUNIDADE");
+}
+{
+  // Órgão federal retendo exatamente 7,05%: correto.
+  const t = titulo({ natureza: "RECEBER", parceiroNome: "UNIVERSIDADE FEDERAL DE SAO CARLOS", parceiroCodigo: "R2", valorDocumentoCents: 100_000_00, valorPagoCents: 92_950_00, retencaoIrCents: 2_400_00, retencaoPisCents: 650_00, retencaoCofinsCents: 3_000_00, retencaoCsllCents: 1_000_00 });
+  const ctx = contexto({ titulos: [...fundo(), t] });
+  conferir("7,05% do órgão federal é o correto", rodarReceber(ctx, "CR-RETENCAO-INDEVIDA").length, 0);
+}
+{
+  // Prefeitura retendo só IRRF: correto; prefeitura retendo PCC: indevido.
+  const so_ir = titulo({ natureza: "RECEBER", parceiroNome: "PREFEITURA MUNICIPAL DE CAJAMAR", parceiroCodigo: "R3", valorDocumentoCents: 100_000_00, retencaoIrCents: 1_500_00 });
+  const comPcc = titulo({ natureza: "RECEBER", parceiroNome: "PREFEITURA MUNICIPAL DE CAJAMAR", parceiroCodigo: "R3", valorDocumentoCents: 100_000_00, retencaoIrCents: 1_500_00, retencaoCofinsCents: 3_000_00 });
+  conferir("prefeitura com só IRRF não é achado", rodarReceber(contexto({ titulos: [...fundo(), so_ir] }), "CR-RETENCAO-INDEVIDA").length, 0);
+  conferir("prefeitura com COFINS retido é achado", rodarReceber(contexto({ titulos: [...fundo(), comPcc] }), "CR-RETENCAO-INDEVIDA").length, 1);
+}
+
+// ---------------------------------------------------------------- CR-LAPPING
+console.log("\nCR-LAPPING — o pagamento de um título aplicado em outro");
+{
+  const pago = titulo({ natureza: "RECEBER", parceiroCodigo: "L1", parceiroDocumento: "77777777000177", valorDocumentoCents: 8_000_00, valorPagoCents: 5_000_00, liquidado: false });
+  const aberto = titulo({ natureza: "RECEBER", parceiroCodigo: "L1", parceiroDocumento: "77777777000177", valorDocumentoCents: 5_000_00, valorPagoCents: 0, liquidado: false, dataVencimento: d("2026-07-10") });
+  const ctx = contexto({ titulos: [...fundo(), pago, aberto], baixas: [baixa({ tituloId: pago.id, valorCents: 5_000_00, dataBaixa: d("2026-07-15") })] });
+  const r = rodarReceber(ctx, "CR-LAPPING");
+  conferir("baixa de R$ 5.000 num título de R$ 8.000, com outro de R$ 5.000 em aberto, é achado", r.length, 1);
+  conferir("a evidência diz qual título tem esse valor", String((r[0]?.evidencia?.casos as { tituloComEsseValor: string }[])[0]?.tituloComEsseValor).length > 0, true);
+}
+{
+  const pago = titulo({ natureza: "RECEBER", parceiroCodigo: "L2", parceiroDocumento: "66666666000166", valorDocumentoCents: 5_000_00, valorPagoCents: 5_000_00 });
+  const aberto = titulo({ natureza: "RECEBER", parceiroCodigo: "L2", parceiroDocumento: "66666666000166", valorDocumentoCents: 5_000_00, valorPagoCents: 0, liquidado: false });
+  const ctx = contexto({ titulos: [...fundo(), pago, aberto], baixas: [baixa({ tituloId: pago.id, valorCents: 5_000_00 })] });
+  conferir("baixa do valor exato do próprio título não é lapping", rodarReceber(ctx, "CR-LAPPING").length, 0);
+}
+
+// ---------------------------------------------- CB-TRANSFERENCIA-INTERGRUPO
+console.log("\nCB-TRANSFERENCIA-INTERGRUPO — dinheiro que mudou de empresa sem título");
+{
+  const ctx = contexto({
+    titulos: fundo(),
+    movimentos: [
+      movimento({ valorCents: -20_000_00, data: d("2026-08-10"), conexaoId: "x", conexaoApelido: "AZUL", contaCorrenteCodigo: "100" }),
+      movimento({ valorCents: 20_000_00, data: d("2026-08-11"), conexaoId: "y", conexaoApelido: "MCZ", contaCorrenteCodigo: "200" }),
+    ],
+  });
+  const r = rodarConciliacao(ctx, "CB-TRANSFERENCIA-INTERGRUPO");
+  conferir("débito na Azul e crédito na MCZ no dia seguinte é transferência", r.length, 1);
+  conferir("informativo", r[0]?.severidade, "INFO");
+  conferir("e não aparece como entrada sem título", rodarConciliacao(ctx, "CB-ENTRADA-SEM-TITULO").length, 0);
+}
+
+// ------------------------------------------------------ HI-REAJUSTE-VENCIDO
+console.log("\nHI-REAJUSTE-VENCIDO — o cliente que fatura o mesmo valor há mais de um ano");
+{
+  const meses = Array.from({ length: 14 }, (_, i) => {
+    const m = new Date(2025, 5 + i, 1);
+    return { competencia: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`, valor: 30_000_00 };
+  });
+  const r = reajusteVencido(serie("C1", meses), "2026-08", MATERIALIDADE);
+  conferir("14 meses no mesmo valor é reajuste vencido", r.length, 1);
+  conferir("impacto = 12 x mediana x 4%", r[0]?.valorCents, Math.round(30_000_00 * 12 * 0.04));
+}
+{
+  const meses = Array.from({ length: 14 }, (_, i) => {
+    const m = new Date(2025, 5 + i, 1);
+    return { competencia: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`, valor: i >= 11 ? 33_000_00 : 30_000_00 };
+  });
+  conferir("aumento de 10% nos últimos meses é reajuste feito", reajusteVencido(serie("C2", meses), "2026-08", MATERIALIDADE).length, 0);
+}
+{
+  const meses = Array.from({ length: 14 }, (_, i) => {
+    const m = new Date(2025, 5 + i, 1);
+    return { competencia: `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`, valor: 10_000_00 + (i % 3) * 8_000_00 };
+  });
+  conferir("valor por quilômetro (varia muito) não tem reajuste a cobrar", reajusteVencido(serie("C3", meses), "2026-08", MATERIALIDADE).length, 0);
+}
+
+// -------------------------------------------- FR-CONTA-ALTERADA-REPETIDA
+console.log("\nFR-CONTA-ALTERADA-REPETIDA — trocou, recebeu, voltou");
+{
+  const p = parceiro({ codigoOmie: "P1", nome: "FORNECEDOR VOLTA E MEIA LTDA" });
+  const ctx = contexto({ parceiros: [p], titulos: fundo() });
+  ctx.contaHistorico = [
+    { id: "h1", companyId: "c", conexaoId: "x", codigoOmie: "P1", hashAnterior: "A", hashNovo: "B", detectadoEm: d("2026-03-01") },
+    { id: "h2", companyId: "c", conexaoId: "x", codigoOmie: "P1", hashAnterior: "B", hashNovo: "A", detectadoEm: d("2026-04-15") },
+  ];
+  const r = rodarFraude(ctx, "FR-CONTA-ALTERADA-REPETIDA");
+  conferir("trocar e voltar à conta anterior é achado ALTA", r[0]?.severidade, "ALTA");
+  conferir("o título diz que voltou", r[0]?.titulo.includes("devolvida"), true);
+}
+{
+  const p = parceiro({ codigoOmie: "P1" });
+  const ctx = contexto({ parceiros: [p], titulos: fundo() });
+  ctx.contaHistorico = [{ id: "h1", companyId: "c", conexaoId: "x", codigoOmie: "P1", hashAnterior: "A", hashNovo: "B", detectadoEm: d("2026-03-01") }];
+  conferir("uma troca só fica com FR-CONTA-ALTERADA", rodarFraude(ctx, "FR-CONTA-ALTERADA-REPETIDA").length, 0);
+}
+
+// ------------------------------------------- FR-EDITADO-APOS-BAIXA (versões)
+console.log("\nFR-EDITADO-APOS-BAIXA — com as versões, diz o que mudou");
+{
+  const t = titulo({ dataUltimaBaixa: d("2026-06-10"), alteradoEmOmie: null, usuarioAlteracao: null, valorPagoCents: 3_000_00, valorDocumentoCents: 3_000_00 });
+  const ctx = contexto({ titulos: [...fundo(), t] });
+  ctx.versoesDeTitulo = [{ id: "v1", companyId: "c", tituloId: t.id, vistoEm: d("2026-06-25"), campo: "parceiroCodigo", de: "P1", para: "P9" }];
+  const r = rodarFraude(ctx, "FR-EDITADO-APOS-BAIXA");
+  conferir("versão depois da baixa dispara mesmo sem o bloco info", r.length, 1);
+  conferir("e a evidência diz o que mudou", (r[0]?.evidencia?.mudancas as string[])[0], "parceiroCodigo: P1 → P9");
 }
 
 console.log(falhas === 0 ? "\nTodos os casos passaram." : `\n${falhas} caso(s) falharam.`);

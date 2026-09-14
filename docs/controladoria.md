@@ -115,6 +115,14 @@ o caso legítimo que preserva (`scripts/teste-desvios.ts`):
 | `HI-FORNECEDOR-DORMENTE` | Relação antiga (3+ meses ativos), 12+ meses sem título, volta no mês corrente ou anterior com valor ≥ materialidade | Quem acordou há mais de um mês, quem nunca teve relação |
 | `FR-EDITADO-APOS-BAIXA` | Título a pagar liquidado e alterado na Omie mais de 2 dias depois da baixa, com o usuário que alterou (bloco `info`, pedido com `lDadosCad`) | Alteração no dia da baixa, título sem usuário de alteração (a conta não devolve o bloco) |
 | `FR-LANCAMENTO-MANUAL` | Títulos a pagar de origem manual (`cOrigem` MANP) sem número de nota, por usuário e mês, somando ≥ materialidade | Título nascido de nota (NFEP) ou de extrato, manual com número de nota |
+| `FR-BENFORD` (Nigrini) | Por empresa e grupo de categoria, sem valores fixos recorrentes: MAD > 0,015 (1º dígito, n ≥ 500) ou > 0,0022 (dois dígitos, n ≥ 300) **e** qui-quadrado acima do crítico a 1%; evidência lista os fornecedores nos dígitos em excesso | Amostra pequena, categoria conforme — o teste anterior (8 p.p. num dígito, n ≥ 150) dava falso alarme perto de 1 em 4 |
+| `FR-KICKBACK-CATEGORIA` | Fornecedor que passa de ≤ 40% para ≥ 75% de uma categoria+departamento entre o primeiro e o último trimestre da janela, com o custo subindo ≥ 25% e a receita crescendo menos da metade disso | Menos de 3 fornecedores, receita que acompanha, menos de 6 meses |
+| `FR-CONTA-ALTERADA-REPETIDA` | 2+ trocas de conta bancária em 12 meses, ou volta a uma conta anterior (trocar, receber, voltar) — do histórico append-only do sync; nunca fecha sozinha | Uma troca só (é `FR-CONTA-ALTERADA`) |
+| `FR-EDITADO-APOS-BAIXA` (com versões) | Além do bloco `info`, dispara quando o sync gravou uma versão do título depois da baixa, e diz o que mudou (fornecedor, valor, categoria, conta, vencimento, documento) | — |
+| `CR-RETENCAO-INDEVIDA` | Tomador privado retendo PCC (Lei 10.833 art. 30 não lista transporte de passageiros); estado/município retendo PCC (IN RFB 2145: só IRRF); órgão federal acima de 7,05% (IN 1234, cód. 6175). Por cliente e trimestre, OPORTUNIDADE (recuperável) | Retenção coerente com o tipo de tomador, abaixo de ¼ da materialidade |
+| `CR-LAPPING` | Baixa cujo valor não é o do título baixado mas é exatamente o de outro título em aberto do mesmo cliente | Baixa no valor do próprio título |
+| `CB-TRANSFERENCIA-INTERGRUPO` | Débito numa empresa e crédito de mesmo valor na outra em ±1 dia, sem título dos dois lados (INFO, um por mês) | — |
+| `HI-REAJUSTE-VENCIDO` | Cliente com 13+ meses de faturamento estável (MAD/mediana < 15%) sem nenhum aumento; impacto = 12 meses × 4% (estimativa declarada) | Valor que varia com o volume (por km), aumento já ocorrido |
 
 **O que a Omie passou a entregar ao espelho** (migração `20260914160000`): no
 título, `usuarioInclusao`/`usuarioAlteracao`/`dataInclusaoOmie` (bloco `info`,
