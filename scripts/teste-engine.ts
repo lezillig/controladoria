@@ -57,8 +57,25 @@ console.log("\n2. O que não pode fechar sozinho");
 }
 {
   // FATO CONSUMADO. Um pagamento em duplicidade não deixa de ter acontecido
-  // porque não apareceu na leitura de hoje.
-  conferir("evento não fecha sozinho", podeFecharSozinho(achado({ tipo: "EVENTO" }), NENHUMA, TODOS_OK), false);
+  // porque não apareceu na leitura de hoje — sem janela informada, vale a
+  // regra estrita.
+  conferir("evento não fecha sozinho sem janela", podeFecharSozinho(achado({ tipo: "EVENTO" }), NENHUMA, TODOS_OK), false);
+}
+{
+  // REAVALIAÇÃO DENTRO DA JANELA. O agente releu o mesmo período, rodou bem
+  // e não apontou o fato: ou o dado foi corrigido na Omie ou a regra foi
+  // recalibrada. É o que fecha os 766 recebimentos a menor que a regra
+  // corrigida deixou de emitir.
+  const janela = { desde: new Date("2025-01-01") };
+  const dentro = achado({ tipo: "EVENTO", dataReferencia: new Date("2026-03-10") });
+  conferir("evento dentro da janela reavaliada fecha", podeFecharSozinho(dentro, NENHUMA, TODOS_OK, janela), true);
+  const fora = achado({ tipo: "EVENTO", dataReferencia: new Date("2024-11-10") });
+  conferir("evento fora da janela não fecha", podeFecharSozinho(fora, NENHUMA, TODOS_OK, janela), false);
+  const semData = achado({ tipo: "EVENTO", dataReferencia: null });
+  conferir("evento sem data de referência não fecha", podeFecharSozinho(semData, NENHUMA, TODOS_OK, janela), false);
+  conferir("evento dentro da janela ainda detectado não fecha", podeFecharSozinho(dentro, new Set([dentro.chave]), TODOS_OK, janela), false);
+  conferir("evento dentro da janela com agente quebrado não fecha", podeFecharSozinho(dentro, NENHUMA, ["conciliacao"], janela), false);
+  conferir("estado continua fechando com janela", podeFecharSozinho(achado({ dataReferencia: null }), NENHUMA, TODOS_OK, janela), true);
 }
 {
   // AGENTE QUEBRADO. O silêncio dele não é prova de que o problema acabou — é

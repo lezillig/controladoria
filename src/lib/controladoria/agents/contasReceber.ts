@@ -230,29 +230,141 @@ function descontosConcedidos(
 // porque o titulo aparece como quitado.
 const TOLERANCIA_CENTAVOS = 50;
 
+// RETENÇÃO PRESUMIDA — o padrão que separa imposto retido de perda real.
+//
+// A calibragem anterior descontava a retenção REGISTRADA no título. Só que
+// a Omie do cliente não registra retenção em título nenhum: os campos vêm
+// zerados e o órgão público paga líquido do mesmo jeito. As evidências
+// mostraram a assinatura: a Secretaria da Educação "recebeu a menor"
+// exatamente 7,70% em cinco títulos de valores diferentes, e a Secretaria
+// de Direitos Humanos exatamente 10,70% em todos os dela. Perda de verdade
+// não tem alíquota. Tarifa bancária, glosa e erro de digitação produzem
+// diferenças de valor variado; imposto retido produz sempre o mesmo
+// percentual, ao centavo, para o mesmo cliente.
+//
+// A regra passa a olhar o CLIENTE, não o título: quando dois ou mais títulos
+// liquidados do mesmo cliente faltam o mesmo percentual — ou quando o
+// percentual é uma alíquota conhecida de retenção —, o conjunto vira UM
+// achado de retenção não registrada (ESTADO, baixo), e os títulos saem do
+// "recebido a menor". O que sobra ali é diferença sem padrão: o que merece
+// cobrança.
+//
+// Percentuais em CENTÉSIMOS de ponto percentual (770 = 7,70%). Alíquotas
+// típicas de retenção sobre serviço no Brasil: IR 1,5% e 1,2% (transporte),
+// CSLL 1%, PIS 0,65%, COFINS 3%, PCC 4,65%, IN 1234 (IR 1,2% + PCC) 5,85%,
+// ISS 2/3/5%, INSS 11% e 3,5% (desoneração). Combinações são cobertas pelo
+// padrão entre títulos, não por lista — inventar combinações aqui seria
+// chutar, e o dado já mostra qual é.
+const ALIQUOTAS_DE_RETENCAO = new Set([65, 100, 120, 150, 200, 300, 350, 465, 480, 500, 585, 615, 705, 945, 1100]);
+// Fora desta faixa não é retenção: abaixo de 0,5% é arredondamento ou tarifa;
+// acima de 20% é glosa, desconto ou erro — e isso PRECISA aparecer.
+const RETENCAO_MINIMA = 50;
+const RETENCAO_MAXIMA = 2000;
+// Cada imposto é arredondado separadamente pelo pagador; a soma pode
+// desviar alguns centavos do percentual exato.
+const TOLERANCIA_DE_ARREDONDAMENTO = 5;
+const MAXIMO_DE_TITULOS_NA_EVIDENCIA = 50;
+
+type FaltaApurada = {
+  t: ReturnType<typeof titulosAtivos>[number];
+  falta: number;
+  devido: number;
+  retencoes: number;
+  // Percentual da falta sobre o devido, em centésimos de ponto; nulo quando
+  // a falta não é um percentual limpo do devido (não é retenção).
+  pontos: number | null;
+};
+
+function apurarFalta(t: ReturnType<typeof titulosAtivos>[number]): FaltaApurada {
+  // RETENÇÃO REGISTRADA NÃO É PERDA. Prefeitura, órgão público e empresa
+  // grande retêm ISS, IR, PIS/COFINS/CSLL e INSS no pagamento: o que entra é
+  // o documento menos o imposto que o cliente recolheu em nome da empresa.
+  // O imposto retido não some: vira crédito na apuração.
+  const retencoes =
+    t.retencaoIrCents + t.retencaoIssCents + t.retencaoPisCents + t.retencaoCofinsCents + t.retencaoCsllCents + t.retencaoInssCents;
+  const devido = t.valorDocumentoCents - t.descontoCents - retencoes;
+  const falta = devido - t.valorPagoCents;
+
+  let pontos: number | null = null;
+  if (devido > 0 && falta > 0) {
+    const candidato = Math.round((falta * 10000) / devido);
+    const esperado = Math.round((devido * candidato) / 10000);
+    if (
+      candidato >= RETENCAO_MINIMA &&
+      candidato <= RETENCAO_MAXIMA &&
+      Math.abs(esperado - falta) <= TOLERANCIA_DE_ARREDONDAMENTO
+    ) {
+      pontos = candidato;
+    }
+  }
+  return { t, falta, devido, retencoes, pontos };
+}
+
 function recebimentoAMenor(
   ctx: ContextoAuditoria,
   titulos: ReturnType<typeof titulosAtivos>,
   materialidade: number
 ): AchadoNovo[] {
-  return titulos
+  const faltas = titulos
     .filter((t) => t.liquidado && t.valorPagoCents > 0)
-    .map((t) => {
-      // RETENÇÃO NA FONTE NÃO É PERDA. Prefeitura, órgão público e empresa
-      // grande retêm ISS, IR, PIS/COFINS/CSLL e INSS no pagamento: o que entra
-      // é o documento menos o imposto que o cliente recolheu em nome da
-      // empresa. A primeira versão ignorava isso e acusou 766 "recebimentos a
-      // menor" — um quarto de todos os achados em aberto — quase todos
-      // retenção legítima. O imposto retido não some: vira crédito na
-      // apuração. O que falta de verdade é o que sobra depois dele.
-      const retencoes =
-        t.retencaoIrCents + t.retencaoIssCents + t.retencaoPisCents + t.retencaoCofinsCents + t.retencaoCsllCents + t.retencaoInssCents;
-      const devido = t.valorDocumentoCents - t.descontoCents - retencoes;
-      const falta = devido - t.valorPagoCents;
-      return { t, falta, devido, retencoes };
-    })
-    .filter(({ falta }) => falta > TOLERANCIA_CENTAVOS)
-    .map(({ t, falta, devido, retencoes }) => ({
+    .map(apurarFalta)
+    .filter(({ falta }) => falta > TOLERANCIA_CENTAVOS);
+
+  // Padrão por cliente e percentual. Dois títulos com a mesma alíquota, ou
+  // um só com alíquota conhecida, é retenção; o resto é diferença real.
+  const porClienteEAliquota = agrupar(
+    faltas.filter((f) => f.pontos !== null),
+    (f) => `${chaveParceiro(f.t)}|${f.pontos}`
+  );
+  const retidos = new Set<string>();
+  const achados: AchadoNovo[] = [];
+
+  for (const [, grupo] of porClienteEAliquota) {
+    const pontos = grupo[0].pontos as number;
+    if (grupo.length < 2 && !ALIQUOTAS_DE_RETENCAO.has(pontos)) continue;
+    for (const f of grupo) retidos.add(f.t.id);
+
+    const total = somar(grupo, (f) => f.falta);
+    const cliente = nomeParceiro(ctx, grupo[0].t);
+    const aliquota = fmtPercent(pontos / 100, 2);
+    achados.push({
+      regra: "CR-RETENCAO-PRESUMIDA",
+      tipo: "ESTADO",
+      severidade: "BAIXA",
+      categoria: "ERRO_PROCESSO",
+      titulo: `Retenção na fonte não registrada — ${cliente}`,
+      descricao:
+        `${grupo.length} título(s) liquidado(s) entraram com exatamente ${aliquota} a menos (${fmtBRL(total)} no total). ` +
+        `Percentual fixo ao centavo é assinatura de imposto retido na fonte (ISS, IR, PIS/COFINS/CSLL ou INSS), não de perda. ` +
+        `O título na Omie não registra a retenção: a receita aparece como recebida a menor e o crédito tributário fica ` +
+        `invisível para a contabilidade.`,
+      recomendacao:
+        "Lançar a retenção nos campos próprios do título (ou na baixa) na Omie, para o DRE mostrar receita bruta e imposto " +
+        "separados e a contabilidade aproveitar o crédito. Se o cliente não deveria reter esse percentual, cobrar a diferença.",
+      valorCents: total,
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieParceiro",
+      entidadeRef: cliente,
+      evidencia: {
+        cliente,
+        aliquota,
+        titulos: grupo.length,
+        totalRetido: total,
+        amostra: grupo.slice(0, MAXIMO_DE_TITULOS_NA_EVIDENCIA).map((f) => ({
+          documento: f.t.numeroDocumento ?? f.t.codigoLancamento,
+          vencimento: f.t.dataVencimento.toISOString(),
+          devido: f.devido,
+          recebido: f.t.valorPagoCents,
+          retido: f.falta,
+        })),
+      },
+      chave: chaveAchado("CR-RETENCAO-PRESUMIDA", chaveParceiro(grupo[0].t), pontos),
+    });
+  }
+
+  for (const { t, falta, devido, retencoes, pontos } of faltas) {
+    if (retidos.has(t.id)) continue;
+    achados.push({
       regra: "CR-RECEBIDO-MENOR",
       tipo: "EVENTO" as const,
       severidade: agravar(severidadePorValor(falta, materialidade)),
@@ -271,9 +383,20 @@ function recebimentoAMenor(
       entidadeTipo: "OmieTitulo",
       entidadeId: t.id,
       entidadeRef: referenciaTitulo(t),
-      evidencia: { documento: t.valorDocumentoCents, desconto: t.descontoCents, retencoes, devido, recebido: t.valorPagoCents },
+      evidencia: {
+        documento: t.valorDocumentoCents,
+        desconto: t.descontoCents,
+        retencoes,
+        devido,
+        recebido: t.valorPagoCents,
+        percentualDaFalta: fmtPercent(devido > 0 ? (falta / devido) * 100 : 0, 2),
+        ...(pontos !== null ? { observacao: "percentual limpo, mas único para este cliente — conferir se é retenção" } : {}),
+      },
       chave: chaveAchado("CR-RECEBIDO-MENOR", refTitulo(t)),
-    }));
+    });
+  }
+
+  return achados;
 }
 
 // CR-CONCENTRACAO — dependencia de poucos clientes. Nao e erro nenhum: e o

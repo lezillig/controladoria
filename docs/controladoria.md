@@ -164,9 +164,39 @@ irrelevante no primeiro mês, que é como um sistema de auditoria morre.
 
 **Achado de ESTADO × de EVENTO** — "título vencido em aberto" é estado: some
 sozinho quando o título é pago, e o motor o encerra como `OBSOLETO`. "Pagou
-R$ 320 de juros em 14/02" é evento: nunca deixa de ser verdade, e só uma pessoa
-o encerra. A distinção importa no indicador de controle interno — "resolvemos 40
+R$ 320 de juros em 14/02" é evento: não deixa de ser verdade porque não apareceu
+hoje. A distinção importa no indicador de controle interno — "resolvemos 40
 achados" é diferente de "40 sumiram sozinhos".
+
+Um evento fecha sozinho num único caso: quando a data do fato está **dentro da
+janela** que os agentes acabaram de reler, o agente dono rodou sem erro e, mesmo
+assim, não o apontou. Aí o silêncio é reavaliação — o dado foi corrigido na Omie
+ou a regra foi recalibrada — e não ausência de informação. Sem isso, 766
+"recebimentos a menor" e 850 "duplicidades" continuaram abertos depois de as
+regras terem sido corrigidas, porque nada os fechava. Fato fora da janela
+continua intocado.
+
+**Calibragem pelas evidências** — cada regra recalibrada nasce de uma evidência
+real, e o teste (`npm run teste:calibragem`) fixa o caso:
+
+- `CR-RETENCAO-PRESUMIDA` — a Omie do cliente não registra retenção em título
+  nenhum, e o órgão público paga líquido: a Secretaria da Educação "recebia a
+  menor" exatamente 7,70% em todos os títulos. Percentual fixo ao centavo é
+  imposto retido, não perda. Dois ou mais títulos do mesmo cliente com a mesma
+  alíquota (ou um só com alíquota conhecida: 1,5%, 4,65%, 5,85%, 11%…) viram
+  um achado de retenção não registrada por cliente; o resto continua
+  `CR-RECEBIDO-MENOR`, com o percentual na evidência.
+- `CP-PAGO-ACIMA` — excedente igual ao desconto (documento 49.379,54, desconto
+  49.379,54, pago 49.379,54) é forma de registro da Omie, não dinheiro a mais.
+  O `resumo` de pesquisartitulos traz `nDesconto`/`nJuros`/`nMulta`, e o
+  mapeamento passou a lê-los de lá em vez de somar das baixas.
+- `CP-DIVERGENCIA-BAIXA` — diferença igual a juros + multa + tarifa − desconto
+  (do título ou das baixas) é bruto de um lado e líquido do outro. O que sobra
+  traz a lista de baixas espelhadas na evidência, para comparar com a aba de
+  baixas da Omie.
+- `CP-DUPLICIDADE` — documento "QUITADO"/"PAGO" vale como documento em branco;
+  N parcelas idênticas para banco, financeira ou consórcio ficam informativas
+  (em frota, são N contratos), com a leitura provável escrita no achado.
 
 **Chave determinística** — o mesmo fato, reavaliado amanhã, produz a mesma chave
 e reencontra o achado, preservando a tratativa que alguém escreveu nele.

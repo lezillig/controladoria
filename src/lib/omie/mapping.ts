@@ -405,10 +405,19 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
   const somaBaixas = (campo: keyof BaixaNormalizada) =>
     baixas.reduce((acc, b) => acc + (typeof b[campo] === "number" ? (b[campo] as number) : 0), 0);
 
+  //
+  // O `resumo` de pesquisartitulos, nas duas contas reais, traz EXATAMENTE:
+  // cLiquidado, nDesconto, nJuros, nMulta, nValAberto, nValLiquido, nValPago.
+  // Os aliases `nValJuros`/`nValDesconto` que vinham na frente nunca
+  // existiram nesse bloco, e "juros"/"desconto" não casam com `nJuros`/
+  // `nDesconto` nem na busca normalizada — resultado: juros, multa e desconto
+  // eram lidos das baixas (campos ainda não confirmados), enquanto o valor
+  // pago vinha do resumo. Comparar um com o outro dava "pago acima do devido"
+  // com excedente igual ao desconto, em 230 títulos.
   const valorPagoCents = cents(resumo, "nValPago", "nValRecebido", "valor_pago") ?? somaBaixas("valorCents");
-  const jurosCents = cents(resumo, "nValJuros", "juros") ?? somaBaixas("jurosCents");
-  const multaCents = cents(resumo, "nValMulta", "multa") ?? somaBaixas("multaCents");
-  const descontoCents = cents(resumo, "nValDesconto", "desconto") ?? somaBaixas("descontoCents");
+  const jurosCents = cents(resumo, "nJuros", "nValJuros", "juros") ?? somaBaixas("jurosCents");
+  const multaCents = cents(resumo, "nMulta", "nValMulta", "multa") ?? somaBaixas("multaCents");
+  const descontoCents = cents(resumo, "nDesconto", "nValDesconto", "desconto") ?? somaBaixas("descontoCents");
   const tarifaCents = cents(resumo, "nValTarifas", "nValTarifa") ?? somaBaixas("tarifaCents");
   const saldoCents = cents(resumo, "nValAberto", "saldo", "valor_saldo");
 

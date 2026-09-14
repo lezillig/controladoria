@@ -36,6 +36,26 @@ const DIAS_TITULO_FANTASMA = 180;
 // de juros diario do proprio banco entra nessa faixa e nao e divergencia.
 const TOLERANCIA_CENTAVOS = 50;
 
+// NÚMERO DE DOCUMENTO QUE NÃO É NÚMERO. A evidência real trouxe quatro
+// parcelas de banco com documento "QUITADO": quem lançou usou o campo como
+// anotação. Para a regra de duplicidade isso vale o mesmo que documento em
+// branco — não identifica nada e não pode contar como "documento distinto".
+const DOCUMENTO_DE_ENFEITE = /^(quitad[oa]|pag[oa]|liquidad[oa]|baixad[oa]|s\/?n|n\/?a|nd|x+|-+|\.+|0+)$/i;
+
+function documentoInformado(numero: string | null): string {
+  const limpo = (numero ?? "").trim();
+  return DOCUMENTO_DE_ENFEITE.test(limpo) ? "" : limpo;
+}
+
+// Banco, financeira, consórcio, leasing. Para uma frota, N parcelas idênticas
+// no mesmo dia para a mesma instituição é o normal — são N contratos (N
+// veículos financiados no mesmo lote), não a mesma parcela lançada N vezes. A
+// Omie não traz o número do contrato, então a regra não consegue provar que
+// são contratos diferentes; o que ela pode fazer é não gritar: o achado
+// fica, informativo, com a leitura provável escrita nele.
+const INSTITUICAO_FINANCEIRA =
+  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|securitizadora|cooperativa de cr|sicredi|sicoob)\b/i;
+
 export const agenteContasPagar: Agente = {
   id: "contas-pagar",
   nome: "Contas a pagar",
@@ -83,11 +103,21 @@ function jurosEMulta(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulosA
           `Título ${referenciaTitulo(t)} de ${fmtBRL(t.valorDocumentoCents)} (venc. ${fmtData(t.dataVencimento)}) ` +
           `foi pago em ${fmtData(t.dataUltimaBaixa)}${atraso !== null ? `, ${atraso} dia(s) após o vencimento` : ""}, ` +
           `com ${fmtBRL(t.jurosCents)} de juros, ${fmtBRL(t.multaCents)} de multa e ${fmtBRL(t.tarifaCents)} de tarifa — ` +
-          `${fmtPercent(percentual)} do valor do título jogado fora.`,
+          `${fmtPercent(percentual)} do valor do título jogado fora.` +
+          // Encargo sem atraso é outra história: ou o boleto já veio com a
+          // multa de um atraso ANTERIOR (renegociação, segunda via) e o
+          // vencimento na Omie é o novo, ou a baixa lançou encargo que não
+          // houve. O texto precisa dizer isso, senão a pessoa lê "0 dias de
+          // atraso" ao lado de "multa" e desconfia do sistema, não do dado.
+          (atraso !== null && atraso <= 0
+            ? " Pago no prazo e mesmo assim com encargo: ou o boleto já embutia multa de um atraso anterior (segunda via, renegociação) ou a baixa registrou encargo indevido."
+            : ""),
         recomendacao:
-          "Levantar a causa do atraso (falta de saldo, aprovação parada ou nota recebida fora do prazo). " +
-          "Se for recorrente com o mesmo fornecedor, renegociar data de vencimento para o ciclo de pagamento da empresa " +
-          "e programar o pagamento em lote com 3 dias de folga.",
+          atraso !== null && atraso <= 0
+            ? "Conferir o boleto pago: se a multa veio impressa nele, o atraso real é anterior — corrigir o vencimento original na Omie para o histórico refletir; se não veio, corrigir a baixa."
+            : "Levantar a causa do atraso (falta de saldo, aprovação parada ou nota recebida fora do prazo). " +
+              "Se for recorrente com o mesmo fornecedor, renegociar data de vencimento para o ciclo de pagamento da empresa " +
+              "e programar o pagamento em lote com 3 dias de folga.",
         valorCents: perda,
         impactoCents: perda,
         dataReferencia: t.dataUltimaBaixa ?? t.dataVencimento,
@@ -159,8 +189,8 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
     // vencimento; ja o mesmo numero de documento repetido no mesmo
     // vencimento e duplicidade real. Documentos distintos com mesmo valor e
     // vencimento ainda sao suspeitos, mas com severidade menor.
-    const documentos = new Set(grupo.map((t) => t.numeroDocumento ?? ""));
-    const mesmoDocumento = documentos.size === 1 && grupo[0].numeroDocumento !== null;
+    const documentos = new Set(grupo.map((t) => documentoInformado(t.numeroDocumento)));
+    const mesmoDocumento = documentos.size === 1 && documentoInformado(grupo[0].numeroDocumento) !== "";
     const parcelas = new Set(grupo.map((t) => t.numeroParcela ?? ""));
     if (!mesmoDocumento && parcelas.size === grupo.length && parcelas.size > 1) continue;
     // DOCUMENTOS DISTINTOS, todos informados, no mesmo dia e valor: é a
@@ -171,30 +201,39 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
     // (mesmo documento repetido) no meio delas. Documento repetido continua
     // sendo apontado; documento ausente continua sendo suspeito.
     const todosComDocumentoDistinto =
-      grupo.every((t) => (t.numeroDocumento ?? "").trim() !== "") && documentos.size === grupo.length;
+      grupo.every((t) => documentoInformado(t.numeroDocumento) !== "") && documentos.size === grupo.length;
     if (todosComDocumentoDistinto) continue;
 
     const valorTotal = somar(grupo, (t) => t.valorDocumentoCents);
     const excedente = valorTotal - grupo[0].valorDocumentoCents;
     const todosPagos = grupo.every((t) => !emAberto(t));
+    const nome = nomeParceiro(ctx, grupo[0]);
+    const financeira = INSTITUICAO_FINANCEIRA.test(nome);
 
     let severidade = severidadePorValor(excedente, materialidade);
     if (mesmoDocumento) severidade = agravar(severidade);
+    if (financeira) severidade = "INFO";
 
     achados.push({
       regra: "CP-DUPLICIDADE",
       tipo: todosPagos ? "EVENTO" : "ESTADO",
       severidade,
       categoria: todosPagos ? "PERDA_FINANCEIRA" : "FRAUDE",
-      titulo: `${grupo.length} títulos idênticos — ${nomeParceiro(ctx, grupo[0])}`,
+      titulo: `${grupo.length} títulos idênticos — ${nome}`,
       descricao:
         `${grupo.length} títulos do mesmo fornecedor com valor idêntico (${fmtBRL(grupo[0].valorDocumentoCents)}) e ` +
         `mesmo vencimento (${fmtData(grupo[0].dataVencimento)})` +
         `${mesmoDocumento ? `, todos com o mesmo número de documento (${grupo[0].numeroDocumento})` : ""}. ` +
-        `${todosPagos ? "Todos já foram pagos" : "Ao menos um ainda está em aberto"} — exposição de ${fmtBRL(excedente)}.`,
-      recomendacao: todosPagos
-        ? "Confrontar com a nota fiscal do fornecedor. Confirmada a duplicidade, solicitar devolução ou compensação no próximo faturamento e registrar o crédito."
-        : "Bloquear o pagamento em aberto até conferir a nota fiscal. Se for duplicidade, cancelar o título antes da data de pagamento.",
+        `${todosPagos ? "Todos já foram pagos" : "Ao menos um ainda está em aberto"} — exposição de ${fmtBRL(excedente)}.` +
+        (financeira
+          ? ` Instituição financeira: em frota, parcelas idênticas no mesmo dia costumam ser ${grupo.length} contratos ` +
+            `distintos (veículos financiados no mesmo lote), e o título na Omie não traz o número do contrato para provar.`
+          : ""),
+      recomendacao: financeira
+        ? "Conferir na Omie ou no extrato do banco se cada parcela corresponde a um contrato diferente (número do contrato ou placa na observação). Sendo contratos distintos, marcar como não se aplica; sendo a mesma parcela lançada mais de uma vez, pedir estorno ao banco."
+        : todosPagos
+          ? "Confrontar com a nota fiscal do fornecedor. Confirmada a duplicidade, solicitar devolução ou compensação no próximo faturamento e registrar o crédito."
+          : "Bloquear o pagamento em aberto até conferir a nota fiscal. Se for duplicidade, cancelar o título antes da data de pagamento.",
       valorCents: excedente,
       impactoCents: excedente,
       dataReferencia: grupo[0].dataVencimento,
@@ -229,6 +268,15 @@ function pagamentoAcimaDoDevido(
       return { t, excedente };
     })
     .filter(({ excedente }) => excedente > TOLERANCIA_CENTAVOS)
+    // EXCEDENTE IGUAL AO DESCONTO NÃO É PAGAMENTO A MAIOR. A evidência real:
+    // documento R$ 49.379,54, desconto R$ 49.379,54, pago R$ 49.379,54 —
+    // "pago R$ 49.379,54 contra R$ 0,00 devidos". Ninguém paga o valor cheio
+    // de um título com 100% de desconto; o que aconteceu é que a Omie
+    // registra o valor BAIXADO (bruto) num campo e o desconto noutro, e o
+    // dinheiro que saiu é a diferença. Quando o "a mais" bate ao centavo com
+    // o desconto, é forma de registro, não perda — e 230 achados diziam isso.
+    // Sobra o que importa: pago acima do documento sem desconto que explique.
+    .filter(({ t, excedente }) => t.descontoCents <= 0 || Math.abs(excedente - t.descontoCents) > TOLERANCIA_CENTAVOS)
     .map(({ t, excedente }) => ({
       regra: "CP-PAGO-ACIMA",
       tipo: "EVENTO" as const,
@@ -253,7 +301,10 @@ function pagamentoAcimaDoDevido(
         documento: t.valorDocumentoCents,
         juros: t.jurosCents,
         multa: t.multaCents,
+        tarifa: t.tarifaCents,
         desconto: t.descontoCents,
+        devido: t.valorDocumentoCents + t.jurosCents + t.multaCents + t.tarifaCents - t.descontoCents,
+        excedente,
       },
       chave: chaveAchado("CP-PAGO-ACIMA", refTitulo(t)),
     }));
@@ -503,28 +554,60 @@ function divergenciaDeBaixa(
       if (baixas.length === 0) return null;
       const somaBaixas = somar(baixas, (b) => b.valorCents);
       const diferenca = t.valorPagoCents - somaBaixas;
-      return Math.abs(diferenca) > TOLERANCIA_CENTAVOS
-        ? { t, somaBaixas, diferenca, quantidadeBaixas: baixas.length }
-        : null;
+      if (Math.abs(diferenca) <= TOLERANCIA_CENTAVOS) return null;
+      // BRUTO NUM LADO, LÍQUIDO NO OUTRO NÃO É DIVERGÊNCIA. O resumo do
+      // título e a lista de baixas são dois registros da mesma Omie, e ela
+      // não guarda os dois na mesma base: um traz o valor com encargos, o
+      // outro sem. Quando a diferença é exatamente juros + multa + tarifa −
+      // desconto (dos dois lados: do título ou das próprias baixas), as duas
+      // fontes concordam sobre o dinheiro — só escrevem de um jeito
+      // diferente. O que sobra é discordância real: baixa que falta ou que
+      // sobrou.
+      const encargosDoTitulo = t.jurosCents + t.multaCents + t.tarifaCents - t.descontoCents;
+      const encargosDasBaixas = somar(baixas, (b) => b.jurosCents + b.multaCents + b.tarifaCents - b.descontoCents);
+      const explicada = [encargosDoTitulo, encargosDasBaixas].some(
+        (e) => e !== 0 && Math.abs(Math.abs(diferenca) - Math.abs(e)) <= TOLERANCIA_CENTAVOS
+      );
+      if (explicada) return null;
+      return { t, baixas, somaBaixas, diferenca };
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
-    .map(({ t, somaBaixas, diferenca, quantidadeBaixas }) => ({
+    .map(({ t, baixas, somaBaixas, diferenca }) => ({
       regra: "CP-DIVERGENCIA-BAIXA",
       tipo: "ESTADO" as const,
       severidade: severidadePorValor(Math.abs(diferenca), materialidade),
       categoria: "ERRO_PROCESSO" as const,
       titulo: `Divergência entre título e baixas — ${nomeParceiro(ctx, t)}`,
       descricao:
-        `${referenciaTitulo(t)} registra ${fmtBRL(t.valorPagoCents)} pagos, mas a soma das baixas lançadas é ` +
-        `${fmtBRL(somaBaixas)} (diferença de ${fmtBRL(Math.abs(diferenca))}). Uma das duas informações da Omie está incorreta.`,
+        `${referenciaTitulo(t)} registra ${fmtBRL(t.valorPagoCents)} pagos, mas a soma das ${baixas.length} baixa(s) espelhada(s) é ` +
+        `${fmtBRL(somaBaixas)} (diferença de ${fmtBRL(Math.abs(diferenca))}), e juros, multa, tarifa e desconto não explicam. ` +
+        `${diferenca > 0 ? "Falta baixa no espelho ou o valor pago do título está inflado" : "Há baixa a mais no espelho ou o valor pago do título está a menor"}.`,
       recomendacao:
-        "Abrir o título na Omie e conferir as baixas contra o extrato bancário. Corrigir a baixa divergente antes do fechamento do mês.",
+        "Abrir o título na Omie e comparar a aba de baixas com a lista da evidência: baixa que existe lá e não está aqui " +
+        "é lançamento retroativo (a sincronização a pega na próxima janela ampla); baixa que está aqui e não existe lá foi " +
+        "excluída na Omie. Diferença sem explicação nas duas telas é erro de digitação na baixa — corrigir antes do fechamento do mês.",
       valorCents: Math.abs(diferenca),
       dataReferencia: t.dataUltimaBaixa ?? t.dataVencimento,
       entidadeTipo: "OmieTitulo",
       entidadeId: t.id,
       entidadeRef: referenciaTitulo(t),
-      evidencia: { valorPagoTitulo: t.valorPagoCents, somaBaixas, baixas: quantidadeBaixas },
+      evidencia: {
+        valorPagoTitulo: t.valorPagoCents,
+        somaBaixas,
+        diferenca,
+        jurosTitulo: t.jurosCents,
+        multaTitulo: t.multaCents,
+        tarifaTitulo: t.tarifaCents,
+        descontoTitulo: t.descontoCents,
+        baixasEspelhadas: baixas.map((b) => ({
+          data: b.dataBaixa.toISOString(),
+          valor: b.valorCents,
+          juros: b.jurosCents,
+          multa: b.multaCents,
+          desconto: b.descontoCents,
+          conta: b.contaCorrenteCodigo,
+        })),
+      },
       chave: chaveAchado("CP-DIVERGENCIA-BAIXA", refTitulo(t)),
     }));
 }

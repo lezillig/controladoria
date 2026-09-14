@@ -63,7 +63,23 @@ const titulo = (p: Partial<Titulo> = {}): Titulo =>
     ...p,
   }) as Titulo;
 
-function contexto(p: { titulos?: Titulo[]; parceiros?: Parceiro[]; motoristas?: Motorista[] }): ContextoAuditoria {
+type Baixa = ContextoAuditoria["baixas"][number];
+const baixa = (tituloId: string, valorCents: number, p: Partial<Baixa> = {}): Baixa =>
+  ({
+    id: `b${++seq}`,
+    companyId: "c",
+    tituloId,
+    dataBaixa: d("2026-08-10"),
+    valorCents,
+    jurosCents: 0,
+    multaCents: 0,
+    descontoCents: 0,
+    tarifaCents: 0,
+    contaCorrenteCodigo: "100",
+    ...p,
+  }) as Baixa;
+
+function contexto(p: { titulos?: Titulo[]; baixas?: Baixa[]; parceiros?: Parceiro[]; motoristas?: Motorista[] }): ContextoAuditoria {
   return {
     companyId: "c",
     conexaoId: null,
@@ -71,7 +87,7 @@ function contexto(p: { titulos?: Titulo[]; parceiros?: Parceiro[]; motoristas?: 
     agora: HOJE,
     janelaDesde: d("2026-01-01"),
     titulos: p.titulos ?? [],
-    baixas: [],
+    baixas: p.baixas ?? [],
     contasCorrentes: [],
     config: { limiteAlcadaCents: 100_000_000_00, diasAtrasoCritico: 30, limiteConcentracaoFornecedorPercent: 90 },
     motoristas: p.motoristas ?? [],
@@ -115,14 +131,148 @@ console.log("\nCR-RECEBIDO-MENOR — retenção na fonte não é perda");
 }
 {
   // Sem retenção, recebeu menos: continua apontando como antes.
-  const t = titulo({ natureza: "RECEBER", valorDocumentoCents: 10_000_00, valorPagoCents: 9_900_00 });
+  // (9.876,55 e não 9.900: 1,00% a menos é alíquota de CSLL, e seria lido
+  // como retenção — ver CR-RETENCAO-PRESUMIDA abaixo.)
+  const t = titulo({ natureza: "RECEBER", valorDocumentoCents: 10_000_00, valorPagoCents: 9_876_55 });
   const a = auditarContasReceber(contexto({ titulos: [t] })).filter((x) => x.regra === "CR-RECEBIDO-MENOR");
-  conferir("sem retenção, diferença real: aponta", a.map((x) => x.valorCents), [100_00]);
+  conferir("sem retenção, diferença real: aponta", a.map((x) => x.valorCents), [123_45]);
+}
+
+// --------------------------------------------------- CR-RETENCAO-PRESUMIDA
+console.log("\nCR-RETENCAO-PRESUMIDA — percentual fixo por cliente é imposto, não perda");
+const receber = (titulos: Titulo[]) =>
+  auditarContasReceber(contexto({ titulos })).filter((x) => x.regra === "CR-RECEBIDO-MENOR" || x.regra === "CR-RETENCAO-PRESUMIDA");
+{
+  // Os cinco títulos reais da Secretaria da Educação: valores diferentes,
+  // TODOS com exatamente 7,70% a menos, sem retenção registrada na Omie.
+  const casos: [number, number][] = [
+    [838_581_95, 774_011_15],
+    [583_572_21, 538_637_16],
+    [248_490_57, 229_356_80],
+    [120_142_55, 110_891_58],
+  ];
+  const titulos = casos.map(([doc, pago], i) =>
+    titulo({ natureza: "RECEBER", parceiroNome: "SECRETARIA DA EDUCACAO", parceiroDocumento: "46000000000100", numeroDocumento: `1${i}`, valorDocumentoCents: doc, valorPagoCents: pago })
+  );
+  const a = receber(titulos);
+  const retencao = a.filter((x) => x.regra === "CR-RETENCAO-PRESUMIDA");
+  conferir("um achado de retenção para o cliente", retencao.length, 1);
+  conferir("nenhum recebido a menor sobra", a.filter((x) => x.regra === "CR-RECEBIDO-MENOR").length, 0);
+  conferir("alíquota identificada", (retencao[0]?.evidencia as { aliquota: string }).aliquota, "7,70%");
+  conferir("total retido = soma das faltas", retencao[0]?.valorCents, 64_570_80 + 44_935_05 + 19_133_77 + 9_250_97);
+  conferir("é ESTADO e baixo", [retencao[0]?.tipo, retencao[0]?.severidade], ["ESTADO", "BAIXA"]);
+  conferir("chave por cliente e alíquota", retencao[0]?.chave, "CR-RETENCAO-PRESUMIDA|doc:46000000000100|770");
+}
+{
+  // Um título só, percentual desconhecido (7,70% não está na lista): sem
+  // segundo título para confirmar o padrão, continua sendo recebido a menor —
+  // com o percentual na evidência para quem for conferir.
+  const t = titulo({ natureza: "RECEBER", parceiroNome: "CLIENTE X", valorDocumentoCents: 838_581_95, valorPagoCents: 774_011_15 });
+  const a = receber([t]);
+  conferir("título único com percentual não catalogado: recebido a menor", a.map((x) => x.regra), ["CR-RECEBIDO-MENOR"]);
+  conferir("evidência traz o percentual", (a[0]?.evidencia as { percentualDaFalta: string }).percentualDaFalta, "7,70%");
+}
+{
+  // Um título só, mas com alíquota conhecida (PCC 4,65%): é retenção.
+  const t = titulo({ natureza: "RECEBER", parceiroNome: "EMPRESA GRANDE", valorDocumentoCents: 100_000_00, valorPagoCents: 95_350_00 });
+  conferir("título único com alíquota conhecida: retenção", receber([t]).map((x) => x.regra), ["CR-RETENCAO-PRESUMIDA"]);
+}
+{
+  // Dois títulos do mesmo cliente com percentuais DIFERENTES e fora da lista:
+  // não há padrão — os dois são recebido a menor.
+  const a = receber([
+    titulo({ natureza: "RECEBER", parceiroNome: "AVULSO", parceiroCodigo: "A", valorDocumentoCents: 10_000_00, valorPagoCents: 9_123_45 }),
+    titulo({ natureza: "RECEBER", parceiroNome: "AVULSO", parceiroCodigo: "A", valorDocumentoCents: 10_000_00, valorPagoCents: 8_765_43 }),
+  ]);
+  conferir("sem padrão: dois recebidos a menor", a.map((x) => x.regra), ["CR-RECEBIDO-MENOR", "CR-RECEBIDO-MENOR"]);
+}
+{
+  // Glosa de 30%: acima do teto de retenção, é perda e precisa aparecer —
+  // mesmo repetida em dois títulos.
+  const a = receber([
+    titulo({ natureza: "RECEBER", parceiroNome: "GLOSA", parceiroCodigo: "G", valorDocumentoCents: 10_000_00, valorPagoCents: 7_000_00 }),
+    titulo({ natureza: "RECEBER", parceiroNome: "GLOSA", parceiroCodigo: "G", valorDocumentoCents: 20_000_00, valorPagoCents: 14_000_00 }),
+  ]);
+  conferir("30% a menos não é retenção", a.map((x) => x.regra), ["CR-RECEBIDO-MENOR", "CR-RECEBIDO-MENOR"]);
+}
+
+// ---------------------------------------------------------- CP-PAGO-ACIMA
+console.log("\nCP-PAGO-ACIMA — excedente igual ao desconto é forma de registro");
+const pagoAcima = (titulos: Titulo[]) => auditarContasPagar(contexto({ titulos })).filter((x) => x.regra === "CP-PAGO-ACIMA");
+{
+  // O caso real: documento, desconto e pago iguais.
+  const t = titulo({ valorDocumentoCents: 49_379_54, descontoCents: 49_379_54, valorPagoCents: 49_379_54 });
+  conferir("desconto = documento = pago: sem achado", pagoAcima([t]).length, 0);
+}
+{
+  // Desconto parcial não aplicado no pagamento: também é registro (pagou o
+  // documento cheio), não dinheiro a mais.
+  const t = titulo({ valorDocumentoCents: 1_000_00, descontoCents: 100_00, valorPagoCents: 1_000_00 });
+  conferir("pagou o documento ignorando o desconto: sem achado", pagoAcima([t]).length, 0);
+}
+{
+  // Pagou acima do documento sem desconto nenhum: continua apontando.
+  const t = titulo({ valorDocumentoCents: 1_000_00, valorPagoCents: 1_200_00 });
+  const a = pagoAcima([t]);
+  conferir("pago acima sem desconto: aponta", a.map((x) => x.valorCents), [200_00]);
+  const ev = a[0]?.evidencia as { devido: number; excedente: number };
+  conferir("evidência traz devido e excedente", [ev.devido, ev.excedente], [1_000_00, 200_00]);
+}
+{
+  // Desconto de 100 e excedente de 300: não bate com o desconto — aponta.
+  const t = titulo({ valorDocumentoCents: 1_000_00, descontoCents: 100_00, valorPagoCents: 1_200_00 });
+  conferir("excedente diferente do desconto: aponta", pagoAcima([t]).map((x) => x.valorCents), [300_00]);
+}
+
+// ----------------------------------------------------- CP-DIVERGENCIA-BAIXA
+console.log("\nCP-DIVERGENCIA-BAIXA — bruto de um lado, líquido do outro, não é divergência");
+const divergencia = (titulos: Titulo[], baixas: Baixa[]) =>
+  auditarContasPagar(contexto({ titulos, baixas })).filter((x) => x.regra === "CP-DIVERGENCIA-BAIXA");
+{
+  // Título pago com juros: resumo diz 1.100 pagos, a baixa diz 1.000 + 100 de juros.
+  const t = titulo({ id: "T1", valorDocumentoCents: 1_000_00, valorPagoCents: 1_100_00, jurosCents: 100_00 });
+  conferir("diferença = juros do título: sem achado", divergencia([t], [baixa("T1", 1_000_00)]).length, 0);
+}
+{
+  // Encargo registrado só na baixa.
+  const t = titulo({ id: "T2", valorDocumentoCents: 1_000_00, valorPagoCents: 1_100_00 });
+  conferir("diferença = juros da baixa: sem achado", divergencia([t], [baixa("T2", 1_000_00, { jurosCents: 100_00 })]).length, 0);
+}
+{
+  // O caso real: duas baixas somam 41.960,30 e o título diz 55.620,43, sem
+  // encargo que explique — aponta, e a evidência lista as baixas.
+  const t = titulo({ id: "T3", valorDocumentoCents: 55_620_43, valorPagoCents: 55_620_43 });
+  const a = divergencia([t], [baixa("T3", 20_980_15), baixa("T3", 20_980_15)]);
+  conferir("diferença sem explicação: aponta", a.map((x) => x.valorCents), [13_660_13]);
+  conferir("evidência lista as baixas espelhadas", (a[0]?.evidencia as { baixasEspelhadas: unknown[] }).baixasEspelhadas.length, 2);
+  conferir("descrição diz que falta baixa", a[0]?.descricao.includes("Falta baixa"), true);
+}
+
+// ----------------------------------------------- CP-DUPLICIDADE (continuação)
+console.log("\nCP-DUPLICIDADE — documento de enfeite e instituição financeira");
+const rodarPagar = (titulos: Titulo[]) => auditarContasPagar(contexto({ titulos })).filter((x) => x.regra === "CP-DUPLICIDADE");
+{
+  // O caso real: quatro parcelas do Banco RCI com documento "QUITADO".
+  const grupo = [1, 2, 3, 4].map(() =>
+    titulo({ parceiroNome: "BANCO RCI BRASIL S.A", valorDocumentoCents: 101_477_45, numeroDocumento: "QUITADO", dataVencimento: d("2026-02-17") })
+  );
+  const a = rodarPagar(grupo);
+  conferir("\"QUITADO\" não conta como documento: aponta", a.length, 1);
+  conferir("banco: informativo, não perda a gritar", a[0]?.severidade, "INFO");
+  conferir("descrição explica a leitura provável", a[0]?.descricao.includes("contratos"), true);
+}
+{
+  // Mesmo padrão num fornecedor comum: severidade normal.
+  const grupo = [1, 2].map(() =>
+    titulo({ parceiroNome: "OFICINA DO ZE", valorDocumentoCents: 5_000_00, numeroDocumento: "PAGO", dataVencimento: d("2026-02-17") })
+  );
+  const a = rodarPagar(grupo);
+  conferir("fornecedor comum com documento de enfeite: aponta", a.length, 1);
+  conferir("sem rebaixar", a[0]?.severidade !== "INFO", true);
 }
 
 // --------------------------------------------------------- CP-DUPLICIDADE
 console.log("\nCP-DUPLICIDADE — documentos distintos não são duplicidade");
-const rodarPagar = (titulos: Titulo[]) => auditarContasPagar(contexto({ titulos })).filter((x) => x.regra === "CP-DUPLICIDADE");
 {
   // Três cotas de consórcio, cada uma com seu documento, mesmo valor, mesmo dia.
   const cotas = ["10408-0454", "10423-0319", "10429-0322"].map((doc) =>

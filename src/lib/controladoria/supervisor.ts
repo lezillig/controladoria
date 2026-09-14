@@ -108,6 +108,9 @@ const REGRAS_EQUIVALENTES: [string, string][] = [
 // Regras cujo achado ja e agregado por natureza (falam do conjunto, nao de um
 // caso) — nunca devem ser consolidadas nem contadas como "regra ruidosa".
 const REGRAS_AGREGADAS = new Set([
+  // Um achado por cliente e alíquota, falando do conjunto de títulos que
+  // entraram com o mesmo percentual a menos.
+  "CR-RETENCAO-PRESUMIDA",
   "CP-SEM-CATEGORIA",
   "CP-SEM-CENTRO-CUSTO",
   "CP-SEM-DOCUMENTO",

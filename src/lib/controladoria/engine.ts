@@ -61,6 +61,9 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
       agente: true, tipo: true,
       entidadeId: true, entidadeRef: true,
       resolvidoEm: true,
+      // Data do fato: decide se um EVENTO que sumiu estava dentro da janela
+      // reavaliada (fecha) ou fora dela (fica). Ver podeFecharSozinho.
+      dataReferencia: true,
     },
   });
   const historico = new Map<string, HistoricoAchado>(
@@ -143,7 +146,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria): Promise<Resulta
   // agente dono precisa ter rodado sem erro. Se o agente quebrou, o silêncio
   // dele não é prova de que o problema acabou — é ausência de informação, e
   // fechar por ausência de informação é pior que não fechar.
-  const fechaveis = anteriores.filter((a) => podeFecharSozinho(a, chavesEmitidas, agentesOk));
+  const fechaveis = anteriores.filter((a) => podeFecharSozinho(a, chavesEmitidas, agentesOk, { desde: ctx.janelaDesde }));
 
   let fechadosAutomaticamente = 0;
   if (fechaveis.length > 0) {
@@ -258,9 +261,12 @@ export async function reabrirSeNecessario(companyId: string, chave: string): Pro
 // `executarAuditoria` ela só poderia ser exercitada com banco, contexto e doze
 // agentes em pé; aqui, com quatro objetos.
 export function podeFecharSozinho(
-  achado: { status: string; chave: string; tipo: string; agente: string },
+  achado: { status: string; chave: string; tipo: string; agente: string; dataReferencia?: Date | null },
   chavesEmitidas: Set<string>,
-  agentesOk: string[]
+  agentesOk: string[],
+  // Janela que os agentes acabaram de reavaliar. Sem ela, vale a regra
+  // estrita: EVENTO nunca fecha sozinho.
+  janela?: { desde: Date }
 ): boolean {
   // 1. Tratado por gente não volta a ser mexido por máquina. RESOLVIDO e
   //    IGNORADO carregam justificativa registrada; sobrescrevê-los apagaria o
@@ -270,9 +276,24 @@ export function podeFecharSozinho(
   // 2. Se a condição voltou a ser detectada agora, ela não deixou de existir.
   if (chavesEmitidas.has(achado.chave)) return false;
 
-  // 3. Só ESTADO fecha sozinho. EVENTO é fato consumado — um pagamento em
-  //    duplicidade não deixa de ter acontecido porque não apareceu hoje.
-  if (achado.tipo !== "ESTADO") return false;
+  // 3. ESTADO fecha sozinho. EVENTO é fato consumado — um pagamento em
+  //    duplicidade não deixa de ter acontecido porque não apareceu hoje — e
+  //    só fecha num caso: quando o fato está DENTRO da janela que o agente
+  //    acabou de reler e, mesmo assim, o agente não o apontou. Aí o silêncio
+  //    não é falta de informação, é reavaliação: ou o dado foi corrigido na
+  //    Omie (a baixa errada foi refeita) ou a regra foi recalibrada e deixou
+  //    de considerar aquilo um problema. Nos dois casos o achado antigo está
+  //    descrevendo algo que a auditoria de hoje, olhando o mesmo dado, não
+  //    vê mais — e mantê-lo aberto é exatamente o ruído que enterra os reais.
+  //
+  //    A regra estrita ("EVENTO nunca fecha") custou caro: 766 recebimentos a
+  //    menor e 850 duplicidades continuaram abertos DEPOIS de a regra ter
+  //    sido corrigida, porque nada os fechava. Fato fora da janela continua
+  //    intocado: o agente não o releu, e silêncio ali é ausência mesmo.
+  if (achado.tipo !== "ESTADO") {
+    if (!janela || !achado.dataReferencia) return false;
+    if (achado.dataReferencia < janela.desde) return false;
+  }
 
   // 4. O agente dono precisa ter rodado sem erro. Agente que quebrou emite
   //    silêncio, e silêncio não é prova de que o problema acabou. Fechar por

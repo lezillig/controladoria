@@ -330,7 +330,13 @@ export function Fatias({
 // de registros, pares rótulo/valor quando é objeto, dinheiro em reais quando
 // o nome do campo diz que é dinheiro. É o "de onde veio isso" que faz a
 // diferença entre confiar num achado e aceitá-lo em bloco.
-const CHAVE_DE_DINHEIRO = /cents$|^(saldo|valor|impacto|total|juros|multa|desconto|tarifa|pago|recebido|diferenca|media|maximo|minimo)/i;
+// A lista precisa cobrir o vocabulário que os agentes usam na evidência:
+// "devido" e "documento" apareciam como 83.858.195 (centavos crus) ao lado
+// de "recebido R$ 774.011,15", e quem lia não tinha como saber que os dois
+// eram a mesma unidade. Contagens ("baixas", "titulos", "atraso") ficam de
+// fora de propósito: são inteiros que NÃO são dinheiro.
+const CHAVE_DE_DINHEIRO =
+  /cents$|^(saldo|valor|impacto|total|juros|multa|desconto|tarifa|pago|recebido|retid|retenc|devido|documento|soma|excedente|exposicao|liquido|bruto|unitario|diferenca|falta|previst|projetad|entrada|saida|receita|despesa|custo|media|maximo|minimo)/i;
 const MAXIMO_DE_LINHAS = 50;
 const MAXIMO_DE_COLUNAS = 12;
 

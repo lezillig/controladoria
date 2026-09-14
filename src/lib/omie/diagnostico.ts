@@ -616,6 +616,12 @@ async function primeiraContaCorrente(credencialRef: string): Promise<string | nu
 //
 // Dois níveis alcançam tudo que os normalizadores leem. Descer mais entraria
 // em item de nota e devolveria centenas de nomes repetidos.
+//
+// LISTAS ENTRAM PELO PRIMEIRO ELEMENTO, como `lancamentos[].nValPago`. As
+// baixas de um título moram numa lista, e a versão anterior parava no nome da
+// lista: o diagnóstico dizia "lancamentos" e nada mais — e foi por isso que o
+// nome dos campos da baixa (valor, juros, desconto) continuou sendo chute
+// enquanto os do cabeçalho já estavam confirmados.
 function nomesDeCampos(registro: Record<string, unknown>, profundidade = 2): string[] {
   const nomes: string[] = [];
 
@@ -623,9 +629,15 @@ function nomesDeCampos(registro: Record<string, unknown>, profundidade = 2): str
     for (const [chave, valor] of Object.entries(obj)) {
       const caminho = prefixo ? `${prefixo}.${chave}` : chave;
       nomes.push(caminho);
-      if (resta > 0 && valor && typeof valor === "object" && !Array.isArray(valor)) {
-        visitar(valor as Record<string, unknown>, caminho, resta - 1);
+      if (resta <= 0 || !valor || typeof valor !== "object") continue;
+      if (Array.isArray(valor)) {
+        const primeiro = valor[0];
+        if (primeiro && typeof primeiro === "object" && !Array.isArray(primeiro)) {
+          visitar(primeiro as Record<string, unknown>, `${caminho}[]`, resta - 1);
+        }
+        continue;
       }
+      visitar(valor as Record<string, unknown>, caminho, resta - 1);
     }
   };
 
