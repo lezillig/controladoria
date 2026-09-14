@@ -129,6 +129,7 @@ export async function carregarContexto(
     afastamentos,
     contratos,
     ctes,
+    receita,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -222,7 +223,19 @@ export async function carregarContexto(
     // as notas.
     prisma.omieContrato.findMany({ where: escopo, orderBy: { codigoOmie: "asc" } }),
     prisma.omieCte.findMany({ where: { ...escopo, dataEmissao: recorteDeData }, orderBy: { dataEmissao: "asc" } }),
+    // A tabela inteira, e não "os CNPJs dos parceiros": ela não tem
+    // companyId (é referência pública, ver o schema) e tem no máximo alguns
+    // milhares de linhas curtas — uma leitura só, em paralelo com as outras,
+    // em vez de uma segunda rodada depois de conhecer os parceiros. O recorte
+    // pelos CNPJs presentes acontece abaixo. Sem a tabela (migração ainda não
+    // aplicada), vem vazia: as regras se calam, a auditoria roda.
+    prisma.parceiroReceita.findMany().catch(() => []),
   ]);
+
+  // Só os CNPJs que este contexto conhece — os agentes não têm o que fazer
+  // com a consulta de um fornecedor fora do recorte (outra empresa, inativo).
+  const cnpjsDoContexto = new Set(parceiros.map((p) => p.documento).filter((d): d is string => Boolean(d)));
+  const receitaDoContexto = receita.filter((r) => cnpjsDoContexto.has(r.cnpj));
 
   return {
     companyId,
@@ -265,6 +278,7 @@ export async function carregarContexto(
     afastamentos,
     contratos,
     ctes,
+    receita: receitaDoContexto,
   };
 }
 

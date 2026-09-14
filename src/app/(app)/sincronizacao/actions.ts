@@ -17,6 +17,7 @@ import {
 import { registrarEvento } from "@/lib/controladoria/trilha";
 import { redigir } from "@/lib/controladoria/falhas";
 import { executarAuditoriaRetroativa } from "@/lib/controladoria/retroativa";
+import { enriquecerParceiros } from "@/lib/receita/enriquecer";
 import { exigirPermissao } from "../_dados";
 
 // Sincronização manual. O ciclo normal é o agendamento diário; este botão
@@ -625,4 +626,68 @@ export async function limparBaseAntiga(confirmacao: string): Promise<{ resultado
 
   revalidatePath("/sincronizacao");
   return { resultado };
+}
+
+// CONSULTAR A RECEITA AGORA — ver src/lib/receita/enriquecer.ts.
+//
+// O ciclo diário consulta ~15 s de CNPJs por dia; com centenas de
+// fornecedores, a fila leva semanas. Este botão faz o mesmo trabalho, em
+// rodadas de até 60 s, enquanto a aba estiver aberta — mesmo desenho do
+// recálculo do resumo mensal: cada chamada faz o que cabe e diz quantos
+// faltam, e a tela chama de novo até zerar.
+//
+// 55 s de trabalho, e não 60: a função tem 60 no total e a última consulta
+// iniciada precisa terminar (até 10 s) antes de a resposta sair. O
+// enriquecimento já reserva o tempo de uma chamada inteira antes de começar
+// outra, então 55 é o orçamento que cabe sem estourar.
+const ORCAMENTO_RECEITA_MS = 55_000;
+
+export async function consultarReceitaAgora(): Promise<{
+  consultados: number;
+  pendentes: number;
+  fila: number;
+  // "api" quando a base pública pediu pausa — a tela não deve emendar outra
+  // rodada em cima.
+  parouPor: "orcamento" | "api" | null;
+  mensagem: string;
+}> {
+  const session = await exigirPermissao("sincronizar");
+
+  const r = await enriquecerParceiros(session.companyId, { orcamentoMs: ORCAMENTO_RECEITA_MS });
+
+  // Trilha a cada rodada, e não só ao zerar: cada rodada é uma sequência de
+  // consultas a um serviço externo sobre fornecedores da empresa, e "quem
+  // pediu isso, quando" é a pergunta que a trilha existe para responder.
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "RECEITA_CONSULTADA",
+    descricao:
+      `Consulta à Receita Federal disparada manualmente: ${r.consultados} CNPJ(s) consultado(s) ` +
+      `(${r.atualizados} com dado, ${r.naoEncontrados} não encontrado(s), ${r.falhas} falha(s)); ${r.pendentes} de ${r.fila} pendente(s).`,
+    depois: { consultados: r.consultados, atualizados: r.atualizados, naoEncontrados: r.naoEncontrados, falhas: r.falhas, pendentes: r.pendentes, parouPor: r.parouPor },
+  });
+
+  revalidatePath("/sincronizacao");
+  revalidatePath("/titulos");
+  const parada =
+    r.parouPor === "api"
+      ? " A base pública pediu para tentar mais tarde — o restante continua no ciclo da madrugada ou num novo clique daqui a alguns minutos."
+      : "";
+  return {
+    consultados: r.consultados,
+    pendentes: r.pendentes,
+    fila: r.fila,
+    parouPor: r.parouPor,
+    mensagem:
+      r.fila === 0
+        ? "Nenhum fornecedor PJ com título a pagar nos últimos 400 dias — nada a consultar."
+        : r.pendentes === 0
+          ? r.consultados === 0
+            ? `Todos os ${r.fila} CNPJ(s) da fila já têm consulta recente (menos de 30 dias).`
+            : `Fila zerada: ${r.consultados} CNPJ(s) consultado(s) nesta rodada, ${r.fila} com consulta no total.`
+          : `${r.consultados} CNPJ(s) consultado(s) nesta rodada; ${r.pendentes} de ${r.fila} ainda sem consulta.${parada}`,
+  };
 }
