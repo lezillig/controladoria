@@ -336,7 +336,7 @@ export function Fatias({
 // eram a mesma unidade. Contagens ("baixas", "titulos", "atraso") ficam de
 // fora de propósito: são inteiros que NÃO são dinheiro.
 const CHAVE_DE_DINHEIRO =
-  /cents$|^(saldo|valor|impacto|total|juros|multa|desconto|tarifa|pago|recebido|retid|retenc|devido|documento|soma|excedente|exposicao|liquido|bruto|unitario|diferenca|falta|previst|projetad|entrada|saida|receita|despesa|custo|media|maximo|minimo)/i;
+  /cents$|^(saldo|valor|impacto|total|juros|multa|desconto|tarifa|pago|recebido|retid|retenc|devido|documento|soma|excedente|exposicao|liquido|bruto|unitario|diferenca|falta|previst|projetad|entrada|saida|receita|despesa|custo|faturado|cobrado|concedido|pendente|aberto|vencido|media|maximo|minimo)/i;
 const MAXIMO_DE_LINHAS = 50;
 const MAXIMO_DE_COLUNAS = 12;
 
