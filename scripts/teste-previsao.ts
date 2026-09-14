@@ -78,10 +78,10 @@ const porNome = (nome: string) => [...comp.values()].find((c) => c.nome === nome
 {
   const p = porNome("PREFEITURA");
   conferir("prefeitura: mediana de atraso 60", p.atrasoMedianoDias, 60);
-  conferir("prefeitura: pontualidade 0%", Math.round(p.pontualidadePercent), 0);
+  conferir("prefeitura: pontualidade 0%", Math.round(p.pontualidadePercent ?? -1), 0);
   const c = porNome("CORPORATIVO");
   conferir("corporativo: atraso 0", c.atrasoMedianoDias, 0);
-  conferir("corporativo: pontualidade 100%", Math.round(c.pontualidadePercent), 100);
+  conferir("corporativo: pontualidade 100%", Math.round(c.pontualidadePercent ?? -1), 100);
   conferir("amostra mínima é 3", MINIMO_DE_AMOSTRA, 3);
   conferir("atraso do conjunto = mediana dos clientes com amostra", atrasoGlobal(comp), 30);
 }

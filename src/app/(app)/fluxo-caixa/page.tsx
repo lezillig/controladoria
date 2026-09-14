@@ -4,6 +4,7 @@ import { HORIZONTES_DIAS, calcularCiclo, horizonteValido, projetarFluxoCaixa } f
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { somarDias } from "@/lib/controladoria/periodos";
 import { preverRecebimentosDoContexto } from "@/lib/controladoria/previsaoCaixa";
+import { carregarHistoricoDeClientes } from "@/lib/controladoria/previsaoHistorico";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
@@ -25,7 +26,10 @@ export default async function FluxoCaixaPage({
   const ciclo = calcularCiclo(ctx);
   // A leitura REALISTA: cada cliente pelo próprio atraso típico, e o vencido
   // além do padrão fora da conta. Ver previsaoCaixa.ts.
-  const previsao = preverRecebimentosDoContexto(ctx);
+  // Com 24 meses de resumo mensal como segunda fonte: em janeiro as baixas do
+  // ano não bastam para cliente nenhum, e sem isso todos caíam no padrão geral.
+  const previsao = preverRecebimentosDoContexto(ctx, await carregarHistoricoDeClientes(ctx));
+  const clientesPeloHistorico = previsao.clientes.filter((c) => c.origem === "historico").length;
   const realistaPorDias = new Map(previsao.porHorizonte.map((p) => [p.dias, p.realistaCents]));
   const previsto30 = realistaPorDias.get(30) ?? 0;
   const contratual30 = previsao.porHorizonte.find((p) => p.dias === 30)?.contratualCents ?? 0;
@@ -165,8 +169,10 @@ export default async function FluxoCaixaPage({
       <Secao
         titulo="Previsão por contrato"
         descricao={
-          `Cada cliente pelo próprio padrão: mediana do atraso entre vencimento e recebimento, e a frequência com que pagou no prazo. ` +
-          `Sem amostra de ${3} baixas, usa o padrão do conjunto (${fmtNumero(previsao.atrasoPadraoDias)} dias)` +
+          `Cada cliente pelo próprio padrão: mediana do atraso entre vencimento e recebimento nas baixas do ano, e a frequência com que pagou no prazo. ` +
+          `Sem ${3} baixas no ano, vale a média de até 24 meses do resumo mensal` +
+          (clientesPeloHistorico > 0 ? ` (${fmtNumero(clientesPeloHistorico)} cliente(s), marcados com †)` : "") +
+          `; sem histórico nenhum, o padrão do conjunto (${fmtNumero(previsao.atrasoPadraoDias)} dias)` +
           (previsao.clientesSemPadrao > 0 ? ` — é o caso de ${fmtNumero(previsao.clientesSemPadrao)} cliente(s).` : ".") +
           ` "Incerto" é o vencido além do padrão do cliente: precisa de cobrança, não de espera.`
         }
@@ -186,7 +192,7 @@ export default async function FluxoCaixaPage({
             c.atrasoMedianoDias === null ? (
               <span key="a" className="text-slate-400">padrão geral</span>
             ) : (
-              `${fmtNumero(c.atrasoMedianoDias)} dia(s)`
+              `${fmtNumero(c.atrasoMedianoDias)} dia(s)${c.origem === "historico" ? " †" : ""}`
             ),
             c.pontualidadePercent === null ? "—" : `${fmtNumero(c.pontualidadePercent)}%`,
             fmtBRL(c.previstoPorHorizonte[30] ?? 0),

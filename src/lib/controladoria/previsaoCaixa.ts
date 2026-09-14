@@ -46,8 +46,16 @@ export type ComportamentoCliente = {
   nome: string;
   amostra: number;
   atrasoMedianoDias: number;
-  pontualidadePercent: number;
+  // Nulo quando o padrão veio do resumo mensal (que guarda a soma dos dias,
+  // não baixa a baixa) — a média de atraso existe, a pontualidade não.
+  pontualidadePercent: number | null;
+  origem: "baixas" | "historico";
 };
+
+// O que o resumo mensal (HistoricoMensal) sabe de um cliente: quantas baixas
+// e a soma de (dia da baixa − dia do vencimento) em até 24 meses. Média, não
+// mediana — o resumo guarda a soma, e é o que há.
+export type HistoricoDeCliente = { nome: string | null; baixas: number; diasSoma: number };
 
 const emAberto = (t: TituloParaPrevisao) => !t.liquidado && !t.cancelado;
 const saldoAberto = (t: TituloParaPrevisao) => t.saldoCents ?? Math.max(0, t.valorDocumentoCents - t.valorPagoCents);
@@ -55,9 +63,17 @@ const nomeDe = (t: TituloParaPrevisao) => t.parceiroNome?.trim() || "(cliente n�
 
 // O padrão de cada cliente, tirado das baixas dos títulos a receber dele:
 // atraso (dias entre vencimento e baixa) por baixa, mediana por cliente.
+//
+// DOIS ANOS DE MEMÓRIA. As baixas do contexto cobrem o ano corrente; em
+// janeiro isso é um mês, e quase nenhum cliente tem três baixas — todos
+// caíam no "padrão geral". O resumo mensal guarda 24 meses por cliente, e
+// entra como segunda fonte: quando as baixas do ano não bastam, vale a média
+// dos dois anos. As baixas do ano continuam preferidas quando existem, porque
+// são o comportamento mais recente e a mediana resiste a exceções.
 export function comportamentoPorCliente(
   titulos: TituloParaPrevisao[],
-  baixas: BaixaParaPrevisao[]
+  baixas: BaixaParaPrevisao[],
+  historico: Map<string, HistoricoDeCliente> = new Map()
 ): Map<string, ComportamentoCliente> {
   const tituloPorId = new Map(titulos.filter((t) => t.natureza === "RECEBER").map((t) => [t.id, t]));
   const atrasosPorCliente = new Map<string, { nome: string; atrasos: number[] }>();
@@ -80,6 +96,22 @@ export function comportamentoPorCliente(
       amostra: atrasos.length,
       atrasoMedianoDias: mediana(atrasos),
       pontualidadePercent: (atrasos.filter((a) => a <= TOLERANCIA_PONTUAL_DIAS).length / atrasos.length) * 100,
+      origem: "baixas",
+    });
+  }
+
+  for (const [chave, h] of historico) {
+    const atual = resultado.get(chave);
+    if (atual && atual.amostra >= MINIMO_DE_AMOSTRA) continue;
+    if (h.baixas < MINIMO_DE_AMOSTRA) continue;
+    const media = Math.min(ATRASO_MAXIMO_DIAS, Math.round(h.diasSoma / h.baixas));
+    resultado.set(chave, {
+      chave,
+      nome: atual?.nome ?? h.nome?.trim() ?? "(cliente não identificado)",
+      amostra: h.baixas,
+      atrasoMedianoDias: media,
+      pontualidadePercent: null,
+      origem: "historico",
     });
   }
   return resultado;
@@ -133,6 +165,9 @@ export type PrevisaoCliente = {
   atrasoMedianoDias: number | null;
   pontualidadePercent: number | null;
   amostra: number;
+  // De onde veio o padrão: baixas do ano, resumo mensal de 24 meses, ou
+  // nenhum (padrão geral).
+  origem: "baixas" | "historico" | null;
   // Previsto por horizonte (dias → centavos), pela data prevista.
   previstoPorHorizonte: Record<number, number>;
 };
@@ -156,9 +191,10 @@ export function preverRecebimentos(params: {
   baixas: BaixaParaPrevisao[];
   referencia: Date;
   horizontes?: readonly number[];
+  historico?: Map<string, HistoricoDeCliente>;
 }): PrevisaoDeCaixa {
   const horizontes = params.horizontes ?? HORIZONTES_DIAS;
-  const comportamentos = comportamentoPorCliente(params.titulos, params.baixas);
+  const comportamentos = comportamentoPorCliente(params.titulos, params.baixas, params.historico);
   const atrasoPadraoDias = atrasoGlobal(comportamentos);
 
   const abertos = params.titulos.filter((t) => t.natureza === "RECEBER" && emAberto(t) && saldoAberto(t) > 0);
@@ -180,6 +216,7 @@ export function preverRecebimentos(params: {
       atrasoMedianoDias: p.padraoProprio && c ? c.atrasoMedianoDias : null,
       pontualidadePercent: p.padraoProprio && c ? c.pontualidadePercent : null,
       amostra: c?.amostra ?? 0,
+      origem: p.padraoProprio && c ? c.origem : null,
       previstoPorHorizonte: Object.fromEntries(horizontes.map((h) => [h, 0])),
     };
     linha.emAbertoCents += p.saldoCents;
@@ -217,6 +254,9 @@ export function preverRecebimentos(params: {
   };
 }
 
-export function preverRecebimentosDoContexto(ctx: ContextoAuditoria): PrevisaoDeCaixa {
-  return preverRecebimentos({ titulos: ctx.titulos, baixas: ctx.baixas, referencia: ctx.dataReferencia });
+export function preverRecebimentosDoContexto(
+  ctx: ContextoAuditoria,
+  historico?: Map<string, HistoricoDeCliente>
+): PrevisaoDeCaixa {
+  return preverRecebimentos({ titulos: ctx.titulos, baixas: ctx.baixas, referencia: ctx.dataReferencia, historico });
 }
