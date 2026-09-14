@@ -80,6 +80,31 @@ function catalogoDeAgentes(): string {
   return AGENTES.map((a) => `- ${a.id} (${a.area}): ${a.descricao}`).join("\n");
 }
 
+// TETO da evidência devolvida por detalhar_achado, em caracteres do JSON.
+const TETO_DA_EVIDENCIA = 6000;
+
+function limitarTexto(valor: unknown, teto: number): unknown {
+  const texto = JSON.stringify(valor ?? null);
+  if (texto.length <= teto) return valor;
+  return { truncado: true, tamanhoOriginal: texto.length, inicio: texto.slice(0, teto) };
+}
+
+// USO POR CHAMADA, no log. É a única medida real de custo (tokens de entrada,
+// lidos do cache, gravados no cache, de saída) e a única prova de que o cache
+// de prompt está funcionando: `cache_read` alto na segunda rodada é o sinal
+// saudável; zero, o sinal de prefixo instável. Também registra o modelo que
+// de fato respondeu — com fallback do lado do servidor, pode não ser o pedido.
+export function registrarUso(
+  origem: string,
+  message: { model: string; usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }
+): void {
+  const u = message.usage;
+  console.log(
+    `[${origem}] ${message.model} entrada=${u.input_tokens} cache_lido=${u.cache_read_input_tokens ?? 0} ` +
+      `cache_gravado=${u.cache_creation_input_tokens ?? 0} saida=${u.output_tokens}`
+  );
+}
+
 const SYSTEM_PROMPT = `Você é o auditor investigador da controladoria de um grupo brasileiro de fretamento e transporte de passageiros (duas empresas, Azul Mob e MCZ, ambas com contabilidade na Omie). Uma pessoa da controladoria faz uma pergunta; você a responde consultando o espelho da Omie e a base de achados da auditoria, através das ferramentas disponíveis.
 
 O que você tem:
@@ -194,7 +219,10 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
         // A evidência é JSON livre dos agentes e pode trazer CPF cru (a regra
         // de funcionário-fornecedor traz por construção). Mascarado aqui, como
         // na tela e na ferramenta de parceiro: o modelo não precisa do número.
-        evidencia: mascararDocumentos(a.evidencia),
+        // E com teto: uma evidência com centenas de linhas (baixas do mês,
+        // títulos de um cliente) viraria milhares de tokens reenviados em
+        // cada rodada seguinte.
+        evidencia: limitarTexto(mascararDocumentos(a.evidencia), TETO_DA_EVIDENCIA),
         valor: fmtBRL(a.valorCents), impacto: a.impactoCents ? fmtBRL(a.impactoCents) : null,
         detectadoEm: fmtData(a.detectadoEm), resolvidoEm: a.resolvidoEm ? fmtData(a.resolvidoEm) : null,
       });
@@ -299,6 +327,13 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
       natureza: z.enum(["PAGAR", "RECEBER"]),
       rotulo: z.string().describe("Trecho do nome do parceiro ou da descrição da categoria."),
       meses: z.number().int().min(3).max(36).optional().describe("Quantos meses para trás (padrão 24)."),
+      limite: z
+        .number()
+        .int()
+        .min(12)
+        .max(200)
+        .optional()
+        .describe("Máximo de linhas (mês x série) devolvidas — padrão 48. Refine o rótulo se vier truncado."),
     }),
     run: async (input) => {
       const meses = input.meses ?? 24;
@@ -314,7 +349,9 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
           rotulo: { contains: input.rotulo, mode: "insensitive" },
         },
         orderBy: [{ chave: "asc" }, { competencia: "asc" }],
-        take: 200,
+        // Sem teto, um rótulo genérico ("posto") devolvia 200 linhas (~12 mil
+        // tokens) reenviadas em toda rodada seguinte.
+        take: input.limite ?? 48,
         select: {
           chave: true, rotulo: true, competencia: true, titulos: true, valorCents: true, valorMaximoCents: true,
           baixas: true, valorBaixadoCents: true, diasPagamentoSoma: true, conexaoId: true,
@@ -587,7 +624,15 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
         output_config: { effort: "high" },
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
-        system: SYSTEM_PROMPT,
+        // CACHE DE PROMPT. O prefixo estável (ferramentas + system) é o mesmo
+        // em toda rodada de toda investigação, e cada rodada reenviava tudo a
+        // preço cheio — o custo crescia quase quadraticamente com o número de
+        // consultas. O marcador no último bloco do system guarda ferramentas e
+        // system juntos; o marcador de nível superior anda com a conversa e
+        // guarda o histórico já enviado. As rodadas são seguidas (o navegador
+        // chama de novo em segundos), dentro dos 5 minutos do cache.
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        cache_control: { type: "ephemeral" },
         tools: ferramentas({ companyId: row.companyId, conexaoId: row.conexaoId }, consultas),
         messages: mensagens,
       });
@@ -603,6 +648,18 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
       }
       if (!message) throw new Error("o modelo não devolveu resposta");
       iteracoes++;
+      registrarUso("investigador", message);
+
+      // Resposta cortada pelo teto de tokens NÃO é resposta pronta: com
+      // raciocínio adaptativo, o corte costuma cair no meio do pensamento e
+      // deixar um texto truncado — que, gravado como concluído, pareceria
+      // uma conclusão. Encerra com erro e pede pergunta mais específica.
+      if (message.stop_reason === "max_tokens") {
+        return encerrar(row.id, {
+          erro: "A resposta estourou o limite de tokens antes de fechar. Faça uma pergunta mais específica, ou divida-a em duas.",
+          mensagens, consultas, iteracoes,
+        });
+      }
 
       if (message.stop_reason === "refusal") {
         return encerrar(row.id, {
@@ -638,7 +695,7 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
         continue;
       }
 
-      // end_turn (ou max_tokens): o modelo fechou a resposta.
+      // end_turn: o modelo fechou a resposta.
       const texto = message.content
         .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
         .map((b) => b.text)

@@ -6,6 +6,7 @@ import type { PanoramaFinanceiro } from "./analytics";
 import type { IndicadorMedido } from "./bsc";
 import type { PanoramaConformidade } from "@/lib/conformidade/panorama";
 import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
+import { registrarUso } from "./investigador";
 
 // ANALISTA (camada 3) — escreve a leitura executiva do relatorio diario.
 //
@@ -224,7 +225,16 @@ function montarBriefing(entrada: EntradaAnalista): string {
 // mais por chamada; são uma ou duas chamadas por dia.
 export const MODELO_ANALISTA = "claude-fable-5-1";
 
-export async function gerarNarrativa(entrada: EntradaAnalista): Promise<Narrativa | null> {
+// Teto de espera pela leitura. A chamada roda dentro da função do ciclo
+// diário (60 s no cron) e uma resposta longa deste modelo pode passar de um
+// minuto; sem teto, a função morria no meio, nada era gravado e a invocação
+// seguinte repetia tudo — pagando de novo. Com o teto, a chamada é abortada
+// e o relatório sai sem narrativa, que é o compromisso: o e-mail com os
+// números sempre sai. Sem retentativa pelo mesmo motivo — uma retentativa
+// dobraria o tempo.
+const TETO_DA_NARRATIVA_MS = Number(process.env.NARRATIVA_TIMEOUT_MS ?? 50_000);
+
+export async function gerarNarrativa(entrada: EntradaAnalista, opcoes: { timeoutMs?: number } = {}): Promise<Narrativa | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
@@ -254,7 +264,9 @@ export async function gerarNarrativa(entrada: EntradaAnalista): Promise<Narrativ
 Escreva a leitura executiva deste relatório.`,
         },
       ],
-    });
+    }, { timeout: opcoes.timeoutMs ?? TETO_DA_NARRATIVA_MS, maxRetries: 0 });
+
+    registrarUso("analista", message);
 
     // A recusa chega como resposta bem-sucedida (HTTP 200) com stop_reason
     // próprio — e conteúdo possivelmente vazio. Tem de ser verificada ANTES
