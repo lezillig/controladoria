@@ -252,6 +252,17 @@ virar lista de trabalho do RH, do jurídico e do financeiro
 **Testes a cada push** — `.github/workflows/testes.yml` roda tipos, lint e os
 doze conjuntos em todo push e pull request para `main`.
 
+**Investigador com proposta** — a ferramenta `propor_tratativa` deixa a IA
+propor resolvido, não se aplica ou em análise para um achado, com a
+justificativa que a evidência sustenta. Nada é gravado: a proposta aparece na
+lista de consultas com um botão "Aplicar", que chama a mesma ação de tratativa
+da tela de auditoria, com a sessão, a permissão e a trilha de quem clicou.
+
+**Agente de validação** — `.claude/agents/validacao-sistema.md` descreve, para
+sessões futuras do Claude Code, a conferência completa: testes e build,
+revisão de segurança, auditoria da lógica do motor e QA funcional local com
+Playwright. Ele só executa e relata; não altera nem publica.
+
 **Chave determinística** — o mesmo fato, reavaliado amanhã, produz a mesma chave
 e reencontra o achado, preservando a tratativa que alguém escreveu nele.
 

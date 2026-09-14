@@ -6,6 +6,7 @@ import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
 import type { EstadoInvestigacao } from "@/lib/controladoria/investigador";
 import { Secao } from "../../_componentes";
 import { avancar, iniciar } from "./actions";
+import { tratarAchado } from "../actions";
 
 const EXEMPLOS = [
   "O que está acontecendo com os títulos vencidos da Cajamar? Quanto é, desde quando, e há tratativa registrada?",
@@ -14,10 +15,65 @@ const EXEMPLOS = [
   "Os achados de juros deste mês se concentram em algum fornecedor ou em alguma data de pagamento?",
 ];
 
+const ROTULO_STATUS: Record<string, string> = {
+  RESOLVIDO: "Resolvido",
+  IGNORADO: "Não se aplica",
+  EM_ANALISE: "Em análise",
+};
+
+// A proposta da IA vira tratativa só aqui, pela mesma ação que a tela de
+// auditoria usa — sessão, permissão e trilha de quem clicou. O texto pode ser
+// ajustado antes de aplicar: a IA propôs, a pessoa assina.
+function PropostaForm({
+  achadoId,
+  status,
+  justificativa,
+  responsavel,
+}: {
+  achadoId: string;
+  status: string;
+  justificativa: string;
+  responsavel: string;
+}) {
+  const [texto, setTexto] = useState(justificativa);
+  const [resultado, setResultado] = useState<string | null>(null);
+  const [processando, iniciarTransicao] = useTransition();
+  const router = useRouter();
+
+  if (resultado) return <p className="mt-2 font-medium text-emerald-700">{resultado}</p>;
+
+  return (
+    <form
+      className="mt-2 space-y-2"
+      action={(formData) => {
+        iniciarTransicao(async () => {
+          const r = await tratarAchado(formData);
+          if (r.erro) {
+            setResultado(null);
+            alert(r.erro);
+            return;
+          }
+          setResultado("Tratativa aplicada com o seu nome.");
+          router.refresh();
+        });
+      }}
+    >
+      <input type="hidden" name="id" value={achadoId} />
+      <input type="hidden" name="status" value={status} />
+      <input type="hidden" name="responsavel" value={responsavel} />
+      <textarea name="observacao" rows={2} value={texto} onChange={(e) => setTexto(e.target.value)} className={`${inputClass} text-xs`} />
+      <button type="submit" disabled={processando} className={`${primaryButtonClass} text-xs`}>
+        {processando ? "Aplicando..." : `Aplicar: ${ROTULO_STATUS[status] ?? status}`}
+      </button>
+    </form>
+  );
+}
+
 export default function InvestigacaoForm({
   conexoes,
   inicial,
   perguntaInicial,
+  podeTratar = false,
 }: {
   conexoes: { id: string; apelido: string; nome: string }[];
   // Uma investigação já gravada, para reabrir pelo histórico. Se ainda estiver
@@ -26,6 +82,8 @@ export default function InvestigacaoForm({
   // Pergunta pré-preenchida por um link de outra tela (o botão "Investigar
   // este achado" na auditoria). Só preenche; a pessoa ainda clica em Investigar.
   perguntaInicial?: string;
+  // Quem pode aplicar a proposta de tratativa da IA. Vem da sessão, na página.
+  podeTratar?: boolean;
 }) {
   const [estado, setEstado] = useState<EstadoInvestigacao | null>(inicial);
   const [erro, setErro] = useState<string | null>(null);
@@ -185,13 +243,35 @@ export default function InvestigacaoForm({
           descricao="Na ordem em que consultou. O que não está aqui, ela não viu — e a resposta não pode se apoiar nisso."
         >
           <ol className="space-y-2 text-xs">
-            {estado.consultas.map((c, i) => (
-              <li key={i} className="rounded-lg border border-slate-200 px-3 py-2">
-                <span className="font-mono font-semibold text-slate-700">{c.ferramenta}</span>
-                <span className="ml-2 font-mono text-slate-500">{JSON.stringify(c.entrada)}</span>
-                <div className="mt-1 text-slate-600">{c.resumo}</div>
-              </li>
-            ))}
+            {estado.consultas.map((c, i) =>
+              c.ferramenta === "propor_tratativa" && typeof c.entrada.achadoId === "string" && typeof c.entrada.status === "string" ? (
+                <li key={i} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                  <span className="font-semibold text-amber-900">Proposta de tratativa</span>
+                  <div className="mt-1 text-slate-700">{c.resumo}</div>
+                  <div className="mt-1 text-slate-600">
+                    <span className="font-medium">{ROTULO_STATUS[c.entrada.status] ?? c.entrada.status}</span>
+                    {typeof c.entrada.responsavel === "string" && c.entrada.responsavel && <span> · responsável: {c.entrada.responsavel}</span>}
+                    {typeof c.entrada.justificativa === "string" && <div className="mt-1 italic">“{c.entrada.justificativa}”</div>}
+                  </div>
+                  {podeTratar ? (
+                    <PropostaForm
+                      achadoId={c.entrada.achadoId}
+                      status={c.entrada.status}
+                      justificativa={typeof c.entrada.justificativa === "string" ? c.entrada.justificativa : ""}
+                      responsavel={typeof c.entrada.responsavel === "string" ? c.entrada.responsavel : ""}
+                    />
+                  ) : (
+                    <p className="mt-2 text-amber-800">Quem tem a permissão de tratar achado aplica esta proposta pela tela de auditoria.</p>
+                  )}
+                </li>
+              ) : (
+                <li key={i} className="rounded-lg border border-slate-200 px-3 py-2">
+                  <span className="font-mono font-semibold text-slate-700">{c.ferramenta}</span>
+                  <span className="ml-2 font-mono text-slate-500">{JSON.stringify(c.entrada)}</span>
+                  <div className="mt-1 text-slate-600">{c.resumo}</div>
+                </li>
+              )
+            )}
           </ol>
         </Secao>
       )}

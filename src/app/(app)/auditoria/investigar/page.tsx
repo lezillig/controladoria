@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isInvestigadorDisponivel, lerInvestigacao, listarInvestigacoes } from "@/lib/controladoria/investigador";
 import { fmtDataHora } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
-import { exigirPermissao } from "../../_dados";
+import { exigirPermissao, podeAcao } from "../../_dados";
 import { AvisoVazio, Secao, Tabela } from "../../_componentes";
 import InvestigacaoForm from "./InvestigacaoForm";
 
@@ -61,7 +61,13 @@ export default async function InvestigarPage({ searchParams }: { searchParams: P
       </div>
 
       {isInvestigadorDisponivel() ? (
-        <InvestigacaoForm key={inicial?.id ?? pergunta ?? "nova"} conexoes={conexoes} inicial={inicial} perguntaInicial={pergunta?.slice(0, 2000) ?? ""} />
+        <InvestigacaoForm
+          key={inicial?.id ?? pergunta ?? "nova"}
+          conexoes={conexoes}
+          inicial={inicial}
+          perguntaInicial={pergunta?.slice(0, 2000) ?? ""}
+          podeTratar={await podeAcao(session, "tratar-achado")}
+        />
       ) : (
         <AvisoVazio
           titulo="Investigação indisponível"

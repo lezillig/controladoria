@@ -97,7 +97,7 @@ Como trabalhar:
 - Diferencie "não encontrei" de "não existe". Se a sua busca pode ter deixado algo de fora, diga isso e diga o que faltou buscar.
 - Diga o que NÃO dá para saber com esta base. O espelho não tem extrato bancário, não tem CT-e emitido, e a janela dos agentes é o ano corrente mais os títulos em aberto. Se a resposta depende de algo fora disso, diga que depende e do quê.
 - Nunca conclua fraude. Aponte o indício, a hipótese e o que uma pessoa precisa verificar para confirmar ou descartar. Indício não é conclusão.
-- Você não altera nada e não deve prometer alteração: não trata achado, não corrige título, não fala com a Omie. Se a pessoa pedir isso, diga onde ela faz.
+- Você não altera nada: não trata achado, não corrige título, não fala com a Omie. O que você pode fazer é PROPOR a tratativa de um achado com a ferramenta propor_tratativa (resolvido, não se aplica ou em análise, com a justificativa que a evidência sustenta). A proposta só vale depois que a pessoa clicar em aplicar na tela — diga isso na resposta. Proponha apenas quando a evidência consultada sustentar a decisão; na dúvida, diga o que falta verificar.
 
 Resposta: comece pelo que encontrou, em uma ou duas frases. Depois a evidência, na ordem em que sustenta a conclusão. Depois o que falta verificar, se faltar. Frases completas, sem abreviações inventadas, sem cadeias de setas. Ser legível importa mais que ser curto. Em português do Brasil.`;
 
@@ -402,7 +402,43 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
     },
   });
 
-  return [listarAchados, detalharAchado, titulosDoParceiro, titulo, serieMensal, parceiro, projetoOs];
+  // PROPOR, NÃO GRAVAR. A única ferramenta que fala de escrita, e ela não
+  // escreve: registra a proposta na lista de consultas da investigação, e a
+  // tela mostra um botão "Aplicar" que chama a MESMA ação de tratativa que
+  // uma pessoa usaria — com a sessão dela, a permissão dela e a trilha com o
+  // nome dela. O modelo sugere; quem decide continua sendo quem clica.
+  const proporTratativa = betaZodTool({
+    name: "propor_tratativa",
+    description:
+      "Propõe a tratativa de UM achado (resolvido, não se aplica ou em análise) com a justificativa que a evidência sustenta. Não grava nada: a pessoa vê a proposta na tela e decide aplicar. Use só depois de ter consultado a evidência do achado.",
+    inputSchema: z.object({
+      achadoId: z.string().describe("Id do achado (o campo id de listar_achados/detalhar_achado)."),
+      status: z.enum(["RESOLVIDO", "IGNORADO", "EM_ANALISE"]).describe("IGNORADO = não se aplica."),
+      justificativa: z.string().min(10).max(600).describe("O que foi verificado e por quê a decisão se sustenta. Fica gravada no achado."),
+      responsavel: z.string().max(120).optional().describe("Área ou pessoa que deve tratar, quando for EM_ANALISE."),
+    }),
+    run: async (input) => {
+      const a = await prisma.auditFinding.findFirst({
+        where: { ...base, id: input.achadoId },
+        select: { id: true, regra: true, titulo: true, status: true },
+      });
+      if (!a) {
+        registrar("propor_tratativa", input, "achado não encontrado");
+        return JSON.stringify({ erro: "achado não encontrado nesta empresa" });
+      }
+      if (a.status === "RESOLVIDO" || a.status === "IGNORADO") {
+        registrar("propor_tratativa", input, `já tratado (${a.status})`);
+        return JSON.stringify({ aviso: `o achado já está ${a.status}; nada a propor` });
+      }
+      registrar("propor_tratativa", input, `proposta: ${input.status} para ${a.regra} — ${a.titulo}`);
+      return JSON.stringify({
+        ok: true,
+        aviso: "Proposta registrada. Ela aparece na tela com um botão para a pessoa aplicar; até lá, nada mudou. Diga isso na resposta.",
+      });
+    },
+  });
+
+  return [listarAchados, detalharAchado, titulosDoParceiro, titulo, serieMensal, parceiro, projetoOs, proporTratativa];
 }
 
 function formatarTitulo(t: {
