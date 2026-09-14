@@ -154,7 +154,77 @@ export const OMIE_ENDPOINTS = {
     callsAlternativos: ["ListarNFSes", "ListarNfse", "ListarNFSe"],
     listKey: ["nfseEncontradas", "nfseCadastro", "nfseLista"],
   },
+  // CONTRATOS DE SERVIÇO — o valor que DEVERIA ser faturado por mês.
+  //
+  // Nomes tirados do SDK gerado a partir do WSDL da Omie (confiança alta no
+  // nome da operação e no array de resposta `contratoCadastro`; os dois
+  // alternativos são grafias vistas em outras listagens do mesmo domínio).
+  // Cada item vem aninhado: `cabecalho` (nCodCtr, cNumCtr, nCodCli, cCodSit,
+  // dVigInicial/dVigFinal, nDiaFat, nValTotMes, cTipoFat), `itensContrato[]`,
+  // `infAdic` e `infoCadastro` — ver normalizarContrato em mapping.ts.
+  //
+  // Os filtros `filtrar_apenas_alteracao` e `filtrar_por_data_de/ate` seguem o
+  // padrão dos endpoints "cadastro" da Omie; se a conta recusar a tag, o sync
+  // cai na variante só com paginação (ver paramsContratos).
+  contratos: {
+    path: "servicos/contrato/",
+    call: "ListarContratos",
+    listKey: ["contratoCadastro", "contratos", "contrato_cadastro"],
+  },
+  // CT-e EMITIDOS — pelo PAINEL DO CONTADOR, porque NÃO existe ListarCTe.
+  //
+  // Foram cinco grafias de "ListarCTe" recusadas antes de a conferência de
+  // CT-e virar colagem manual (ver src/lib/controladoria/cte.ts). O caminho que
+  // existe é o do contador: `contador/xml/ListarDocumentos` lista os XMLs
+  // emitidos por modelo (`cModelo` "57" CT-e, "67" CT-e OS) e período de
+  // emissão, com `cOperacao` "1" (emitidos) ou "0" (recebidos). A resposta vem
+  // em `documentosEncontrados[]` com nNumero, cSerie, nChave, dEmissao, nValor,
+  // cStatus e o XML inteiro em `cXml` — que NÃO é lido.
+  //
+  // Pode depender de o painel do contador estar habilitado na conta. Recusa
+  // aqui é "indisponível": vai para o diagnóstico e para o erro do run, e a
+  // fase conclui sem derrubar o ciclo.
+  cteDocumentos: {
+    path: "contador/xml/",
+    call: "ListarDocumentos",
+    listKey: ["documentosEncontrados", "documentos_encontrados", "documentos"],
+  },
 } as const satisfies Record<string, OmieEndpoint>;
+
+// Variantes de parâmetro da listagem de CONTRATOS, em ordem de preferência.
+//
+// `cExibirProdutos: "S"` pede os itens do contrato junto com o cabeçalho — é
+// o que dá o resumo de serviços e valores. Na carga diária, `filtrar_apenas_
+// alteracao: "S"` com a janela traz só o que mudou. Nenhum dos dois é
+// confirmado contra a conta real, então cada variante remove um: se a conta
+// recusar a tag, a seguinte é tentada, e a última é só paginação — sempre
+// passa, ao custo de varrer todas as páginas.
+export function paramsContratos(
+  pagina: number,
+  porPagina: number,
+  janela: { de: string; ate: string } | null
+): readonly Record<string, unknown>[] {
+  const paginacao = { pagina, registros_por_pagina: porPagina };
+  if (!janela) return [{ ...paginacao, cExibirProdutos: "S" }, paginacao];
+  const filtro = {
+    filtrar_apenas_alteracao: "S",
+    filtrar_por_data_de: janela.de,
+    filtrar_por_data_ate: janela.ate,
+  };
+  return [
+    { ...paginacao, ...filtro, cExibirProdutos: "S" },
+    { ...paginacao, ...filtro },
+    { ...paginacao, cExibirProdutos: "S" },
+    paginacao,
+  ];
+}
+
+// Parâmetro da listagem de CT-e pelo painel do contador. Um só, sem variante:
+// os nomes vêm do WSDL e, se a conta recusar, a recusa é o que se quer ver no
+// diagnóstico — não uma variante mais fraca passando por cima.
+export function paramsCte(pagina: number, porPagina: number, modelo: "57" | "67", de: string, ate: string): Record<string, unknown> {
+  return { nPagina: pagina, nRegPorPagina: porPagina, cModelo: modelo, cOperacao: "1", dEmiInicial: de, dEmiFinal: ate };
+}
 
 // Variantes de filtro da listagem de NFS-e, em ordem de preferencia.
 //

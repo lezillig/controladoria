@@ -186,7 +186,7 @@ export async function executarPasso(params: {
     detalhes.push(
       `[${conexao.apelido}] ${fase}: ${resultado.titulosPagar} títulos a pagar, ${resultado.titulosReceber} a receber, ` +
         `${resultado.baixas} baixas, ${resultado.movimentos} movimentos, ${resultado.notas} notas, ` +
-        `${resultado.cadastros} cadastros.`
+        `${resultado.cadastros} cadastros, ${resultado.contratos} contratos, ${resultado.ctes} CT-e.`
     );
     for (const erro of resultado.erros) detalhes.push(`[${conexao.apelido}] erro: ${erro}`);
 
