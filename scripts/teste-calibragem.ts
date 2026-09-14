@@ -8,6 +8,7 @@
 import { auditarContasPagar } from "../src/lib/controladoria/agents/contasPagar";
 import { auditarContasReceber } from "../src/lib/controladoria/agents/contasReceber";
 import { auditarFraude } from "../src/lib/controladoria/agents/antifraude";
+import { buscarOportunidades as auditarOportunidades } from "../src/lib/controladoria/agents/oportunidades";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 
 let falhas = 0;
@@ -408,6 +409,42 @@ const fornecedorFuncionario = (p: Parameters<typeof contexto>[0]) =>
   conferir("chave por empresa e categoria", a[0]?.chave, "FR-FORNECEDOR-FUNCIONARIO|AZUL|2.05");
 }
 {
+  // "Banco de Horas" (R$ 1.737,50, acima do teto de reembolso): rotina de
+  // pessoal pelo nome. E uma categoria de nome neutro dentro do grupo
+  // "Despesas com Pessoal" também é rotina, pela árvore.
+  const categorias = [
+    { conexaoId: "x", codigo: "2.03", descricao: "Despesas com Pessoal", categoriaSuperior: null },
+    { conexaoId: "x", codigo: "2.03.95", descricao: "Banco de Horas", categoriaSuperior: "2.03" },
+    { conexaoId: "x", codigo: "2.03.77", descricao: "Outros", categoriaSuperior: "2.03" },
+  ] as unknown as ContextoAuditoria["categorias"];
+  const ctx = (titulos: Titulo[]) => ({ ...contexto({ titulos, parceiros: [parceiro()], motoristas: [motorista] }), categorias });
+  const bancoDeHoras = titulo({ parceiroCodigo: "F9", valorDocumentoCents: 1_737_50, categoriaCodigo: "2.03.95", categoriaDescricao: "Banco de Horas" });
+  const a = auditarFraude(ctx([bancoDeHoras])).filter((x) => x.regra === "FR-FORNECEDOR-FUNCIONARIO");
+  conferir("banco de horas: rotina de pessoal", a[0]?.severidade, "INFO");
+  const outros = titulo({ parceiroCodigo: "F9", valorDocumentoCents: 5_000_00, categoriaCodigo: "2.03.77", categoriaDescricao: "Outros" });
+  const b = auditarFraude(ctx([outros])).filter((x) => x.regra === "FR-FORNECEDOR-FUNCIONARIO");
+  conferir("nome neutro dentro do grupo de pessoal: rotina pela árvore", b[0]?.severidade, "INFO");
+  conferir("evidência mostra o grupo", (b[0]?.evidencia as { grupoDaCategoria: string }).grupoDaCategoria, "Outros > Despesas com Pessoal");
+}
+{
+  // "Freelancer" com três pessoas da folha: pagamento por fora, médio,
+  // risco financeiro (passivo trabalhista) — não fraude individual.
+  const motoristas = [1, 2, 3].map((i) => ({ id: `m${i}`, name: `MOTORISTA ${i}`, cpf: `0000000000${i}`, active: true }) as unknown as Motorista);
+  const parceiros = [1, 2, 3].map((i) => parceiro({ id: `p${i}`, codigoOmie: `F${i}`, nome: `MOTORISTA ${i}`, documento: `0000000000${i}` } as Partial<Parceiro>));
+  const titulos = [1, 2, 3].map((i) =>
+    titulo({ parceiroCodigo: `F${i}`, parceiroNome: `MOTORISTA ${i}`, valorDocumentoCents: 1_250_00, categoriaCodigo: "2.04.76", categoriaDescricao: "Freelancer" })
+  );
+  const a = fornecedorFuncionario({ titulos, parceiros, motoristas });
+  conferir("freelancer para gente da folha: médio, risco financeiro", [a[0]?.severidade, a[0]?.categoria], ["MEDIA", "RISCO_FINANCEIRO"]);
+  conferir("título fala em passivo trabalhista", a[0]?.descricao.includes("passivo trabalhista"), true);
+}
+{
+  // "Processo Judicial" pago a quem continua ativo: médio, erro de processo.
+  const t = titulo({ parceiroCodigo: "F9", valorDocumentoCents: 2_930_00, categoriaCodigo: "2.04.56", categoriaDescricao: "Processo Judicial" });
+  const a = fornecedorFuncionario({ titulos: [t], parceiros: [parceiro()], motoristas: [motorista] });
+  conferir("acordo judicial a ativo: médio, processo", [a[0]?.severidade, a[0]?.categoria], ["MEDIA", "ERRO_PROCESSO"]);
+}
+{
   // R$ 10,00 em "Serviços Gráficos": reembolso, informativo.
   const t = titulo({ parceiroCodigo: "F9", parceiroNome: "JOAO MOTORISTA ME", valorDocumentoCents: 10_00, categoriaCodigo: "2.02.92", categoriaDescricao: "Serviços Gráficos" });
   const a = fornecedorFuncionario({ titulos: [t], parceiros: [parceiro()], motoristas: [motorista] });
@@ -483,6 +520,32 @@ const cadastros = (parceiros: Parceiro[]) =>
     parceiro({ id: "b", codigoOmie: "2", nome: "AUTO POSTO GAMA LTDA", documento: "11222333000262" } as Partial<Parceiro>),
   ]);
   conferir("matriz e filial: silêncio", a.length, 0);
+}
+
+// ---------------------------------------------------------- OP-CONSOLIDACAO
+console.log("\nOP-CONSOLIDACAO — folha não se cota, categoria concentrada já está consolidada");
+{
+  const pj = (nome: string, documento: string, valor: number, cat: [string, string]) =>
+    titulo({ parceiroNome: nome, parceiroDocumento: documento, parceiroCodigo: nome, valorDocumentoCents: valor, categoriaCodigo: cat[0], categoriaDescricao: cat[1], dataVencimento: d("2026-06-10") });
+  const consolidacao = (titulos: Titulo[]) => auditarOportunidades(contexto({ titulos })).filter((x) => x.regra === "OP-CONSOLIDACAO");
+  // Folha: 460 "fornecedores" em Salários não é compra pulverizada.
+  const folha = [1, 2, 3, 4, 5].map((i) => pj(`FUNCIONARIO ${i}`, `1234567890${i}`, 80_000_00, ["2.03.01", "Salários"]));
+  conferir("salários: silêncio", consolidacao(folha).length, 0);
+  // Combustível: 90% num cartão de abastecimento + cauda abaixo de 5x a
+  // materialidade (sem baixas no contexto, a materialidade é o piso de R$ 500).
+  const cartao = pj("TICKET", "11111111000111", 900_000_00, ["2.05.01", "Combustível"]);
+  const caudaPequena = [1, 2, 3, 4].map((i) => pj(`POSTO ${i}`, `2222222200010${i}`, 500_00, ["2.05.01", "Combustível"]));
+  conferir("categoria concentrada com cauda pequena: silêncio", consolidacao([cartao, ...caudaPequena]).length, 0);
+  // Combustível: 80% num cartão + cauda grande — aponta a cauda, não o total.
+  const caudaGrande = [1, 2, 3, 4].map((i) => pj(`POSTO ${i}`, `2222222200010${i}`, 100_000_00, ["2.05.01", "Combustível"]));
+  const a = consolidacao([cartao, ...caudaGrande]);
+  conferir("cauda grande: aponta", a.length, 1);
+  conferir("o valor é a cauda", a[0]?.valorCents, 400_000_00);
+  conferir("título fala da cauda", a[0]?.titulo.includes("fora do fornecedor principal"), true);
+  // Pulverizado de verdade: cinco oficinas com fatias parecidas.
+  const oficinas = [1, 2, 3, 4, 5].map((i) => pj(`OFICINA ${i}`, `3333333300010${i}`, 100_000_00, ["2.06.01", "Manutenção"]));
+  const b = consolidacao(oficinas);
+  conferir("pulverizado: aponta o total", b[0]?.valorCents, 500_000_00);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);

@@ -2,6 +2,7 @@ import { fmtBRL, fmtPercent } from "../format";
 import { inicioDoAno } from "../periodos";
 import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "../estrategiaCusto";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
+import { ehPessoaFisica } from "../documento";
 import { agrupar, chaveAchado, chaveParceiro, materialidadeCents, nomeParceiro, somar, titulosAtivos } from "./comum";
 
 // AGENTE DE OPORTUNIDADES
@@ -22,7 +23,7 @@ export const agenteOportunidades: Agente = {
   executar: buscarOportunidades,
 };
 
-function buscarOportunidades(ctx: ContextoAuditoria): AchadoNovo[] {
+export function buscarOportunidades(ctx: ContextoAuditoria): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
   const materialidade = materialidadeCents(ctx);
 
@@ -186,49 +187,85 @@ function tarifasBancarias(ctx: ContextoAuditoria, materialidade: number): Achado
 // OP-CONSOLIDACAO — varios fornecedores para a mesma categoria. Cada um com
 // seu preco, seu prazo e nenhum com volume suficiente para negociar.
 const MINIMO_FORNECEDORES_PARA_CONSOLIDAR = 4;
+// Categoria que não se negocia por cotação: folha, encargos, tributo,
+// juros, financiamento. "460 fornecedores em Salários" era a folha inteira
+// lida como compra pulverizada — cada funcionário um "fornecedor". Não há
+// cotação única para salário.
+const CATEGORIA_NAO_NEGOCIAVEL =
+  /sal[aá]rio|folha|pessoal|pr[oó]-labore|prolabore|rescis|f[eé]rias|13|banco de horas|hora extra|inss|fgts|encargo|imposto|tribut|taxa|contribui|iss\b|icms|pis|cofins|csll|irpj|irrf|simples|multa|juros|empr[eé]stimo|financiamento|cons[oó]rcio|leasing|parcelamento|judicial|processo|acordo|indeniza|dep[oó]sito|transfer[eê]ncia|aplica[cç][aã]o|resgate|distribui[cç][aã]o de lucro|dividendo/i;
+// Acima desta fatia, o maior fornecedor JÁ é a consolidação: 80% do
+// combustível num cartão de abastecimento não é volume pulverizado, é
+// exatamente o que a recomendação pediria. O que sobra para negociar é a
+// cauda — e é ela que precisa ser grande para valer o esforço.
+const FATIA_JA_CONSOLIDADA = 0.6;
 
 function consolidacaoDeFornecedores(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const inicio = inicioDoAno(ctx.dataReferencia);
-  const titulos = titulosAtivos(ctx, "PAGAR").filter((t) => t.dataVencimento >= inicio && t.categoriaCodigo);
+  // Pessoa física não entra: reembolso, diária e freelancer não são
+  // fornecimento cotável, e são eles que pulverizam a contagem.
+  const titulos = titulosAtivos(ctx, "PAGAR").filter(
+    (t) => t.dataVencimento >= inicio && t.categoriaCodigo && !ehPessoaFisica(t.parceiroDocumento)
+  );
   const porCategoria = agrupar(titulos, (t) => t.categoriaCodigo!);
 
   const achados: AchadoNovo[] = [];
   for (const [codigo, grupo] of porCategoria) {
-    const fornecedores = new Set(grupo.map((t) => chaveParceiro(t)));
-    if (fornecedores.size < MINIMO_FORNECEDORES_PARA_CONSOLIDAR) continue;
+    const nomeCategoria =
+      ctx.categorias.find((c) => c.codigo === codigo)?.descricao ?? grupo[0].categoriaDescricao ?? `categoria ${codigo}`;
+    if (CATEGORIA_NAO_NEGOCIAVEL.test(nomeCategoria)) continue;
+
+    const porFornecedor = [...agrupar(grupo, (t) => chaveParceiro(t))]
+      .map(([, itens]) => ({ nome: nomeParceiro(ctx, itens[0]), valor: somar(itens, (t) => t.valorDocumentoCents) }))
+      .sort((a, b) => b.valor - a.valor);
+    if (porFornecedor.length < MINIMO_FORNECEDORES_PARA_CONSOLIDAR) continue;
 
     const total = somar(grupo, (t) => t.valorDocumentoCents);
     if (total < materialidade * 5) continue;
 
-    const nomeCategoria =
-      ctx.categorias.find((c) => c.codigo === codigo)?.descricao ?? grupo[0].categoriaDescricao ?? `categoria ${codigo}`;
+    const maior = porFornecedor[0];
+    const fatiaDoMaior = maior.valor / total;
+    const jaConsolidada = fatiaDoMaior >= FATIA_JA_CONSOLIDADA;
+    // O que dá para negociar: tudo, quando é pulverizado; só a cauda, quando
+    // o maior já concentra. A cauda precisa valer a pena sozinha.
+    const negociavel = jaConsolidada ? total - maior.valor : total;
+    if (negociavel < materialidade * 5) continue;
 
     // Ranking interno da categoria, para a recomendacao ser acionavel
     // (com quem falar primeiro) em vez de generica.
-    const ranking = [...agrupar(grupo, (t) => chaveParceiro(t))]
-      .map(([, itens]) => ({ nome: nomeParceiro(ctx, itens[0]), valor: somar(itens, (t) => t.valorDocumentoCents) }))
-      .sort((a, b) => b.valor - a.valor)
-      .slice(0, 5);
+    const ranking = porFornecedor.slice(0, 5);
 
     achados.push({
       regra: "OP-CONSOLIDACAO",
       tipo: "ESTADO",
       severidade: "BAIXA",
       categoria: "OPORTUNIDADE",
-      titulo: `${fornecedores.size} fornecedores diferentes em ${nomeCategoria}`,
+      titulo: jaConsolidada
+        ? `${fmtBRL(negociavel)} fora do fornecedor principal em ${nomeCategoria}`
+        : `${porFornecedor.length} fornecedores diferentes em ${nomeCategoria}`,
       descricao:
-        `${fmtBRL(total)} gastos no ano nessa categoria, distribuídos entre ${fornecedores.size} fornecedores. ` +
+        `${fmtBRL(total)} gastos no ano nessa categoria, distribuídos entre ${porFornecedor.length} fornecedores. ` +
         `Maiores: ${ranking.map((r) => `${r.nome} (${fmtBRL(r.valor)})`).join(", ")}. ` +
-        `Volume pulverizado é volume sem poder de negociação — e sem parâmetro de preço entre os próprios fornecedores.`,
-      recomendacao:
-        "Levantar o preço unitário praticado por cada um e fazer uma cotação única com o volume anual consolidado. " +
-        "Concentrar em dois fornecedores (um principal e um reserva) costuma render de 5% a 15% sem perder segurança de fornecimento.",
-      valorCents: total,
-      impactoCents: Math.round(total * 0.07),
+        (jaConsolidada
+          ? `${fmtPercent(fatiaDoMaior * 100)} já estão concentrados em ${maior.nome} — a categoria está consolidada. ` +
+            `A oportunidade é a cauda: ${fmtBRL(negociavel)} espalhados por ${porFornecedor.length - 1} fornecedores fora do acordo principal.`
+          : `Volume pulverizado é volume sem poder de negociação — e sem parâmetro de preço entre os próprios fornecedores.`),
+      recomendacao: jaConsolidada
+        ? `Levar a cauda para dentro do acordo principal: conferir por que ${porFornecedor.length - 1} fornecedores ainda são usados fora dele (rota sem cobertura, emergência, hábito) e fechar as exceções.`
+        : "Levantar o preço unitário praticado por cada um e fazer uma cotação única com o volume anual consolidado. " +
+          "Concentrar em dois fornecedores (um principal e um reserva) costuma render de 5% a 15% sem perder segurança de fornecimento.",
+      valorCents: negociavel,
+      impactoCents: Math.round(negociavel * 0.07),
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieCategoria",
       entidadeRef: nomeCategoria,
-      evidencia: { categoria: nomeCategoria, fornecedores: fornecedores.size, total, ranking },
+      evidencia: {
+        categoria: nomeCategoria,
+        fornecedores: porFornecedor.length,
+        total,
+        fatiaDoMaior: fmtPercent(fatiaDoMaior * 100),
+        negociavel,
+        ranking,
+      },
       chave: chaveAchado("OP-CONSOLIDACAO", codigo, String(ctx.dataReferencia.getFullYear())),
     });
   }

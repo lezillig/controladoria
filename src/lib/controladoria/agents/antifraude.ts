@@ -482,13 +482,28 @@ function fracionamentoDeAlcada(ctx: ContextoAuditoria, materialidade: number): A
 // interesse tem o tamanho de um serviço contratado.
 const TETO_DE_REEMBOLSO = 1_000_00;
 const CATEGORIA_DE_ROTINA_DE_MOTORISTA =
-  /di[aá]ria|adiantamento|reembolso|ped[aá]gio|viagem|despesa de viagem|acerto|vale|ajuda de custo|sal[aá]rio|folha|rescis|f[eé]rias|13|pr[oó]-labore|prolabore/i;
+  /di[aá]ria|adiantamento|reembolso|ped[aá]gio|viagem|despesa de viagem|acerto|vale|ajuda de custo|sal[aá]rio|folha|rescis|f[eé]rias|13|pr[oó]-labore|prolabore|banco de horas|hora[s]? extra|bonifica|premia|pr[eê]mio|comiss|gratifica|benef[ií]cio|plano de sa[uú]de|conv[eê]nio|uniforme|exame|treinamento|cesta|pessoal|recursos humanos|\brh\b|encargos|inss|fgts|pens[aã]o|estagi/i;
 
 function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const cpfsFuncionarios = new Map(
     ctx.motoristas.filter((m) => m.cpf).map((m) => [m.cpf.replace(/\D/g, ""), m])
   );
   const descricaoDaCategoria = new Map(ctx.categorias.map((c) => [`${c.conexaoId}|${c.codigo}`, c.descricao]));
+  // O GRUPO da categoria diz mais que o nome dela. "Banco de Horas" não está
+  // em lista nenhuma de rotina, mas mora em 2.03, o grupo de despesas com
+  // pessoal, ao lado de "Rescisão" e "Vale Alimentação". Subir a árvore de
+  // categorias e olhar o nome do pai é o que faz a regra reconhecer o grupo
+  // inteiro sem precisar listar cada filha.
+  const categoriaPorCodigo = new Map(ctx.categorias.map((c) => [`${c.conexaoId}|${c.codigo}`, c]));
+  const caminhoDaCategoria = (conexaoId: string, codigo: string | null): string => {
+    const nomes: string[] = [];
+    let atual = codigo ? categoriaPorCodigo.get(`${conexaoId}|${codigo}`) : undefined;
+    for (let passos = 0; atual && passos < 6; passos++) {
+      nomes.push(atual.descricao);
+      atual = atual.categoriaSuperior ? categoriaPorCodigo.get(`${conexaoId}|${atual.categoriaSuperior}`) : undefined;
+    }
+    return nomes.join(" > ");
+  };
 
   type Linha = {
     p: ContextoAuditoria["parceiros"][number];
@@ -497,7 +512,10 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     valor: number;
     maiorTitulo: number;
   };
-  const porEmpresaECategoria = new Map<string, { apelido: string; categoriaCodigo: string | null; categoria: string; linhas: Linha[] }>();
+  const porEmpresaECategoria = new Map<
+    string,
+    { apelido: string; categoriaCodigo: string | null; categoria: string; caminho: string; linhas: Linha[] }
+  >();
 
   for (const p of ctx.parceiros) {
     if (!p.documento) continue;
@@ -524,6 +542,7 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
         apelido: p.conexaoApelido,
         categoriaCodigo: categoriaCodigo || null,
         categoria: descricao,
+        caminho: caminhoDaCategoria(p.conexaoId, categoriaCodigo || null) || descricao,
         linhas: [],
       };
       grupo.linhas.push({
@@ -550,7 +569,8 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     // contratado, não de uma nota de papelaria.
     const maiorTitulo = Math.max(...g.linhas.map((l) => l.maiorTitulo));
     const reembolso = maiorTitulo <= TETO_DE_REEMBOLSO;
-    const rotina = CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.categoria) || reembolso;
+    const categoriaDeRotina = CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.caminho);
+    const rotina = categoriaDeRotina || reembolso;
     // RESCISÃO PAGA A QUEM AINDA CONSTA ATIVO. A evidência real: sete
     // rescisões, seis delas para motoristas que o cadastro ainda mostra em
     // atividade. Ou o desligamento não foi registrado na gestão (e o cadastro
@@ -558,39 +578,69 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     // rescisão a quem não saiu. Nos dois casos é o cruzamento que interessa.
     const rescisao = /rescis/i.test(g.categoria);
     const ativosComRescisao = rescisao ? g.linhas.filter((l) => l.funcionario.active) : [];
+    // PAGAMENTO POR FORA DA FOLHA. "Freelancer" com 34 pessoas da folha e 108
+    // títulos no ano não é 34 conflitos de interesse: é a viagem extra, a
+    // hora a mais, o fim de semana, pagos como se fossem de autônomo a quem
+    // é CLT. Não é fraude de uma pessoa, é passivo trabalhista da empresa —
+    // cada real pago assim reflete em férias, 13º, FGTS e INSS, e uma
+    // reclamação trabalhista cobra o retroativo com o dobro.
+    const porFora = !rotina && /free ?lancer|aut[oô]nomo|\brpa\b|extra|bico|avulso|tempor[aá]rio|di[aá]rista/i.test(g.caminho);
+    // ACORDO JUDICIAL PAGO A QUEM CONTINUA NA FOLHA. Doze parcelas de
+    // "Processo Judicial" para um motorista ativo: acordo trabalhista com
+    // quem não saiu. Não é conflito de interesse nem fraude — é o RH que
+    // precisa saber que a pessoa que processou a empresa continua nela.
+    const judicial = /judicial|processo|acordo|indeniza/i.test(g.caminho);
+    const ativosComAcordo = judicial ? g.linhas.filter((l) => l.funcionario.active) : [];
 
     achados.push({
       regra: "FR-FORNECEDOR-FUNCIONARIO",
       tipo: "ESTADO",
       severidade:
-        ativosComRescisao.length > 0
+        ativosComRescisao.length > 0 || ativosComAcordo.length > 0
           ? "MEDIA"
-          : rotina
-            ? "INFO"
-            : valor >= materialidade
-              ? agravar(severidadePorValor(valor, materialidade))
-              : "BAIXA",
-      categoria: rotina ? "ERRO_PROCESSO" : "FRAUDE",
-      titulo: `${pessoas} funcionário(s) recebem pelo contas a pagar em "${g.categoria}" (${g.apelido})`,
+          : porFora && pessoas >= 3
+            ? "MEDIA"
+            : rotina
+              ? "INFO"
+              : valor >= materialidade
+                ? agravar(severidadePorValor(valor, materialidade))
+                : "BAIXA",
+      categoria: rotina || judicial ? "ERRO_PROCESSO" : porFora ? "RISCO_FINANCEIRO" : "FRAUDE",
+      titulo: porFora
+        ? `${pessoas} pessoa(s) da folha pagas como "${g.categoria}" (${g.apelido})`
+        : `${pessoas} funcionário(s) recebem pelo contas a pagar em "${g.categoria}" (${g.apelido})`,
       descricao:
         `${pessoas} fornecedor(es) com o mesmo CPF de gente da folha receberam ${titulos} título(s) a pagar, ` +
         `somando ${fmtBRL(valor)}, lançados na categoria "${g.categoria}". ` +
-        (reembolso && !CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.categoria)
-          ? `Nenhum título passa de ${fmtBRL(TETO_DE_REEMBOLSO)}: é reembolso de despesa (o funcionário pagou e foi ressarcido), lançado na categoria da despesa, como deve. Não é conflito de interesse.`
-          : rotina
-            ? "Categoria de rotina de pessoal (diária, adiantamento, reembolso, folha): é o processo normal da operação, não conflito de interesse. Fica registrado para a política de conflito cobrir o caso."
-            : `Categoria de fornecedor comum paga a pessoa da própria folha, com título de até ${fmtBRL(maiorTitulo)}: serviço que a empresa já remunera via folha é risco trabalhista e fiscal, e pagamento a si mesmo é o caminho mais curto para fraude.`) +
+        (porFora
+          ? `É pagamento por fora da folha: viagem extra, hora a mais ou fim de semana pagos como autônomo a quem é CLT. ` +
+            `Cada real pago assim reflete em férias, 13º, FGTS e INSS que não foram recolhidos — passivo trabalhista que uma ` +
+            `reclamação cobra em dobro, com retroativo.`
+          : judicial
+            ? `Acordo ou condenação judicial pago em parcelas a pessoa da folha.`
+            : reembolso && !categoriaDeRotina
+              ? `Nenhum título passa de ${fmtBRL(TETO_DE_REEMBOLSO)}: é reembolso de despesa (o funcionário pagou e foi ressarcido), lançado na categoria da despesa, como deve. Não é conflito de interesse.`
+              : rotina
+                ? "Categoria de rotina de pessoal (diária, adiantamento, reembolso, folha): é o processo normal da operação, não conflito de interesse. Fica registrado para a política de conflito cobrir o caso."
+                : `Categoria de fornecedor comum paga a pessoa da própria folha, com título de até ${fmtBRL(maiorTitulo)}: serviço que a empresa já remunera via folha é risco trabalhista e fiscal, e pagamento a si mesmo é o caminho mais curto para fraude.`) +
         (ativosComRescisao.length > 0
           ? ` ATENÇÃO: ${ativosComRescisao.length} de ${pessoas} receberam rescisão e ainda constam ATIVOS no cadastro de motoristas — ` +
             `ou o desligamento não foi registrado na gestão, ou a rescisão foi paga a quem não saiu.`
+          : "") +
+        (ativosComAcordo.length > 0
+          ? ` ${ativosComAcordo.length} de ${pessoas} ainda consta(m) ATIVO(S) no cadastro: a pessoa que acionou a empresa continua trabalhando nela.`
           : ""),
       recomendacao:
         ativosComRescisao.length > 0
           ? "Conferir na gestão de motoristas o desligamento de cada nome marcado como ativo na evidência: registrar a saída de quem saiu; apurar com o RH a rescisão de quem continua trabalhando."
-          : rotina
-            ? "Nenhuma ação sobre os pagamentos. Vale só formalizar: política escrita de diária/adiantamento e conferência amostral dos comprovantes."
-            : "Verificar a natureza de cada pagamento da lista e se há autorização formal para contratar pessoa da própria folha. " +
-              "Havendo, registrar a declaração de conflito de interesse; não havendo, suspender novos pagamentos até a apuração.",
+          : porFora
+            ? "Levar a lista ao RH e ao contador: o que for hora extra ou viagem extra de empregado precisa entrar na folha (com os encargos), não no contas a pagar. Estimar o passivo do que já foi pago assim e decidir se regulariza."
+            : judicial
+              ? "Confirmar com o jurídico e o RH que o acordo está registrado e que a continuidade do vínculo é intencional. Se a pessoa foi desligada, atualizar o cadastro de motoristas."
+              : rotina
+                ? "Nenhuma ação sobre os pagamentos. Vale só formalizar: política escrita de diária/adiantamento e conferência amostral dos comprovantes."
+                : "Verificar a natureza de cada pagamento da lista e se há autorização formal para contratar pessoa da própria folha. " +
+                  "Havendo, registrar a declaração de conflito de interesse; não havendo, suspender novos pagamentos até a apuração.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieCategoria",
@@ -599,6 +649,7 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
         empresa: g.apelido,
         categoria: g.categoria,
         categoriaCodigo: g.categoriaCodigo,
+        grupoDaCategoria: g.caminho,
         pessoas,
         titulos,
         total: valor,
