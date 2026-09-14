@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
+import { fimDoDia } from "@/lib/controladoria/periodos";
+import { fmtData } from "@/lib/controladoria/format";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { recalcularPendentes } from "@/lib/controladoria/historico";
@@ -471,16 +473,25 @@ export async function reabrirAuditoria(): Promise<{ mensagens: string[] }> {
     };
   }
 
+  // A MESMA IDENTIDADE QUE O CICLO USA PARA RECUSAR A SEGUNDA CONSOLIDAÇÃO.
+  //
+  // obterOuCriarRun reconhece a consolidação do dia por (conexaoId nulo, não
+  // backfill, janelaFim = fim do dia da data de referência) — e é ESSA linha
+  // que faz "Sincronizar agora" responder "ciclo do dia já concluído". A
+  // versão anterior procurava por outro critério, "iniciada hoje", e os dois
+  // não coincidem sempre: a consolidação que bloqueava o ciclo não era
+  // encontrada, o botão dizia "não havia consolidação" e o ciclo, em seguida,
+  // dizia que já estava concluído. Apagar pela janela remove exatamente o que
+  // bloqueia; as consolidações de outros dias continuam intactas, porque têm
+  // outra janelaFim.
+  const janelaFim = fimDoDia(dataReferenciaPadrao());
   const apagadas = await prisma.omieSyncRun.deleteMany({
     where: {
       companyId: session.companyId,
       conexaoId: null,
       backfill: false,
       status: { in: ["CONCLUIDO", "ERRO"] },
-      // Só a consolidação de HOJE. As anteriores são histórico de execução e
-      // apagá-las tiraria da tela de sincronização o registro de que o ciclo
-      // rodou nos dias passados.
-      iniciadoEm: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
+      janelaFim,
     },
   });
 
@@ -502,7 +513,7 @@ export async function reabrirAuditoria(): Promise<{ mensagens: string[] }> {
             "Clique em Sincronizar agora: o ciclo vai direto para a fase de auditoria, sobre a base como ela está agora.",
           ]
         : [
-            "Não havia consolidação concluída hoje — a auditoria já vai rodar no próximo Sincronizar agora.",
+            `Não havia consolidação para a referência ${fmtData(janelaFim)} — a auditoria já vai rodar no próximo Sincronizar agora.`,
           ],
   };
 }

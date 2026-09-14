@@ -95,7 +95,12 @@ export async function executarPasso(params: {
   }
 
   const run = await obterOuCriarRun(companyId, utilizaveis, dataReferencia, config.dataInicioBase);
-  if (!run) return nadaAFazer("Ciclo do dia já concluído para todas as conexões.");
+  if (!run) {
+    return nadaAFazer(
+      `Ciclo do dia já concluído para todas as conexões (referência ${dataReferencia.toLocaleDateString("pt-BR")}). ` +
+        "Para auditar de novo sobre a base atual, use \"Rodar a auditoria de novo\" e depois Sincronizar agora."
+    );
+  }
 
   const conexao = run.conexaoId ? utilizaveis.find((c) => c.id === run.conexaoId) ?? null : null;
   const detalhes: string[] = [];
