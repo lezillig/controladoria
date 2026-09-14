@@ -469,6 +469,23 @@ model OmieTitulo {
   observacao     String?
   origem         String?
   alteradoEmOmie DateTime?
+  // QUEM E QUANDO, na Omie. Vem do bloco `info` de pesquisartitulos quando o
+  // pedido leva `lDadosCad: true`: usuário que incluiu e que alterou o título,
+  // e a data real de inclusão. É o dado que sustenta a segregação de funções
+  // (quem lança não paga) e o "alterado depois de pago" — antes disso, a
+  // regra do doc ("quem cadastra nunca aprova") era uma frase sem teste.
+  usuarioInclusao  String?
+  usuarioAlteracao String?
+  dataInclusaoOmie DateTime?
+  // Chave da NF-e/CT-e de origem (`cChaveNFe`), origem do lançamento
+  // (`cOrigem`: MANP/MANR manual, NFEP/NFER por nota, OFXP por extrato...),
+  // contrato de serviço e ordem de serviço a que o título pertence. A chave
+  // dispensa o casamento por valor e data na conferência de CT-e; a origem é
+  // o primeiro filtro de risco (lançamento manual sem documento).
+  chaveNfe           String?
+  origemLancamento   String?
+  contratoCodigo     String?
+  ordemServicoCodigo String?
   sincronizadoEm DateTime  @default(now())
 
   baixas OmieBaixa[]
@@ -511,6 +528,11 @@ model OmieBaixa {
   contaCorrenteCodigo String?
   observacao          String?
   liquidaTitulo       Boolean     @default(true)
+  // `nIdLancCC` da Omie: o lançamento na conta corrente que esta baixa gerou.
+  // É a ligação DETERMINÍSTICA entre a baixa e a linha do extrato
+  // (OmieMovimento.codigoLancamento) — sem ela, a conciliação casa por valor
+  // e data, e duas baixas iguais no mesmo dia viram uma.
+  lancamentoCCCodigo  String?
   sincronizadoEm      DateTime    @default(now())
 
   @@unique([conexaoId, chave])

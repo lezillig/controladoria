@@ -2,7 +2,15 @@ import { fmtBRL, fmtData, fmtDocumento, fmtPercent } from "../format";
 import { diasEntre, ehDiaNaoUtil, inicioDoMes } from "../periodos";
 import { documentoValido, ehPessoaFisica, normalizarRazaoSocial } from "../documento";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
-import { cadastradoEPago, contaBancariaCompartilhada, notaRepetida, notaSequencial, valoresRedondos } from "./antifraudeFornecedor";
+import {
+  cadastradoEPago,
+  contaBancariaCompartilhada,
+  editadoAposBaixa,
+  lancamentoManualSemDocumento,
+  notaRepetida,
+  notaSequencial,
+  valoresRedondos,
+} from "./antifraudeFornecedor";
 import {
   agravar,
   agrupar,
@@ -82,6 +90,10 @@ export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...cadastradoEPago(ctx, materialidade));
   achados.push(...valoresRedondos(ctx, materialidade));
   achados.push(...notaSequencial(ctx, materialidade));
+  // O operador (bloco `info` da Omie): título alterado depois de pago e
+  // lançamento manual sem documento.
+  achados.push(...editadoAposBaixa(ctx, materialidade));
+  achados.push(...lancamentoManualSemDocumento(ctx, materialidade));
 
   return achados;
 }

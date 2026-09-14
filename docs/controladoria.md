@@ -113,6 +113,20 @@ o caso legítimo que preserva (`scripts/teste-desvios.ts`):
 | `CB-ENTRADA-SEM-TITULO` | Crédito no extrato sem título a receber nem baixa casável — receita que o sistema não conhece | Transferência entre contas do grupo (par débito/crédito em ±1 dia), resgate, rendimento, estorno, tarifa |
 | `CR-JUROS-NAO-COBRADOS` | Cliente que pagou 30+ dias depois do vencimento com juros e multa zerados; um achado por cliente e trimestre; impacto = custo do atraso a 1% a.m.; cita a Lei 14.133 (art. 92 V) para tomador público | Atraso com encargo cobrado, juros abaixo de ¼ da materialidade |
 | `HI-FORNECEDOR-DORMENTE` | Relação antiga (3+ meses ativos), 12+ meses sem título, volta no mês corrente ou anterior com valor ≥ materialidade | Quem acordou há mais de um mês, quem nunca teve relação |
+| `FR-EDITADO-APOS-BAIXA` | Título a pagar liquidado e alterado na Omie mais de 2 dias depois da baixa, com o usuário que alterou (bloco `info`, pedido com `lDadosCad`) | Alteração no dia da baixa, título sem usuário de alteração (a conta não devolve o bloco) |
+| `FR-LANCAMENTO-MANUAL` | Títulos a pagar de origem manual (`cOrigem` MANP) sem número de nota, por usuário e mês, somando ≥ materialidade | Título nascido de nota (NFEP) ou de extrato, manual com número de nota |
+
+**O que a Omie passou a entregar ao espelho** (migração `20260914160000`): no
+título, `usuarioInclusao`/`usuarioAlteracao`/`dataInclusaoOmie` (bloco `info`,
+com `lDadosCad: true` — se a conta recusar a tag, o sync refaz o pedido sem ela
+e segue), `chaveNfe` (chave da NF-e/CT-e de origem), `origemLancamento`
+(`cOrigem`), `contratoCodigo`, `ordemServicoCodigo`; na baixa,
+`lancamentoCCCodigo` (`nIdLancCC`), a ligação exata com a linha do extrato. O
+extrato bancário lê o array oficial `listaMovimentos` (as grafias anteriores
+eram chute — a resposta chegava cheia e ninguém a lia), ignora as linhas de
+SALDO e as PREVISTAS, e traz `cSituacao` ("Conciliado"/"Não conciliado"),
+`dDataConciliacao`, `cDocumentoFiscal` e `nCodLancRelac`. As linhas já
+espelhadas só ganham esses campos quando a janela delas for relida.
 
 ### Camada 2 — Supervisor
 

@@ -79,6 +79,7 @@ export type BaixaNormalizada = {
   contaCorrenteCodigo: string | null;
   observacao: string | null;
   liquidaTitulo: boolean;
+  lancamentoCCCodigo: string | null;
 };
 
 export type TituloNormalizado = {
@@ -124,6 +125,13 @@ export type TituloNormalizado = {
   observacao: string | null;
   origem: string | null;
   alteradoEmOmie: Date | null;
+  usuarioInclusao: string | null;
+  usuarioAlteracao: string | null;
+  dataInclusaoOmie: Date | null;
+  chaveNfe: string | null;
+  origemLancamento: string | null;
+  contratoCodigo: string | null;
+  ordemServicoCodigo: string | null;
   baixas: BaixaNormalizada[];
 };
 

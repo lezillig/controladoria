@@ -222,9 +222,14 @@ function baixaSemMovimento(ctx: ContextoAuditoria, materialidade: number): Achad
   const baixas = ctx.baixas.filter((b) => b.dataBaixa >= inicio && b.dataBaixa <= limite);
   const movimentos = ctx.movimentos;
 
+  // Primeiro pelo código do lançamento na conta corrente (nIdLancCC da baixa
+  // = nCodLancamento da linha do extrato): é o casamento exato. Só quem não
+  // tem o código cai no casamento por valor e data.
+  const codigosNoExtrato = new Set(movimentos.map((m) => m.codigoLancamento));
   const semMovimento = baixas.filter(
     (b) =>
       Math.abs(b.valorCents) >= materialidade &&
+      !(b.lancamentoCCCodigo && codigosNoExtrato.has(b.lancamentoCCCodigo)) &&
       !movimentos.some(
         (m) =>
           Math.abs(Math.abs(m.valorCents) - Math.abs(b.valorCents)) <= TOLERANCIA_CENTAVOS &&

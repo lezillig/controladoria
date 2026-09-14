@@ -401,3 +401,131 @@ export function notaSequencial(ctx: ContextoAuditoria, materialidade: number): A
 }
 
 export type { OmieParceiro, OmieTitulo };
+
+// ---------------------------------------------------------------------------
+// O OPERADOR — o que o bloco `info` da Omie permite ver
+// ---------------------------------------------------------------------------
+// Com `lDadosCad`, cada título traz quem o incluiu, quem o alterou e quando.
+// As duas regras abaixo só existem quando esse dado veio (título com
+// `usuarioInclusao`/`usuarioAlteracao`); sem ele, ficam caladas — e a tela
+// de sincronização ("Testar integração") mostra se a conta devolve o bloco.
+
+// FR-EDITADO-APOS-BAIXA — o título mudou depois de pago.
+//
+// Um título liquidado é fato encerrado. Alteração dias depois da baixa
+// (fornecedor, valor, categoria, conta — a Omie não diz o quê, só quem e
+// quando) é o que se faz para esconder um pagamento: muda-se o beneficiário
+// ou a categoria depois que o dinheiro saiu. Dois dias de folga cobrem a
+// própria baixa e a conciliação bumping a data de alteração.
+const DIAS_DE_FOLGA_APOS_BAIXA = 2;
+
+export function editadoAposBaixa(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const achados: AchadoNovo[] = [];
+  const editados = titulosAtivos(ctx, "PAGAR").filter(
+    (t) =>
+      t.liquidado &&
+      t.dataUltimaBaixa !== null &&
+      t.alteradoEmOmie !== null &&
+      t.usuarioAlteracao !== null &&
+      diasEntre(t.dataUltimaBaixa, t.alteradoEmOmie) > DIAS_DE_FOLGA_APOS_BAIXA &&
+      t.valorPagoCents >= materialidade / 2
+  );
+  for (const t of editados) {
+    const dias = diasEntre(t.dataUltimaBaixa as Date, t.alteradoEmOmie as Date);
+    const nome = nomeParceiro(ctx, t);
+    achados.push({
+      regra: "FR-EDITADO-APOS-BAIXA",
+      tipo: "EVENTO",
+      severidade: severidadePorValor(t.valorPagoCents, materialidade) === "BAIXA" ? "MEDIA" : agravar(severidadePorValor(t.valorPagoCents, materialidade)),
+      categoria: "FRAUDE",
+      titulo: `${referenciaTitulo(t)} (${nome}) alterado ${dias} dias depois de pago`,
+      descricao:
+        `O título foi baixado em ${fmtData(t.dataUltimaBaixa)} (${fmtBRL(t.valorPagoCents)}) e alterado na Omie em ` +
+        `${fmtData(t.alteradoEmOmie)} por ${t.usuarioAlteracao}. Título pago é fato encerrado: o que muda depois ` +
+        `(fornecedor, valor, categoria, conta) precisa de motivo registrado.`,
+      recomendacao:
+        "Abrir o histórico do título na Omie e ver o que foi alterado. Se foi o beneficiário ou o valor, comparar com o " +
+        "comprovante do pagamento; se foi a categoria, confirmar com quem aprovou. Registrar a justificativa.",
+      valorCents: t.valorPagoCents,
+      dataReferencia: t.alteradoEmOmie as Date,
+      entidadeTipo: "OmieTitulo",
+      entidadeId: t.id,
+      entidadeRef: referenciaTitulo(t),
+      evidencia: {
+        fornecedor: nome,
+        pagoEm: fmtData(t.dataUltimaBaixa),
+        alteradoEm: fmtData(t.alteradoEmOmie),
+        diasDepois: dias,
+        alteradoPor: t.usuarioAlteracao,
+        incluidoPor: t.usuarioInclusao ?? "—",
+        valor: t.valorPagoCents,
+      },
+      chave: chaveAchado("FR-EDITADO-APOS-BAIXA", t.conexaoApelido, t.codigoLancamento, (t.alteradoEmOmie as Date).toISOString().slice(0, 10)),
+    });
+  }
+  return achados;
+}
+
+// FR-LANCAMENTO-MANUAL — título a pagar digitado à mão, sem documento.
+//
+// `cOrigem` diz de onde o título nasceu: NFEP veio de nota, OFXP do extrato,
+// MANP foi digitado. Lançamento manual não é errado — é onde o controle é
+// mais fraco, e por isso o teste clássico de "manual journal entries". Um
+// achado por usuário e mês, com os títulos manuais SEM número de documento
+// e acima da metade da materialidade.
+const ORIGEM_MANUAL = /^MAN[PR]$/i;
+
+export function lancamentoManualSemDocumento(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const achados: AchadoNovo[] = [];
+  const manuais = titulosAtivos(ctx, "PAGAR").filter(
+    (t) =>
+      t.origemLancamento !== null &&
+      ORIGEM_MANUAL.test(t.origemLancamento) &&
+      !numeroDaNota(t.numeroDocumento) &&
+      t.valorDocumentoCents >= materialidade / 2
+  );
+  const mes = (t: OmieTitulo) => {
+    const d = t.dataInclusaoOmie ?? t.dataEmissao ?? t.dataVencimento;
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+  for (const [chave, lista] of agrupar(manuais, (t) => `${t.conexaoApelido}|${t.usuarioInclusao ?? "?"}|${mes(t)}`)) {
+    const [empresa, usuario, competencia] = chave.split("|");
+    const valor = somar(lista, (t) => t.valorDocumentoCents);
+    if (valor < materialidade) continue;
+    achados.push({
+      regra: "FR-LANCAMENTO-MANUAL",
+      tipo: "EVENTO",
+      severidade: severidadePorValor(valor, materialidade),
+      categoria: "RISCO_FINANCEIRO",
+      titulo: `${empresa}: ${lista.length} título(s) a pagar lançados à mão sem documento por ${usuario} em ${competencia}`,
+      descricao:
+        `${fmtBRL(valor)} em títulos com origem manual (MANP) e sem número de nota, incluídos por ${usuario}. ` +
+        `Título que não nasce de nota nem de extrato depende só de quem o digitou — é a classe de lançamento em que a ` +
+        `conferência precisa ser por amostra, todo mês.`,
+      recomendacao:
+        "Pedir o documento de suporte (nota, contrato, recibo) de cada título listado e conferir quem aprovou o pagamento. " +
+        "Fornecedor recorrente lançado à mão deveria entrar por nota.",
+      valorCents: valor,
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "Usuario",
+      entidadeId: `${empresa}|${usuario}`,
+      entidadeRef: usuario,
+      evidencia: {
+        empresa,
+        usuario,
+        competencia,
+        quantidade: lista.length,
+        valor,
+        titulos: lista.slice(0, 20).map((t) => ({
+          ref: referenciaTitulo(t),
+          fornecedor: nomeParceiro(ctx, t),
+          categoria: t.categoriaDescricao ?? "",
+          valor: t.valorDocumentoCents,
+          pago: t.valorPagoCents,
+        })),
+      },
+      chave: chaveAchado("FR-LANCAMENTO-MANUAL", empresa, usuario, competencia),
+    });
+  }
+  return achados;
+}

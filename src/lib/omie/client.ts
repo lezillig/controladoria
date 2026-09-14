@@ -77,7 +77,11 @@ export const OMIE_ENDPOINTS = {
   // (OFX, CNAB ou Open Finance). Nao e paginado — a janela de datas limita o
   // volume. Vem vazio quando a empresa nao importa extrato, e vazio aqui NAO
   // significa que nao ha movimento bancario (ver `lancamentos` abaixo).
-  extrato: { path: "financas/extrato/", call: "ListarExtrato", listKey: ["listaExtrato", "extrato"] },
+  // `listaMovimentos` é o nome OFICIAL do array de resposta (EccListarExtrato
+  // Response, confirmado em seis integrações públicas). As duas grafias
+  // anteriores eram chute — e é por isso que o extrato "voltava vazio": a
+  // resposta chegava com 200 e uma lista cheia que ninguém lia.
+  extrato: { path: "financas/extrato/", call: "ListarExtrato", listKey: ["listaMovimentos", "listaExtrato", "extrato"] },
   // LANCAMENTOS DE CONTA CORRENTE — os avulsos.
   //
   // A Omie tem dois conceitos que parecem o mesmo e nao sao: o EXTRATO, acima

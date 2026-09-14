@@ -170,7 +170,7 @@ const SONDAS: Sonda[] = [
       path: "financas/extrato/",
       call: "ListarExtrato",
       callsAlternativos: ["ListarExtratoCC", "ObterExtrato", "ConsultarExtrato"],
-      listKey: ["listaExtrato", "extrato", "extratoLista", "lancamentos"],
+      listKey: ["listaMovimentos", "listaExtrato", "extrato", "extratoLista", "lancamentos"],
     },
     param: (_de, ate, conta) => {
       const inicio = new Date();
@@ -256,14 +256,17 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
       chave: "titulosPagar",
       rotulo: "Títulos a pagar",
       endpoint: OMIE_ENDPOINTS.titulos,
-      param: { nPagina: 1, nRegPorPagina: REGISTROS_DE_AMOSTRA, cNatureza: "P", dDtEmisDe: de, dDtEmisAte: ate },
+      // `lDadosCad` pede o bloco `info` (usuário e data de inclusão/alteração).
+      // Se a conta recusar a tag, a sonda abaixo mostra a recusa e o sync
+      // segue sem ela (ver buscarTitulos em sync.ts).
+      param: { nPagina: 1, nRegPorPagina: REGISTROS_DE_AMOSTRA, cNatureza: "P", dDtEmisDe: de, dDtEmisAte: ate, lDadosCad: true },
       normalizar: (b) => normalizarTitulo(b, "PAGAR"),
     },
     {
       chave: "titulosReceber",
       rotulo: "Títulos a receber",
       endpoint: OMIE_ENDPOINTS.titulos,
-      param: { nPagina: 1, nRegPorPagina: REGISTROS_DE_AMOSTRA, cNatureza: "R", dDtEmisDe: de, dDtEmisAte: ate },
+      param: { nPagina: 1, nRegPorPagina: REGISTROS_DE_AMOSTRA, cNatureza: "R", dDtEmisDe: de, dDtEmisAte: ate, lDadosCad: true },
       normalizar: (b) => normalizarTitulo(b, "RECEBER"),
     },
     {

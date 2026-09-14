@@ -394,8 +394,11 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
       descontoCents: centsOuZero(lanc, "nDesconto", "desconto", "nValDesconto"),
       tarifaCents: centsOuZero(lanc, "nTarifa", "nValTarifa", "tarifa"),
       contaCorrenteCodigo: str(lanc, "nCodCC", "codigo_conta_corrente"),
-      observacao: str(lanc, "cObs", "observacao", "cObsBaixa"),
+      observacao: str(lanc, "cObsLanc", "cObs", "observacao", "cObsBaixa"),
       liquidaTitulo: bool(lanc, "cLiqTitulo", "liquida_titulo") ?? true,
+      // `nIdLancCC`: o lançamento na conta corrente gerado por esta baixa —
+      // a chave que a linha do extrato (`nCodLancamento`) também carrega.
+      lancamentoCCCodigo: str(lanc, "nIdLancCC", "nCodLancCC"),
     });
   }
 
@@ -422,6 +425,10 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
   const saldoCents = cents(resumo, "nValAberto", "saldo", "valor_saldo");
 
   const departamentos = arr(bruto, "departamentos", "distribuicao", "cDadosDepto");
+  // Bloco `info` (só quando o pedido leva `lDadosCad: true`): quem incluiu e
+  // quem alterou, com as datas. Ausente, os campos ficam nulos — e as regras
+  // que dependem deles ficam caladas, em vez de inventar.
+  const info = obj(bruto, "info", "infoCadastro") ?? obj(cabec, "info") ?? {};
 
   return {
     natureza,
@@ -475,7 +482,14 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
     cancelado: STATUS_CANCELADO.test(status),
     observacao: str(cabec, "observacao", "cObs", "cObservacao"),
     origem: str(cabec, "cOperacao", "id_origem", "cOrigem"),
-    alteradoEmOmie: data(bruto, "dAlt", "data_alteracao") ?? data(cabec, "dAlt"),
+    alteradoEmOmie: data(bruto, "dAlt", "data_alteracao") ?? data(cabec, "dAlt") ?? data(info, "dAlt"),
+    usuarioInclusao: str(info, "uInc", "usuario_inclusao"),
+    usuarioAlteracao: str(info, "uAlt", "usuario_alteracao"),
+    dataInclusaoOmie: data(info, "dInc", "data_inclusao"),
+    chaveNfe: str(cabec, "cChaveNFe", "chave_nfe"),
+    origemLancamento: str(cabec, "cOrigem"),
+    contratoCodigo: str(cabec, "nCodCtr", "cNumCtr"),
+    ordemServicoCodigo: str(cabec, "nCodOS", "cNumOS"),
     baixas,
   };
 }
@@ -485,12 +499,23 @@ export function normalizarMovimentoExtrato(
   contaCorrenteCodigo: string
 ): MovimentoNormalizado | null {
   const dataMov = data(bruto, "dDataLancamento", "dDtLanc", "data_lancamento", "dDataMovimento");
-  const valorBruto = num(bruto, "nValorLancamento", "nValor", "valor_lancamento", "nValorMovimento");
+  // `nValorDocumento` é o nome oficial de ListarExtrato (com sinal). Os
+  // outros são as grafias que o diagnóstico já viu em contas diferentes.
+  const valorBruto = num(bruto, "nValorDocumento", "nValorLancamento", "nValor", "valor_lancamento", "nValorMovimento");
   if (!dataMov || valorBruto === null) return null;
+
+  // Linhas de SALDO do próprio extrato (sem código, "SALDO ..." no lugar do
+  // parceiro) e lançamentos PREVISTOS não são movimento do banco: o primeiro
+  // é um subtotal, o segundo ainda não aconteceu.
+  const situacao = str(bruto, "cSituacao", "situacao");
+  const descricaoDoParceiro = str(bruto, "cDesCliente", "cRazCliente", "cNomeCliente", "cRazaoSocial", "cNome");
+  const codigoOmie = str(bruto, "nCodLancamento", "nCodLanc", "nCodMovCC", "codigo_lancamento", "nCodExtrato");
+  if (!codigoOmie && /^saldo/i.test(descricaoDoParceiro ?? "")) return null;
+  if (situacao && /previst/i.test(situacao)) return null;
 
   const natureza = str(bruto, "cNatureza", "natureza", "cTipoLancamento");
   const codigo =
-    str(bruto, "nCodLanc", "nCodMovCC", "codigo_lancamento", "nCodExtrato") ??
+    codigoOmie ??
     // Extrato sem identificador proprio: monta uma chave deterministica a
     // partir do conteudo, para a reimportacao da mesma janela nao duplicar.
     `${contaCorrenteCodigo}:${dataMov.toISOString().slice(0, 10)}:${Math.round(valorBruto * 100)}:${
@@ -509,15 +534,22 @@ export function normalizarMovimentoExtrato(
     data: dataMov,
     valorCents: valorBruto < 0 && !ehDebito ? -Math.abs(valorCents) : valorCents,
     natureza,
-    tipo: str(bruto, "cTipo", "cCodTipoLanc", "tipo"),
-    categoriaCodigo: str(bruto, "cCodCateg", "codigo_categoria"),
+    tipo: str(bruto, "cTipoDocumento", "cTipo", "cCodTipoLanc", "tipo"),
+    categoriaCodigo: str(bruto, "cCodCategoria", "cCodCateg", "codigo_categoria"),
     parceiroCodigo: str(bruto, "nCodCliente", "codigo_cliente"),
-    parceiroNome: str(bruto, "cNomeCliente", "cRazaoSocial", "cNome"),
-    documento: str(bruto, "cNumDoc", "cDocumento", "numero_documento"),
+    parceiroNome: descricaoDoParceiro,
+    // `cDocumentoFiscal` ("Nota Fiscal, Cupom Fiscal, CT-e...") e `cNumero`
+    // são os dois campos oficiais; os demais, grafias vistas.
+    documento: str(bruto, "cDocumentoFiscal", "cNumero", "cNumDoc", "cDocumento", "numero_documento"),
     observacao: str(bruto, "cObservacoes", "observacao", "cObs", "cHistorico"),
-    conciliado: bool(bruto, "cConciliado", "conciliado", "lConciliado"),
-    dataConciliacao: data(bruto, "dDtConciliacao", "data_conciliacao"),
-    tituloCodigo: str(bruto, "nCodTitulo", "codigo_titulo"),
+    // A situação oficial é texto: "Conciliado", "Não conciliado", "Previsto".
+    // Só afirma quando ela existe; senão, os campos booleanos das outras
+    // grafias; senão, nulo (ver o comentário do tipo).
+    conciliado: situacao ? /^conciliad/i.test(situacao) : bool(bruto, "cConciliado", "conciliado", "lConciliado"),
+    dataConciliacao: data(bruto, "dDataConciliacao", "dDtConciliacao", "data_conciliacao"),
+    // `nCodLancRelac`: o lançamento relacionado (a baixa ou o título de que a
+    // linha nasceu). Basta existir para a linha não ser "sem título".
+    tituloCodigo: str(bruto, "nCodTitulo", "codigo_titulo", "nCodLancRelac"),
   };
 }
 

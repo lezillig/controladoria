@@ -423,6 +423,48 @@ const rodarReceber = (ctx: ContextoAuditoria, regra: string) => auditarContasRec
   conferir("juros abaixo de um quarto da materialidade não viram achado", rodarReceber(ctx, "CR-JUROS-NAO-COBRADOS").length, 0);
 }
 
+// ----------------------------------------------------- FR-EDITADO-APOS-BAIXA
+console.log("\nFR-EDITADO-APOS-BAIXA — o título mudou depois de pago");
+{
+  const t = titulo({ dataUltimaBaixa: d("2026-06-10"), alteradoEmOmie: d("2026-06-25"), usuarioAlteracao: "maria", usuarioInclusao: "joao", valorPagoCents: 3_000_00, valorDocumentoCents: 3_000_00 });
+  const ctx = contexto({ titulos: [...fundo(), t] });
+  const r = rodarFraude(ctx, "FR-EDITADO-APOS-BAIXA");
+  conferir("alterado 15 dias depois de pago é achado", r.length, 1);
+  conferir("diz quem alterou", r[0]?.evidencia?.alteradoPor, "maria");
+  conferir("nunca abaixo de MÉDIA", ["MEDIA", "ALTA", "CRITICA"].includes(r[0]?.severidade ?? ""), true);
+}
+{
+  const t = titulo({ dataUltimaBaixa: d("2026-06-10"), alteradoEmOmie: d("2026-06-11"), usuarioAlteracao: "maria", valorPagoCents: 3_000_00 });
+  const ctx = contexto({ titulos: [...fundo(), t] });
+  conferir("alteração no dia seguinte (a própria baixa) não é achado", rodarFraude(ctx, "FR-EDITADO-APOS-BAIXA").length, 0);
+}
+{
+  // Sem o bloco info (conta que não devolve usuário): a regra fica calada,
+  // porque `alteradoEmOmie` sozinho não diz nada sobre quem.
+  const t = titulo({ dataUltimaBaixa: d("2026-06-10"), alteradoEmOmie: d("2026-06-25"), usuarioAlteracao: null, valorPagoCents: 3_000_00 });
+  const ctx = contexto({ titulos: [...fundo(), t] });
+  conferir("sem usuário de alteração fica calada", rodarFraude(ctx, "FR-EDITADO-APOS-BAIXA").length, 0);
+}
+
+// ------------------------------------------------------ FR-LANCAMENTO-MANUAL
+console.log("\nFR-LANCAMENTO-MANUAL — título digitado à mão, sem documento");
+{
+  const manuais = [1, 2, 3].map((i) =>
+    titulo({ origemLancamento: "MANP", numeroDocumento: null, usuarioInclusao: "carlos", dataInclusaoOmie: d(`2026-07-0${i}`), valorDocumentoCents: 900_00, valorPagoCents: 900_00, parceiroCodigo: `M${i}`, parceiroNome: `FORNECEDOR MANUAL ${i}` })
+  );
+  const ctx = contexto({ titulos: [...fundo(), ...manuais] });
+  const r = rodarFraude(ctx, "FR-LANCAMENTO-MANUAL");
+  conferir("três manuais sem nota do mesmo usuário no mês são um achado", r.length, 1);
+  conferir("por usuário e mês", r[0]?.chave, "FR-LANCAMENTO-MANUAL|AZUL|carlos|2026-07");
+  conferir("com a soma", r[0]?.valorCents, 2_700_00);
+}
+{
+  const porNota = titulo({ origemLancamento: "NFEP", numeroDocumento: null, usuarioInclusao: "carlos", valorDocumentoCents: 5_000_00 });
+  const manualComNota = titulo({ origemLancamento: "MANP", numeroDocumento: "4411", usuarioInclusao: "carlos", valorDocumentoCents: 5_000_00 });
+  const ctx = contexto({ titulos: [...fundo(), porNota, manualComNota] });
+  conferir("nascido de nota, ou manual com número de nota, não é achado", rodarFraude(ctx, "FR-LANCAMENTO-MANUAL").length, 0);
+}
+
 // ---------------------------------------------------- HI-FORNECEDOR-DORMENTE
 console.log("\nHI-FORNECEDOR-DORMENTE — o cadastro esquecido que voltou a receber");
 const MATERIALIDADE = 50_000;

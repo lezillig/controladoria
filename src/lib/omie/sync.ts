@@ -412,6 +412,33 @@ export function planejarPassosTitulos(
   return passos;
 }
 
+// `lDadosCad: true` pede o bloco `info` (quem incluiu/alterou, quando) junto
+// com cada título. A documentação diz que o parâmetro existe; se a conta
+// recusar a tag ("não faz parte da estrutura"), o pedido é refeito sem ela
+// e a decisão fica lembrada pelo processo — uma recusa por conta, não uma
+// por página. Nulo = ainda não se sabe.
+let dadosCadastraisAceitos: boolean | null = null;
+
+async function buscarTitulos(
+  ctx: ContextoFase,
+  param: Record<string, unknown>
+): Promise<Awaited<ReturnType<typeof omieCall>>> {
+  const opts = { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true };
+  if (dadosCadastraisAceitos === false) return omieCall(OMIE_ENDPOINTS.titulos, param, opts);
+  try {
+    const resposta = await omieCall(OMIE_ENDPOINTS.titulos, { ...param, lDadosCad: true }, opts);
+    dadosCadastraisAceitos = true;
+    return resposta;
+  } catch (e) {
+    if (e instanceof OmieVazioError) throw e;
+    const mensagem = e instanceof Error ? e.message : "";
+    if (!/lDadosCad/i.test(mensagem)) throw e;
+    dadosCadastraisAceitos = false;
+    console.warn("[omie] a conta recusou lDadosCad em PesquisarLancamentos; seguindo sem o bloco info.");
+    return omieCall(OMIE_ENDPOINTS.titulos, param, opts);
+  }
+}
+
 async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise<ResultadoFase> {
   const res = vazio();
   const passos = planejarPassosTitulos(ctx.janelaInicio, ctx.janelaFim, backfill);
@@ -433,11 +460,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
 
       let resposta;
       try {
-        resposta = await omieCall(
-          OMIE_ENDPOINTS.titulos,
-          { nPagina: pagina, nRegPorPagina: REGISTROS_POR_PAGINA, ...passo.param },
-          { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true }
-        );
+        resposta = await buscarTitulos(ctx, { nPagina: pagina, nRegPorPagina: REGISTROS_POR_PAGINA, ...passo.param });
       } catch (e) {
         if (e instanceof OmieVazioError) break;
         res.erros.push(`títulos ${passo.id}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
