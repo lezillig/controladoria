@@ -14,6 +14,7 @@ import type {
   OmieSyncRun,
   OmieTitulo,
   OmieVinculoCentroCusto,
+  ParceiroReceita,
 } from "@prisma/client";
 import type {
   AbastecimentoGestao,
@@ -125,6 +126,12 @@ export type ContextoAuditoria = {
   // Baixado nos últimos 12 meses fechados, do resumo mensal. Base da
   // materialidade quando o ano corrente ainda é curto.
   baixadoEm12MesesCents?: number | null;
+  // O que a Receita Federal diz dos CNPJs presentes em `parceiros`
+  // (ParceiroReceita, preenchida aos poucos por src/lib/receita). Opcional
+  // como `usosDeVeiculo`: os testes montam o contexto à mão, e a tabela
+  // enche ao longo de dias. As regras de agents/antifraudeReceita.ts ficam
+  // caladas para o CNPJ que ainda não tem consulta — nunca inventam.
+  receita?: ParceiroReceita[];
 };
 
 // Um achado emitido por um agente. Ainda nao e o registro do banco: o motor

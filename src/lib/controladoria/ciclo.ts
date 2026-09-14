@@ -9,6 +9,7 @@ import { gerarEEnviarRelatorio } from "./relatorio";
 import { enviarAlertaPorExcecao } from "./alerta";
 import { fimDoDia, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
 import { competenciasDaJanela, recalcularHistorico } from "./historico";
+import { enriquecerParceiros } from "@/lib/receita/enriquecer";
 
 // CICLO DIÁRIO DA CONTROLADORIA
 //
@@ -38,8 +39,15 @@ import { competenciasDaJanela, recalcularHistorico } from "./historico";
 // mês carregado seria absurdo.
 
 // Fases que rodam depois da sincronização, só na execução consolidada.
-export type FasePosSync = "auditoria" | "relatorio";
+// `receita` vem antes da auditoria: é o enriquecimento cadastral pela Receita
+// Federal (src/lib/receita/enriquecer.ts), num passo próprio para não
+// disputar os 60 s da função com os agentes.
+export type FasePosSync = "receita" | "auditoria" | "relatorio";
 export type FaseCiclo = FaseSync | FasePosSync | "concluido";
+
+// Orçamento do passo da Receita por invocação: dezenas de CNPJs por dia, e a
+// fila inteira em uma ou duas semanas. Quem tem pressa usa o botão da tela.
+const ORCAMENTO_RECEITA_MS = 15_000;
 
 export type ResultadoPasso = {
   runId: string | null;
@@ -199,6 +207,50 @@ export async function executarPasso(params: {
       // Mesmo terminando esta conexão, o ciclo continua: há a próxima conexão,
       // o próximo mês de backfill ou a consolidação esperando. Quem decide é
       // obterOuCriarRun na chamada seguinte.
+      continua: true,
+      detalhes,
+    };
+  }
+
+  // ---- Receita Federal (consolidada, antes da auditoria) ----
+  //
+  // Consulta a situação cadastral, CNAE, porte e sócios dos CNPJs que o grupo
+  // paga (ParceiroReceita), o que couber em ~15 s, em ordem de maior valor
+  // pago. É um PASSO PRÓPRIO, e não um trecho da fase de auditoria, porque a
+  // auditoria já roda perto do teto de 60 s da função: quinze segundos a mais
+  // ali seriam a diferença entre gravar e morrer sem gravar.
+  //
+  // NUNCA impede a auditoria: falha vira linha de detalhe, a fase avança do
+  // mesmo jeito, e o CNPJ que não deu volta na fila amanhã. As regras que
+  // dependem da Receita se calam sobre quem ainda não foi consultado.
+  if (fase === "receita") {
+    const orcamento = Math.max(0, Math.min(ORCAMENTO_RECEITA_MS, fimDoOrcamento - Date.now()));
+    if (orcamento > 5_000) {
+      try {
+        const r = await enriquecerParceiros(companyId, { orcamentoMs: orcamento });
+        detalhes.push(
+          `Receita Federal: ${r.consultados} CNPJ(s) consultado(s) (${r.atualizados} com dado, ${r.naoEncontrados} não encontrado(s), ` +
+            `${r.falhas} falha(s)); ${r.pendentes} de ${r.fila} ainda sem consulta` +
+            (r.parouPor === "api" ? " — a API pediu para tentar depois." : ".")
+        );
+      } catch (e) {
+        detalhes.push(`Receita Federal: enriquecimento falhou e foi pulado — ${e instanceof Error ? e.message.slice(0, 200) : String(e)}`);
+      }
+    } else {
+      detalhes.push("Receita Federal: sem tempo nesta invocação — a fila continua na próxima consolidação.");
+    }
+
+    await prisma.omieSyncRun.update({
+      where: { id: run.id },
+      data: { fase: "auditoria", invocacoes: { increment: 1 } },
+    });
+
+    return {
+      runId: run.id,
+      fase: "auditoria",
+      conexaoApelido: "GRUPO",
+      backfill: run.backfill,
+      concluido: false,
       continua: true,
       detalhes,
     };
@@ -523,7 +575,8 @@ export async function obterOuCriarRun(
     data: {
       companyId,
       conexaoId: null,
-      fase: "auditoria",
+      // Começa pela Receita Federal (um passo curto) e segue para a auditoria.
+      fase: "receita",
       janelaInicio: janelaInicioDoDia,
       janelaFim: janelaFimDoDia,
       backfill: false,

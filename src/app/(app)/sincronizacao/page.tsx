@@ -26,6 +26,8 @@ import RelerPeriodoForm from "./RelerPeriodoForm";
 import AuditoriaRetroativaForm from "./AuditoriaRetroativaForm";
 import { achadosAbertosPorAno, anosAuditaveis } from "@/lib/controladoria/retroativa";
 import { leiturasOpcionaisPendentes } from "@/lib/gestao/leitura";
+import { situacaoDoEnriquecimento } from "@/lib/receita/enriquecer";
+import ReceitaButton from "./ReceitaButton";
 
 // Teto de duração das Server Actions desta tela, declarado por precaução e não
 // por diagnóstico.
@@ -128,6 +130,9 @@ export default async function SincronizacaoPage() {
 
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
   const janelasSemNotas = apenasNotas(janelasRuins);
+  // `catch` pelo mesmo motivo do saldo por conta: sem a tabela (migração
+  // ainda não aplicada) a tela precisa abrir e o painel de esquema explicar.
+  const receita = await situacaoDoEnriquecimento(session.companyId).catch(() => null);
   const versao = versaoPublicada();
   const abertosPorAno = Object.fromEntries(await achadosAbertosPorAno(session.companyId));
 
@@ -342,6 +347,27 @@ export default async function SincronizacaoPage() {
               têm dado novo para olhar, e o ciclo não tem como saber disso sozinho.
             </p>
             <ReabrirAuditoriaButton />
+          </div>
+
+          {/* O cadastro público da Receita enche sozinho, ~15 s por ciclo, em
+              ordem de maior valor pago. Este botão é para quem não quer
+              esperar semanas: roda a mesma fila em rodadas de um minuto. */}
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="text-xs font-medium text-slate-700">Cadastro dos fornecedores na Receita Federal</p>
+            <p className="mb-2 mt-0.5 text-xs text-slate-500">
+              Situação cadastral, data de abertura, atividade (CNAE), porte e sócios de cada CNPJ que o grupo paga, da
+              base pública da Receita. É o que sustenta as regras de CNPJ irregular, empresa recém-aberta, CNAE
+              incompatível e sócio com nome de motorista — que ficam caladas para quem ainda não foi consultado.
+              {receita
+                ? receita.fila === 0
+                  ? " Nenhum fornecedor PJ com título a pagar nos últimos 400 dias."
+                  : ` ${fmtNumero(receita.consultados)} de ${fmtNumero(receita.fila)} CNPJ(s) com consulta` +
+                    (receita.pendentes > 0 ? `, ${fmtNumero(receita.pendentes)} pendente(s)` : "") +
+                    (receita.comErro > 0 ? `, ${fmtNumero(receita.comErro)} com falha na última tentativa` : "") +
+                    (receita.ultimaConsulta ? ` — última consulta em ${fmtDataHora(receita.ultimaConsulta)}.` : ".")
+                : " A tabela de consultas ainda não existe neste banco — veja as diferenças de esquema no topo."}
+            </p>
+            <ReceitaButton pendentesIniciais={receita?.pendentes ?? 0} />
           </div>
 
           {/* O ciclo protege o presente; esta seção olha para trás. Um desvio

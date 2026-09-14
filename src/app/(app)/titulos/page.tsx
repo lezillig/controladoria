@@ -6,6 +6,7 @@ import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 import { larguraPainel } from "@/lib/ui";
+import { fmtCnae } from "@/lib/receita/cliente";
 
 // CONTAS A PAGAR E A RECEBER numa tela só, alternada por querystring.
 //
@@ -46,6 +47,12 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
 
   const encargos = somar(todos, (t) => t.jurosCents + t.multaCents + t.tarifaCents);
   const rotulo = natureza === "PAGAR" ? "a pagar" : "a receber";
+
+  // SELO DA RECEITA por CNPJ, quando há consulta: "ATIVA (desde 2019, CNAE
+  // 4929-9/01)". Uma linha, abaixo do documento — é o suficiente para quem lê
+  // a lista notar o BAIXADA sem abrir achado nenhum. Sem consulta, nada:
+  // ausência não é informação.
+  const receitaPorCnpj = new Map((ctx.receita ?? []).filter((r) => r.situacao).map((r) => [r.cnpj, r]));
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -134,11 +141,25 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
             linhas={ordenada.map((t) => {
               const atraso = diasDeAtraso(t, ctx.dataReferencia);
               const encargo = t.jurosCents + t.multaCents + t.tarifaCents;
+              const receita = t.parceiroDocumento ? receitaPorCnpj.get(t.parceiroDocumento) : undefined;
               return [
                 <span key="p">
                   <span className="font-medium text-slate-800">{t.parceiroNome ?? "(não identificado)"}</span>
                   {t.parceiroDocumento && (
                     <span className="block text-xs text-slate-400">{fmtDocumento(t.parceiroDocumento)}</span>
+                  )}
+                  {receita && (
+                    <span className={`block text-xs ${receita.situacao === "ATIVA" ? "text-slate-400" : "font-medium text-red-600"}`}>
+                      Receita: {receita.situacao}
+                      {receita.inicioAtividade || receita.cnaeCodigo
+                        ? ` (${[
+                            receita.inicioAtividade ? `desde ${receita.inicioAtividade.getFullYear()}` : null,
+                            receita.cnaeCodigo ? `CNAE ${fmtCnae(receita.cnaeCodigo)}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(", ")})`
+                        : ""}
+                    </span>
                   )}
                 </span>,
                 <span key="d" className="text-xs">

@@ -1395,3 +1395,65 @@ model Investigacao {
 
   @@index([companyId, criadoEm])
 }
+
+// ============================================================================
+// Receita Federal — o que o CNPJ diz de si mesmo
+// ============================================================================
+// Situação cadastral, data de abertura, CNAE, porte, capital social e quadro
+// societário de cada CNPJ que o grupo paga, lidos da base pública da Receita
+// (via BrasilAPI, sem autenticação — ver src/lib/receita/cliente.ts). É o que
+// destrava as regras que o espelho da Omie sozinho não alcança: fornecedor
+// com CNPJ baixado recebendo, empresa aberta há três meses faturando alto,
+// CNAE de loja de roupas cobrando "manutenção de veículos", sócio com o
+// mesmo nome de um motorista da folha.
+//
+// DELIBERADAMENTE SEM companyId — a mesma exceção consciente que a gestão de
+// motoristas faz com `AnpPrecoReferencia`: é dado público, igual para
+// qualquer empresa que consulte, e o mesmo CNPJ é fornecedor da Azul e da
+// MCZ. Guardá-lo por empresa dobraria as consultas a uma API pública que
+// pede ritmo, para chegar ao mesmo registro. Todo o resto do schema é
+// multi-tenant; esta tabela é referência, não dado da empresa.
+//
+// Preenchida aos poucos: ~15 s por ciclo diário e um botão na tela de
+// sincronização (src/lib/receita/enriquecer.ts), sempre em ordem de maior
+// valor pago — o fornecedor que mais recebe é o primeiro a ser conferido.
+model ParceiroReceita {
+  id                 String    @id @default(cuid())
+  // 14 dígitos, sem máscara — a mesma normalização de OmieParceiro.documento.
+  cnpj               String    @unique
+  // Razão social na Receita. Serve à conferência ("o cadastro da Omie chama
+  // de X, a Receita de Y") e ao cruzamento do MEI, cuja razão social é o
+  // nome do titular.
+  razaoSocial        String?
+  // ATIVA | BAIXADA | INAPTA | SUSPENSA | NULA, como a Receita escreve; ou
+  // NAO ENCONTRADA quando a base pública não conhece o CNPJ.
+  situacao           String?
+  situacaoEm         DateTime?
+  inicioAtividade    DateTime?
+  // CNAE fiscal principal, 7 dígitos sem máscara ("4929901").
+  cnaeCodigo         String?
+  cnaeDescricao      String?
+  // "MICRO EMPRESA" | "EMPRESA DE PEQUENO PORTE" | "DEMAIS", como vem.
+  porte              String?
+  // Centavos em Int, como o resto do espelho. Capital acima do teto do Int4
+  // (~R$ 21 milhões) é gravado no teto: a única pergunta que as regras fazem
+  // é "é pequeno?", e R$ 21 milhões responde "não" tão bem quanto R$ 2 bi.
+  capitalSocialCents Int?
+  naturezaJuridica   String?
+  municipio          String?
+  uf                 String?
+  mei                Boolean?
+  simples            Boolean?
+  // [{ nome, qualificacao }]. Só nome e qualificação: a Receita já mascara
+  // o CPF do sócio, e este sistema não guarda mais do que precisa cruzar.
+  socios             Json
+  // Última TENTATIVA, com ou sem sucesso. Com `erro` preenchido, os campos
+  // acima são da última consulta que deu certo (ou nulos, se nunca deu).
+  consultadoEm       DateTime
+  // Última falha, curta e sem o corpo da resposta. Nula quando a última
+  // consulta deu certo.
+  erro               String?
+  criadoEm           DateTime  @default(now())
+
+  @@index([consultadoEm])
+}
