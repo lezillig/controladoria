@@ -26,6 +26,8 @@ import type {
   PrecoAnpGestao,
   UsoDeVeiculoGestao,
   VeiculoGestao,
+  PontoGestao,
+  AfastamentoGestao,
 } from "@/lib/gestao/leitura";
 import type { DadosConformidade } from "@/lib/conformidade/panorama";
 
@@ -116,6 +118,10 @@ export type ContextoAuditoria = {
   // espelhados. Opcionais pelo mesmo motivo dos demais.
   contaHistorico?: OmieParceiroContaHistorico[];
   versoesDeTitulo?: OmieTituloVersao[];
+  // Ponto e afastamento: só o agente de pessoal (agents/pessoal.ts) os lê,
+  // pelo mesmo contrato — ausentes ou vazios, as regras ficam caladas.
+  pontos?: PontoGestao[];
+  afastamentos?: AfastamentoGestao[];
 
   // O que veio de fora: relatorios de consultoria, contabilidade e auditoria
   // externa, ja transformados em apontamentos rastreaveis, mais as ligacoes

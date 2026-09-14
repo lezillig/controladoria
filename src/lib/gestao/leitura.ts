@@ -9,7 +9,7 @@ import { prismaGestao } from "./cliente";
 // A conexão usada aqui é a de `./cliente`, que aponta para o banco da gestão —
 // separado do banco desta aplicação quando `GESTAO_DATABASE_URL` está
 // configurada, e o mesmo banco quando não está. Ela deve usar um papel SOMENTE
-// LEITURA, com permissão apenas nas nove tabelas lidas neste arquivo (ver
+// LEITURA, com permissão apenas nas onze tabelas lidas neste arquivo (ver
 // docs/papel-leitura-gestao.sql): assim a fronteira é uma propriedade do
 // banco, e não uma promessa de quem escreve o código.
 //
@@ -38,6 +38,16 @@ export type MotoristaGestao = {
   valorHoraCents: number | null;
   clienteId: string | null;
   departamento: string | null;
+  // Para o agente de pessoal (src/lib/controladoria/agents/pessoal.ts):
+  // admissão separa o recém-contratado (cujo ponto ainda não chegou) do
+  // fantasma; função diz se a pessoa bate ponto e pega veículo ou trabalha
+  // no escritório; empregador é a razão social de quem a contrata. Nulos
+  // quando o cadastro não os tem. Não há data de desligamento na gestão —
+  // só `active` —, e é por isso que o desligado é reconhecido pelo último
+  // rastro operacional, não por uma data.
+  admissao: Date | null;
+  funcao: string | null;
+  empregador: string | null;
 };
 
 export type VeiculoGestao = {
@@ -110,6 +120,28 @@ export type PrecoAnpGestao = {
   precoMedioCents: number;
 };
 
+// Ponto e afastamento, para o agente de pessoal. O ponto é o rastro mais
+// direto de que a pessoa trabalhou no dia (a gestão importa do TiqueTaque,
+// com atraso de dias — quem lê precisa de folga para isso); o afastamento
+// (férias, atestado, folga, abono) explica a ausência de rastro e, ao
+// contrário, denuncia ponto batido em dia de atestado. Só os campos que o
+// cruzamento usa: horário e intervalo ficam de fora de propósito — a
+// Controladoria não apura jornada, isso é da gestão.
+export type PontoGestao = {
+  driverId: string;
+  date: Date;
+  clockIn: string;
+  clockOut: string | null;
+};
+
+export type AfastamentoGestao = {
+  driverId: string;
+  leaveType: string;
+  startDate: Date;
+  endDate: Date;
+  paidLeave: boolean;
+};
+
 // Marca se a última leitura encontrou o schema da gestão. Consultado pela tela
 // de sincronização e pelo supervisor para explicar, em português, por que os
 // cruzamentos não rodaram — em vez de simplesmente não apontar nada.
@@ -139,7 +171,7 @@ async function ler<T>(consulta: () => Promise<T[]>, rotulo: string): Promise<T[]
 export async function lerMotoristas(companyId: string): Promise<MotoristaGestao[]> {
   return ler(
     () => prismaGestao.$queryRaw<MotoristaGestao[]>`
-      SELECT id, name, cpf, active, "valorHoraCents", "clienteId", departamento
+      SELECT id, name, cpf, active, "valorHoraCents", "clienteId", departamento, admissao, funcao, empregador
       FROM public."Driver"
       WHERE "companyId" = ${companyId}
     `,
@@ -211,6 +243,35 @@ export async function lerPrecosAnp(desde: Date): Promise<PrecoAnpGestao[]> {
       WHERE "semanaFim" >= ${desde}
     `,
     "os preços de referência da ANP (AnpPrecoReferencia)"
+  );
+}
+
+// Ponto e afastamento entram pelo mesmo caminho opcional: a permissão ainda
+// não existe em produção, e até existir o agente de pessoal fica calado (a
+// tela de sincronização diz o que falta). Recortados por data pelo mesmo
+// motivo dos abastecimentos — o ponto é uma linha por pessoa por dia.
+export async function lerPontos(companyId: string, desde: Date): Promise<PontoGestao[]> {
+  return lerOpcional(
+    () => prismaGestao.$queryRaw<PontoGestao[]>`
+      SELECT "driverId", date, "clockIn", "clockOut"
+      FROM public."TimeClockEntry"
+      WHERE "companyId" = ${companyId} AND date >= ${desde}
+    `,
+    "o ponto dos motoristas (TimeClockEntry)"
+  );
+}
+
+// Afastamento que TERMINA dentro da janela: um atestado começado antes do
+// corte e ainda em curso precisa entrar, senão a pessoa afastada vira
+// fantasma justamente no período em que está justificada.
+export async function lerAfastamentos(companyId: string, desde: Date): Promise<AfastamentoGestao[]> {
+  return lerOpcional(
+    () => prismaGestao.$queryRaw<AfastamentoGestao[]>`
+      SELECT "driverId", "leaveType", "startDate", "endDate", "paidLeave"
+      FROM public."DriverLeave"
+      WHERE "companyId" = ${companyId} AND "endDate" >= ${desde}
+    `,
+    "os afastamentos dos motoristas (DriverLeave)"
   );
 }
 

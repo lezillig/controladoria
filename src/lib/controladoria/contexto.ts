@@ -10,6 +10,8 @@ import {
   lerPrecosAnp,
   lerUsosDeVeiculo,
   lerVeiculos,
+  lerPontos,
+  lerAfastamentos,
 } from "@/lib/gestao/leitura";
 import { carregarConformidade } from "@/lib/conformidade/panorama";
 import type { ContextoAuditoria } from "./types";
@@ -123,6 +125,8 @@ export async function carregarContexto(
     precosAnp,
     contaHistorico,
     versoesDeTitulo,
+    pontos,
+    afastamentos,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -207,6 +211,10 @@ export async function carregarContexto(
       where: { companyId, vistoEm: ate ? { gte: desde, lte: ate } : { gte: desde } },
       orderBy: { vistoEm: "asc" },
     }),
+    // Ponto e afastamento no mesmo recorte do cartão de frota: o agente de
+    // pessoal compara os dois com os títulos pagos a CPF nesse período.
+    lerPontos(companyId, corteRecente),
+    lerAfastamentos(companyId, corteRecente),
   ]);
 
   return {
@@ -246,6 +254,8 @@ export async function carregarContexto(
     conexaoId: conexaoId ?? null,
     janelaDesde: desde,
     janelaAte: ate,
+    pontos,
+    afastamentos,
   };
 }
 

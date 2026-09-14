@@ -67,6 +67,18 @@ GRANT SELECT ON public."VehicleUsageLog"    TO controladoria_leitura;  -- abaste
 GRANT SELECT ON public."Escala"             TO controladoria_leitura;  -- abastecimento em dia sem escala
 GRANT SELECT ON public."AnpPrecoReferencia" TO controladoria_leitura;  -- preço do litro x média ANP da praça
 
+-- Agente de pessoal (src/lib/controladoria/agents/pessoal.ts): o título pago a
+-- CPF de motorista é cruzado com o ponto (a pessoa trabalhou no dia?) e com o
+-- afastamento (férias, atestado explicam a ausência — ou denunciam o ponto
+-- batido durante o atestado). É a exceção consciente ao "não enxergar dado
+-- trabalhista" dito acima: só data, entrada e saída do ponto, e tipo e período
+-- do afastamento — sem horário de intervalo, sem detalhe, sem folha. Sem estas
+-- duas permissões nada quebra: as seis regras do agente ficam caladas e a tela
+-- de sincronização lista o que falta.
+
+GRANT SELECT ON public."TimeClockEntry" TO controladoria_leitura;  -- pagamento a quem não bateu ponto; ponto em dia de atestado
+GRANT SELECT ON public."DriverLeave"    TO controladoria_leitura;  -- afastamento que explica (ou não) a ausência de rastro
+
 -- ---------------------------------------------------------------------------
 -- 4. Garantir que continue somente leitura no futuro
 -- ---------------------------------------------------------------------------
@@ -79,7 +91,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM controladori
 -- ---------------------------------------------------------------------------
 -- 5. Conferir — antes de confiar
 -- ---------------------------------------------------------------------------
--- Deve listar exatamente as nove tabelas, todas com privilege_type = SELECT.
+-- Deve listar exatamente as onze tabelas, todas com privilege_type = SELECT.
 -- Qualquer INSERT, UPDATE ou DELETE nesta lista é erro.
 
 SELECT table_name, privilege_type
