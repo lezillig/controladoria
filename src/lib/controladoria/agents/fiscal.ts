@@ -147,6 +147,12 @@ function notaCanceladaComTitulo(ctx: ContextoAuditoria, materialidade: number): 
     if (titulos.length === 0) continue;
 
     const valor = somar(titulos, (t) => t.valorDocumentoCents);
+    // NF-e (produto) numa empresa de serviço: as notas 251 e 252, para uma
+    // distribuidora de autopeças e uma concessionária, são devolução ou
+    // remessa de peça — não receita. O título a receber que ficou é resto do
+    // cancelamento e deve ser cancelado; "reemitir a nota" e "omissão de
+    // receita" só fazem sentido para NFS-e de serviço prestado.
+    const nfeDeProduto = nota.tipo !== "NFSE";
     achados.push({
       regra: "FI-NOTA-CANCELADA",
       tipo: "ESTADO",
@@ -156,10 +162,14 @@ function notaCanceladaComTitulo(ctx: ContextoAuditoria, materialidade: number): 
       descricao:
         `A ${nota.tipo === "NFSE" ? "NFS-e" : "NF-e"} nº ${nota.numero}, emitida em ${fmtData(nota.dataEmissao)} ` +
         `para ${nota.parceiroNome ?? "cliente não identificado"}, está cancelada — mas ${titulos.length} título(s) ` +
-        `a receber somando ${fmtBRL(valor)} seguem ativos com esse número de documento.`,
-      recomendacao:
-        "Cancelar o título correspondente ou reemitir a nota. Se o serviço foi prestado e o cliente pagou, " +
-        "a nota precisa ser reemitida — receita sem nota é omissão de receita, não apenas falha de controle.",
+        `a receber somando ${fmtBRL(valor)} seguem ativos com esse número de documento.` +
+        (nfeDeProduto
+          ? " NF-e de produto numa empresa de serviço costuma ser devolução ou remessa de peça, não receita: o título é resto do cancelamento."
+          : ""),
+      recomendacao: nfeDeProduto
+        ? "Cancelar o título a receber na Omie. Se a devolução ou remessa precisa de nota válida, emitir nova NF-e sem gerar título financeiro."
+        : "Cancelar o título correspondente ou reemitir a nota. Se o serviço foi prestado e o cliente pagou, " +
+          "a nota precisa ser reemitida — receita sem nota é omissão de receita, não apenas falha de controle.",
       valorCents: valor,
       dataReferencia: nota.dataEmissao,
       entidadeTipo: "OmieNota",

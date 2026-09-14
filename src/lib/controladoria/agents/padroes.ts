@@ -7,6 +7,7 @@ import {
   type SerieMensal,
 } from "../historico";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
+import { normalizarRazaoSocial } from "../documento";
 import { chaveAchado, chaveMes, materialidadeCents, mediana, severidadePorValor } from "./comum";
 
 // AGENTE DE PADRÕES — o que só o histórico responde.
@@ -337,6 +338,20 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
   // sobre nada. Silêncio por falta de dado não pode parecer aprovação.
   if (series.length === 0) return [];
 
+  // QUEM NÃO É FORNECEDOR não tem padrão de fornecedor.
+  //
+  //   - A PRÓPRIA EMPRESA. "AZUL TRANSPORTES subiu de patamar: de R$ 14.830
+  //     para R$ 550.000 por mês" era a Azul transferindo para a Azul (e a MCZ
+  //     para a MCZ): mútuo, aporte, folha paga pela matriz. Não é reajuste,
+  //     não é fornecedor efêmero, não é fila de pagamento — é movimento
+  //     entre contas do grupo, e entra aqui só porque o parceiro existe no
+  //     cadastro. Reconhecido pelo CNPJ da conexão ou pelo nome dela.
+  //   - BANCO, FINANCEIRA, CONSÓRCIO E TRIBUTO. O Bradesco "subiu 56%" porque
+  //     entrou um financiamento novo, e o que se renegocia é o contrato, não
+  //     um "aditivo de fornecimento". A cobrança retroativa da diferença, que
+  //     é a recomendação, não faz sentido para nenhum deles.
+  const seriesDeFornecedores = somenteFornecedores(series, ctx);
+
   const achados: AchadoNovo[] = [];
   const montar = (
     regra: string,
@@ -372,7 +387,7 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
     (i) => `${i.rotulo} cobrou muito acima do próprio padrão`,
     "Comparar as notas do mês com as dos meses anteriores do mesmo fornecedor. Aumento de escopo, reajuste " +
       "contratual e erro de digitação produzem o mesmo salto no total — e só o documento distingue os três.",
-    foraDoPadrao(series, competenciaAtual, materialidade)
+    foraDoPadrao(seriesDeFornecedores, competenciaAtual, materialidade)
   );
 
   montar(
@@ -381,16 +396,37 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
     (i) => `${i.rotulo} recebeu e desapareceu`,
     "Conferir contrato, notas e a entrega correspondente. Fornecedor de serviço pontual tem exatamente este desenho e " +
       "é legítimo; o que não pode existir é pagamento relevante sem contraparte documentada.",
-    fornecedorEfemero(series, competenciaAtual, materialidade)
+    fornecedorEfemero(seriesDeFornecedores, competenciaAtual, materialidade)
   );
 
+  // REAJUSTE × OPERAÇÃO QUE CRESCEU. O cartão de combustível "subiu 44%"
+  // no mesmo período em que a receita subiu: mais contrato, mais veículo
+  // rodando, mais diesel. Preço unitário reajustado e volume maior produzem
+  // o mesmo salto no total do fornecedor; a receita separa os dois. Quando o
+  // faturamento do grupo cresceu ao menos metade do que o fornecedor
+  // cresceu, o achado diz isso e pede a conta certa: custo por quilômetro
+  // ou por veículo, não aditivo.
+  const crescimentoDaReceita = crescimentoRecenteDaReceita(ctx, competenciaAtual);
+  const reajustes = reajusteSilencioso(seriesDeFornecedores, competenciaAtual, materialidade).map((i) => {
+    const aumento = Number((i.evidencia as { aumentoPercent?: number }).aumentoPercent ?? 0);
+    const acompanhaOperacao = crescimentoDaReceita !== null && crescimentoDaReceita >= aumento / 2 && crescimentoDaReceita > 10;
+    if (!acompanhaOperacao) return i;
+    return {
+      ...i,
+      descricao:
+        i.descricao +
+        ` No mesmo período a receita do grupo cresceu ${fmtPercent(crescimentoDaReceita)}: o salto acompanha a operação, ` +
+        `e a pergunta certa é se o custo por veículo ou por quilômetro subiu — não se houve aditivo.`,
+      evidencia: { ...i.evidencia, crescimentoDaReceitaPercent: Math.round(crescimentoDaReceita * 10) / 10, acompanhaOperacao: true },
+    };
+  });
   montar(
     "HI-REAJUSTE-SILENCIOSO",
     "PERDA_FINANCEIRA",
     (i) => `${i.rotulo} subiu de patamar e ficou`,
     "Localizar o aditivo ou o aceite que autorizou o novo valor. Sem ele, o reajuste é unilateral e cabe cobrança " +
       "retroativa da diferença — o valor do achado é o custo projetado em doze meses.",
-    reajusteSilencioso(series, competenciaAtual, materialidade)
+    reajustes
   );
 
   montar(
@@ -399,8 +435,56 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
     (i) => `${i.rotulo} passou a ser pago antes do vencimento`,
     "Verificar se há desconto por antecipação negociado e registrado. Havendo, o desconto precisa aparecer no valor " +
       "pago; não havendo, identificar quem alterou a ordem da fila de pagamentos e com que autorização.",
-    prazoAntecipado(series, competenciaAtual, materialidade)
+    prazoAntecipado(seriesDeFornecedores, competenciaAtual, materialidade)
   );
 
   return achados;
+}
+
+// Banco, financeira, consórcio, tributo e afins: não são fornecedores com
+// contrato de fornecimento, e nenhuma das quatro perguntas deste agente se
+// aplica a eles.
+const NAO_E_FORNECEDOR =
+  /\b(banco|bco|financeira|cons[oó]rcio|leasing|arrendamento|fomento|fidc|securitizadora|sicredi|sicoob|caixa econ|receita federal|prefeitura|secretaria da fazenda|sefaz|inss|fgts|detran|uni[aã]o)\b/i;
+
+export function somenteFornecedores(
+  series: SerieMensal[],
+  ctx: Pick<ContextoAuditoria, "conexoes" | "parceiros">
+): SerieMensal[] {
+  const cnpjsDoGrupo = new Set(ctx.conexoes.map((c) => (c.cnpj ?? "").replace(/\D/g, "")).filter(Boolean));
+  const nomesDoGrupo = ctx.conexoes.map((c) => normalizarRazaoSocial(c.nome)).filter((n) => n.length >= 6);
+  const parceiroPorCodigo = new Map(ctx.parceiros.map((p) => [p.codigoOmie, p]));
+  const foraDeEscopo = (chave: string, rotulo: string | null): boolean => {
+    const p = parceiroPorCodigo.get(chave);
+    const documento = (p?.documento ?? "").replace(/\D/g, "");
+    if (documento && cnpjsDoGrupo.has(documento)) return true;
+    const nome = normalizarRazaoSocial(p?.nome ?? rotulo ?? "");
+    if (nome && nomesDoGrupo.some((n) => n === nome || nome.startsWith(n))) return true;
+    return NAO_E_FORNECEDOR.test(p?.nome ?? rotulo ?? "");
+  };
+  const excluidas = new Set(
+    [...porChave(series)].filter(([chave, linhas]) => foraDeEscopo(chave, rotuloDe(linhas, chave))).map(([chave]) => chave)
+  );
+  return series.filter((s) => !excluidas.has(s.chave));
+}
+
+// Crescimento da receita do grupo: mediana dos três meses recentes contra a
+// mediana dos anteriores, na mesma janela que o reajuste usa. Vem dos
+// títulos a receber do contexto; nulo quando não há base para comparar.
+function crescimentoRecenteDaReceita(ctx: ContextoAuditoria, competenciaAtual: string): number | null {
+  const porMes = new Map<string, number>();
+  for (const t of ctx.titulos) {
+    if (t.natureza !== "RECEBER" || t.cancelado) continue;
+    const comp = competenciaDe(t.dataEmissao ?? t.dataVencimento);
+    if (comp > competenciaAtual) continue;
+    porMes.set(comp, (porMes.get(comp) ?? 0) + t.valorDocumentoCents);
+  }
+  const meses = [...porMes.entries()].filter(([, v]) => v > 0).sort(([a], [b]) => a.localeCompare(b));
+  if (meses.length < 6) return null;
+  const recentes = meses.slice(-3).map(([, v]) => v);
+  const antigos = meses.slice(0, -3).map(([, v]) => v);
+  const antes = mediana(antigos);
+  const depois = mediana(recentes);
+  if (antes <= 0) return null;
+  return ((depois - antes) / antes) * 100;
 }

@@ -9,6 +9,7 @@ import { auditarContasPagar } from "../src/lib/controladoria/agents/contasPagar"
 import { auditarContasReceber } from "../src/lib/controladoria/agents/contasReceber";
 import { auditarFraude } from "../src/lib/controladoria/agents/antifraude";
 import { buscarOportunidades as auditarOportunidades } from "../src/lib/controladoria/agents/oportunidades";
+import { somenteFornecedores } from "../src/lib/controladoria/agents/padroes";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 
 let falhas = 0;
@@ -546,6 +547,28 @@ console.log("\nOP-CONSOLIDACAO — folha não se cota, categoria concentrada já
   const oficinas = [1, 2, 3, 4, 5].map((i) => pj(`OFICINA ${i}`, `3333333300010${i}`, 100_000_00, ["2.06.01", "Manutenção"]));
   const b = consolidacao(oficinas);
   conferir("pulverizado: aponta o total", b[0]?.valorCents, 500_000_00);
+}
+
+// ------------------------------------------------- padrões: quem é fornecedor
+console.log("\nPadrões — a própria empresa e o banco não têm padrão de fornecedor");
+{
+  const serie = (chave: string, rotulo: string) =>
+    ({ chave, rotulo, competencia: "2026-08", titulos: 1, valorCents: 100_00, baixas: 1, valorBaixadoCents: 100_00, diasPagamentoSoma: 0 }) as unknown as import("../src/lib/controladoria/historico").SerieMensal;
+  const ctx = {
+    conexoes: [{ nome: "AZUL TRANSPORTES E TURISMO LTDA", cnpj: "12.345.678/0001-90" }, { nome: "MCZ TRANSPORTE E TURISMO LTDA", cnpj: null }],
+    parceiros: [
+      { codigoOmie: "1", nome: "AZUL TRANSPORTES E TURISMO LTDA", documento: "12345678000190" },
+      { codigoOmie: "2", nome: "MCZ TRANSPORTE E TURISMO LTDA.", documento: "99999999000199" },
+      { codigoOmie: "3", nome: "BANCO BRADESCO SA", documento: "60746948000112" },
+      { codigoOmie: "4", nome: "TICKET SOLUCOES HDFGT S/A", documento: "03506307000157" },
+    ],
+  } as unknown as Pick<ContextoAuditoria, "conexoes" | "parceiros">;
+  const series = [serie("1", "AZUL TRANSPORTES E TURISMO LTDA"), serie("2", "MCZ TRANSPORTE E TURISMO LTDA."), serie("3", "BANCO BRADESCO SA"), serie("4", "TICKET SOLUCOES HDFGT S/A")];
+  const restantes = somenteFornecedores(series, ctx).map((s) => s.chave);
+  conferir("empresa do grupo pelo CNPJ: fora", restantes.includes("1"), false);
+  conferir("empresa do grupo pelo nome: fora", restantes.includes("2"), false);
+  conferir("banco: fora", restantes.includes("3"), false);
+  conferir("fornecedor comum: fica", restantes, ["4"]);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);
