@@ -173,6 +173,35 @@ const receber = (titulos: Titulo[]) =>
   conferir("evidência traz o percentual", (a[0]?.evidencia as { percentualDaFalta: string }).percentualDaFalta, "7,70%");
 }
 {
+  // Um título só a 8,30% (não catalogado), mas OUTRO cliente da base tem
+  // retenção REGISTRADA de 8,30%: a base ensinou a alíquota — é retenção.
+  const comRetencao = titulo({
+    natureza: "RECEBER", parceiroNome: "PIONEIRAS", parceiroCodigo: "P", valorDocumentoCents: 37_380_00, valorPagoCents: 34_277_46,
+    retencaoIrCents: 3_102_54,
+  });
+  const unico = titulo({ natureza: "RECEBER", parceiroNome: "ENFORCE", parceiroCodigo: "E", valorDocumentoCents: 66_100_00, valorPagoCents: 60_613_70 });
+  const a = receber([comRetencao, unico]);
+  conferir("alíquota aprendida de retenção registrada: retenção presumida", a.map((x) => x.regra), ["CR-RETENCAO-PRESUMIDA"]);
+}
+{
+  // Um título só a 10,70%, e outro cliente com cluster de 10,70%: também.
+  const cluster = [1, 2].map((i) =>
+    titulo({ natureza: "RECEBER", parceiroNome: "DIREITOS HUMANOS", parceiroCodigo: "D", numeroDocumento: `d${i}`, valorDocumentoCents: 365_192_66, valorPagoCents: 326_117_05 })
+  );
+  const unico = titulo({ natureza: "RECEBER", parceiroNome: "SEC MUNICIPAL", parceiroCodigo: "S", valorDocumentoCents: 113_560_00, valorPagoCents: 101_409_08 });
+  const a = receber([...cluster, unico]);
+  conferir("alíquota aprendida de cluster alheio: dois achados de retenção", a.map((x) => x.regra), ["CR-RETENCAO-PRESUMIDA", "CR-RETENCAO-PRESUMIDA"]);
+}
+{
+  // Pagamento parcial registrado como quitado (38% a menos) e o caso em que
+  // o recebido é igual ao desconto (98% a menos): perda de verdade, aponta.
+  const a = receber([
+    titulo({ natureza: "RECEBER", parceiroNome: "HOLDING", parceiroCodigo: "H", valorDocumentoCents: 568_049_45, valorPagoCents: 350_000_00 }),
+    titulo({ natureza: "RECEBER", parceiroNome: "ASSOCIACAO", parceiroCodigo: "A2", valorDocumentoCents: 37_380_00, valorPagoCents: 429_60, descontoCents: 429_60, retencaoIssCents: 3_102_54 }),
+  ]);
+  conferir("diferenças grandes continuam recebido a menor", a.map((x) => x.regra), ["CR-RECEBIDO-MENOR", "CR-RECEBIDO-MENOR"]);
+}
+{
   // Um título só, mas com alíquota conhecida (PCC 4,65%): é retenção.
   const t = titulo({ natureza: "RECEBER", parceiroNome: "EMPRESA GRANDE", valorDocumentoCents: 100_000_00, valorPagoCents: 95_350_00 });
   conferir("título único com alíquota conhecida: retenção", receber([t]).map((x) => x.regra), ["CR-RETENCAO-PRESUMIDA"]);
@@ -219,9 +248,15 @@ const pagoAcima = (titulos: Titulo[]) => auditarContasPagar(contexto({ titulos }
   conferir("evidência traz devido e excedente", [ev.devido, ev.excedente], [1_000_00, 200_00]);
 }
 {
-  // Desconto de 100 e excedente de 300: não bate com o desconto — aponta.
+  // Desconto de 100, pagou 1.200 por um documento de 1.000: o que passa do
+  // documento é 200 — o desconto não entra na conta.
   const t = titulo({ valorDocumentoCents: 1_000_00, descontoCents: 100_00, valorPagoCents: 1_200_00 });
-  conferir("excedente diferente do desconto: aponta", pagoAcima([t]).map((x) => x.valorCents), [300_00]);
+  conferir("acima do documento com desconto: aponta só o que passa", pagoAcima([t]).map((x) => x.valorCents), [200_00]);
+}
+{
+  // O segundo caso real: pago = documento, com multa e desconto registrados.
+  const t = titulo({ valorDocumentoCents: 1_248_77, descontoCents: 339_30, multaCents: 12_49, valorPagoCents: 1_248_77 });
+  conferir("pago = documento, desconto e multa no registro: sem achado", pagoAcima([t]).length, 0);
 }
 
 // ----------------------------------------------------- CP-DIVERGENCIA-BAIXA
@@ -260,6 +295,16 @@ const rodarPagar = (titulos: Titulo[]) => auditarContasPagar(contexto({ titulos 
   conferir("\"QUITADO\" não conta como documento: aponta", a.length, 1);
   conferir("banco: informativo, não perda a gritar", a[0]?.severidade, "INFO");
   conferir("descrição explica a leitura provável", a[0]?.descricao.includes("contratos"), true);
+}
+{
+  // O caso real: três licenciamentos do DETRAN com documento "Toyota Corolla".
+  const grupo = [1, 2, 3].map(() =>
+    titulo({ parceiroNome: "DEPARTAMENTO ESTADUAL DE TRANSITO", valorDocumentoCents: 5_069_99, numeroDocumento: "Toyota Corolla", dataVencimento: d("2026-05-05") })
+  );
+  const a = rodarPagar(grupo);
+  conferir("\"Toyota Corolla\" não é número de documento: aponta", a.length, 1);
+  conferir("DETRAN cobra por veículo: informativo", a[0]?.severidade, "INFO");
+  conferir("descrição não diz 'mesmo número de documento'", a[0]?.descricao.includes("mesmo número de documento"), false);
 }
 {
   // Mesmo padrão num fornecedor comum: severidade normal.
@@ -339,6 +384,18 @@ const fornecedorFuncionario = (p: Parameters<typeof contexto>[0]) =>
   conferir("chave por empresa e categoria", a[0]?.chave, "FR-FORNECEDOR-FUNCIONARIO|AZUL|2.05");
 }
 {
+  // Rescisão paga a quem ainda consta ativo: sobe de informativo para médio.
+  const motoristas = [1, 2].map((i) => ({ id: `m${i}`, name: `MOTORISTA ${i}`, cpf: `0000000000${i}`, active: i === 1 }) as unknown as Motorista);
+  const parceiros = [1, 2].map((i) => parceiro({ id: `p${i}`, codigoOmie: `F${i}`, nome: `MOTORISTA ${i}`, documento: `0000000000${i}` } as Partial<Parceiro>));
+  const titulos = [1, 2].map((i) =>
+    titulo({ parceiroCodigo: `F${i}`, parceiroNome: `MOTORISTA ${i}`, valorDocumentoCents: 5_000_00, categoriaCodigo: "2.03.04", categoriaDescricao: "Rescisão Trabalhista" })
+  );
+  const a = fornecedorFuncionario({ titulos, parceiros, motoristas });
+  conferir("rescisão com um ativo: médio", a[0]?.severidade, "MEDIA");
+  conferir("evidência conta os ativos com rescisão", (a[0]?.evidencia as { rescisaoComCadastroAtivo: number }).rescisaoComCadastroAtivo, 1);
+  conferir("descrição alerta", a[0]?.descricao.includes("ATENÇÃO"), true);
+}
+{
   // Título de OUTRA conexão com o mesmo código de parceiro não conta.
   const t = titulo({ conexaoId: "y", conexaoApelido: "MCZ", parceiroCodigo: "F9", valorDocumentoCents: 2_000_00 });
   conferir("código igual em outra conta: silêncio", fornecedorFuncionario({ titulos: [t], parceiros: [parceiro()], motoristas: [motorista] }).length, 0);
@@ -379,6 +436,22 @@ const cadastros = (parceiros: Parceiro[]) =>
     parceiro({ id: "b", codigoOmie: "2", nome: "OFICINA MECANICA BETA LTDA.", documento: "99888777000155" } as Partial<Parceiro>),
   ]);
   conferir("nome igual na mesma conta com documentos diferentes: aponta", a.map((x) => x.regra), ["FR-CADASTRO-NOME-SIMILAR"]);
+}
+{
+  // Homônimos: dois CPFs, o mesmo nome, duas pessoas.
+  const a = cadastros([
+    parceiro({ id: "a", codigoOmie: "1", nome: "JOSE DA SILVA", documento: "12345678909" } as Partial<Parceiro>),
+    parceiro({ id: "b", codigoOmie: "2", nome: "JOSE DA SILVA", documento: "98765432100" } as Partial<Parceiro>),
+  ]);
+  conferir("dois CPFs com o mesmo nome: silêncio", a.length, 0);
+}
+{
+  // Matriz e filial: mesma raiz de CNPJ.
+  const a = cadastros([
+    parceiro({ id: "a", codigoOmie: "1", nome: "AUTO POSTO GAMA LTDA", documento: "11222333000181" } as Partial<Parceiro>),
+    parceiro({ id: "b", codigoOmie: "2", nome: "AUTO POSTO GAMA LTDA", documento: "11222333000262" } as Partial<Parceiro>),
+  ]);
+  conferir("matriz e filial: silêncio", a.length, 0);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);

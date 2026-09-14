@@ -90,8 +90,12 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
     // Por CATEGORIA E REGRA juntas: é o que faz cada cartão de categoria abrir
     // e mostrar de quais regras vêm os seus números. "495 indícios de fraude"
     // não é informação; "dos 495, 400 são baixa em dia não útil" é.
+    // A severidade entra no agrupamento para a tabela de concentração dizer
+    // quantos de cada regra são só INFORMATIVOS: parcelas idênticas de banco
+    // e diária de motorista ficam na lista de propósito, mas contá-las junto
+    // com o que precisa de triagem faz a regra parecer ruidosa quando não é.
     prisma.auditFinding.groupBy({
-      by: ["categoria", "regra"],
+      by: ["categoria", "regra", "severidade"],
       where: { companyId: session.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
       _count: true,
       _sum: { impactoCents: true },
@@ -117,12 +121,14 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
   // da soma, senão a regra aparece duas vezes e ninguém sabe o total dela.
   const concentracaoPorRegra = [...porRegra
     .reduce((mapa, r) => {
-      const atual = mapa.get(r.regra) ?? { regra: r.regra, total: 0, impactoCents: 0 };
+      const atual = mapa.get(r.regra) ?? { regra: r.regra, total: 0, informativos: 0, impactoCents: 0 };
       atual.total += r._count;
+      if (r.severidade === "INFO") atual.informativos += r._count;
       atual.impactoCents += r._sum.impactoCents ?? 0;
       return mapa.set(r.regra, atual);
-    }, new Map<string, { regra: string; total: number; impactoCents: number }>())
+    }, new Map<string, { regra: string; total: number; informativos: number; impactoCents: number }>())
     .values()].sort((a, b) => b.total - a.total);
+  const totalInformativos = concentracaoPorRegra.reduce((acc, r) => acc + r.informativos, 0);
 
   const totalImpacto = achados.reduce((acc, a) => acc + (a.impactoCents ?? 0), 0);
   const agentesComAchado = new Map(porAgente.map((a) => [a.agente, a._count]));
@@ -323,18 +329,23 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
         <Secao
           titulo="Concentração por regra"
           descricao={
-            `${fmtNumero(totalEmAberto)} achado(s) em aberto. Quando poucas regras respondem pela maior parte da lista, ` +
+            `${fmtNumero(totalEmAberto)} achado(s) em aberto` +
+            (totalInformativos > 0
+              ? `, ${fmtNumero(totalInformativos)} apenas informativo(s) — ${fmtNumero(totalEmAberto - totalInformativos)} a triar`
+              : "") +
+            ". Quando poucas regras respondem pela maior parte da lista, " +
             "o problema costuma ser de calibragem — e uma lista que ninguém consegue triar informa tanto quanto uma lista vazia."
           }
         >
           <Tabela
-            colunas={["Regra", "Achados", "% do total", "Valor em jogo", ""]}
-            alinharDireita={[1, 2, 3]}
+            colunas={["Regra", "Achados", "Informativos", "% do total", "Valor em jogo", ""]}
+            alinharDireita={[1, 2, 3, 4]}
             linhas={concentracaoPorRegra.slice(0, 20).map((r) => [
               <span key="r" className="font-mono text-xs text-slate-700">
                 {r.regra}
               </span>,
               fmtNumero(r.total),
+              r.informativos > 0 ? fmtNumero(r.informativos) : "—",
               fmtPercent(totalEmAberto > 0 ? (r.total / totalEmAberto) * 100 : 0),
               r.impactoCents ? fmtBRL(r.impactoCents) : "—",
               <Link

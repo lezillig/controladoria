@@ -310,18 +310,44 @@ function recebimentoAMenor(
     .map(apurarFalta)
     .filter(({ falta }) => falta > TOLERANCIA_CENTAVOS);
 
+  // ALÍQUOTAS QUE A PRÓPRIA BASE ENSINA. A lista fixa cobre o Brasil em
+  // geral; a base cobre este cliente em particular. Dois lugares de onde
+  // aprender:
+  //   - títulos que TÊM retenção registrada: a Associação das Pioneiras
+  //     entrou com R$ 3.102,54 retidos sobre R$ 37.380,00 — 8,30%. Quando a
+  //     Enforce "recebe a menor" exatos 8,30% num título único, é a mesma
+  //     retenção, só que não registrada.
+  //   - clusters de outros clientes: os 10,70% de Direitos Humanos aparecem
+  //     em cinco títulos; a Secretaria Municipal de Educação, com um título
+  //     só, falta os mesmos 10,70%.
+  // Um título único só é reclassificado quando o percentual já foi visto de
+  // um desses jeitos; percentual inédito e único continua sendo recebido a
+  // menor, com o percentual na evidência para quem for conferir.
+  const aliquotasConhecidas = new Set(ALIQUOTAS_DE_RETENCAO);
+  for (const t of titulos) {
+    const retencoes =
+      t.retencaoIrCents + t.retencaoIssCents + t.retencaoPisCents + t.retencaoCofinsCents + t.retencaoCsllCents + t.retencaoInssCents;
+    if (retencoes <= 0 || t.valorDocumentoCents <= 0) continue;
+    const pontos = Math.round((retencoes * 10000) / t.valorDocumentoCents);
+    if (pontos >= RETENCAO_MINIMA && pontos <= RETENCAO_MAXIMA) aliquotasConhecidas.add(pontos);
+  }
+
   // Padrão por cliente e percentual. Dois títulos com a mesma alíquota, ou
   // um só com alíquota conhecida, é retenção; o resto é diferença real.
   const porClienteEAliquota = agrupar(
     faltas.filter((f) => f.pontos !== null),
     (f) => `${chaveParceiro(f.t)}|${f.pontos}`
   );
+  for (const [, grupo] of porClienteEAliquota) {
+    if (grupo.length >= 2) aliquotasConhecidas.add(grupo[0].pontos as number);
+  }
+
   const retidos = new Set<string>();
   const achados: AchadoNovo[] = [];
 
   for (const [, grupo] of porClienteEAliquota) {
     const pontos = grupo[0].pontos as number;
-    if (grupo.length < 2 && !ALIQUOTAS_DE_RETENCAO.has(pontos)) continue;
+    if (grupo.length < 2 && !aliquotasConhecidas.has(pontos)) continue;
     for (const f of grupo) retidos.add(f.t.id);
 
     const total = somar(grupo, (f) => f.falta);

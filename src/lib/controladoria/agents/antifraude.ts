@@ -527,23 +527,37 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     const titulos = somar(g.linhas, (l) => l.titulos);
     const rotina = CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.categoria);
     const pessoas = g.linhas.length;
+    // RESCISÃO PAGA A QUEM AINDA CONSTA ATIVO. A evidência real: sete
+    // rescisões, seis delas para motoristas que o cadastro ainda mostra em
+    // atividade. Ou o desligamento não foi registrado na gestão (e o cadastro
+    // mente para todo relatório de custo por motorista), ou pagou-se
+    // rescisão a quem não saiu. Nos dois casos é o cruzamento que interessa.
+    const rescisao = /rescis/i.test(g.categoria);
+    const ativosComRescisao = rescisao ? g.linhas.filter((l) => l.funcionario.active) : [];
 
     achados.push({
       regra: "FR-FORNECEDOR-FUNCIONARIO",
       tipo: "ESTADO",
-      severidade: rotina ? "INFO" : agravar(severidadePorValor(valor, materialidade)),
+      severidade: ativosComRescisao.length > 0 ? "MEDIA" : rotina ? "INFO" : agravar(severidadePorValor(valor, materialidade)),
       categoria: rotina ? "ERRO_PROCESSO" : "FRAUDE",
       titulo: `${pessoas} funcionário(s) recebem pelo contas a pagar em "${g.categoria}" (${g.apelido})`,
       descricao:
         `${pessoas} fornecedor(es) com o mesmo CPF de gente da folha receberam ${titulos} título(s) a pagar, ` +
         `somando ${fmtBRL(valor)}, lançados na categoria "${g.categoria}". ` +
         (rotina
-          ? "Categoria de rotina de motorista (diária, adiantamento, reembolso): é o processo normal da operação, não conflito de interesse. Fica registrado para a política de conflito cobrir o caso."
-          : "Categoria de fornecedor comum paga a pessoa da própria folha: serviço que a empresa já remunera via folha é risco trabalhista e fiscal, e pagamento a si mesmo é o caminho mais curto para fraude."),
-      recomendacao: rotina
-        ? "Nenhuma ação sobre os pagamentos. Vale só formalizar: política escrita de diária/adiantamento e conferência amostral dos comprovantes."
-        : "Verificar a natureza de cada pagamento da lista e se há autorização formal para contratar pessoa da própria folha. " +
-          "Havendo, registrar a declaração de conflito de interesse; não havendo, suspender novos pagamentos até a apuração.",
+          ? "Categoria de rotina de pessoal (diária, adiantamento, reembolso, folha): é o processo normal da operação, não conflito de interesse. Fica registrado para a política de conflito cobrir o caso."
+          : "Categoria de fornecedor comum paga a pessoa da própria folha: serviço que a empresa já remunera via folha é risco trabalhista e fiscal, e pagamento a si mesmo é o caminho mais curto para fraude.") +
+        (ativosComRescisao.length > 0
+          ? ` ATENÇÃO: ${ativosComRescisao.length} de ${pessoas} receberam rescisão e ainda constam ATIVOS no cadastro de motoristas — ` +
+            `ou o desligamento não foi registrado na gestão, ou a rescisão foi paga a quem não saiu.`
+          : ""),
+      recomendacao:
+        ativosComRescisao.length > 0
+          ? "Conferir na gestão de motoristas o desligamento de cada nome marcado como ativo na evidência: registrar a saída de quem saiu; apurar com o RH a rescisão de quem continua trabalhando."
+          : rotina
+            ? "Nenhuma ação sobre os pagamentos. Vale só formalizar: política escrita de diária/adiantamento e conferência amostral dos comprovantes."
+            : "Verificar a natureza de cada pagamento da lista e se há autorização formal para contratar pessoa da própria folha. " +
+              "Havendo, registrar a declaração de conflito de interesse; não havendo, suspender novos pagamentos até a apuração.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieCategoria",
@@ -555,6 +569,7 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
         pessoas,
         titulos,
         total: valor,
+        ...(rescisao ? { rescisaoComCadastroAtivo: ativosComRescisao.length } : {}),
         funcionarios: g.linhas
           .sort((a, b) => b.valor - a.valor)
           .slice(0, 50)
@@ -668,9 +683,25 @@ function cadastrosDuplicados(ctx: ContextoAuditoria): AchadoNovo[] {
   for (const [, grupo] of porNome) {
     const nomeNormalizado = normalizarRazaoSocial(grupo[0].nome);
     if (grupo.length < 2 || nomeNormalizado.length < 6) continue;
-    const documentos = new Set(grupo.map((p) => p.documento).filter(Boolean));
-    if (documentos.size <= 1) continue; // ja coberto pela regra acima
+    const documentos = [...new Set(grupo.map((p) => p.documento).filter((d): d is string => Boolean(d)))];
+    if (documentos.length <= 1) continue; // ja coberto pela regra acima
     const apelido = grupo[0].conexaoApelido;
+
+    // MESMO NOME, DOCUMENTOS DIFERENTES, e o que isso significa de verdade.
+    // Sobraram 171 destes na mesma conta, e quase nenhum era duplicidade:
+    //   - dois CPFs com o mesmo nome são duas PESSOAS (homônimos: "José da
+    //     Silva" existe aos milhares). Um cadastro com CPF digitado errado
+    //     não passaria no dígito verificador, e isso outra regra pega.
+    //   - dois CNPJs com a mesma raiz (8 primeiros dígitos) são matriz e
+    //     filial da mesma empresa — o posto da rodovia e o da cidade. A
+    //     própria descrição do achado já dizia "pode ser matriz e filial".
+    // O que resta é o caso que vale olhar: CNPJs de raízes diferentes com o
+    // mesmo nome — empresa homônima de verdade, ou cadastro com CNPJ de
+    // outra empresa colado no lugar.
+    const todosPessoaFisica = documentos.every((d) => ehPessoaFisica(d));
+    if (todosPessoaFisica) continue;
+    const raizes = new Set(documentos.map((d) => (ehPessoaFisica(d) ? `cpf:${d}` : d.slice(0, 8))));
+    if (raizes.size <= 1) continue;
 
     achados.push({
       regra: "FR-CADASTRO-NOME-SIMILAR",

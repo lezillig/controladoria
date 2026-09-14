@@ -69,10 +69,12 @@ console.log("\n2. O que não pode fechar sozinho");
   const janela = { desde: new Date("2025-01-01") };
   const dentro = achado({ tipo: "EVENTO", dataReferencia: new Date("2026-03-10") });
   conferir("evento dentro da janela reavaliada fecha", podeFecharSozinho(dentro, NENHUMA, TODOS_OK, janela), true);
+  // Fato que ficou para trás da janela: nenhum agente vai reencontrá-lo, e
+  // pendência que ninguém reavalia não é controle — fecha.
   const fora = achado({ tipo: "EVENTO", dataReferencia: new Date("2024-11-10") });
-  conferir("evento fora da janela não fecha", podeFecharSozinho(fora, NENHUMA, TODOS_OK, janela), false);
+  conferir("evento fora da janela fecha (saiu do alcance)", podeFecharSozinho(fora, NENHUMA, TODOS_OK, janela), true);
   const semData = achado({ tipo: "EVENTO", dataReferencia: null });
-  conferir("evento sem data de referência não fecha", podeFecharSozinho(semData, NENHUMA, TODOS_OK, janela), false);
+  conferir("evento sem data de referência fecha com janela", podeFecharSozinho(semData, NENHUMA, TODOS_OK, janela), true);
   conferir("evento dentro da janela ainda detectado não fecha", podeFecharSozinho(dentro, new Set([dentro.chave]), TODOS_OK, janela), false);
   conferir("evento dentro da janela com agente quebrado não fecha", podeFecharSozinho(dentro, NENHUMA, ["conciliacao"], janela), false);
   conferir("estado continua fechando com janela", podeFecharSozinho(achado({ dataReferencia: null }), NENHUMA, TODOS_OK, janela), true);

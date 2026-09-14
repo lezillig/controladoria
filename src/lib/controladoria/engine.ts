@@ -278,22 +278,27 @@ export function podeFecharSozinho(
 
   // 3. ESTADO fecha sozinho. EVENTO é fato consumado — um pagamento em
   //    duplicidade não deixa de ter acontecido porque não apareceu hoje — e
-  //    só fecha num caso: quando o fato está DENTRO da janela que o agente
-  //    acabou de reler e, mesmo assim, o agente não o apontou. Aí o silêncio
-  //    não é falta de informação, é reavaliação: ou o dado foi corrigido na
-  //    Omie (a baixa errada foi refeita) ou a regra foi recalibrada e deixou
-  //    de considerar aquilo um problema. Nos dois casos o achado antigo está
-  //    descrevendo algo que a auditoria de hoje, olhando o mesmo dado, não
-  //    vê mais — e mantê-lo aberto é exatamente o ruído que enterra os reais.
+  //    só fecha quando uma auditoria COMPLETA acabou de rodar (a janela vem
+  //    informada) e o agente dono, sem erro, não o apontou. Dois motivos
+  //    possíveis, e os dois encerram o achado:
+  //
+  //    - o fato está dentro da janela e o agente o releu: ou o dado foi
+  //      corrigido na Omie (a baixa errada foi refeita) ou a regra foi
+  //      recalibrada e deixou de considerar aquilo um problema. O achado
+  //      antigo descreve algo que a auditoria de hoje, olhando o mesmo dado,
+  //      não vê mais.
+  //    - o fato ficou para trás da janela (nenhum agente olha além do início
+  //      do ano corrente): saiu do alcance da auditoria, nunca mais será
+  //      reavaliado, e um achado que ninguém tratou nem vai reencontrar é
+  //      pendência eterna, não controle. Catorze cotas de consórcio de
+  //      dezembro ficaram abertas assim — a regra corrigida não as via, e o
+  //      fechamento também não.
   //
   //    A regra estrita ("EVENTO nunca fecha") custou caro: 766 recebimentos a
   //    menor e 850 duplicidades continuaram abertos DEPOIS de a regra ter
-  //    sido corrigida, porque nada os fechava. Fato fora da janela continua
-  //    intocado: o agente não o releu, e silêncio ali é ausência mesmo.
-  if (achado.tipo !== "ESTADO") {
-    if (!janela || !achado.dataReferencia) return false;
-    if (achado.dataReferencia < janela.desde) return false;
-  }
+  //    sido corrigida, porque nada os fechava. Sem janela informada (chamada
+  //    fora de uma auditoria completa), vale a regra estrita.
+  if (achado.tipo !== "ESTADO" && !janela) return false;
 
   // 4. O agente dono precisa ter rodado sem erro. Agente que quebrou emite
   //    silêncio, e silêncio não é prova de que o problema acabou. Fechar por

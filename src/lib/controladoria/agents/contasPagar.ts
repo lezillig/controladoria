@@ -41,20 +41,26 @@ const TOLERANCIA_CENTAVOS = 50;
 // anotação. Para a regra de duplicidade isso vale o mesmo que documento em
 // branco — não identifica nada e não pode contar como "documento distinto".
 const DOCUMENTO_DE_ENFEITE = /^(quitad[oa]|pag[oa]|liquidad[oa]|baixad[oa]|s\/?n|n\/?a|nd|x+|-+|\.+|0+)$/i;
+// Texto sem nenhum dígito ("Toyota Corolla", "IPVA frota") é descrição, não
+// número: três títulos do DETRAN com documento "Toyota Corolla" são três
+// Corollas licenciados, e o campo foi usado como legenda.
+const DOCUMENTO_SEM_DIGITO = /^[^\d]+$/;
 
 function documentoInformado(numero: string | null): string {
   const limpo = (numero ?? "").trim();
-  return DOCUMENTO_DE_ENFEITE.test(limpo) ? "" : limpo;
+  return DOCUMENTO_DE_ENFEITE.test(limpo) || DOCUMENTO_SEM_DIGITO.test(limpo) ? "" : limpo;
 }
 
-// Banco, financeira, consórcio, leasing. Para uma frota, N parcelas idênticas
-// no mesmo dia para a mesma instituição é o normal — são N contratos (N
-// veículos financiados no mesmo lote), não a mesma parcela lançada N vezes. A
-// Omie não traz o número do contrato, então a regra não consegue provar que
-// são contratos diferentes; o que ela pode fazer é não gritar: o achado
-// fica, informativo, com a leitura provável escrita nele.
-const INSTITUICAO_FINANCEIRA =
-  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|securitizadora|cooperativa de cr|sicredi|sicoob)\b/i;
+// QUEM COBRA POR VEÍCULO. Banco, financeira, consórcio, leasing, DETRAN,
+// seguradora, rastreador, pedágio. Para uma frota, N parcelas idênticas no
+// mesmo dia para o mesmo cobrador é o normal — são N veículos (N contratos
+// financiados no mesmo lote, N licenciamentos do mesmo modelo, N apólices),
+// não a mesma parcela lançada N vezes. A Omie não traz o número do contrato
+// nem a placa, então a regra não consegue provar que são veículos
+// diferentes; o que ela pode fazer é não gritar: o achado fica, informativo,
+// com a leitura provável escrita nele.
+const COBRADOR_POR_VEICULO =
+  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|securitizadora|cooperativa de cr|sicredi|sicoob|detran|denatran|tr[aâ]nsito|ipva|licenciamento|segur|rastrea|monitoramento|ped[aá]gio|sem parar|conectcar|veloe|dpvat)\b/i;
 
 export const agenteContasPagar: Agente = {
   id: "contas-pagar",
@@ -208,7 +214,7 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
     const excedente = valorTotal - grupo[0].valorDocumentoCents;
     const todosPagos = grupo.every((t) => !emAberto(t));
     const nome = nomeParceiro(ctx, grupo[0]);
-    const financeira = INSTITUICAO_FINANCEIRA.test(nome);
+    const financeira = COBRADOR_POR_VEICULO.test(nome);
 
     let severidade = severidadePorValor(excedente, materialidade);
     if (mesmoDocumento) severidade = agravar(severidade);
@@ -226,11 +232,12 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
         `${mesmoDocumento ? `, todos com o mesmo número de documento (${grupo[0].numeroDocumento})` : ""}. ` +
         `${todosPagos ? "Todos já foram pagos" : "Ao menos um ainda está em aberto"} — exposição de ${fmtBRL(excedente)}.` +
         (financeira
-          ? ` Instituição financeira: em frota, parcelas idênticas no mesmo dia costumam ser ${grupo.length} contratos ` +
-            `distintos (veículos financiados no mesmo lote), e o título na Omie não traz o número do contrato para provar.`
+          ? ` Cobrador por veículo (banco, consórcio, DETRAN, seguradora, rastreador): em frota, títulos idênticos no mesmo dia ` +
+            `costumam ser ${grupo.length} veículos (contratos, licenciamentos ou apólices distintos), e o título na Omie não traz ` +
+            `contrato nem placa para provar.`
           : ""),
       recomendacao: financeira
-        ? "Conferir na Omie ou no extrato do banco se cada parcela corresponde a um contrato diferente (número do contrato ou placa na observação). Sendo contratos distintos, marcar como não se aplica; sendo a mesma parcela lançada mais de uma vez, pedir estorno ao banco."
+        ? "Conferir na Omie se cada título corresponde a um veículo diferente (placa, contrato ou RENAVAM na observação). Sendo veículos distintos, marcar como não se aplica; sendo o mesmo lançado mais de uma vez, pedir estorno."
         : todosPagos
           ? "Confrontar com a nota fiscal do fornecedor. Confirmada a duplicidade, solicitar devolução ou compensação no próximo faturamento e registrar o crédito."
           : "Bloquear o pagamento em aberto até conferir a nota fiscal. Se for duplicidade, cancelar o título antes da data de pagamento.",
@@ -260,33 +267,36 @@ function pagamentoAcimaDoDevido(
   titulos: ReturnType<typeof titulosAtivos>,
   materialidade: number
 ): AchadoNovo[] {
+  // O DESCONTO NÃO ENTRA NO "DEVIDO". As evidências reais:
+  //   - documento R$ 49.379,54, desconto R$ 49.379,54, pago R$ 49.379,54:
+  //     "pago contra R$ 0,00 devidos". Ninguém paga o valor cheio de um
+  //     título com 100% de desconto.
+  //   - documento R$ 1.248,77, desconto R$ 339,30, multa R$ 12,49, pago
+  //     R$ 1.248,77: o pago é o documento, ao centavo, e nem a multa nem o
+  //     desconto passaram pelo número.
+  // A Omie registra o valor BAIXADO (o documento) num campo e o desconto
+  // noutro; o dinheiro que saiu é a diferença. Subtrair o desconto do devido
+  // fazia todo título com desconto parecer "pago a mais" exatamente no valor
+  // do desconto — 230 achados diziam isso. Desconto não aproveitado é outro
+  // assunto (oportunidade, não perda); pagamento a maior é o que passa do
+  // documento MAIS os encargos, e é só isso que esta regra aponta.
   return titulos
     .filter((t) => t.valorPagoCents > 0)
     .map((t) => {
-      const devido = t.valorDocumentoCents + t.jurosCents + t.multaCents + t.tarifaCents - t.descontoCents;
+      const devido = t.valorDocumentoCents + t.jurosCents + t.multaCents + t.tarifaCents;
       const excedente = t.valorPagoCents - devido;
-      return { t, excedente };
+      return { t, devido, excedente };
     })
     .filter(({ excedente }) => excedente > TOLERANCIA_CENTAVOS)
-    // EXCEDENTE IGUAL AO DESCONTO NÃO É PAGAMENTO A MAIOR. A evidência real:
-    // documento R$ 49.379,54, desconto R$ 49.379,54, pago R$ 49.379,54 —
-    // "pago R$ 49.379,54 contra R$ 0,00 devidos". Ninguém paga o valor cheio
-    // de um título com 100% de desconto; o que aconteceu é que a Omie
-    // registra o valor BAIXADO (bruto) num campo e o desconto noutro, e o
-    // dinheiro que saiu é a diferença. Quando o "a mais" bate ao centavo com
-    // o desconto, é forma de registro, não perda — e 230 achados diziam isso.
-    // Sobra o que importa: pago acima do documento sem desconto que explique.
-    .filter(({ t, excedente }) => t.descontoCents <= 0 || Math.abs(excedente - t.descontoCents) > TOLERANCIA_CENTAVOS)
-    .map(({ t, excedente }) => ({
+    .map(({ t, devido, excedente }) => ({
       regra: "CP-PAGO-ACIMA",
       tipo: "EVENTO" as const,
       severidade: agravar(severidadePorValor(excedente, materialidade)),
       categoria: "PERDA_FINANCEIRA" as const,
       titulo: `Pagamento acima do devido — ${nomeParceiro(ctx, t)}`,
       descricao:
-        `${referenciaTitulo(t)}: pago ${fmtBRL(t.valorPagoCents)} contra ${fmtBRL(
-          t.valorDocumentoCents + t.jurosCents + t.multaCents + t.tarifaCents - t.descontoCents
-        )} devidos (documento + encargos − desconto). Excedente de ${fmtBRL(excedente)} sem justificativa no título.`,
+        `${referenciaTitulo(t)}: pago ${fmtBRL(t.valorPagoCents)} contra ${fmtBRL(devido)} devidos ` +
+        `(documento + juros, multa e tarifa). Excedente de ${fmtBRL(excedente)} sem justificativa no título.`,
       recomendacao:
         "Conferir o comprovante de pagamento contra o título. Sendo erro de digitação na baixa, corrigir na Omie; " +
         "sendo pagamento a maior de fato, cobrar a devolução do fornecedor.",
@@ -303,7 +313,7 @@ function pagamentoAcimaDoDevido(
         multa: t.multaCents,
         tarifa: t.tarifaCents,
         desconto: t.descontoCents,
-        devido: t.valorDocumentoCents + t.jurosCents + t.multaCents + t.tarifaCents - t.descontoCents,
+        devido,
         excedente,
       },
       chave: chaveAchado("CP-PAGO-ACIMA", refTitulo(t)),

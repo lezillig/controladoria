@@ -168,13 +168,13 @@ R$ 320 de juros em 14/02" é evento: não deixa de ser verdade porque não apare
 hoje. A distinção importa no indicador de controle interno — "resolvemos 40
 achados" é diferente de "40 sumiram sozinhos".
 
-Um evento fecha sozinho num único caso: quando a data do fato está **dentro da
-janela** que os agentes acabaram de reler, o agente dono rodou sem erro e, mesmo
-assim, não o apontou. Aí o silêncio é reavaliação — o dado foi corrigido na Omie
-ou a regra foi recalibrada — e não ausência de informação. Sem isso, 766
-"recebimentos a menor" e 850 "duplicidades" continuaram abertos depois de as
-regras terem sido corrigidas, porque nada os fechava. Fato fora da janela
-continua intocado.
+Um evento fecha sozinho quando uma auditoria **completa** acabou de rodar, o
+agente dono rodou sem erro e, mesmo assim, não o apontou. Ou o fato está dentro
+da janela e foi reavaliado (o dado foi corrigido na Omie, ou a regra foi
+recalibrada), ou ficou para trás da janela e nenhum agente vai reencontrá-lo —
+pendência que ninguém reavalia não é controle. Sem isso, 766 "recebimentos a
+menor" e 850 "duplicidades" continuaram abertos depois de as regras terem sido
+corrigidas, porque nada os fechava.
 
 **Calibragem pelas evidências** — cada regra recalibrada nasce de uma evidência
 real, e o teste (`npm run teste:calibragem`) fixa o caso:
@@ -205,7 +205,16 @@ real, e o teste (`npm run teste:calibragem`) fixa o caso:
   fraude.
 - `FR-CADASTRO-DUPLICADO` / `FR-CADASTRO-NOME-SIMILAR` — só dentro da mesma
   conta Omie. O mesmo fornecedor existe, com razão, na Azul e na MCZ; 203
-  "duplicidades" eram isso.
+  "duplicidades" eram isso. Nome igual com dois CPFs é homônimo (duas
+  pessoas); com CNPJs de mesma raiz é matriz e filial. Sobra CNPJ de raiz
+  diferente com o mesmo nome.
+- `CP-DUPLICIDADE` (de novo) — três licenciamentos do DETRAN com documento
+  "Toyota Corolla": texto sem dígito no número do documento é legenda, e
+  quem cobra por veículo (DETRAN, seguradora, rastreador, pedágio, além de
+  banco e consórcio) entra na leitura de "N veículos", informativa.
+
+A tabela "Concentração por regra" mostra, por regra, quantos achados são
+apenas informativos, e o cabeçalho separa "a triar" de "informativos".
 
 **Chave determinística** — o mesmo fato, reavaliado amanhã, produz a mesma chave
 e reencontra o achado, preservando a tratativa que alguém escreveu nele.
