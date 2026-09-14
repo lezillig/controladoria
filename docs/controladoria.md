@@ -213,8 +213,32 @@ real, e o teste (`npm run teste:calibragem`) fixa o caso:
   quem cobra por veículo (DETRAN, seguradora, rastreador, pedágio, além de
   banco e consórcio) entra na leitura de "N veículos", informativa.
 
+- `FR-FORNECEDOR-FUNCIONARIO` (de novo) — lê a árvore de categorias da Omie
+  ("Banco de Horas" em "Despesas com Pessoal" é rotina pelo grupo); título de
+  funcionário até R$ 1.000 em qualquer categoria é reembolso; "Freelancer" com
+  várias pessoas da folha é pagamento por fora (risco financeiro, passivo
+  trabalhista); rescisão ou acordo judicial pago a quem ainda consta ativo sobe
+  para médio.
+- `CP-PREVISAO` — documento "PREVISÃO" é orçamento lançado como conta a pagar;
+  sai da duplicidade e vira um achado informativo por empresa.
+- `CR-DESCONTO` — desconto acima de 50% do faturado (Ame 96,7%, SPAL 96,8%) é
+  o campo registrando compensação, crédito ou baixa errada, não política
+  comercial: erro de processo, sem impacto, com a forma de baixa a conferir.
+- `OP-CONSOLIDACAO` — folha, encargos, tributos e financeiro não se cotam;
+  pessoa física não entra; categoria com o maior fornecedor acima de 60% já
+  está consolidada e o achado passa a ser a cauda fora do acordo.
+- Padrões (`HI-*`) — a própria empresa (CNPJ ou nome da conexão), banco,
+  consórcio e tributo não têm padrão de fornecedor. Reajuste que acompanha o
+  crescimento da receita do grupo diz isso e pede custo por veículo, não aditivo.
+- `FR-BAIXA-ANTECIPADA` — débito automático (banco, consórcio, cartão de
+  combustível, tributo), baixa de valor zero e até 7 dias de atraso de
+  lançamento não são título criado depois. Era um crítico de 1.704 casos.
+- `FI-NOTA-CANCELADA` — NF-e de produto numa empresa de serviço é devolução; o
+  título é resto do cancelamento e deve ser cancelado, não a nota reemitida.
+
 A tabela "Concentração por regra" mostra, por regra, quantos achados são
-apenas informativos, e o cabeçalho separa "a triar" de "informativos".
+apenas informativos, e o cabeçalho separa "a triar" de "informativos". A
+calibragem levou a lista de 2.977 achados em aberto para 396, com 183 a triar.
 
 **Chave determinística** — o mesmo fato, reavaliado amanhã, produz a mesma chave
 e reencontra o achado, preservando a tratativa que alguém escreveu nele.
