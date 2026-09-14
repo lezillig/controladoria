@@ -11,6 +11,7 @@ import { agenteFrota } from "./agents/frota";
 import { agenteOportunidades } from "./agents/oportunidades";
 import { agentePadroes } from "./agents/padroes";
 import { agenteRentabilidade } from "./agents/rentabilidade";
+import { agentePessoal } from "./agents/pessoal";
 import type { Agente } from "./types";
 
 // REGISTRO DOS AGENTES
@@ -63,6 +64,10 @@ export const AGENTES: Agente[] = [
   agenteOportunidades,
   agenteAdministrativo,
   agenteConformidade,
+  // Pessoal por último e com área própria (RH): cruza o que se paga a CPF de
+  // gente da folha com o ponto, a escala, o uso de veículo e o afastamento
+  // da gestão. Quem confere se a pessoa trabalhou é o RH, não o financeiro.
+  agentePessoal,
 ];
 
 export function agentePorId(id: string): Agente | undefined {

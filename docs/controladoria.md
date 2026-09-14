@@ -54,11 +54,11 @@ entregaria acesso ao ERP financeiro do grupo.
 
 A escolha por **três camadas** é o que dá confiança ao resultado:
 
-### Camada 1 — Treze agentes de domínio
+### Camada 1 — Catorze agentes de domínio
 
 Determinísticos e puros: recebem o mesmo retrato dos dados, não consultam banco
-nem API, não escrevem nada. São treze porque cada um responde a uma pergunta com
-**dono diferente na empresa** — o que torna o achado endereçável a alguém.
+nem API, não escrevem nada. São catorze porque cada um responde a uma pergunta
+com **dono diferente na empresa** — o que torna o achado endereçável a alguém.
 
 | Agente | Área | O que procura |
 |---|---|---|
@@ -75,8 +75,9 @@ nem API, não escrevem nada. São treze porque cada um responde a uma pergunta c
 | `oportunidades` | Controladoria | **Onde reduzir custo** (seção 5), juros evitáveis anualizados, tarifas, consolidação de fornecedores, política de alçadas sugerida |
 | `administrativo` | Administrativo | Sync atrasado ou com erro, cadastro incompleto, conta sem extrato, título emitido depois de vencer, achados críticos sem tratativa |
 | `conformidade` | Controladoria | Prazo estourado, risco grave sem responsável, apontamento externo reincidente, apontamento confirmado pelos dados, proposta de leitura não conferida, relatório mensal não recebido, ponto cego do sistema |
+| `pessoal` | RH | O que se paga a CPF de gente da folha cruzado com o rastro operacional da gestão (ponto, escala, uso de veículo, cartão de frota, afastamento): pagamento a quem já saiu, pagamento a quem nunca aparece na operação, diária fora do padrão do departamento ou sem dia trabalhado, reembolso repetido, adiantamento sem acerto, ponto batido em dia de atestado ou férias |
 
-Um agente que quebra **não derruba os outros doze**.
+Um agente que quebra **não derruba os outros treze**.
 
 **Frota e combustível — o que cada regra precisa e quando fica calada.** O
 agente lê o extrato do cartão (`FuelTransaction` da gestão) e cruza com escala
@@ -123,6 +124,28 @@ o caso legítimo que preserva (`scripts/teste-desvios.ts`):
 | `CR-LAPPING` | Baixa cujo valor não é o do título baixado mas é exatamente o de outro título em aberto do mesmo cliente | Baixa no valor do próprio título |
 | `CB-TRANSFERENCIA-INTERGRUPO` | Débito numa empresa e crédito de mesmo valor na outra em ±1 dia, sem título dos dois lados (INFO, um por mês) | — |
 | `HI-REAJUSTE-VENCIDO` | Cliente com 13+ meses de faturamento estável (MAD/mediana < 15%) sem nenhum aumento; impacto = 12 meses × 4% (estimativa declarada) | Valor que varia com o volume (por km), aumento já ocorrido |
+
+**Pessoal — o que se paga a quem é da folha, contra o rastro da operação.** O
+agente `pessoal` (`src/lib/controladoria/agents/pessoal.ts`) parte dos títulos
+a pagar cujo documento é o CPF de um motorista (o mesmo cruzamento de
+`FR-FORNECEDOR-FUNCIONARIO`) e pergunta o que a Omie sozinha não responde: a
+pessoa estava trabalhando? O rastro vem da gestão — ponto (`TimeClockEntry`),
+afastamento (`DriverLeave`), escala, uso de veículo e cartão de frota; ponto e
+afastamento são duas tabelas a mais no papel de leitura
+(`docs/papel-leitura-gestao.sql`), lidas como opcionais: até a permissão ser
+concedida, a tela de sincronização lista o que falta e as regras ficam caladas.
+O TiqueTaque importa o ponto com atraso, então todo título precisa de idade
+antes de contar (7 dias; 45 para o desligado). Evidência sempre com o CPF
+mascarado.
+
+| Regra | Aponta | Fica calada quando |
+|---|---|---|
+| `PE-PAGO-A-DESLIGADO` | Motorista INATIVO com título emitido mais de 45 dias depois do último rastro operacional (ponto, uso, escala — o mais recente), fora das categorias de desligamento (rescisão, acordo, judicial, indenização, FGTS, homologação, aviso prévio, férias vencidas); um achado por pessoa, severidade agravada pelo valor | Nenhuma fonte de rastro carregada; a pessoa não tem rastro nenhum na janela (não se sabe quando saiu); título com menos de 45 dias |
+| `PE-FANTASMA` | Motorista ATIVO com função de operação (nula ou motorista/cobrador/ajudante/monitor/auxiliar), com título nos últimos 60 dias e nenhum ponto, escala, uso de veículo nem abastecimento no período, sem afastamento cobrindo 30+ desses dias; ALTA fixa | Tabela de afastamentos ausente ou vazia; menos de 50% dos ativos de operação com rastro no período (a base não registra a operação); título com menos de 7 dias; admissão há menos de 30 dias; rescisão (é desligamento não registrado, do antifraude) |
+| `PE-DIARIA-OUTLIER` | Diária/ajuda de custo/reembolso/pedágio/alimentação por dia trabalhado (dias com ponto; sem ponto, dias com uso de veículo) acima de mediana + 5·MAD do departamento no mês, com excesso ≥ ¼ da materialidade → ERRO_PROCESSO MÉDIA; diária com zero dia trabalhado → FRAUDE MÉDIA; um achado por pessoa e mês | Sem ponto nem uso carregados; mês ainda aberto (fecha 7 dias depois do fim); metade de quem recebeu diária sem dia registrado (o ponto do mês não veio); departamento com menos de 5 pessoas (só o caso de zero dias roda) |
+| `PE-REEMBOLSO-DUPLICADO` | O mesmo número de documento em dois reembolsos (mesma pessoa, ou pessoas diferentes com o mesmo valor); ou a mesma pessoa, o mesmo valor e a mesma categoria em até 7 dias; EVENTO | Número que a pessoa repete 4+ vezes (rótulo, não cupom); parcelas do mesmo documento; 4+ títulos iguais com metade dos intervalos em 7 dias (diária fixa, é o ritmo da pessoa) |
+| `PE-ADIANTAMENTO-ABERTO` | Adiantamento/vale pago a CPF há 60+ dias sem título de acerto/devolução/desconto em folha, sem título a receber do CPF e sem rescisão nos 60 dias seguintes; agregado por pessoa, RISCO_FINANCEIRO | Vale-alimentação/transporte (benefício); adiantamento ainda não pago; 10+ adiantamentos vencidos e nenhum com acerto na Omie (o acerto é feito na folha, fora dela — apontaria todo mundo) |
+| `PE-AFASTADO-COM-OPERACAO` | Atestado, férias, licença ou afastamento com ponto, uso de veículo ou abastecimento da pessoa em dia coberto; INFO, um achado por afastamento | Sem afastamentos carregados; sem ponto, uso nem abastecimento carregados; folga e abono (trocar folga de dia é rotina); escala não conta (é plano, não presença) |
 
 **O que a Omie passou a entregar ao espelho** (migração `20260914160000`): no
 título, `usuarioInclusao`/`usuarioAlteracao`/`dataInclusaoOmie` (bloco `info`,
