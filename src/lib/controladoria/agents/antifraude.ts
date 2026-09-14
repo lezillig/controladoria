@@ -478,6 +478,11 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
 
     const titulos = ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo === p.codigoOmie);
     const valor = somar(titulos, (t) => t.valorDocumentoCents);
+    // SÓ COM DINHEIRO ENVOLVIDO. Motorista cadastrado como fornecedor sem
+    // título no período é cadastro, não pagamento — 348 achados dizendo
+    // "conflito de interesse" sobre gente que não recebeu nada. O conflito
+    // existe no dia em que há título; é nesse dia que ele aparece.
+    if (titulos.length === 0) continue;
 
     achados.push({
       regra: "FR-FORNECEDOR-FUNCIONARIO",

@@ -53,7 +53,7 @@ export const agenteContasReceber: Agente = {
   executar: auditarContasReceber,
 };
 
-function auditarContasReceber(ctx: ContextoAuditoria): AchadoNovo[] {
+export function auditarContasReceber(ctx: ContextoAuditoria): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
   const materialidade = materialidadeCents(ctx);
   const titulos = titulosAtivos(ctx, "RECEBER");
@@ -238,12 +238,21 @@ function recebimentoAMenor(
   return titulos
     .filter((t) => t.liquidado && t.valorPagoCents > 0)
     .map((t) => {
-      const devido = t.valorDocumentoCents - t.descontoCents;
+      // RETENÇÃO NA FONTE NÃO É PERDA. Prefeitura, órgão público e empresa
+      // grande retêm ISS, IR, PIS/COFINS/CSLL e INSS no pagamento: o que entra
+      // é o documento menos o imposto que o cliente recolheu em nome da
+      // empresa. A primeira versão ignorava isso e acusou 766 "recebimentos a
+      // menor" — um quarto de todos os achados em aberto — quase todos
+      // retenção legítima. O imposto retido não some: vira crédito na
+      // apuração. O que falta de verdade é o que sobra depois dele.
+      const retencoes =
+        t.retencaoIrCents + t.retencaoIssCents + t.retencaoPisCents + t.retencaoCofinsCents + t.retencaoCsllCents + t.retencaoInssCents;
+      const devido = t.valorDocumentoCents - t.descontoCents - retencoes;
       const falta = devido - t.valorPagoCents;
-      return { t, falta, devido };
+      return { t, falta, devido, retencoes };
     })
     .filter(({ falta }) => falta > TOLERANCIA_CENTAVOS)
-    .map(({ t, falta, devido }) => ({
+    .map(({ t, falta, devido, retencoes }) => ({
       regra: "CR-RECEBIDO-MENOR",
       tipo: "EVENTO" as const,
       severidade: agravar(severidadePorValor(falta, materialidade)),
@@ -251,7 +260,8 @@ function recebimentoAMenor(
       titulo: `Recebimento a menor — ${nomeParceiro(ctx, t)}`,
       descricao:
         `${referenciaTitulo(t)} está liquidado, mas entraram ${fmtBRL(t.valorPagoCents)} de ${fmtBRL(devido)} devidos ` +
-        `(descontos já considerados). Faltam ${fmtBRL(falta)} que ninguém vai cobrar, porque o título consta como quitado.`,
+        `(descontos${retencoes > 0 ? ` e ${fmtBRL(retencoes)} de retenções na fonte` : ""} já considerados). ` +
+        `Faltam ${fmtBRL(falta)} que ninguém vai cobrar, porque o título consta como quitado.`,
       recomendacao:
         "Conferir o comprovante do cliente. Sendo diferença real, reabrir a cobrança do saldo; sendo tarifa bancária, " +
         "lançar como despesa financeira em vez de reduzir a receita — a margem do contrato está sendo subestimada.",
@@ -261,7 +271,7 @@ function recebimentoAMenor(
       entidadeTipo: "OmieTitulo",
       entidadeId: t.id,
       entidadeRef: referenciaTitulo(t),
-      evidencia: { devido, recebido: t.valorPagoCents, desconto: t.descontoCents },
+      evidencia: { documento: t.valorDocumentoCents, desconto: t.descontoCents, retencoes, devido, recebido: t.valorPagoCents },
       chave: chaveAchado("CR-RECEBIDO-MENOR", refTitulo(t)),
     }));
 }

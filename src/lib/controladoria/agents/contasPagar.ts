@@ -45,7 +45,7 @@ export const agenteContasPagar: Agente = {
   executar: auditarContasPagar,
 };
 
-function auditarContasPagar(ctx: ContextoAuditoria): AchadoNovo[] {
+export function auditarContasPagar(ctx: ContextoAuditoria): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
   const materialidade = materialidadeCents(ctx);
   const titulos = titulosAtivos(ctx, "PAGAR");
@@ -163,6 +163,16 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
     const mesmoDocumento = documentos.size === 1 && grupo[0].numeroDocumento !== null;
     const parcelas = new Set(grupo.map((t) => t.numeroParcela ?? ""));
     if (!mesmoDocumento && parcelas.size === grupo.length && parcelas.size > 1) continue;
+    // DOCUMENTOS DISTINTOS, todos informados, no mesmo dia e valor: é a
+    // rotina de uma frota, não duplicidade. Quarenta cotas de consórcio,
+    // trinta rastreadores, o IPVA de cada veículo — cada um com o seu número
+    // de documento, todos com o mesmo valor, todos vencendo no mesmo dia. A
+    // primeira versão acusava 850 "duplicidades" assim, e enterrava as reais
+    // (mesmo documento repetido) no meio delas. Documento repetido continua
+    // sendo apontado; documento ausente continua sendo suspeito.
+    const todosComDocumentoDistinto =
+      grupo.every((t) => (t.numeroDocumento ?? "").trim() !== "") && documentos.size === grupo.length;
+    if (todosComDocumentoDistinto) continue;
 
     const valorTotal = somar(grupo, (t) => t.valorDocumentoCents);
     const excedente = valorTotal - grupo[0].valorDocumentoCents;

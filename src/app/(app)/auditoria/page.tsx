@@ -111,6 +111,19 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
 
   const totalEmAberto = contagens.reduce((acc, c) => acc + c._count, 0);
 
+  // A mesma regra pode emitir em duas categorias (CP-DUPLICIDADE é FRAUDE
+  // enquanto há título em aberto e PERDA_FINANCEIRA depois de pago). O cartão
+  // de categoria precisa das duas partes; a concentração por regra precisa
+  // da soma, senão a regra aparece duas vezes e ninguém sabe o total dela.
+  const concentracaoPorRegra = [...porRegra
+    .reduce((mapa, r) => {
+      const atual = mapa.get(r.regra) ?? { regra: r.regra, total: 0, impactoCents: 0 };
+      atual.total += r._count;
+      atual.impactoCents += r._sum.impactoCents ?? 0;
+      return mapa.set(r.regra, atual);
+    }, new Map<string, { regra: string; total: number; impactoCents: number }>())
+    .values()].sort((a, b) => b.total - a.total);
+
   const totalImpacto = achados.reduce((acc, a) => acc + (a.impactoCents ?? 0), 0);
   const agentesComAchado = new Map(porAgente.map((a) => [a.agente, a._count]));
 
@@ -317,13 +330,13 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
           <Tabela
             colunas={["Regra", "Achados", "% do total", "Valor em jogo", ""]}
             alinharDireita={[1, 2, 3]}
-            linhas={porRegra.slice(0, 20).map((r) => [
+            linhas={concentracaoPorRegra.slice(0, 20).map((r) => [
               <span key="r" className="font-mono text-xs text-slate-700">
                 {r.regra}
               </span>,
-              fmtNumero(r._count),
-              fmtPercent(totalEmAberto > 0 ? (r._count / totalEmAberto) * 100 : 0),
-              r._sum.impactoCents ? fmtBRL(r._sum.impactoCents) : "—",
+              fmtNumero(r.total),
+              fmtPercent(totalEmAberto > 0 ? (r.total / totalEmAberto) * 100 : 0),
+              r.impactoCents ? fmtBRL(r.impactoCents) : "—",
               <Link
                 key="v"
                 href={`/auditoria?regra=${encodeURIComponent(r.regra)}`}
