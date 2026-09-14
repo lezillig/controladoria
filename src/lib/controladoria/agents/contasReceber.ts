@@ -201,24 +201,61 @@ function descontosConcedidos(
     const percentual = bruto > 0 ? (desconto / bruto) * 100 : 0;
     if (desconto < materialidade / 2 && percentual < PERCENTUAL_DESCONTO_RELEVANTE) continue;
 
+    // DESCONTO QUASE IGUAL AO FATURADO NÃO É DESCONTO. Ame Digital com 96,7%
+    // e SPAL com 96,8%: ninguém dá 97% de desconto a uma engarrafadora. É o
+    // campo "desconto" da Omie sendo usado para outra coisa — a parte
+    // liquidada por compensação ou crédito, a taxa da plataforma, uma baixa
+    // registrada errado. O dinheiro pode até ter entrado; o que sumiu foi a
+    // trilha. A regra continua apontando, mas diz o que é: registro, não
+    // política comercial. Os 15% da Kontak (203 títulos) são o outro caso —
+    // comissão de agência lançada como desconto, recorrente, e é esse que
+    // precisa de política escrita.
+    const registroSuspeito = percentual >= 50;
+    const cliente = nomeParceiro(ctx, grupo[0]);
+
     achados.push({
       regra: "CR-DESCONTO",
       tipo: "ESTADO",
       severidade: severidadePorValor(desconto, materialidade),
-      categoria: "PERDA_FINANCEIRA",
-      titulo: `${fmtBRL(desconto)} em descontos concedidos a ${nomeParceiro(ctx, grupo[0])}`,
+      categoria: registroSuspeito ? "ERRO_PROCESSO" : "PERDA_FINANCEIRA",
+      titulo: registroSuspeito
+        ? `${fmtBRL(desconto)} lançados como desconto para ${cliente} (${fmtPercent(percentual)} do faturado)`
+        : `${fmtBRL(desconto)} em descontos concedidos a ${cliente}`,
       descricao:
         `${grupo.length} recebimento(s) desse cliente tiveram desconto, somando ${fmtBRL(desconto)} — ` +
-        `${fmtPercent(percentual)} do valor faturado a ele. Em serviço de fretamento, essa margem raramente é recuperável no volume.`,
-      recomendacao:
-        "Verificar se há política de desconto aprovada e quem autorizou cada um. Sem política, definir alçada e percentual máximo; " +
-        "havendo política, checar se o desconto por antecipação está sendo dado para pagamentos que não foram antecipados.",
+        `${fmtPercent(percentual)} do valor faturado a ele. ` +
+        (registroSuspeito
+          ? "Desconto quase igual ao faturado não é desconto comercial: o campo está registrando outra coisa — baixa por " +
+            "compensação ou crédito, taxa de plataforma, ou lançamento errado. A receita some do DRE sem trilha do que aconteceu."
+          : "Em serviço de fretamento, essa margem raramente é recuperável no volume."),
+      recomendacao: registroSuspeito
+        ? "Abrir as baixas desses títulos na Omie e ver como foram liquidadas. O que foi compensação ou crédito deve ser baixa " +
+          "própria, não desconto; o que foi taxa é despesa financeira. Corrigir para a receita bruta voltar ao DRE."
+        : "Verificar se há política de desconto aprovada e quem autorizou cada um. Sem política, definir alçada e percentual máximo; " +
+          "havendo política, checar se o desconto por antecipação está sendo dado para pagamentos que não foram antecipados.",
       valorCents: desconto,
-      impactoCents: desconto,
+      impactoCents: registroSuspeito ? undefined : desconto,
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieParceiro",
-      entidadeRef: nomeParceiro(ctx, grupo[0]),
-      evidencia: { cliente: nomeParceiro(ctx, grupo[0]), desconto, faturado: bruto, titulos: grupo.length },
+      entidadeRef: cliente,
+      evidencia: {
+        cliente,
+        desconto,
+        faturado: bruto,
+        percentual: fmtPercent(percentual),
+        titulos: grupo.length,
+        lista: [...grupo]
+          .sort((a, b) => b.descontoCents - a.descontoCents)
+          .slice(0, 50)
+          .map((t) => ({
+            documento: t.numeroDocumento ?? t.codigoLancamento,
+            vencimento: t.dataVencimento.toISOString(),
+            faturado: t.valorDocumentoCents,
+            desconto: t.descontoCents,
+            recebido: t.valorPagoCents,
+            status: t.status,
+          })),
+      },
       chave: chaveAchado("CR-DESCONTO", codigo, chaveMes(ctx.dataReferencia)),
     });
   }
