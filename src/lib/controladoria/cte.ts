@@ -279,34 +279,82 @@ export async function conferirCte(params: {
   return cruzarCte(lista, titulos);
 }
 
-// O CRUZAMENTO, separado da consulta de propósito: é ele que carrega a regra —
-// e regra que só dá para exercitar com banco em pé é regra que ninguém
-// exercita. Assim o teste roda com a lista real do usuário e os títulos em
-// memória, e prova que o resultado reproduz a conferência feita à mão.
-export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoConferencia {
-  const usados = new Set<string>();
-  const linhas: LinhaConferencia[] = [];
+// O CASAMENTO CT-e × TÍTULO, como função pura e reutilizável.
+//
+// Nasceu dentro de `cruzarCte` (a conferência por colagem) e saiu dali quando
+// o CT-e passou a ser espelhado pelo painel do contador: o agente fiscal
+// precisa exatamente do mesmo casamento, contra os mesmos títulos, e duas
+// cópias da regra divergiriam na primeira calibragem. A tela e o agente
+// chamam esta função; o que muda é só de onde vem a lista de CT-e.
+//
+// Três passadas, nesta ordem, e a ordem é a regra:
+//   1. CHAVE DE ACESSO — o título traz `cChaveNFe` quando nasceu do documento.
+//      É o único casamento que não tem ambiguidade nenhuma.
+//   2. NÚMERO — o primeiro grupo de dígitos, sem zeros à esquerda (ver
+//      soDigitos). Forte, mas 43% dos títulos de CT-e não têm número.
+//   3. VALOR + DATA — exato no valor, ±7 dias. Fraco: dois CT-e de
+//      R$ 52.000,00 no mesmo dia é caso real desta base, e é por isso que as
+//      passadas fortes rodam ANTES, para todos os CT-e, e consomem o título.
+//
+// A lista de CT-e é percorrida na ordem recebida; quem chama decide a
+// prioridade (o agente passa os autorizados antes dos cancelados, para que um
+// casamento fraco não prenda o título ao documento morto quando há um vivo de
+// mesmo valor).
+export type CteCasavel = {
+  id: string;
+  chave?: string | null;
+  numero: string | null;
+  data: Date;
+  valorCents: number;
+};
 
-  // Casamento em duas passadas, e nesta ordem: primeiro TODOS os que têm
-  // número, depois os que só dá para casar por valor e data. Invertido, um
-  // casamento fraco consumiria o título que pertencia a um casamento forte —
-  // dois CT-e de R$ 52.000,00 no mesmo dia é caso real desta base.
-  const casar = (c: CteDaLista, porNumero: boolean): { t: TituloCte; como: "número" | "valor+data" } | null => {
-    if (porNumero) {
-      const alvo = soDigitos(c.numero);
-      if (alvo === "") return null;
-      const t = titulos.find((x) => !usados.has(x.id) && soDigitos(x.numero) === alvo);
-      return t ? { t, como: "número" } : null;
-    }
-    // Desempate do casamento fraco, nesta ordem: (1) título que É CT-e; (2)
-    // título SEM número — o que carrega um número que não é o deste CT-e quase
-    // sempre é outro documento; (3) o mais próximo na data.
+export type TituloCasavel = {
+  id: string;
+  chaveNfe?: string | null;
+  numero: string | null;
+  data: Date;
+  valorCents: number;
+  tipo: string | null;
+};
+
+export type ComoCasou = "chave" | "número" | "valor+data";
+
+export function casarCtesComTitulos<C extends CteCasavel, T extends TituloCasavel>(
+  ctes: C[],
+  titulos: T[]
+): Map<string, { titulo: T; como: ComoCasou }> {
+  const usados = new Set<string>();
+  const resultado = new Map<string, { titulo: T; como: ComoCasou }>();
+  const marcar = (c: C, titulo: T, como: ComoCasou) => {
+    usados.add(titulo.id);
+    resultado.set(c.id, { titulo, como });
+  };
+
+  // Passada 1: chave de acesso.
+  for (const c of ctes) {
+    const chave = (c.chave ?? "").replace(/\D/g, "");
+    if (chave.length !== 44) continue;
+    const t = titulos.find((x) => !usados.has(x.id) && (x.chaveNfe ?? "").replace(/\D/g, "") === chave);
+    if (t) marcar(c, t, "chave");
+  }
+
+  // Passada 2: número.
+  for (const c of ctes) {
+    if (resultado.has(c.id)) continue;
+    const alvo = soDigitos(c.numero);
+    if (alvo === "") continue;
+    const t = titulos.find((x) => !usados.has(x.id) && soDigitos(x.numero) === alvo);
+    if (t) marcar(c, t, "número");
+  }
+
+  // Passada 3: valor e data. Desempate, nesta ordem: (1) título que É CT-e;
+  // (2) título SEM número — o que carrega um número que não é o deste CT-e
+  // quase sempre é outro documento; (3) o mais próximo na data.
+  for (const c of ctes) {
+    if (resultado.has(c.id)) continue;
     const candidatos = titulos
       .filter(
-        (x) =>
-          !usados.has(x.id) &&
-          x.valorCents === c.valorCents &&
-          Math.abs(dias(x.data, c.data)) <= DIAS_DE_TOLERANCIA
+        (x) => !usados.has(x.id) && x.valorCents === c.valorCents && Math.abs(dias(x.data, c.data)) <= DIAS_DE_TOLERANCIA
       )
       .sort(
         (a, b) =>
@@ -314,24 +362,30 @@ export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoC
           Number(soDigitos(a.numero) === "") - Number(soDigitos(b.numero) === "") ||
           Math.abs(dias(a.data, c.data)) - Math.abs(dias(b.data, c.data))
       );
-    return candidatos[0] ? { t: candidatos[0], como: "valor+data" } : null;
-  };
-
-  const pendentes: CteDaLista[] = [];
-  for (const c of lista) {
-    const achado = casar(c, true);
-    if (achado) {
-      usados.add(achado.t.id);
-      linhas.push(montar(c, achado.t, achado.como));
-    } else {
-      pendentes.push(c);
-    }
+    if (candidatos[0]) marcar(c, candidatos[0], "valor+data");
   }
-  for (const c of pendentes) {
-    const achado = casar(c, false);
+
+  return resultado;
+}
+
+// O CRUZAMENTO, separado da consulta de propósito: é ele que carrega a regra —
+// e regra que só dá para exercitar com banco em pé é regra que ninguém
+// exercita. Assim o teste roda com a lista real do usuário e os títulos em
+// memória, e prova que o resultado reproduz a conferência feita à mão.
+export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoConferencia {
+  const linhas: LinhaConferencia[] = [];
+
+  // A lista colada não tem chave de acesso, então só as passadas por número e
+  // por valor+data têm efeito aqui — a de chave é vazia por construção.
+  const casaveis = lista.map((c, i) => ({ ...c, id: String(i) }));
+  const casamentos = casarCtesComTitulos(casaveis, titulos);
+  const usados = new Set<string>();
+
+  for (const c of casaveis) {
+    const achado = casamentos.get(c.id);
     if (achado) {
-      usados.add(achado.t.id);
-      linhas.push(montar(c, achado.t, achado.como));
+      usados.add(achado.titulo.id);
+      linhas.push(montar(c, achado.titulo, achado.como === "valor+data" ? "valor+data" : "número"));
     } else if (!c.cancelado) {
       // CT-e cancelado e sem título é o caso CERTO: documento anulado, cobrança
       // inexistente. Não vira linha para não afogar o que importa.
@@ -412,7 +466,7 @@ function ordem(tipo: LinhaConferencia["tipo"]): number {
   return { cancelado_com_titulo: 0, valor_divergente: 1, autorizado_sem_titulo: 2, titulo_sem_cte: 3, casado: 4 }[tipo];
 }
 
-function dias(a: Date, b: Date): number {
+export function dias(a: Date, b: Date): number {
   return Math.round((a.getTime() - b.getTime()) / 86_400_000);
 }
 
@@ -424,7 +478,7 @@ function dias(a: Date, b: Date): number {
 // "1284/2" (a parcela, que a Omie às vezes cola no número) precisam dar o mesmo
 // "1284". Juntar todos os dígitos transformaria "1284/2" em "12842" — um
 // número que não existe, e o casamento silenciosamente erra.
-function soDigitos(numero: string | null): string {
+export function soDigitos(numero: string | null): string {
   const grupo = /\d+/.exec(numero ?? "");
   return grupo ? grupo[0].replace(/^0+/, "") : "";
 }

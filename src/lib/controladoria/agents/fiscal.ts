@@ -1,7 +1,10 @@
+import type { OmieCte, OmieTitulo } from "@prisma/client";
+import { cteAutorizado } from "@/lib/omie/mapping";
+import { casarCtesComTitulos } from "../cte";
 import { fmtBRL, fmtData, fmtPercent } from "../format";
-import { inicioDoAno, inicioDoMes } from "../periodos";
+import { diasEntre, inicioDoAno, inicioDoMes } from "../periodos";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
-import { agrupar, chaveAchado, chaveMes, materialidadeCents, severidadePorValor, somar, titulosAtivos } from "./comum";
+import { agrupar, chaveAchado, chaveMes, materialidadeCents, refTitulo, severidadePorValor, somar, titulosAtivos } from "./comum";
 
 // AGENTE FISCAL / CONTÁBIL
 //
@@ -51,8 +54,205 @@ function auditarFiscal(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...cargaTributaria(ctx));
   achados.push(...falhaNaSequencia(ctx));
   achados.push(...documentoSemNumero(ctx, materialidade));
+  achados.push(...regrasDeCte(ctx, materialidade));
 
   return achados;
+}
+
+// ---------------------------------------------------------------------------
+// CT-e ESPELHADO × TÍTULO A RECEBER
+//
+// As três regras abaixo são a conferência de CT-e (src/lib/controladoria/
+// cte.ts) rodando sozinha, todo dia, sobre o que o painel do contador devolve
+// — em vez de esperar alguém colar a lista. O casamento é a MESMA função da
+// tela (`casarCtesComTitulos`), de propósito: a conferência à mão achou cinco
+// cancelados com título vivo (R$ 164 mil) e quatro autorizados nunca cobrados,
+// e o agente precisa reproduzir exatamente esse resultado, não uma variação.
+//
+// Ficam caladas quando não há CT-e no contexto: a conta pode não ter o painel
+// do contador habilitado, e nesse caso ausência de CT-e é ausência de fonte,
+// não achado. O supervisor registra o motivo.
+// ---------------------------------------------------------------------------
+
+// Dias depois da emissão para cobrar título: o faturamento do frete costuma
+// sair no mesmo dia, mas o fechamento semanal de alguns clientes leva alguns.
+const DIAS_PARA_TITULO_DO_CTE = 5;
+
+// Divergência de valor que vira achado: mais de 1% E mais de R$ 10. O
+// percentual absorve arredondamento de pedágio e reajuste de centavos; o piso
+// evita apontar R$ 0,50 num frete de R$ 40.
+const DIVERGENCIA_PERCENT = 0.01;
+const DIVERGENCIA_MINIMA_CENTS = 1_000;
+
+function regrasDeCte(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const ctes = ctx.ctes ?? [];
+  if (ctes.length === 0) return [];
+
+  const achados: AchadoNovo[] = [];
+  const receber = titulosAtivos(ctx, "RECEBER");
+
+  // Uma conexão de cada vez: a numeração de CT-e e de título é da conta, e um
+  // CT-e 1284 da Azul não pode casar com o título 1284 da MCZ.
+  for (const [conexaoId, ctesDaConexao] of agrupar(ctes, (c) => c.conexaoId)) {
+    const titulos = receber
+      .filter((t) => t.conexaoId === conexaoId)
+      .map((t) => ({
+        id: t.id,
+        chaveNfe: t.chaveNfe,
+        numero: t.numeroDocumento,
+        data: t.dataEmissao ?? t.dataVencimento,
+        valorCents: t.valorDocumentoCents,
+        tipo: t.tipoDocumento,
+        titulo: t,
+      }));
+
+    // Autorizados ANTES dos cancelados: um CT-e cancelado e reemitido com o
+    // mesmo valor no mesmo dia é o caso comum, e o casamento fraco precisa
+    // prender o título ao documento vivo. Denegado, devolvido e pendente não
+    // entram — não são documento válido nem cancelamento.
+    const autorizados = ctesDaConexao.filter((c) => !c.cancelado && cteAutorizado(c.status));
+    const cancelados = ctesDaConexao.filter((c) => c.cancelado);
+    const casaveis = [...autorizados, ...cancelados].map((c) => ({
+      id: c.id,
+      chave: c.chave,
+      numero: c.numero,
+      data: c.dataEmissao,
+      valorCents: c.valorCents,
+      cte: c,
+    }));
+    const casamentos = casarCtesComTitulos(casaveis, titulos);
+
+    for (const c of cancelados) {
+      const m = casamentos.get(c.id);
+      // Só casamento FORTE (chave ou número) sustenta "cancelado com título":
+      // por valor e data, um cancelado e o seu substituto são indistinguíveis.
+      if (!m || m.como === "valor+data") continue;
+      achados.push(cteCanceladoComTitulo(c, m.titulo.titulo, m.como, materialidade));
+    }
+
+    for (const c of autorizados) {
+      const m = casamentos.get(c.id);
+      if (!m) {
+        if (diasEntre(c.dataEmissao, ctx.dataReferencia) >= DIAS_PARA_TITULO_DO_CTE) {
+          achados.push(cteSemTitulo(ctx, c, materialidade));
+        }
+        continue;
+      }
+      if (m.como === "valor+data") continue; // valor exato por construção
+      const t = m.titulo.titulo;
+      const diferenca = Math.abs(t.valorDocumentoCents - c.valorCents);
+      if (diferenca > DIVERGENCIA_MINIMA_CENTS && diferenca > Math.round(c.valorCents * DIVERGENCIA_PERCENT)) {
+        achados.push(cteValorDivergente(ctx, c, t, m.como, materialidade));
+      }
+    }
+  }
+  return achados;
+}
+
+function rotuloCte(c: OmieCte): string {
+  return `CT-e${c.modelo === "67" ? " OS" : ""} ${c.numero ?? c.chave} (${c.conexaoApelido})`;
+}
+
+function evidenciaCte(c: OmieCte): Record<string, unknown> {
+  return {
+    cte: c.numero,
+    serie: c.serie,
+    modelo: c.modelo,
+    chave: c.chave,
+    emissao: c.dataEmissao,
+    valorCteCents: c.valorCents,
+    status: c.status,
+  };
+}
+
+// FI-CTE-CANCELADO-COM-TITULO — o documento fiscal foi cancelado e a cobrança
+// continuou. É o padrão dos cinco casos da conferência à mão: CT-e cancelado e
+// reemitido, título colado no morto — num deles o substituto saiu R$ 7.617,65
+// mais barato e o título ficou com o valor antigo.
+function cteCanceladoComTitulo(c: OmieCte, t: OmieTitulo, como: string, materialidade: number): AchadoNovo {
+  return {
+    regra: "FI-CTE-CANCELADO-COM-TITULO",
+    tipo: "EVENTO",
+    severidade: severidadePorValor(t.valorDocumentoCents, materialidade),
+    categoria: "CONFORMIDADE",
+    titulo: `${rotuloCte(c)} cancelado, mas o título de ${fmtBRL(t.valorDocumentoCents)} continua ativo`,
+    descricao:
+      `O ${rotuloCte(c)}, emitido em ${fmtData(c.dataEmissao)} por ${fmtBRL(c.valorCents)}, está cancelado — e o título ` +
+      `${refTitulo(t)}, de ${fmtBRL(t.valorDocumentoCents)} para ${t.parceiroNome ?? "cliente não identificado"}, ` +
+      `segue ${t.liquidado ? "recebido" : "em aberto"} com esse documento (casado por ${como}). Cobrança sem documento ` +
+      `fiscal válido: o cliente contesta, e se pagou, pagou sem CT-e.`,
+    recomendacao:
+      "Localizar o CT-e substituto e religar o título a ele — conferindo o valor, que no substituto pode ter mudado. " +
+      "Se não houve reemissão, cancelar o título.",
+    valorCents: t.valorDocumentoCents,
+    dataReferencia: c.dataEmissao,
+    entidadeTipo: "OmieTitulo",
+    entidadeId: t.id,
+    entidadeRef: rotuloCte(c),
+    evidencia: { ...evidenciaCte(c), titulo: t.codigoLancamento, valorTituloCents: t.valorDocumentoCents, casadoPor: como },
+    chave: chaveAchado("FI-CTE-CANCELADO-COM-TITULO", c.conexaoApelido, c.chave),
+  };
+}
+
+// FI-CTE-SEM-TITULO — frete documentado, imposto devido, ninguém cobrou. Um
+// achado por CT-e, e não agregado por mês como a NFS-e: cada frete é grande o
+// bastante para ser tratado sozinho, e o mais antigo da conferência à mão
+// estava parado desde abril.
+function cteSemTitulo(ctx: ContextoAuditoria, c: OmieCte, materialidade: number): AchadoNovo {
+  return {
+    regra: "FI-CTE-SEM-TITULO",
+    tipo: "ESTADO",
+    severidade: severidadePorValor(c.valorCents, materialidade),
+    categoria: "PERDA_FINANCEIRA",
+    titulo: `${rotuloCte(c)} de ${fmtBRL(c.valorCents)} sem título a receber`,
+    descricao:
+      `O ${rotuloCte(c)}, autorizado em ${fmtData(c.dataEmissao)} por ${fmtBRL(c.valorCents)}, não tem título a receber ` +
+      `correspondente — nem pela chave de acesso, nem pelo número, nem por valor e data (±7 dias) — passados ` +
+      `${diasEntre(c.dataEmissao, ctx.dataReferencia)} dias. Documento emitido e frete prestado sem cobrança registrada.`,
+    recomendacao:
+      "Gerar o título a receber do CT-e e enviar a fatura. Se o título existe com outro valor ou sem número, " +
+      "preencher o número do documento no título para o cruzamento reconhecê-lo.",
+    valorCents: c.valorCents,
+    impactoCents: c.valorCents,
+    dataReferencia: ctx.dataReferencia,
+    entidadeTipo: "OmieCte",
+    entidadeId: c.id,
+    entidadeRef: rotuloCte(c),
+    evidencia: { ...evidenciaCte(c), diasDesdeEmissao: diasEntre(c.dataEmissao, ctx.dataReferencia) },
+    chave: chaveAchado("FI-CTE-SEM-TITULO", c.conexaoApelido, c.chave),
+  };
+}
+
+// FI-CTE-VALOR-DIVERGENTE — o título casou com o CT-e (por chave ou número)
+// mas cobra outro valor. Acima do documento é cobrança que ele não autoriza;
+// abaixo é receita que ficou na mesa.
+function cteValorDivergente(ctx: ContextoAuditoria, c: OmieCte, t: OmieTitulo, como: string, materialidade: number): AchadoNovo {
+  const diferenca = t.valorDocumentoCents - c.valorCents;
+  return {
+    regra: "FI-CTE-VALOR-DIVERGENTE",
+    tipo: "ESTADO",
+    severidade: severidadePorValor(diferenca, materialidade),
+    categoria: "ERRO_PROCESSO",
+    titulo: `${rotuloCte(c)}: título ${diferenca > 0 ? "acima" : "abaixo"} do documento em ${fmtBRL(Math.abs(diferenca))}`,
+    descricao:
+      `O ${rotuloCte(c)} foi autorizado por ${fmtBRL(c.valorCents)} e o título ${refTitulo(t)} (casado por ${como}) ` +
+      `cobra ${fmtBRL(t.valorDocumentoCents)} — diferença de ${fmtBRL(Math.abs(diferenca))}` +
+      (diferenca > 0
+        ? ", acima do que o documento fiscal autoriza."
+        : ", abaixo do frete documentado."),
+    recomendacao:
+      diferenca > 0
+        ? "Ajustar o título ao valor do CT-e ou emitir CT-e complementar. Cobrar acima do documento é o que o cliente glosa primeiro."
+        : "Conferir se houve desconto acordado; sem acordo, emitir o complemento da cobrança.",
+    valorCents: Math.abs(diferenca),
+    impactoCents: diferenca < 0 ? Math.abs(diferenca) : undefined,
+    dataReferencia: ctx.dataReferencia,
+    entidadeTipo: "OmieTitulo",
+    entidadeId: t.id,
+    entidadeRef: rotuloCte(c),
+    evidencia: { ...evidenciaCte(c), titulo: t.codigoLancamento, valorTituloCents: t.valorDocumentoCents, diferencaCents: diferenca, casadoPor: como },
+    chave: chaveAchado("FI-CTE-VALOR-DIVERGENTE", c.conexaoApelido, c.chave),
+  };
 }
 
 // FI-DOC-SEM-NUMERO — titulo de documento fiscal sem o numero preenchido.
