@@ -435,13 +435,10 @@ function contaBancariaAlterada(ctx: ContextoAuditoria, materialidade: number): A
   );
 
   const achados: AchadoNovo[] = [];
+  const pagarPorParceiro = agrupar(ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo), (t) => t.parceiroCodigo as string);
   for (const p of alterados) {
-    const pagamentosDepois = ctx.titulos.filter(
-      (t) =>
-        t.natureza === "PAGAR" &&
-        t.parceiroCodigo === p.codigoOmie &&
-        t.dataUltimaBaixa !== null &&
-        t.dataUltimaBaixa >= p.contaBancariaAlteradaEm!
+    const pagamentosDepois = (pagarPorParceiro.get(p.codigoOmie) ?? []).filter(
+      (t) => t.dataUltimaBaixa !== null && t.dataUltimaBaixa >= p.contaBancariaAlteradaEm!
     );
     const valor = somar(pagamentosDepois, (t) => t.valorPagoCents);
 
@@ -590,6 +587,13 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     { apelido: string; categoriaCodigo: string | null; categoria: string; caminho: string; linhas: Linha[] }
   >();
 
+  // Títulos a pagar indexados por conexão e código do parceiro, uma vez:
+  // filtrar a lista inteira a cada parceiro era 70% do tempo deste agente.
+  const titulosPorParceiroEConexao = agrupar(
+    titulosAtivos(ctx, "PAGAR").filter((t) => t.parceiroCodigo),
+    (t) => `${t.conexaoId}|${t.parceiroCodigo}`
+  );
+
   for (const p of ctx.parceiros) {
     if (!p.documento) continue;
     const funcionario = cpfsFuncionarios.get(p.documento);
@@ -597,9 +601,7 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
 
     // O mesmo código de parceiro existe nas duas contas Omie com pessoas
     // diferentes: o título precisa ser da MESMA conexão do cadastro.
-    const titulos = ctx.titulos.filter(
-      (t) => t.natureza === "PAGAR" && t.conexaoId === p.conexaoId && t.parceiroCodigo === p.codigoOmie
-    );
+    const titulos = titulosPorParceiroEConexao.get(`${p.conexaoId}|${p.codigoOmie}`) ?? [];
     // SÓ COM DINHEIRO ENVOLVIDO. Motorista cadastrado como fornecedor sem
     // título no período é cadastro, não pagamento.
     if (titulos.length === 0) continue;
@@ -971,8 +973,9 @@ function fornecedorNovoComValorAlto(ctx: ContextoAuditoria, materialidade: numbe
     return desde !== null && diasEntre(desde, ctx.dataReferencia) <= DIAS_FORNECEDOR_NOVO;
   });
 
+  const pagarPorParceiro = agrupar(ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo), (t) => t.parceiroCodigo as string);
   for (const p of novos) {
-    const titulos = ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo === p.codigoOmie);
+    const titulos = pagarPorParceiro.get(p.codigoOmie) ?? [];
     if (titulos.length === 0) continue;
     const valor = somar(titulos, (t) => t.valorDocumentoCents);
     if (valor < materialidade * 3) continue;

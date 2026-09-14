@@ -140,10 +140,12 @@ function notaCanceladaComTitulo(ctx: ContextoAuditoria, materialidade: number): 
   if (canceladas.length === 0) return [];
 
   const achados: AchadoNovo[] = [];
+  const receberPorNumero = agrupar(
+    titulosAtivos(ctx, "RECEBER").filter((t) => t.numeroDocumento !== null),
+    (t) => t.numeroDocumento as string
+  );
   for (const nota of canceladas) {
-    const titulos = titulosAtivos(ctx, "RECEBER").filter(
-      (t) => t.numeroDocumento !== null && nota.numero !== null && t.numeroDocumento === nota.numero
-    );
+    const titulos = nota.numero !== null ? (receberPorNumero.get(nota.numero) ?? []) : [];
     if (titulos.length === 0) continue;
 
     const valor = somar(titulos, (t) => t.valorDocumentoCents);
@@ -239,13 +241,15 @@ function notaSemTitulo(ctx: ContextoAuditoria, materialidade: number): AchadoNov
   if (notas.length === 0) return [];
 
   const receber = titulosAtivos(ctx, "RECEBER");
+  const numerosDeTitulo = new Set(receber.map((t) => t.numeroDocumento).filter((n): n is string => n !== null));
+  const valoresPorParceiro = agrupar(receber.filter((t) => t.parceiroCodigo), (t) => t.parceiroCodigo as string);
   const orfas = notas.filter((n) => {
-    if (n.numero && receber.some((t) => t.numeroDocumento === n.numero)) return false;
+    if (n.numero && numerosDeTitulo.has(n.numero)) return false;
     // Sem numero em comum, tenta casar por cliente e valor exato — o
     // casamento frouxo evita apontar nota que so foi lancada com outro
     // numero de documento.
-    return !receber.some(
-      (t) => t.parceiroCodigo === n.parceiroCodigo && Math.abs(t.valorDocumentoCents - n.valorCents) <= 100
+    return !(n.parceiroCodigo ? (valoresPorParceiro.get(n.parceiroCodigo) ?? []) : []).some(
+      (t) => Math.abs(t.valorDocumentoCents - n.valorCents) <= 100
     );
   });
   if (orfas.length === 0) return [];

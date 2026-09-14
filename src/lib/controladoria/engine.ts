@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { achadosSemTratativa } from "./agents/administrativo";
@@ -71,8 +72,18 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
     }
   }
 
+  // Achados anteriores: os vivos, os julgados por gente e os fechados sozinhos
+  // há pouco. OBSOLETO antigo fica de fora — a pilha só cresce (cada rodada
+  // fecha centenas), a leitura ia a dezenas de milhares de linhas, e nada aqui
+  // precisa deles: a reabertura de OBSOLETO re-emitido é feita em SQL, pela
+  // chave, mais abaixo. Um OBSOLETO velho que volta conta como "novo" na
+  // estatística da rodada — e reabre do mesmo jeito.
+  const corteDeObsoletos = new Date(ctx.agora.getTime() - 90 * 86_400_000);
   const anteriores = await prisma.auditFinding.findMany({
-    where: { companyId: ctx.companyId },
+    where: {
+      companyId: ctx.companyId,
+      OR: [{ status: { not: "OBSOLETO" } }, { resolvidoEm: { gte: corteDeObsoletos } }],
+    },
     select: {
       chave: true, status: true, severidade: true, ocorrencias: true,
       regra: true, id: true,
@@ -137,15 +148,21 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
   let novos = 0;
   let reincidentes = 0;
   const chavesEmitidas = new Set<string>();
+  const aPersistir: LinhaDeAchado[] = [];
 
   for (const achado of revisao.aprovados) {
     if (opcoes.retroativa && achado.tipo === "ESTADO") continue;
+    // A mesma chave emitida duas vezes na rodada (duas regras equivalentes
+    // consolidadas, ou um agente que repetiu a entidade) grava uma vez só:
+    // o upsert em lote recusa chave repetida no mesmo comando.
+    if (chavesEmitidas.has(achado.chave)) continue;
     chavesEmitidas.add(achado.chave);
     const existente = historico.has(achado.chave);
     if (existente) reincidentes++;
     else novos++;
-    await persistirAchado(ctx, achado, agentePorRegra.get(achado.regra) ?? "desconhecido", resolverConexao(achado));
+    aPersistir.push(linhaDeAchado(ctx, achado, agentePorRegra.get(achado.regra) ?? "desconhecido", resolverConexao(achado)));
   }
+  await persistirAchados(ctx.companyId, aPersistir);
 
   // FECHAMENTO AUTOMÁTICO — achados de ESTADO que deixaram de existir na base
   // (o título foi pago, a conta foi conciliada). Viram OBSOLETO, nunca
@@ -209,7 +226,9 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
         ctx.agora
       );
   if (meta) {
-    await persistirAchado(ctx, { ...meta, confianca: 100, notaSupervisor: null, chaveRelacionada: null }, "administrativo", null);
+    await persistirAchados(ctx.companyId, [
+      linhaDeAchado(ctx, { ...meta, confianca: 100, notaSupervisor: null, chaveRelacionada: null }, "administrativo", null),
+    ]);
     // O meta-achado é persistido DEPOIS do fechamento, então na execução
     // seguinte ele estava na lista de anteriores sem estar nas chaves
     // emitidas — e fechava. Reaberto aqui pelo mesmo caminho dos demais.
@@ -237,13 +256,61 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
   };
 }
 
-async function persistirAchado(
+// A linha que vai para o banco, já com tudo resolvido. Separada da gravação
+// para o lote poder ser montado inteiro antes de qualquer escrita.
+export type LinhaDeAchado = {
+  chave: string;
+  agente: string;
+  tipo: string;
+  conexaoId: string | null;
+  conexaoApelido: string | null;
+  regra: string;
+  severidade: AchadoRevisado["severidade"];
+  categoria: AchadoRevisado["categoria"];
+  titulo: string;
+  descricao: string;
+  recomendacao: string | null;
+  valorCents: number | null;
+  impactoCents: number | null;
+  dataReferencia: Date | null;
+  entidadeTipo: string | null;
+  entidadeId: string | null;
+  entidadeRef: string | null;
+  evidencia: Prisma.InputJsonValue | null;
+  confianca: number;
+  notaSupervisor: string | null;
+  chaveRelacionada: string | null;
+};
+
+// TETO DO INTEIRO DE 32 BITS: R$ 21.474.836,47. `valorCents` e `impactoCents`
+// são INT4 no banco, e um achado agregado (o custo total de uma categoria no
+// ano, a soma de uma regra sobre o conjunto) pode passar disso. Sem o teto, a
+// gravação inteira quebrava — "Unable to fit integer value into INT4" — no
+// meio da rodada, com parte dos achados gravada e o fechamento sem rodar.
+// Gravar o teto e dizer na nota é o oposto: o número aparece truncado, com
+// aviso, e a rodada termina.
+const TETO_INT4 = 2_147_483_647;
+
+function comTeto(valor: number | null): number | null {
+  if (valor === null || valor === undefined) return null;
+  return Math.max(-TETO_INT4, Math.min(TETO_INT4, Math.round(valor)));
+}
+
+export function linhaDeAchado(
   ctx: ContextoAuditoria,
   achado: AchadoRevisado,
   agente: string,
   conexao: { id: string; apelido: string } | null
-): Promise<void> {
-  const comum = {
+): LinhaDeAchado {
+  const estourou = (achado.valorCents ?? 0) > TETO_INT4 || (achado.impactoCents ?? 0) > TETO_INT4;
+  const nota = estourou
+    ? [achado.notaSupervisor, "Valor acima do teto de armazenamento (R$ 21,4 milhões): gravado no teto — o valor real está no texto."]
+        .filter(Boolean)
+        .join(" ")
+    : achado.notaSupervisor;
+  void ctx;
+  return {
+    chave: achado.chave,
     agente,
     tipo: achado.tipo,
     conexaoId: conexao?.id ?? null,
@@ -254,31 +321,115 @@ async function persistirAchado(
     titulo: achado.titulo,
     descricao: achado.descricao,
     recomendacao: achado.recomendacao ?? null,
-    valorCents: achado.valorCents ?? null,
-    impactoCents: achado.impactoCents ?? null,
+    valorCents: comTeto(achado.valorCents ?? null),
+    impactoCents: comTeto(achado.impactoCents ?? null),
     dataReferencia: achado.dataReferencia ?? null,
     entidadeTipo: achado.entidadeTipo ?? null,
     entidadeId: achado.entidadeId ?? null,
     entidadeRef: achado.entidadeRef ?? null,
-    evidencia: (achado.evidencia ?? null) as Prisma.InputJsonValue,
+    evidencia: (achado.evidencia ?? null) as Prisma.InputJsonValue | null,
     confianca: achado.confianca,
-    notaSupervisor: achado.notaSupervisor,
+    notaSupervisor: nota,
     chaveRelacionada: achado.chaveRelacionada,
   };
+}
 
-  await prisma.auditFinding.upsert({
-    where: { companyId_chave: { companyId: ctx.companyId, chave: achado.chave } },
-    create: { companyId: ctx.companyId, chave: achado.chave, ...comum },
-    update: {
-      // Campos calculados sao sempre atualizados (o valor de um titulo
-      // vencido muda conforme ele e parcialmente pago). O que NAO se toca:
-      // status, tratativa e detectadoEm — sao da pessoa que tratou, e
-      // sobrescreve-los apagaria trabalho humano a cada execucao diaria.
-      ...comum,
-      ultimaOcorrencia: new Date(),
-      ocorrencias: { increment: 1 },
-    },
-  });
+// GRAVAÇÃO EM LOTE — um comando por até 500 achados, não um upsert por achado.
+//
+// O laço de upserts era um comando e uma ida ao banco POR ACHADO: com quatro
+// mil achados e ~13 ms de ida e volta até o Neon, só a gravação passava dos
+// 42 s do orçamento do cron — o ciclo estourava na fase de auditoria. Medido
+// em banco local: 4.000 upserts sequenciais em 8,7 s; o mesmo lote com
+// `INSERT … SELECT FROM unnest(...) ON CONFLICT DO UPDATE` em 0,25 s.
+//
+// O que NÃO muda, e é o contrato desta função: campos calculados são sempre
+// atualizados (o valor de um título vencido muda conforme é pago); status,
+// tratativa, responsável, prazo e detectadoEm nunca são tocados — são da
+// pessoa que tratou. `ocorrencias` soma 1 e `ultimaOcorrencia` avança.
+//
+// `id` e `atualizadoEm` são gerados aqui: `cuid()` e `@updatedAt` são do
+// cliente Prisma, não do banco, e um INSERT cru não os recebe.
+const TAMANHO_DO_LOTE = 500;
+
+export async function persistirAchados(companyId: string, linhas: LinhaDeAchado[]): Promise<void> {
+  for (let i = 0; i < linhas.length; i += TAMANHO_DO_LOTE) {
+    const lote = linhas.slice(i, i + TAMANHO_DO_LOTE);
+    // O lote viaja como UM parâmetro JSON e vira linhas com jsonb_to_recordset:
+    // arrays de parâmetro com nulos dentro quebram na serialização binária do
+    // driver ("improper binary format in array element"), e JSON não tem esse
+    // problema — nulo é nulo, data é texto ISO, evidência já é JSON.
+    const lote_json = JSON.stringify(
+      lote.map((l) => ({
+        id: `af_${randomUUID().replace(/-/g, "")}`,
+        chave: l.chave,
+        agente: l.agente,
+        tipo: l.tipo,
+        conexaoId: l.conexaoId,
+        conexaoApelido: l.conexaoApelido,
+        regra: l.regra,
+        severidade: l.severidade,
+        categoria: l.categoria,
+        titulo: l.titulo,
+        descricao: l.descricao,
+        recomendacao: l.recomendacao,
+        valorCents: l.valorCents,
+        impactoCents: l.impactoCents,
+        dataReferencia: l.dataReferencia ? l.dataReferencia.toISOString() : null,
+        entidadeTipo: l.entidadeTipo,
+        entidadeId: l.entidadeId,
+        entidadeRef: l.entidadeRef,
+        evidencia: l.evidencia,
+        confianca: l.confianca,
+        notaSupervisor: l.notaSupervisor,
+        chaveRelacionada: l.chaveRelacionada,
+      }))
+    );
+    await prisma.$executeRaw`
+      INSERT INTO "AuditFinding" (
+        id, "companyId", chave, agente, tipo, "conexaoId", "conexaoApelido", regra, severidade, categoria,
+        titulo, descricao, recomendacao, "valorCents", "impactoCents", "dataReferencia",
+        "entidadeTipo", "entidadeId", "entidadeRef", evidencia, confianca, "notaSupervisor", "chaveRelacionada",
+        "atualizadoEm"
+      )
+      SELECT
+        u.id, ${companyId}, u.chave, u.agente, u.tipo, u."conexaoId", u."conexaoApelido", u.regra,
+        u.severidade::"AuditSeveridade", u.categoria::"AuditCategoria",
+        u.titulo, u.descricao, u.recomendacao, u."valorCents", u."impactoCents", u."dataReferencia",
+        u."entidadeTipo", u."entidadeId", u."entidadeRef", u.evidencia, u.confianca, u."notaSupervisor", u."chaveRelacionada",
+        now()
+      FROM jsonb_to_recordset(${lote_json}::jsonb) AS u(
+        id text, chave text, agente text, tipo text, "conexaoId" text, "conexaoApelido" text, regra text,
+        severidade text, categoria text, titulo text, descricao text, recomendacao text,
+        "valorCents" int, "impactoCents" int, "dataReferencia" timestamptz,
+        "entidadeTipo" text, "entidadeId" text, "entidadeRef" text, evidencia jsonb, confianca int,
+        "notaSupervisor" text, "chaveRelacionada" text
+      )
+      ON CONFLICT ("companyId", chave) DO UPDATE SET
+        agente = EXCLUDED.agente,
+        tipo = EXCLUDED.tipo,
+        "conexaoId" = EXCLUDED."conexaoId",
+        "conexaoApelido" = EXCLUDED."conexaoApelido",
+        regra = EXCLUDED.regra,
+        severidade = EXCLUDED.severidade,
+        categoria = EXCLUDED.categoria,
+        titulo = EXCLUDED.titulo,
+        descricao = EXCLUDED.descricao,
+        recomendacao = EXCLUDED.recomendacao,
+        "valorCents" = EXCLUDED."valorCents",
+        "impactoCents" = EXCLUDED."impactoCents",
+        "dataReferencia" = EXCLUDED."dataReferencia",
+        "entidadeTipo" = EXCLUDED."entidadeTipo",
+        "entidadeId" = EXCLUDED."entidadeId",
+        "entidadeRef" = EXCLUDED."entidadeRef",
+        evidencia = EXCLUDED.evidencia,
+        confianca = EXCLUDED.confianca,
+        "notaSupervisor" = EXCLUDED."notaSupervisor",
+        "chaveRelacionada" = EXCLUDED."chaveRelacionada",
+        "ultimaOcorrencia" = now(),
+        ocorrencias = "AuditFinding".ocorrencias + 1,
+        "atualizadoEm" = now()
+    `;
+  }
 }
 
 // Reabre um achado fechado automaticamente cuja condicao voltou. Usado pelo

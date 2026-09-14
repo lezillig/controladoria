@@ -40,17 +40,22 @@ export default async function FluxoCaixaPage({
   // Agenda dia a dia, no horizonte escolhido: é a visão que o financeiro usa
   // para decidir o que pagar hoje e o que empurrar — a projeção por horizonte
   // responde "vai faltar?", esta responde "em que dia".
+  // Somas por dia montadas uma vez: filtrar os títulos em aberto a cada um
+  // dos 90 dias era o item mais caro da página.
+  const saidasPorDia = new Map<string, number>();
+  for (const t of pagarAberto) {
+    const k = t.dataVencimento.toDateString();
+    saidasPorDia.set(k, (saidasPorDia.get(k) ?? 0) + saldoAberto(t));
+  }
+  const entradasPorDia = new Map<string, number>();
+  for (const t of receberAberto) {
+    const k = t.dataVencimento.toDateString();
+    entradasPorDia.set(k, (entradasPorDia.get(k) ?? 0) + saldoAberto(t));
+  }
   const agenda = Array.from({ length: dias }, (_, i) => {
     const dia = somarDias(ctx.dataReferencia, i + 1);
-    const saidas = somar(
-      pagarAberto.filter((t) => t.dataVencimento.toDateString() === dia.toDateString()),
-      saldoAberto
-    );
-    const entradas = somar(
-      receberAberto.filter((t) => t.dataVencimento.toDateString() === dia.toDateString()),
-      saldoAberto
-    );
-    return { dia, entradas, saidas };
+    const k = dia.toDateString();
+    return { dia, entradas: entradasPorDia.get(k) ?? 0, saidas: saidasPorDia.get(k) ?? 0 };
   }).filter((d) => d.entradas > 0 || d.saidas > 0);
 
   const ruptura = projecao.find((p) => p.saldoProjetadoCents < 0);

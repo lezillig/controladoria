@@ -481,6 +481,11 @@ model OmieTitulo {
   @@index([companyId, natureza, status])
   @@index([companyId, dataUltimaBaixa])
   @@index([companyId, parceiroCodigo])
+  // Buscas do investigador e da conferência de CT-e (ver a migração
+  // 20260914150000, com as medições).
+  @@index([companyId, parceiroDocumento])
+  @@index([companyId, numeroDocumento])
+  @@index([companyId, projetoCodigo])
 }
 
 // Cada pagamento/recebimento de um título. É aqui que moram juros, multa,
@@ -716,6 +721,7 @@ model AuditFinding {
   @@index([companyId, status, severidade])
   @@index([companyId, categoria, status])
   @@index([companyId, detectadoEm])
+  @@index([companyId, regra, status])
   @@index([conexaoId, status])
 }
 

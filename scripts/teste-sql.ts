@@ -232,6 +232,54 @@ async function principal() {
   conferir("a série volta do banco", series.length >= 1, true);
   conferir("e o baseline não explode com amostra pequena", montarBaselines(series).size, 0);
 
+  // ------------------------------------------------ gravação em lote de achados
+  // O motor grava os achados com um INSERT ... ON CONFLICT por lote, em SQL
+  // cru (engine.ts). O contrato que este bloco garante: cria, atualiza os
+  // campos calculados, soma ocorrências, e NÃO toca status nem tratativa.
+  console.log("\nGravação em lote de achados");
+  const { persistirAchados } = await import("../src/lib/controladoria/engine");
+  await prisma.auditFinding.deleteMany({ where: { companyId: EMPRESA } });
+  const linha = (chave: string, extra: Record<string, unknown> = {}) => ({
+    chave,
+    agente: "contas-pagar",
+    tipo: "ESTADO",
+    conexaoId: null,
+    conexaoApelido: "TESTE",
+    regra: "CP-VENCIDO",
+    severidade: "MEDIA" as const,
+    categoria: "PERDA_FINANCEIRA" as const,
+    titulo: "Título de teste",
+    descricao: "Descrição com 'aspas', \"duplas\" e vírgula.",
+    recomendacao: null,
+    valorCents: 12_345,
+    impactoCents: null,
+    dataReferencia: new Date("2026-08-10T00:00:00Z"),
+    entidadeTipo: "OmieTitulo",
+    entidadeId: "t1",
+    entidadeRef: "doc 1 (TESTE)",
+    evidencia: { valor: 12_345, lista: [{ a: 1 }], nulo: null } as never,
+    confianca: 90,
+    notaSupervisor: null,
+    chaveRelacionada: null,
+    ...extra,
+  });
+  await persistirAchados(EMPRESA, [
+    linha("K1"),
+    linha("K2", { evidencia: null, dataReferencia: null, valorCents: null, severidade: "CRITICA", categoria: "FRAUDE", tipo: "EVENTO" }),
+  ]);
+  const lote1 = await prisma.auditFinding.findMany({ where: { companyId: EMPRESA }, orderBy: { chave: "asc" } });
+  conferir("dois achados gravados", lote1.length, 2);
+  conferir("evidência JSON preservada", (lote1[0].evidencia as { valor: number }).valor, 12_345);
+  conferir("data de referência preservada", lote1[0].dataReferencia?.toISOString(), "2026-08-10T00:00:00.000Z");
+  conferir("enums e nulos do segundo", [lote1[1].severidade, lote1[1].categoria, lote1[1].evidencia, lote1[1].valorCents], ["CRITICA", "FRAUDE", null, null]);
+  await prisma.auditFinding.update({ where: { id: lote1[0].id }, data: { status: "RESOLVIDO", observacaoTratativa: "tratado" } });
+  await persistirAchados(EMPRESA, [linha("K1", { valorCents: 99_999 }), linha("K2"), linha("K3")]);
+  const lote2 = await prisma.auditFinding.findMany({ where: { companyId: EMPRESA }, orderBy: { chave: "asc" } });
+  conferir("reincidência soma ocorrências", lote2.map((a) => a.ocorrencias), [2, 2, 1]);
+  conferir("status e tratativa humana ficam", [lote2[0].status, lote2[0].observacaoTratativa], ["RESOLVIDO", "tratado"]);
+  conferir("campo calculado é atualizado", lote2[0].valorCents, 99_999);
+  await prisma.auditFinding.deleteMany({ where: { companyId: EMPRESA } });
+
   await limpar();
 }
 

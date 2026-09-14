@@ -34,14 +34,27 @@ export function fmtPercent(valor: number | null | undefined, casas = 1): string 
   return `${valor.toFixed(casas).replace(".", ",")}%`;
 }
 
+// Formatadores em cache por número de casas. `toLocaleString` cria um
+// Intl.NumberFormat a cada chamada, e os agentes chamam isto dezenas de
+// milhares de vezes por rodada (uma descrição por achado, várias por
+// evidência): a criação do formatador era 14% do tempo de CPU dos agentes.
+const FORMATADOR_DE_NUMERO = new Map<number, Intl.NumberFormat>();
+
 export function fmtNumero(valor: number | null | undefined, casas = 0): string {
   if (valor === null || valor === undefined || !Number.isFinite(valor)) return "—";
-  return valor.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  let f = FORMATADOR_DE_NUMERO.get(casas);
+  if (!f) {
+    f = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
+    FORMATADOR_DE_NUMERO.set(casas, f);
+  }
+  return f.format(valor);
 }
+
+const FORMATADOR_DE_DATA = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" });
 
 export function fmtData(d: Date | null | undefined): string {
   if (!d) return "—";
-  return d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  return FORMATADOR_DE_DATA.format(d);
 }
 
 // Data COM HORA. Existe para o registro de falhas: duas falhas no mesmo dia

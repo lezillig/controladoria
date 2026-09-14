@@ -83,10 +83,21 @@ export function agravar(s: AuditSeveridade): AuditSeveridade {
   return escala[Math.min(escala.length - 1, i + 1)];
 }
 
+// Nome pelo cadastro, quando o título não o traz. O mapa é montado uma vez
+// por contexto (WeakMap: some junto com ele): a busca linear em dez mil
+// parceiros, chamada duas ou três vezes por achado, custava quase meio
+// segundo a cada cinco mil chamadas.
+const NOMES_POR_CONTEXTO = new WeakMap<ContextoAuditoria, Map<string, string>>();
+
 export function nomeParceiro(ctx: ContextoAuditoria, t: OmieTitulo): string {
   if (t.parceiroNome) return t.parceiroNome;
-  const p = ctx.parceiros.find((x) => x.codigoOmie === t.parceiroCodigo);
-  return p?.nome ?? "(fornecedor não identificado)";
+  if (!t.parceiroCodigo) return "(fornecedor não identificado)";
+  let nomes = NOMES_POR_CONTEXTO.get(ctx);
+  if (!nomes) {
+    nomes = new Map(ctx.parceiros.map((p) => [p.codigoOmie, p.nome]));
+    NOMES_POR_CONTEXTO.set(ctx, nomes);
+  }
+  return nomes.get(t.parceiroCodigo) ?? "(fornecedor não identificado)";
 }
 
 export function referenciaTitulo(t: OmieTitulo): string {

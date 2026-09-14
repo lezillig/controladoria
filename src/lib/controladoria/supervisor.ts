@@ -364,7 +364,9 @@ export function supervisionar(
   for (const a of candidatos) {
     if (!a.entidadeId) continue;
     const k = a.entidadeId;
-    porEntidade.set(k, [...(porEntidade.get(k) ?? []), a]);
+    const lista = porEntidade.get(k);
+    if (lista) lista.push(a);
+    else porEntidade.set(k, [a]);
   }
   for (const [, grupo] of porEntidade) {
     if (grupo.length < 2) continue;
@@ -397,7 +399,11 @@ export function supervisionar(
 
   // ---- Controle 5: regra ruidosa ----
   const porRegra = new Map<string, AchadoRevisado[]>();
-  for (const a of candidatos) porRegra.set(a.regra, [...(porRegra.get(a.regra) ?? []), a]);
+  for (const a of candidatos) {
+    const lista = porRegra.get(a.regra);
+    if (lista) lista.push(a);
+    else porRegra.set(a.regra, [a]);
+  }
 
   for (const [regra, grupo] of porRegra) {
     if (REGRAS_AGREGADAS.has(regra) || grupo.length <= MAXIMO_ACHADOS_POR_REGRA) continue;

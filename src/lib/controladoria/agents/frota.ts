@@ -183,7 +183,9 @@ function volumeAcimaDoTanque(frota: Frota, recentes: AbastecimentoGestao[], mate
   for (const [chave, historico] of frota.porVeiculo) {
     const tanque = tanquePlausivel(historico, frota.modelo(historico[0]), tanquePorModelo);
     if (!tanque) continue;
-    const doVeiculo = recentes.filter((a) => frota.chaveVeiculo(a) === chave);
+    // `recentes` é o próprio histórico (a janela é a do contexto); filtrar a
+    // lista inteira por veículo era O(veículos x abastecimentos).
+    const doVeiculo = historico;
     if (doVeiculo.length === 0) continue;
 
     type Caso = { data: string; motorista: string; litros: number; litrosDoTanque: number; excedenteLitros: number; valor: number; posto: string; modo: string };
