@@ -46,6 +46,19 @@ const DOCUMENTO_DE_ENFEITE = /^(quitad[oa]|pag[oa]|liquidad[oa]|baixad[oa]|s\/?n
 // Corollas licenciados, e o campo foi usado como legenda.
 const DOCUMENTO_SEM_DIGITO = /^[^\d]+$/;
 
+// TÍTULO DE PREVISÃO. A conta MCZ tem seis títulos de R$ 50.000,00 para a
+// própria MCZ, parcela 012/013, documento "PREVISÃO": é orçamento lançado
+// como conta a pagar para aparecer no fluxo de caixa da Omie, não obrigação
+// com fornecedor. Não é duplicidade (são seis meses de previsão no mesmo
+// dia) e não é nota a conferir. É outra coisa: previsão misturada com
+// realizado, que infla o contas a pagar e o fluxo projetado — e isso merece
+// um achado só, dizendo quanto, e não seis achados de fraude.
+const DOCUMENTO_DE_PREVISAO = /previs[aã]o|provis[aã]o|estimativa|or[cç]amento|simula[cç][aã]o|projec[aã]o/i;
+
+export function ehTituloDePrevisao(t: { numeroDocumento: string | null }): boolean {
+  return DOCUMENTO_DE_PREVISAO.test(t.numeroDocumento ?? "");
+}
+
 function documentoInformado(numero: string | null): string {
   const limpo = (numero ?? "").trim();
   return DOCUMENTO_DE_ENFEITE.test(limpo) || DOCUMENTO_SEM_DIGITO.test(limpo) ? "" : limpo;
@@ -78,7 +91,8 @@ export function auditarContasPagar(ctx: ContextoAuditoria): AchadoNovo[] {
 
   achados.push(...jurosEMulta(ctx, titulos, materialidade));
   achados.push(...vencidosEmAberto(ctx, titulos, materialidade));
-  achados.push(...duplicidades(ctx, titulos, materialidade));
+  achados.push(...titulosDePrevisao(ctx, titulos));
+  achados.push(...duplicidades(ctx, titulos.filter((t) => !ehTituloDePrevisao(t)), materialidade));
   achados.push(...pagamentoAcimaDoDevido(ctx, titulos, materialidade));
   achados.push(...antecipacaoSemDesconto(ctx, titulos, materialidade));
   achados.push(...classificacaoIncompleta(ctx, titulos, materialidade));
@@ -178,6 +192,51 @@ function vencidosEmAberto(ctx: ContextoAuditoria, titulos: ReturnType<typeof tit
     });
 }
 
+// CP-PREVISAO — previsão lançada como conta a pagar, em aberto. Um achado por
+// empresa, com a lista: o que interessa é quanto do "a pagar" não é obrigação.
+function titulosDePrevisao(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulosAtivos>): AchadoNovo[] {
+  const abertos = titulos.filter((t) => ehTituloDePrevisao(t) && emAberto(t));
+  const porEmpresa = agrupar(abertos, (t) => t.conexaoApelido);
+  const achados: AchadoNovo[] = [];
+
+  for (const [apelido, grupo] of porEmpresa) {
+    const total = somar(grupo, (t) => saldoAberto(t));
+    achados.push({
+      regra: "CP-PREVISAO",
+      tipo: "ESTADO",
+      severidade: "INFO",
+      categoria: "ERRO_PROCESSO",
+      titulo: `${grupo.length} título(s) de previsão em aberto no contas a pagar (${apelido})`,
+      descricao:
+        `${grupo.length} título(s) com documento marcado como previsão/estimativa somam ${fmtBRL(total)} em aberto. ` +
+        `São orçamento lançado como conta a pagar para aparecer no fluxo da Omie, não obrigação com fornecedor — ` +
+        `e entram no saldo a pagar e na projeção de caixa como se fossem.`,
+      recomendacao:
+        "Manter a previsão fora do contas a pagar (usar o módulo de previsão de caixa da Omie ou uma categoria própria e " +
+        "excluída dos relatórios), ou baixar/cancelar as previsões cujo mês já passou. Enquanto ficarem, todo saldo a pagar " +
+        "está inflado nesse valor.",
+      valorCents: total,
+      dataReferencia: ctx.dataReferencia,
+      entidadeTipo: "OmieConexao",
+      entidadeRef: apelido,
+      evidencia: {
+        empresa: apelido,
+        titulos: grupo.length,
+        totalEmAberto: total,
+        lista: grupo.slice(0, 50).map((t) => ({
+          fornecedor: nomeParceiro(ctx, t),
+          documento: t.numeroDocumento,
+          parcela: t.numeroParcela,
+          vencimento: t.dataVencimento.toISOString(),
+          saldo: saldoAberto(t),
+        })),
+      },
+      chave: chaveAchado("CP-PREVISAO", apelido),
+    });
+  }
+  return achados;
+}
+
 // CP-DUPLICIDADE — mesmo fornecedor, mesmo valor, mesmo vencimento. E o furo
 // classico de contas a pagar: a nota chega por dois caminhos (e-mail do
 // fornecedor e portal) e e lancada duas vezes. Quando as duas ja foram
@@ -214,7 +273,19 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
     const excedente = valorTotal - grupo[0].valorDocumentoCents;
     const todosPagos = grupo.every((t) => !emAberto(t));
     const nome = nomeParceiro(ctx, grupo[0]);
-    const financeira = COBRADOR_POR_VEICULO.test(nome);
+    // A leitura "N veículos" só vale quando os documentos NÃO se repetem. O
+    // mesmo contrato ("CTO 0704830809", parcela 015/055) duas vezes para a
+    // administradora de consórcio é o mesmo veículo, a mesma parcela — a
+    // duplicidade clássica, e banco não a torna informativa.
+    const financeira = COBRADOR_POR_VEICULO.test(nome) && !mesmoDocumento;
+
+    // Entre EMPRESAS: o mesmo CPF/CNPJ com o mesmo valor e vencimento na Azul
+    // e na MCZ. É o caso que só a auditoria de grupo enxerga — a mesma
+    // despesa paga pelas duas, ou serviço prestado às duas pelo mesmo valor.
+    // O texto precisa dizer isso, senão quem lê procura a duplicidade dentro
+    // de uma empresa só e não acha.
+    const empresas = [...new Set(grupo.map((t) => t.conexaoApelido))].sort();
+    const entreEmpresas = empresas.length > 1;
 
     let severidade = severidadePorValor(excedente, materialidade);
     if (mesmoDocumento) severidade = agravar(severidade);
@@ -231,6 +302,10 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
         `mesmo vencimento (${fmtData(grupo[0].dataVencimento)})` +
         `${mesmoDocumento ? `, todos com o mesmo número de documento (${grupo[0].numeroDocumento})` : ""}. ` +
         `${todosPagos ? "Todos já foram pagos" : "Ao menos um ainda está em aberto"} — exposição de ${fmtBRL(excedente)}.` +
+        (entreEmpresas
+          ? ` Lançados em empresas DIFERENTES (${empresas.join(" e ")}): ou a mesma despesa foi paga pelas duas, ou é serviço ` +
+            `prestado às duas pelo mesmo valor — conferir qual empresa contratou.`
+          : "") +
         (financeira
           ? ` Cobrador por veículo (banco, consórcio, DETRAN, seguradora, rastreador): em frota, títulos idênticos no mesmo dia ` +
             `costumam ser ${grupo.length} veículos (contratos, licenciamentos ou apólices distintos), e o título na Omie não traz ` +
@@ -249,7 +324,8 @@ function duplicidades(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulos
       entidadeRef: referenciaTitulo(grupo[0]),
       evidencia: {
         fornecedor: nomeParceiro(ctx, grupo[0]),
-        lancamentos: grupo.map((t) => t.codigoLancamento),
+        empresas: empresas.join(", "),
+        lancamentos: grupo.map((t) => `${t.conexaoApelido}:${t.codigoLancamento}`),
         documentos: [...documentos],
         valorUnitario: grupo[0].valorDocumentoCents,
       },

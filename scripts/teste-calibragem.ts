@@ -307,6 +307,30 @@ const rodarPagar = (titulos: Titulo[]) => auditarContasPagar(contexto({ titulos 
   conferir("descrição não diz 'mesmo número de documento'", a[0]?.descricao.includes("mesmo número de documento"), false);
 }
 {
+  // O caso real do Bradesco Consórcios: o MESMO contrato, mesma parcela,
+  // duas vezes. Banco não torna isso informativo.
+  const par = [1, 2].map(() =>
+    titulo({ parceiroNome: "BRADESCO ADMINISTRADORA DE CONSORCIOS LTDA.", valorDocumentoCents: 838_25, numeroDocumento: "CTO 0704830809", numeroParcela: "015/055", dataVencimento: d("2026-09-09") })
+  );
+  const a = rodarPagar(par);
+  conferir("mesmo contrato duas vezes no consórcio: aponta", a.length, 1);
+  conferir("sem rebaixar para informativo", a[0]?.severidade !== "INFO", true);
+}
+{
+  // O caso real da MCZ: seis previsões de R$ 50.000 no mesmo dia, documento
+  // "PREVISÃO", em aberto. Não é duplicidade — é previsão no contas a pagar.
+  const grupo = [1, 2, 3, 4, 5, 6].map(() =>
+    titulo({ conexaoApelido: "MCZ", parceiroNome: "MCZ TRANSPORTE E TURISMO LTDA", valorDocumentoCents: 50_000_00, numeroDocumento: "PREVISÃO",
+      numeroParcela: "012/013", dataVencimento: d("2026-05-28"), liquidado: false, status: "A VENCER", valorPagoCents: 0, saldoCents: 50_000_00 })
+  );
+  const todos = auditarContasPagar(contexto({ titulos: grupo }));
+  conferir("previsão não é duplicidade", todos.filter((x) => x.regra === "CP-DUPLICIDADE").length, 0);
+  const previsao = todos.filter((x) => x.regra === "CP-PREVISAO");
+  conferir("um achado de previsão por empresa", previsao.length, 1);
+  conferir("com o total em aberto", previsao[0]?.valorCents, 300_000_00);
+  conferir("informativo", previsao[0]?.severidade, "INFO");
+}
+{
   // Mesmo padrão num fornecedor comum: severidade normal.
   const grupo = [1, 2].map(() =>
     titulo({ parceiroNome: "OFICINA DO ZE", valorDocumentoCents: 5_000_00, numeroDocumento: "PAGO", dataVencimento: d("2026-02-17") })

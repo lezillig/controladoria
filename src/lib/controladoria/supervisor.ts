@@ -114,6 +114,8 @@ const REGRAS_AGREGADAS = new Set([
   // Um achado por empresa e categoria de pagamento, com a lista de pessoas
   // da folha que receberam por ela na evidência.
   "FR-FORNECEDOR-FUNCIONARIO",
+  // Um achado por empresa: quanto do contas a pagar é previsão, não obrigação.
+  "CP-PREVISAO",
   "CP-SEM-CATEGORIA",
   "CP-SEM-CENTRO-CUSTO",
   "CP-SEM-DOCUMENTO",
