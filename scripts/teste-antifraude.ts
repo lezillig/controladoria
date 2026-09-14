@@ -230,7 +230,7 @@ console.log("\nFR-BAIXA-ANTECIPADA — pagou antes de existir");
   });
   const a = rodar(ctx, "FR-BAIXA-ANTECIPADA");
   conferir("19 dias antes da emissão é achado", a.length, 1);
-  conferir("com a diferença na evidência", (a[0]?.evidencia as { casos: { diasDeDiferenca: number }[] })?.casos[0]?.diasDeDiferenca, 19);
+  conferir("com a diferença na evidência", (a[0]?.evidencia as { casosAvulsos: { diasDeDiferenca: number }[] })?.casosAvulsos[0]?.diasDeDiferenca, 19);
 }
 {
   const t = titulo({ dataEmissao: d("2026-08-10") });
@@ -254,6 +254,27 @@ console.log("\nFR-BAIXA-ANTECIPADA — pagou antes de existir");
   const t = titulo({ dataEmissao: d("2026-01-27"), parceiroNome: "BANCO DO BRASIL SA", valorDocumentoCents: 6_453_43 });
   const ctx = contexto({ titulos: [t], baixas: [baixa({ tituloId: t.id, dataBaixa: d("2026-01-11"), valorCents: 6_453_43 })] });
   conferir("débito automático de banco: silêncio", rodar(ctx, "FR-BAIXA-ANTECIPADA").length, 0);
+}
+{
+  // Assinatura paga todo mês antes de o título existir (Google, dia 16 →
+  // título dia 3 do mês seguinte) é recorrente: lançamento retroativo, não
+  // título inventado. Um pagamento avulso grande no meio é o que decide.
+  const google = [1, 2, 3].map((m) =>
+    titulo({ parceiroNome: "GOOGLE BRASIL INTERNET LTDA.", parceiroCodigo: "G", dataEmissao: d(`2026-0${m + 1}-03`), valorDocumentoCents: 2_000_00 })
+  );
+  const baixasGoogle = google.map((t, i) => baixa({ tituloId: t.id, dataBaixa: d(`2026-0${i + 1}-16`), valorCents: 2_000_00 }));
+  const soRecorrente = rodar(contexto({ titulos: google, baixas: baixasGoogle }), "FR-BAIXA-ANTECIPADA");
+  conferir("só recorrentes: baixo, erro de processo", [soRecorrente[0]?.severidade, soRecorrente[0]?.categoria], ["BAIXA", "ERRO_PROCESSO"]);
+  conferir("fornecedor recorrente resumido na evidência", (soRecorrente[0]?.evidencia as { fornecedoresRecorrentes: unknown[] }).fornecedoresRecorrentes.length, 1);
+
+  const avulso = titulo({ parceiroNome: "MALAFAIA TRANSPORTES LTDA", parceiroCodigo: "M", dataEmissao: d("2026-05-27"), valorDocumentoCents: 45_000_00 });
+  const comAvulso = rodar(
+    contexto({ titulos: [...google, avulso], baixas: [...baixasGoogle, baixa({ tituloId: avulso.id, dataBaixa: d("2026-04-28"), valorCents: 45_000_00 })] }),
+    "FR-BAIXA-ANTECIPADA"
+  );
+  conferir("com avulso: fraude, severidade pelo avulso", comAvulso[0]?.categoria, "FRAUDE");
+  conferir("título fala do avulso", comAvulso[0]?.titulo.includes("avulso"), true);
+  conferir("evidência separa o avulso", (comAvulso[0]?.evidencia as { casosAvulsos: unknown[] }).casosAvulsos.length, 1);
 }
 {
   // Baixa de valor zero é ajuste, não pagamento.

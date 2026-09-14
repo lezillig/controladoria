@@ -332,42 +332,83 @@ function baixaAntesDaEmissao(ctx: ContextoAuditoria, materialidade: number): Ach
   });
   if (invertidas.length === 0) return [];
 
+  // RECORRENTE × AVULSO. Sobraram 146 depois do débito automático, e a
+  // evidência mostrou a segunda camada: Google todo dia 16, Mercado Livre
+  // todo dia 9, seguradora todo mês — assinatura e fatura de cartão, pagas
+  // na data do cartão e LANÇADAS na Omie na data da fatura, com registro
+  // igual à emissão. É lançamento retroativo em série: despesa que sai antes
+  // de ter título, o que é falha de aprovação prévia, não título inventado.
+  // O mesmo fornecedor com três ou mais casos é recorrente; o que resta é
+  // avulso — R$ 45.000 para uma transportadora pagos um mês antes de o
+  // título existir é o caso que a regra existe para achar, e é ele que dá a
+  // severidade.
+  const porParceiro = agrupar(invertidas, (b) => chaveParceiro(porId.get(b.tituloId)!));
+  const recorrentes: typeof invertidas = [];
+  const avulsas: typeof invertidas = [];
+  for (const [, grupo] of porParceiro) (grupo.length >= 3 ? recorrentes : avulsas).push(...grupo);
+
   const valor = somar(invertidas, (b) => Math.abs(b.valorCents));
+  const valorAvulsas = somar(avulsas, (b) => Math.abs(b.valorCents));
+  const valorRecorrentes = valor - valorAvulsas;
+  const linha = (b: (typeof invertidas)[number]) => {
+    const t = porId.get(b.tituloId);
+    return {
+      titulo: t?.codigoLancamento,
+      parceiro: t?.parceiroNome,
+      emissao: t?.dataEmissao,
+      registroNaOmie: t?.dataRegistro ?? null,
+      dataBaixa: b.dataBaixa,
+      diasDeDiferenca: t?.dataEmissao ? diasEntre(b.dataBaixa, t.dataEmissao) : null,
+      valorCents: b.valorCents,
+    };
+  };
+  const resumoRecorrentes = [...porParceiro]
+    .filter(([, grupo]) => grupo.length >= 3)
+    .map(([, grupo]) => ({
+      parceiro: porId.get(grupo[0].tituloId)?.parceiroNome,
+      casos: grupo.length,
+      valor: somar(grupo, (b) => Math.abs(b.valorCents)),
+    }))
+    .sort((a, b) => b.valor - a.valor);
 
   return [
     {
       regra: "FR-BAIXA-ANTECIPADA",
       tipo: "ESTADO",
-      severidade: agravar(severidadePorValor(valor, materialidade)),
-      categoria: "FRAUDE",
-      titulo: `${invertidas.length} pagamento(s) com data anterior à emissão do título`,
+      severidade: avulsas.length > 0 ? agravar(severidadePorValor(valorAvulsas, materialidade)) : "BAIXA",
+      categoria: avulsas.length > 0 ? "FRAUDE" : "ERRO_PROCESSO",
+      titulo:
+        avulsas.length > 0
+          ? `${avulsas.length} pagamento(s) avulso(s) antes de o título existir — ${fmtBRL(valorAvulsas)}`
+          : `${recorrentes.length} pagamento(s) recorrente(s) lançados depois de pagos`,
       descricao:
         `${invertidas.length} baixa(s), somando ${fmtBRL(valor)}, têm data de pagamento mais de ${DIAS_DE_ATRASO_DE_LANCAMENTO} dias ` +
-        `ANTERIOR à data de emissão do título que elas liquidam — já descontados débito automático de banco, consórcio, ` +
-        `cartão de combustível e tributo, e baixas de valor zero. Paga-se o que já existe: ou a data foi digitada errada, ` +
-        `ou o título foi criado depois para justificar uma saída que já tinha acontecido.`,
+        `ANTERIOR à emissão do título — já descontados débito automático, tributo e baixas de valor zero. ` +
+        (recorrentes.length > 0
+          ? `${recorrentes.length} são RECORRENTES de ${resumoRecorrentes.length} fornecedor(es) (assinatura, fatura de cartão), ` +
+            `somando ${fmtBRL(valorRecorrentes)}: pagas na data do cartão e lançadas na Omie na data da fatura — despesa que sai ` +
+            `antes de ter título, falha de aprovação prévia, não título inventado. `
+          : "") +
+        (avulsas.length > 0
+          ? `${avulsas.length} são AVULSAS, somando ${fmtBRL(valorAvulsas)}: pagamento único a fornecedor comum com o título ` +
+            `criado semanas depois. Ou a data foi digitada errada, ou o título foi criado para justificar uma saída que já tinha ` +
+            `acontecido — e é esse o caso a conferir.`
+          : ""),
       recomendacao:
-        "Conferir cada caso contra o extrato do banco. A data do banco é a que não se digita — é ela que decide qual " +
-        "das duas hipóteses é a verdadeira.",
+        avulsas.length > 0
+          ? "Conferir cada caso avulso contra o extrato do banco: a data do banco é a que não se digita, e é ela que decide. " +
+            "Para os recorrentes, lançar a assinatura ou a fatura do cartão na Omie antes do débito, com aprovação — ou registrar a data real da compra."
+          : "Lançar assinaturas e faturas de cartão na Omie antes do débito, com aprovação prévia — ou registrar a data real da compra no título.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
       evidencia: {
-        casos: [...invertidas]
-          .sort((a, b) => Math.abs(b.valorCents) - Math.abs(a.valorCents))
-          .slice(0, 30)
-          .map((b) => {
-            const t = porId.get(b.tituloId);
-            return {
-              titulo: t?.codigoLancamento,
-              parceiro: t?.parceiroNome,
-              emissao: t?.dataEmissao,
-              registroNaOmie: t?.dataRegistro ?? null,
-              dataBaixa: b.dataBaixa,
-              diasDeDiferenca: t?.dataEmissao ? diasEntre(b.dataBaixa, t.dataEmissao) : null,
-              valorCents: b.valorCents,
-            };
-          }),
         quantidade: invertidas.length,
+        avulsas: avulsas.length,
+        valorAvulsas,
+        recorrentes: recorrentes.length,
+        valorRecorrentes,
+        casosAvulsos: [...avulsas].sort((a, b) => Math.abs(b.valorCents) - Math.abs(a.valorCents)).slice(0, 30).map(linha),
+        fornecedoresRecorrentes: resumoRecorrentes.slice(0, 30),
       },
       chave: chaveAchado("FR-BAIXA-ANTECIPADA", chaveMes(ctx.dataReferencia)),
     },
@@ -809,17 +850,31 @@ function cadastrosDuplicados(ctx: ContextoAuditoria): AchadoNovo[] {
     if (todosPessoaFisica) continue;
     const raizes = new Set(documentos.map((d) => (ehPessoaFisica(d) ? `cpf:${d}` : d.slice(0, 8))));
     if (raizes.size <= 1) continue;
+    // CPF E CNPJ COM O MESMO NOME: a pessoa e o MEI dela (ou a empresa
+    // individual com o nome do dono). "Vanessa Barbosa" com CPF e "Vanessa
+    // Barbosa" com CNPJ não é cadastro duplicado — é a mesma pessoa que pode
+    // ser paga de dois jeitos, e isso é o que interessa: pagamento ao CPF é
+    // RPA, com INSS e IR retidos; ao CNPJ não tem encargo. Informativo, com
+    // a leitura certa, em vez de "conferir na Receita".
+    const pessoaEEmpresa = documentos.some((d) => ehPessoaFisica(d)) && documentos.some((d) => !ehPessoaFisica(d));
 
     achados.push({
       regra: "FR-CADASTRO-NOME-SIMILAR",
       tipo: "ESTADO",
-      severidade: "BAIXA",
+      severidade: pessoaEEmpresa ? "INFO" : "BAIXA",
       categoria: "ERRO_PROCESSO",
-      titulo: `Cadastros com nome muito parecido: ${grupo[0].nome} (${apelido})`,
-      descricao:
-        `Na conta ${apelido}, os cadastros "${grupo.map((p) => p.nome).join('", "')}" têm praticamente o mesmo nome, mas documentos diferentes. ` +
-        `Pode ser matriz e filial (legítimo) ou duplicidade com documento digitado errado.`,
-      recomendacao: "Conferir os documentos na Receita e unificar se for o mesmo fornecedor.",
+      titulo: pessoaEEmpresa
+        ? `Mesma pessoa cadastrada como pessoa física e como empresa: ${grupo[0].nome} (${apelido})`
+        : `Cadastros com nome muito parecido: ${grupo[0].nome} (${apelido})`,
+      descricao: pessoaEEmpresa
+        ? `Na conta ${apelido}, "${grupo[0].nome}" existe com CPF e com CNPJ — a pessoa e a empresa dela (MEI ou empresa ` +
+          `individual). Não é duplicidade; é a mesma pessoa que pode ser paga de dois jeitos, e o jeito muda o encargo: ` +
+          `pagamento ao CPF é RPA com INSS e IR retidos, ao CNPJ é nota sem retenção.`
+        : `Na conta ${apelido}, os cadastros "${grupo.map((p) => p.nome).join('", "')}" têm praticamente o mesmo nome, mas documentos diferentes. ` +
+          `Pode ser matriz e filial (legítimo) ou duplicidade com documento digitado errado.`,
+      recomendacao: pessoaEEmpresa
+        ? "Definir por qual cadastro o serviço é contratado (o CNPJ, quando existe) e inativar o outro, para o histórico e a retenção ficarem num lugar só."
+        : "Conferir os documentos na Receita e unificar se for o mesmo fornecedor.",
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieParceiro",
       entidadeId: grupo[0].id,

@@ -515,6 +515,15 @@ const cadastros = (parceiros: Parceiro[]) =>
   conferir("dois CPFs com o mesmo nome: silêncio", a.length, 0);
 }
 {
+  // A pessoa e o MEI dela: CPF e CNPJ com o mesmo nome — informativo.
+  const a = cadastros([
+    parceiro({ id: "a", codigoOmie: "1", nome: "VANESSA BARBOSA ALMEIDA SILVA", documento: "36613521809" } as Partial<Parceiro>),
+    parceiro({ id: "b", codigoOmie: "2", nome: "VANESSA BARBOSA ALMEIDA SILVA", documento: "32285051000101" } as Partial<Parceiro>),
+  ]);
+  conferir("pessoa física e empresa dela: informativo", a[0]?.severidade, "INFO");
+  conferir("título diz que é a mesma pessoa", a[0]?.titulo.includes("Mesma pessoa"), true);
+}
+{
   // Matriz e filial: mesma raiz de CNPJ.
   const a = cadastros([
     parceiro({ id: "a", codigoOmie: "1", nome: "AUTO POSTO GAMA LTDA", documento: "11222333000181" } as Partial<Parceiro>),
