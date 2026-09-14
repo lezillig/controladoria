@@ -30,6 +30,7 @@ function auditarConciliacao(ctx: ContextoAuditoria): AchadoNovo[] {
 
   achados.push(...movimentosNaoConciliados(ctx, materialidade));
   achados.push(...saidaSemTitulo(ctx, materialidade));
+  achados.push(...entradaSemTitulo(ctx, materialidade));
   achados.push(...baixaSemMovimento(ctx, materialidade));
   achados.push(...debitosDuplicados(ctx, materialidade));
   achados.push(...movimentoSemCategoria(ctx, materialidade));
@@ -41,6 +42,77 @@ function auditarConciliacao(ctx: ContextoAuditoria): AchadoNovo[] {
 function movimentosDoPeriodo(ctx: ContextoAuditoria) {
   const inicio = inicioDoMes(new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth() - 1, 1));
   return ctx.movimentos.filter((m) => m.data >= inicio && m.data <= ctx.dataReferencia);
+}
+
+// CB-ENTRADA-SEM-TITULO — o espelho da saída sem título, do lado da receita.
+//
+// Crédito no extrato que não nasce de título a receber nem casa com baixa é
+// receita que o sistema não conhece: um serviço eventual pago direto na
+// conta, um estorno, um empréstimo de sócio — ou receita que alguém está
+// recebendo por fora e só parte dela entra. Também é o lado que a ISA 240
+// manda olhar para receita não registrada, e o único trecho do circuito
+// título → baixa → banco que não tinha regra.
+//
+// Ficam de fora, por histórico: transferência entre contas do próprio grupo
+// (o par débito/crédito de mesmo valor em ±1 dia entre contas ativas),
+// rendimento de aplicação e estorno — que não são receita.
+const NAO_E_RECEITA = /transfer|aplica[cç][aã]o|resgate|rendimento|estorno|devolu[cç][aã]o|tarifa|cdb|poupan|juros s\/|cr[eé]dito de juros|entre contas|ted mesma|mesma titularidade/i;
+
+function entradaSemTitulo(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const movimentos = movimentosDoPeriodo(ctx);
+  const creditos = movimentos.filter((m) => m.valorCents > 0);
+  const debitos = movimentos.filter((m) => m.valorCents < 0);
+  const baixas = ctx.baixas;
+
+  const orfaos = creditos.filter((m) => {
+    if (m.tituloCodigo) return false;
+    if (NAO_E_RECEITA.test(`${m.observacao ?? ""} ${m.tipo ?? ""} ${m.parceiroNome ?? ""}`)) return false;
+    // Transferência entre contas do grupo: um débito de mesmo valor em outra
+    // conta, no mesmo dia ou no dia seguinte.
+    const transferencia = debitos.some(
+      (d) =>
+        d.contaCorrenteCodigo !== m.contaCorrenteCodigo &&
+        Math.abs(Math.abs(d.valorCents) - m.valorCents) <= TOLERANCIA_CENTAVOS &&
+        Math.abs(diasEntre(d.data, m.data)) <= 1
+    );
+    if (transferencia) return false;
+    return !baixas.some(
+      (b) =>
+        Math.abs(Math.abs(b.valorCents) - m.valorCents) <= TOLERANCIA_CENTAVOS &&
+        Math.abs(diasEntre(b.dataBaixa, m.data)) <= JANELA_CASAMENTO_DIAS
+    );
+  });
+
+  return orfaos
+    .filter((m) => m.valorCents >= materialidade / 2)
+    .map((m) => ({
+      regra: "CB-ENTRADA-SEM-TITULO",
+      tipo: "ESTADO" as const,
+      severidade: severidadePorValor(m.valorCents, materialidade),
+      categoria: "RISCO_FINANCEIRO" as const,
+      titulo: `Entrada de ${fmtBRL(m.valorCents)} sem título a receber correspondente`,
+      descricao:
+        `Crédito de ${fmtBRL(m.valorCents)} em ${fmtData(m.data)}${m.parceiroNome ? ` de ${m.parceiroNome}` : ""} não tem ` +
+        `título a receber vinculado nem baixa equivalente em valor e data. ${m.observacao ? `Histórico: "${m.observacao}". ` : ""}` +
+        `Receita que entra sem título não é faturada, não é tributada e não aparece em nenhum relatório — e é assim que ` +
+        `uma parte dela pode nunca chegar à conta.`,
+      recomendacao:
+        "Identificar a origem do crédito. Sendo receita, emitir a nota e o título correspondentes na Omie; sendo " +
+        "aporte, empréstimo ou estorno, registrar a natureza correta para a conciliação fechar.",
+      valorCents: m.valorCents,
+      dataReferencia: m.data,
+      entidadeTipo: "OmieMovimento",
+      entidadeId: m.id,
+      entidadeRef: m.documento ?? m.codigoLancamento,
+      evidencia: {
+        data: m.data.toISOString(),
+        valor: m.valorCents,
+        historico: m.observacao,
+        parceiro: m.parceiroNome,
+        conta: m.contaCorrenteCodigo,
+      },
+      chave: chaveAchado("CB-ENTRADA-SEM-TITULO", m.codigoLancamento),
+    }));
 }
 
 // CB-NAO-CONCILIADO — agregado por conta corrente. O numero que importa e o

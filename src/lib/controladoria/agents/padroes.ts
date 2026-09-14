@@ -188,6 +188,68 @@ export function fornecedorEfemero(
 }
 
 // ---------------------------------------------------------------------------
+// HI-FORNECEDOR-DORMENTE — o cadastro esquecido que voltou a receber.
+//
+// O inverso do efêmero: fornecedor com relação antiga, um ano ou mais sem
+// nenhum título, e de repente um pagamento relevante. É o teste padrão de
+// cadastro de fornecedores (ACFE): o cadastro dormente é o veículo mais
+// barato para um pagamento indevido — já existe, já foi aprovado um dia, e
+// ninguém olha para ele. Também é o que acontece quando um contrato antigo é
+// reativado sem passar por cotação.
+// ---------------------------------------------------------------------------
+const MESES_ATIVOS_PARA_SER_ANTIGO = 3;
+const MESES_DE_SONO = 12;
+
+function mesesEntreCompetencias(de: string, ate: string): number {
+  const [a1, m1] = de.split("-").map(Number);
+  const [a2, m2] = ate.split("-").map(Number);
+  return (a2 - a1) * 12 + (m2 - m1);
+}
+
+export function fornecedorDormente(
+  series: SerieMensal[],
+  competenciaAtual: string,
+  materialidade: number
+): ItemDePadrao[] {
+  const achados: ItemDePadrao[] = [];
+  const competenciaAnteriorAAtual = competenciaAnterior(competenciaAtual, 1);
+
+  for (const [chave, linhas] of porChave(series)) {
+    const ativos = linhas.filter((l) => l.valorCents > 0).sort((a, b) => a.competencia.localeCompare(b.competencia));
+    if (ativos.length < MESES_ATIVOS_PARA_SER_ANTIGO + 1) continue;
+    const ultimo = ativos[ativos.length - 1];
+    // Só interessa quem acordou AGORA: no mês corrente ou no anterior.
+    if (ultimo.competencia !== competenciaAtual && ultimo.competencia !== competenciaAnteriorAAtual) continue;
+    if (ultimo.valorCents < materialidade) continue;
+    const penultimo = ativos[ativos.length - 2];
+    const sono = mesesEntreCompetencias(penultimo.competencia, ultimo.competencia) - 1;
+    if (sono < MESES_DE_SONO) continue;
+    const antes = ativos.slice(0, -1);
+    if (antes.length < MESES_ATIVOS_PARA_SER_ANTIGO) continue;
+    const mediaAntes = Math.round(antes.reduce((a, b) => a + b.valorCents, 0) / antes.length);
+
+    achados.push({
+      chave,
+      rotulo: rotuloDe(linhas, chave),
+      valorCents: ultimo.valorCents,
+      descricao:
+        `Recebeu em ${antes.length} mês(es) até ${penultimo.competencia} (em média ${fmtBRL(mediaAntes)} por mês), ficou ${sono} meses ` +
+        `sem nenhum título e voltou em ${ultimo.competencia} com ${fmtBRL(ultimo.valorCents)}. Cadastro que dorme um ano e acorda ` +
+        `com valor relevante é o que se confere antes de pagar o próximo.`,
+      evidencia: {
+        ultimaCompetenciaAntesDoSono: penultimo.competencia,
+        mesesDormente: sono,
+        acordouEm: ultimo.competencia,
+        valorAoAcordar: ultimo.valorCents,
+        mediaMensalAntes: mediaAntes,
+        titulosAoAcordar: ultimo.titulos,
+      },
+    });
+  }
+  return achados;
+}
+
+// ---------------------------------------------------------------------------
 // HI-REAJUSTE-SILENCIOSO — contrato recorrente que subiu de degrau e ficou.
 //
 // Diferente de HI-FORA-DO-PADRAO de propósito: aquele acha o PICO, este acha o
@@ -397,6 +459,16 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
     "Conferir contrato, notas e a entrega correspondente. Fornecedor de serviço pontual tem exatamente este desenho e " +
       "é legítimo; o que não pode existir é pagamento relevante sem contraparte documentada.",
     fornecedorEfemero(seriesDeFornecedores, competenciaAtual, materialidade)
+  );
+
+  montar(
+    "HI-FORNECEDOR-DORMENTE",
+    "FRAUDE",
+    (i) => `${i.rotulo} ficou mais de um ano parado e voltou a receber`,
+    "Antes do próximo pagamento: confirmar quem reativou a relação e por quê, se houve cotação, e se o cadastro " +
+      "(CNPJ ativo, conta bancária, contato) ainda é o mesmo de antes. Cadastro dormente reativado sem ninguém " +
+      "lembrar é o caminho mais curto para um pagamento indevido.",
+    fornecedorDormente(seriesDeFornecedores, competenciaAtual, materialidade)
   );
 
   // REAJUSTE × OPERAÇÃO QUE CRESCEU. O cartão de combustível "subiu 44%"

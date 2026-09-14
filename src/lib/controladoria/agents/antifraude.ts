@@ -2,6 +2,7 @@ import { fmtBRL, fmtData, fmtDocumento, fmtPercent } from "../format";
 import { diasEntre, ehDiaNaoUtil, inicioDoMes } from "../periodos";
 import { documentoValido, ehPessoaFisica, normalizarRazaoSocial } from "../documento";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
+import { cadastradoEPago, contaBancariaCompartilhada, notaRepetida, notaSequencial, valoresRedondos } from "./antifraudeFornecedor";
 import {
   agravar,
   agrupar,
@@ -73,6 +74,14 @@ export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...recebivelCancelado(ctx, materialidade));
   achados.push(...descontoQueEngoleOTitulo(ctx, materialidade));
   achados.push(...clienteQueTambemEFornecedor(ctx, materialidade));
+  // O fornecedor como entidade (antifraudeFornecedor.ts): conta dividida,
+  // nota repetida, cadastrado e pago na mesma semana, valor sempre redondo,
+  // numeração de nota que só anda conosco.
+  achados.push(...contaBancariaCompartilhada(ctx, materialidade));
+  achados.push(...notaRepetida(ctx, materialidade));
+  achados.push(...cadastradoEPago(ctx, materialidade));
+  achados.push(...valoresRedondos(ctx, materialidade));
+  achados.push(...notaSequencial(ctx, materialidade));
 
   return achados;
 }

@@ -63,12 +63,12 @@ nem API, não escrevem nada. São treze porque cada um responde a uma pergunta c
 | Agente | Área | O que procura |
 |---|---|---|
 | `contas-pagar` | Financeiro | Juros e multa por atraso, duplicidade, pagamento acima do documento, títulos vencidos e "fantasma", antecipação sem desconto, falta de classificação |
-| `contas-receber` | Financeiro | Inadimplência por cliente, aging, descontos concedidos, recebimento a menor, concentração de receita, atraso recorrente |
-| `conciliacao-bancaria` | Financeiro | Movimentos não conciliados, saída sem título, baixa sem dinheiro no extrato, débito duplicado, saldo abaixo do mínimo |
-| `antifraude` | Controladoria | Troca de conta bancária de fornecedor, fracionamento de alçada, fornecedor que é funcionário, documento inválido, cadastro duplicado, pagamento em dia não útil, Lei de Benford; por onde o dinheiro saiu (conta escondida, baixa desviada, sem conta, em título cancelado, antes da emissão, no futuro, repetida) |
+| `contas-receber` | Financeiro | Inadimplência por cliente, aging, descontos concedidos, recebimento a menor, concentração de receita, atraso recorrente, atraso recebido sem juros |
+| `conciliacao-bancaria` | Financeiro | Movimentos não conciliados, saída sem título, **entrada sem título**, baixa sem dinheiro no extrato, débito duplicado, saldo abaixo do mínimo |
+| `antifraude` | Controladoria | Troca de conta bancária de fornecedor, fracionamento de alçada, fornecedor que é funcionário, documento inválido, cadastro duplicado, pagamento em dia não útil, Lei de Benford; por onde o dinheiro saiu (conta escondida, baixa desviada, sem conta, em título cancelado, antes da emissão, no futuro, repetida); o fornecedor como entidade (conta bancária dividida, nota repetida, cadastrado e pago na mesma semana, valor sempre redondo, numeração de nota exclusiva) |
 | `frota` | Operações | Antifraude do combustível, transação a transação no extrato do cartão: abastecimento maior que o tanque ou dois tanques em 12 h, consumo que despenca ou hodômetro que anda para trás, abastecimento em dia sem escala nem uso do veículo, placa fora da frota ou veículo inativo, produto que o motor não usa, posto acima da frota e da ANP, motorista abastecendo vários veículos no dia |
 | `custos` | Controladoria | Variação por categoria, despesa nova, gasto recorrente, valor fora do padrão, divergência combustível Omie × cartão de frota |
-| `padroes` | Controladoria | Cada fornecedor contra o histórico DELE (24 meses): valor fora do padrão, fornecedor efêmero, reajuste silencioso, prazo antecipado |
+| `padroes` | Controladoria | Cada fornecedor contra o histórico DELE (24 meses): valor fora do padrão, fornecedor efêmero, fornecedor dormente que voltou, reajuste silencioso, prazo antecipado |
 | `fiscal` | Contabilidade | Nota cancelada com título ativo, receita sem nota, nota sem título, carga tributária fora da faixa do Lucro Presumido, falha de sequência |
 | `fluxo-caixa` | Tesouraria | Projeção 7/15/30/60/90 dias, descasamento da semana, ciclo financeiro (PMR/PMP) |
 | `rentabilidade` | Controladoria | Margem por contrato, contrato no prejuízo, veículo fora do padrão, cobertura do rateio |
@@ -97,6 +97,22 @@ achado, a lista na evidência), e toda regra tem uma condição de silêncio:
 
 A severidade sobe pela **recorrência** no mês (3+ casos = MÉDIA), não só pelo
 valor: um abastecimento sozinho nunca chega à materialidade da empresa.
+
+**Desvio de dinheiro — as regras que vieram do estudo de fraude.** Benchmark
+das regras contra ACFE (Fraud Tree, Report to the Nations), ISA 240, COSO e os
+testes clássicos de cadastro de fornecedores; cada uma com o caso que aponta e
+o caso legítimo que preserva (`scripts/teste-desvios.ts`):
+
+| Regra | Aponta | Deixa em paz |
+|---|---|---|
+| `FR-CONTA-COMPARTILHADA` | Dois cadastros com documentos de raízes diferentes e o mesmo hash de banco/agência/conta (dentro e entre as empresas); CRÍTICA quando um deles é CPF da folha | Matriz e filial, o mesmo CNPJ nas duas contas Omie, factoring/FIDC/cooperativa |
+| `FR-NF-REPETIDA` | O mesmo número de nota do mesmo fornecedor pago mais de uma vez com valor ou vencimento diferentes — inclusive Azul e MCZ | Parcelas de carnê, duplicidade exata (é de `CP-DUPLICIDADE`), quem numera por contrato (banco, DETRAN, telefonia…), "número" que se repete todo mês |
+| `FR-CADASTRO-E-PAGO` | Fornecedor criado na Omie (`info.dInc`) e pago em até 3 dias, valor ≥ metade da materialidade; PF, sem nota, sem e-mail/cidade e categoria de serviço agravam | Sem data real de cadastro (a carga histórica cria cadastro e título juntos), motorista da folha |
+| `FR-VALOR-REDONDO` | Fornecedor PJ com 6+ títulos, 70%+ múltiplos de R$ 100 (e 3× a taxa da base), metade ou mais sem nota | Aluguel, folha, diária, consórcio, honorário fixo, mesmo valor todo mês |
+| `FR-NOTA-SEQUENCIAL` | 4+ notas numeradas quase sem intervalo ao longo de 60+ dias: somos praticamente o único cliente | Quem numera por contrato, PF, sequência curta demais no tempo |
+| `CB-ENTRADA-SEM-TITULO` | Crédito no extrato sem título a receber nem baixa casável — receita que o sistema não conhece | Transferência entre contas do grupo (par débito/crédito em ±1 dia), resgate, rendimento, estorno, tarifa |
+| `CR-JUROS-NAO-COBRADOS` | Cliente que pagou 30+ dias depois do vencimento com juros e multa zerados; um achado por cliente e trimestre; impacto = custo do atraso a 1% a.m.; cita a Lei 14.133 (art. 92 V) para tomador público | Atraso com encargo cobrado, juros abaixo de ¼ da materialidade |
+| `HI-FORNECEDOR-DORMENTE` | Relação antiga (3+ meses ativos), 12+ meses sem título, volta no mês corrente ou anterior com valor ≥ materialidade | Quem acordou há mais de um mês, quem nunca teve relação |
 
 ### Camada 2 — Supervisor
 

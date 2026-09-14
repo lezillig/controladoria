@@ -20,6 +20,7 @@
     "teste:previsao": "tsx scripts/teste-previsao.ts",
     "teste:calibragem": "tsx scripts/teste-calibragem.ts",
     "teste:frota": "tsx scripts/teste-frota.ts",
+    "teste:desvios": "tsx scripts/teste-desvios.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

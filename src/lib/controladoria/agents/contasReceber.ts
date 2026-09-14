@@ -64,10 +64,88 @@ export function auditarContasReceber(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...recebimentoAMenor(ctx, titulos, materialidade));
   achados.push(...concentracaoDeReceita(ctx, titulos, materialidade));
   achados.push(...atrasoRecorrente(ctx, titulos, materialidade));
+  achados.push(...jurosNaoCobrados(ctx, titulos, materialidade));
   // Esta última não olha os títulos a RECEBER — olha os que não existem. Por
   // isso recebe o contexto inteiro e não a lista filtrada acima.
   achados.push(...osComCustoSemFaturamento(ctx, materialidade));
 
+  return achados;
+}
+
+// CR-JUROS-NAO-COBRADOS — o cliente atrasou e pagou sem juros.
+//
+// CR-ATRASO-RECORRENTE mede o atraso e o custo de capital dele. Esta pergunta
+// é a seguinte: quando o cliente pagou com atraso, a empresa cobrou alguma
+// coisa por isso? Título liquidado 30 dias ou mais depois do vencimento com
+// juros e multa zerados na baixa é dinheiro deixado na mesa — e, para tomador
+// público, é direito escrito em lei (Lei 14.133, art. 92 V: atualização
+// monetária entre o adimplemento e o pagamento). Um achado por cliente e
+// trimestre; a empresa pode ter decidido não cobrar, por isso é OPORTUNIDADE
+// e não perda: o impacto é o que a cobrança renderia a 1% ao mês.
+const DIAS_DE_ATRASO_PARA_JUROS = 30;
+const CUSTO_MENSAL_DO_ATRASO = 0.01;
+
+function jurosNaoCobrados(ctx: ContextoAuditoria, titulos: ReturnType<typeof titulosAtivos>, materialidade: number): AchadoNovo[] {
+  const achados: AchadoNovo[] = [];
+  const atrasados = titulos.filter(
+    (t) =>
+      t.liquidado &&
+      t.dataUltimaBaixa !== null &&
+      diasEntre(t.dataVencimento, t.dataUltimaBaixa) >= DIAS_DE_ATRASO_PARA_JUROS &&
+      t.jurosCents === 0 &&
+      t.multaCents === 0 &&
+      t.valorPagoCents > 0
+  );
+
+  const trimestre = (d: Date) => `${d.getFullYear()}-T${Math.floor(d.getMonth() / 3) + 1}`;
+  for (const [chave, lista] of agrupar(atrasados, (t) => `${chaveParceiro(t)}|${trimestre(t.dataUltimaBaixa as Date)}`)) {
+    const [cliente, periodo] = [chave.slice(0, chave.lastIndexOf("|")), chave.slice(chave.lastIndexOf("|") + 1)];
+    const valor = somar(lista, (t) => t.valorPagoCents);
+    const jurosDevidos = Math.round(
+      somar(lista, (t) => t.valorPagoCents * CUSTO_MENSAL_DO_ATRASO * (diasEntre(t.dataVencimento, t.dataUltimaBaixa as Date) / 30))
+    );
+    if (jurosDevidos < materialidade / 4) continue;
+    const nome = nomeParceiro(ctx, lista[0]);
+    const atrasoMedio = Math.round(somar(lista, (t) => diasEntre(t.dataVencimento, t.dataUltimaBaixa as Date)) / lista.length);
+    const publico = /prefeitura|munic[ií]pio|secretaria|fundo municipal|c[aâ]mara|estado de|governo|autarquia|universidade|instituto federal|minist[eé]rio/i.test(nome);
+
+    achados.push({
+      regra: "CR-JUROS-NAO-COBRADOS",
+      tipo: "EVENTO",
+      severidade: jurosDevidos >= materialidade ? "MEDIA" : "BAIXA",
+      categoria: "OPORTUNIDADE",
+      titulo: `${nome}: ${lista.length} título(s) pagos com ${atrasoMedio} dias de atraso, sem juros nem multa (${periodo})`,
+      descricao:
+        `${fmtBRL(valor)} recebidos em média ${atrasoMedio} dias depois do vencimento, com juros e multa zerados nas baixas. ` +
+        `A 1% ao mês, o atraso custou ${fmtBRL(jurosDevidos)} que não foram cobrados.` +
+        (publico
+          ? " Tomador público: a atualização monetária entre o adimplemento e o pagamento é cláusula obrigatória (Lei 14.133, art. 92 V) — cabe cobrar."
+          : " Se o contrato prevê encargos de mora, cabe cobrar; se não prevê, é o momento de incluir."),
+      recomendacao:
+        "Conferir a cláusula de encargos do contrato e emitir a cobrança complementar dos títulos listados. Registrar a " +
+        "decisão de não cobrar, quando for o caso, para o atraso do cliente não virar custo silencioso da empresa.",
+      valorCents: valor,
+      impactoCents: jurosDevidos,
+      dataReferencia: lista[lista.length - 1].dataUltimaBaixa ?? ctx.dataReferencia,
+      entidadeTipo: "OmieParceiro",
+      entidadeRef: nome,
+      evidencia: {
+        cliente: nome,
+        periodo,
+        titulos: lista.slice(0, 20).map((t) => ({
+          ref: referenciaTitulo(t),
+          vencimento: t.dataVencimento.toISOString().slice(0, 10),
+          pagoEm: (t.dataUltimaBaixa as Date).toISOString().slice(0, 10),
+          diasDeAtraso: diasEntre(t.dataVencimento, t.dataUltimaBaixa as Date),
+          pago: t.valorPagoCents,
+        })),
+        recebido: valor,
+        jurosNaoCobrados: jurosDevidos,
+        tomadorPublico: publico,
+      },
+      chave: chaveAchado("CR-JUROS-NAO-COBRADOS", cliente, periodo),
+    });
+  }
   return achados;
 }
 
