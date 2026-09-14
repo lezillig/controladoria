@@ -384,6 +384,13 @@ const fornecedorFuncionario = (p: Parameters<typeof contexto>[0]) =>
   conferir("chave por empresa e categoria", a[0]?.chave, "FR-FORNECEDOR-FUNCIONARIO|AZUL|2.05");
 }
 {
+  // R$ 10,00 em "Serviços Gráficos": reembolso, informativo.
+  const t = titulo({ parceiroCodigo: "F9", parceiroNome: "JOAO MOTORISTA ME", valorDocumentoCents: 10_00, categoriaCodigo: "2.02.92", categoriaDescricao: "Serviços Gráficos" });
+  const a = fornecedorFuncionario({ titulos: [t], parceiros: [parceiro()], motoristas: [motorista] });
+  conferir("título pequeno em categoria de fornecedor: informativo", [a[0]?.severidade, a[0]?.categoria], ["INFO", "ERRO_PROCESSO"]);
+  conferir("descrição diz reembolso", a[0]?.descricao.includes("reembolso"), true);
+}
+{
   // Rescisão paga a quem ainda consta ativo: sobe de informativo para médio.
   const motoristas = [1, 2].map((i) => ({ id: `m${i}`, name: `MOTORISTA ${i}`, cpf: `0000000000${i}`, active: i === 1 }) as unknown as Motorista);
   const parceiros = [1, 2].map((i) => parceiro({ id: `p${i}`, codigoOmie: `F${i}`, nome: `MOTORISTA ${i}`, documento: `0000000000${i}` } as Partial<Parceiro>));

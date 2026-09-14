@@ -477,6 +477,10 @@ function fracionamentoDeAlcada(ctx: ContextoAuditoria, materialidade: number): A
 // caso que a regra existe para achar. Então o agrupamento é por empresa e
 // categoria, com a lista de pessoas na evidência — a pessoa lendo julga a
 // categoria de uma vez, e não 331 vezes.
+// Título de funcionário até este valor, em qualquer categoria, é reembolso
+// de despesa — impressão, peça comprada na estrada, hospedagem. Conflito de
+// interesse tem o tamanho de um serviço contratado.
+const TETO_DE_REEMBOLSO = 1_000_00;
 const CATEGORIA_DE_ROTINA_DE_MOTORISTA =
   /di[aá]ria|adiantamento|reembolso|ped[aá]gio|viagem|despesa de viagem|acerto|vale|ajuda de custo|sal[aá]rio|folha|rescis|f[eé]rias|13|pr[oó]-labore|prolabore/i;
 
@@ -486,7 +490,13 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
   );
   const descricaoDaCategoria = new Map(ctx.categorias.map((c) => [`${c.conexaoId}|${c.codigo}`, c.descricao]));
 
-  type Linha = { p: ContextoAuditoria["parceiros"][number]; funcionario: ContextoAuditoria["motoristas"][number]; titulos: number; valor: number };
+  type Linha = {
+    p: ContextoAuditoria["parceiros"][number];
+    funcionario: ContextoAuditoria["motoristas"][number];
+    titulos: number;
+    valor: number;
+    maiorTitulo: number;
+  };
   const porEmpresaECategoria = new Map<string, { apelido: string; categoriaCodigo: string | null; categoria: string; linhas: Linha[] }>();
 
   for (const p of ctx.parceiros) {
@@ -516,7 +526,13 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
         categoria: descricao,
         linhas: [],
       };
-      grupo.linhas.push({ p, funcionario, titulos: doGrupo.length, valor: somar(doGrupo, (t) => t.valorDocumentoCents) });
+      grupo.linhas.push({
+        p,
+        funcionario,
+        titulos: doGrupo.length,
+        valor: somar(doGrupo, (t) => t.valorDocumentoCents),
+        maiorTitulo: Math.max(...doGrupo.map((t) => t.valorDocumentoCents)),
+      });
       porEmpresaECategoria.set(chave, grupo);
     }
   }
@@ -525,8 +541,16 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
   for (const [, g] of porEmpresaECategoria) {
     const valor = somar(g.linhas, (l) => l.valor);
     const titulos = somar(g.linhas, (l) => l.titulos);
-    const rotina = CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.categoria);
     const pessoas = g.linhas.length;
+    // R$ 10,00 em "Serviços Gráficos" para um funcionário não é conflito de
+    // interesse: é o funcionário que pagou a impressão e foi ressarcido, e o
+    // financeiro lançou na categoria da DESPESA (que é o certo para o DRE),
+    // não na do pagamento. Título pequeno em categoria de fornecedor é
+    // reembolso; o conflito que a regra procura tem o tamanho de um serviço
+    // contratado, não de uma nota de papelaria.
+    const maiorTitulo = Math.max(...g.linhas.map((l) => l.maiorTitulo));
+    const reembolso = maiorTitulo <= TETO_DE_REEMBOLSO;
+    const rotina = CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.categoria) || reembolso;
     // RESCISÃO PAGA A QUEM AINDA CONSTA ATIVO. A evidência real: sete
     // rescisões, seis delas para motoristas que o cadastro ainda mostra em
     // atividade. Ou o desligamento não foi registrado na gestão (e o cadastro
@@ -538,15 +562,24 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
     achados.push({
       regra: "FR-FORNECEDOR-FUNCIONARIO",
       tipo: "ESTADO",
-      severidade: ativosComRescisao.length > 0 ? "MEDIA" : rotina ? "INFO" : agravar(severidadePorValor(valor, materialidade)),
+      severidade:
+        ativosComRescisao.length > 0
+          ? "MEDIA"
+          : rotina
+            ? "INFO"
+            : valor >= materialidade
+              ? agravar(severidadePorValor(valor, materialidade))
+              : "BAIXA",
       categoria: rotina ? "ERRO_PROCESSO" : "FRAUDE",
       titulo: `${pessoas} funcionário(s) recebem pelo contas a pagar em "${g.categoria}" (${g.apelido})`,
       descricao:
         `${pessoas} fornecedor(es) com o mesmo CPF de gente da folha receberam ${titulos} título(s) a pagar, ` +
         `somando ${fmtBRL(valor)}, lançados na categoria "${g.categoria}". ` +
-        (rotina
-          ? "Categoria de rotina de pessoal (diária, adiantamento, reembolso, folha): é o processo normal da operação, não conflito de interesse. Fica registrado para a política de conflito cobrir o caso."
-          : "Categoria de fornecedor comum paga a pessoa da própria folha: serviço que a empresa já remunera via folha é risco trabalhista e fiscal, e pagamento a si mesmo é o caminho mais curto para fraude.") +
+        (reembolso && !CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.categoria)
+          ? `Nenhum título passa de ${fmtBRL(TETO_DE_REEMBOLSO)}: é reembolso de despesa (o funcionário pagou e foi ressarcido), lançado na categoria da despesa, como deve. Não é conflito de interesse.`
+          : rotina
+            ? "Categoria de rotina de pessoal (diária, adiantamento, reembolso, folha): é o processo normal da operação, não conflito de interesse. Fica registrado para a política de conflito cobrir o caso."
+            : `Categoria de fornecedor comum paga a pessoa da própria folha, com título de até ${fmtBRL(maiorTitulo)}: serviço que a empresa já remunera via folha é risco trabalhista e fiscal, e pagamento a si mesmo é o caminho mais curto para fraude.`) +
         (ativosComRescisao.length > 0
           ? ` ATENÇÃO: ${ativosComRescisao.length} de ${pessoas} receberam rescisão e ainda constam ATIVOS no cadastro de motoristas — ` +
             `ou o desligamento não foi registrado na gestão, ou a rescisão foi paga a quem não saiu.`
