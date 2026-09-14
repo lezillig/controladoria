@@ -196,7 +196,7 @@ function baixaDesviadaDeConta(ctx: ContextoAuditoria, materialidade: number): Ac
         contaDoTitulo: nomeDaConta.get(de) ?? de,
         contaDoPagamento: nomeDaConta.get(para) ?? para,
         baixas: grupo.slice(0, 20).map((b) => ({ chave: b.chave, data: b.dataBaixa, valorCents: b.valorCents })),
-        total: grupo.length,
+        quantidade: grupo.length,
       },
       chave: chaveAchado("FR-BAIXA-DESVIADA", par, chaveMes(ctx.dataReferencia)),
     });
@@ -230,7 +230,7 @@ function baixaSemConta(ctx: ContextoAuditoria, materialidade: number): AchadoNov
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
       evidencia: {
-        total: semConta.length,
+        quantidade: semConta.length,
         valorCents: valor,
         baixas: semConta.slice(0, 20).map((b) => ({ chave: b.chave, data: b.dataBaixa, valorCents: b.valorCents })),
       },
@@ -285,7 +285,7 @@ function canceladoComBaixa(ctx: ContextoAuditoria, materialidade: number): Achad
             valorCents: b.valorCents,
           };
         }),
-        total: suspeitas.length,
+        quantidade: suspeitas.length,
       },
       chave: chaveAchado("FR-CANCELADO-COM-BAIXA", chaveMes(ctx.dataReferencia)),
     },
@@ -298,19 +298,37 @@ function canceladoComBaixa(ctx: ContextoAuditoria, materialidade: number): Achad
 // aparece, ou a data foi digitada errada, ou o titulo foi criado depois para
 // justificar uma saida que ja tinha acontecido — e a segunda hipotese e a
 // razao de esta regra existir.
+//
+// O QUE A PRIMEIRA VERSÃO ACHOU: 1.704 casos, R$ 8,3 milhões, crítico. Quase
+// tudo era o débito automático do banco. Parcela de financiamento, cota de
+// consórcio e cartão de combustível são debitados na conta no dia certo e
+// LANÇADOS na Omie depois, quando o extrato chega — a "emissão" do título é
+// a data em que alguém digitou, dias depois do débito. Havia ainda baixas
+// de R$ 0,00 (ajuste, não pagamento) e uma emissão em 2027 para um débito
+// de 2026 (parcela futura de um carnê). Nada disso é título criado para
+// justificar saída.
+//
+// O que sobra, e é o que a regra existe para achar: fornecedor comum, com
+// dinheiro de verdade, pago mais de uma semana antes de o título existir.
+// Uma semana é o atraso normal de quem lança nota depois de pagar; acima
+// disso é ordem invertida que precisa de explicação.
+const DIAS_DE_ATRASO_DE_LANCAMENTO = 7;
+const DEBITO_AUTOMATICO =
+  /\b(banco|bco|financeira|financiamento|cons[oó]rcio|leasing|arrendamento|fomento|cr[eé]dito|fidc|sicredi|sicoob|caixa econ|ticket|sodexo|alelo|vr\b|flash|sem parar|conectcar|veloe|detran|ipva|receita federal|inss|fgts|sefaz|prefeitura)\b/i;
+
 function baixaAntesDaEmissao(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const porId = new Map(ctx.titulos.map((t) => [t.id, t]));
 
   const invertidas = ctx.baixas.filter((b) => {
     const t = porId.get(b.tituloId);
     if (!t || t.cancelado || !t.dataEmissao) return false;
-    // Um dia de folga: baixa e emissao no mesmo dia, com horas diferentes,
-    // aparecem invertidas por arredondamento de fuso e nao sao anomalia.
+    if (b.valorCents === 0) return false;
+    if (DEBITO_AUTOMATICO.test(t.parceiroNome ?? "")) return false;
     // `diasEntre(a, b)` devolve b − a. O que se quer aqui é quanto a BAIXA
     // antecede a EMISSÃO, então a baixa vem primeiro. Invertido, a regra
     // apontava pagamento em atraso — o oposto exato do que ela procura, e
     // silenciosamente, porque atraso é comum e o achado pareceria plausível.
-    return diasEntre(b.dataBaixa, t.dataEmissao) > 1;
+    return diasEntre(b.dataBaixa, t.dataEmissao) > DIAS_DE_ATRASO_DE_LANCAMENTO;
   });
   if (invertidas.length === 0) return [];
 
@@ -324,27 +342,32 @@ function baixaAntesDaEmissao(ctx: ContextoAuditoria, materialidade: number): Ach
       categoria: "FRAUDE",
       titulo: `${invertidas.length} pagamento(s) com data anterior à emissão do título`,
       descricao:
-        `${invertidas.length} baixa(s), somando ${fmtBRL(valor)}, têm data de pagamento ANTERIOR à data de emissão ` +
-        `do título que elas liquidam. Paga-se o que já existe: ou a data foi digitada errada, ou o título foi criado ` +
-        `depois para justificar uma saída que já tinha acontecido.`,
+        `${invertidas.length} baixa(s), somando ${fmtBRL(valor)}, têm data de pagamento mais de ${DIAS_DE_ATRASO_DE_LANCAMENTO} dias ` +
+        `ANTERIOR à data de emissão do título que elas liquidam — já descontados débito automático de banco, consórcio, ` +
+        `cartão de combustível e tributo, e baixas de valor zero. Paga-se o que já existe: ou a data foi digitada errada, ` +
+        `ou o título foi criado depois para justificar uma saída que já tinha acontecido.`,
       recomendacao:
         "Conferir cada caso contra o extrato do banco. A data do banco é a que não se digita — é ela que decide qual " +
         "das duas hipóteses é a verdadeira.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
       evidencia: {
-        casos: invertidas.slice(0, 20).map((b) => {
-          const t = porId.get(b.tituloId);
-          return {
-            titulo: t?.codigoLancamento,
-            parceiro: t?.parceiroNome,
-            emissao: t?.dataEmissao,
-            dataBaixa: b.dataBaixa,
-            diasDeDiferenca: t?.dataEmissao ? diasEntre(b.dataBaixa, t.dataEmissao) : null,
-            valorCents: b.valorCents,
-          };
-        }),
-        total: invertidas.length,
+        casos: [...invertidas]
+          .sort((a, b) => Math.abs(b.valorCents) - Math.abs(a.valorCents))
+          .slice(0, 30)
+          .map((b) => {
+            const t = porId.get(b.tituloId);
+            return {
+              titulo: t?.codigoLancamento,
+              parceiro: t?.parceiroNome,
+              emissao: t?.dataEmissao,
+              registroNaOmie: t?.dataRegistro ?? null,
+              dataBaixa: b.dataBaixa,
+              diasDeDiferenca: t?.dataEmissao ? diasEntre(b.dataBaixa, t.dataEmissao) : null,
+              valorCents: b.valorCents,
+            };
+          }),
+        quantidade: invertidas.length,
       },
       chave: chaveAchado("FR-BAIXA-ANTECIPADA", chaveMes(ctx.dataReferencia)),
     },
@@ -713,7 +736,7 @@ function documentoInvalido(ctx: ContextoAuditoria, materialidade: number): Achad
           documento: p.documento,
           pago: somar(pagamentosPorParceiro.get(p.codigoOmie) ?? [], (t) => t.valorPagoCents),
         })),
-        total: suspeitos.length,
+        quantidade: suspeitos.length,
       },
       chave: chaveAchado("FR-DOCUMENTO-INVALIDO", "atual"),
     },
@@ -839,7 +862,7 @@ function pagamentoEmDiaNaoUtil(ctx: ContextoAuditoria, materialidade: number): A
       dataReferencia: ctx.dataReferencia,
       evidencia: {
         baixas: suspeitos.slice(0, 30).map((b) => ({ data: b.dataBaixa.toISOString(), valor: b.valorCents })),
-        total: suspeitos.length,
+        quantidade: suspeitos.length,
       },
       chave: chaveAchado("FR-PAGAMENTO-NAO-UTIL", chaveMes(ctx.dataReferencia)),
     },
@@ -1064,7 +1087,7 @@ function baixaComDataFutura(ctx: ContextoAuditoria, materialidade: number): Acha
             valorCents: b.valorCents,
           };
         }),
-        total: futuras.length,
+        quantidade: futuras.length,
       },
       chave: chaveAchado("FR-BAIXA-FUTURA", chaveMes(ctx.dataReferencia)),
     },
@@ -1126,7 +1149,7 @@ function baixaDuplicada(ctx: ContextoAuditoria, materialidade: number): AchadoNo
             valorCents: b.valorCents,
           };
         }),
-        total: suspeitas.length,
+        quantidade: suspeitas.length,
       },
       chave: chaveAchado("FR-BAIXA-DUPLICADA", chaveMes(ctx.dataReferencia)),
     },
@@ -1175,7 +1198,7 @@ function recebivelCancelado(ctx: ContextoAuditoria, materialidade: number): Acha
       entidadeRef: nomeParceiro(ctx, grupo[0]),
       evidencia: {
         cliente: nomeParceiro(ctx, grupo[0]),
-        total: grupo.length,
+        quantidade: grupo.length,
         valorCents: valor,
         titulos: grupo.slice(0, 20).map((t) => ({
           codigoLancamento: t.codigoLancamento,
@@ -1243,7 +1266,7 @@ function descontoQueEngoleOTitulo(ctx: ContextoAuditoria, materialidade: number)
             descontoCents: b.descontoCents,
           };
         }),
-        total: engolidas.length,
+        quantidade: engolidas.length,
       },
       chave: chaveAchado("FR-DESCONTO-TOTAL", chaveMes(ctx.dataReferencia)),
     },

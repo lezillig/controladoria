@@ -174,7 +174,7 @@ function perdaProvavel(
           saldo: saldoAberto(t),
           atraso: diasDeAtraso(t, ctx.dataReferencia),
         })),
-        total: grupo.length,
+        quantidade: grupo.length,
       },
       chave: chaveAchado("CR-PERDA-PROVAVEL", codigo),
     });

@@ -76,7 +76,7 @@ function movimentosNaoConciliados(ctx: ContextoAuditoria, materialidade: number)
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieContaCorrente",
       entidadeRef: nomeConta,
-      evidencia: { conta: nomeConta, pendentes: pendentes.length, total: lista.length, percentual, valor },
+      evidencia: { conta: nomeConta, pendentes: pendentes.length, quantidade: lista.length, percentual, valor },
       chave: chaveAchado("CB-NAO-CONCILIADO", conta, chaveMes(ctx.dataReferencia)),
     });
   }
@@ -185,7 +185,7 @@ function baixaSemMovimento(ctx: ContextoAuditoria, materialidade: number): Achad
           data: b.dataBaixa.toISOString(),
           valor: b.valorCents,
         })),
-        total: semMovimento.length,
+        quantidade: semMovimento.length,
       },
       chave: chaveAchado("CB-BAIXA-SEM-MOVIMENTO", chaveMes(ctx.dataReferencia)),
     },
@@ -260,7 +260,7 @@ function movimentoSemCategoria(ctx: ContextoAuditoria, materialidade: number): A
         "(tarifas, combustível, folha) — a maior parte do volume costuma ser resolvida por meia dúzia de regras.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
-      evidencia: { semCategoria: semCategoria.length, total: movimentos.length, valor },
+      evidencia: { semCategoria: semCategoria.length, quantidade: movimentos.length, valor },
       chave: chaveAchado("CB-SEM-CATEGORIA", chaveMes(ctx.dataReferencia)),
     },
   ];

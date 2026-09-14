@@ -492,7 +492,7 @@ function classificacaoIncompleta(
         "Classificar os títulos listados na Omie e, para evitar reincidência, tornar a categoria obrigatória no cadastro de contas a pagar.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
-      evidencia: { titulos: semCategoria.slice(0, 50).map((t) => t.codigoLancamento), total: semCategoria.length },
+      evidencia: { titulos: semCategoria.slice(0, 50).map((t) => t.codigoLancamento), quantidade: semCategoria.length },
       chave: chaveAchado("CP-SEM-CATEGORIA", mes),
     });
   }
@@ -513,7 +513,7 @@ function classificacaoIncompleta(
         "Começar pelos maiores valores: os 10 primeiros títulos costumam cobrir a maior parte do valor não alocado.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
-      evidencia: { titulos: semCentroCusto.slice(0, 50).map((t) => t.codigoLancamento), total: semCentroCusto.length },
+      evidencia: { titulos: semCentroCusto.slice(0, 50).map((t) => t.codigoLancamento), quantidade: semCentroCusto.length },
       chave: chaveAchado("CP-SEM-CENTRO-CUSTO", mes),
     });
   }
@@ -533,7 +533,7 @@ function classificacaoIncompleta(
         "Exigir nota fiscal antes da liberação do pagamento. Para os títulos já lançados, cobrar o documento do fornecedor e anexá-lo na Omie.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
-      evidencia: { titulos: semDocumento.slice(0, 50).map((t) => t.codigoLancamento), total: semDocumento.length },
+      evidencia: { titulos: semDocumento.slice(0, 50).map((t) => t.codigoLancamento), quantidade: semDocumento.length },
       chave: chaveAchado("CP-SEM-DOCUMENTO", mes),
     });
   }
@@ -576,7 +576,7 @@ function titulosFantasma(
           vencimento: t.dataVencimento.toISOString(),
           saldo: saldoAberto(t),
         })),
-        total: antigos.length,
+        quantidade: antigos.length,
       },
       chave: chaveAchado("CP-FANTASMA", "atual"),
     },

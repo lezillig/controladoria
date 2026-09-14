@@ -242,6 +242,25 @@ console.log("\nFR-BAIXA-ANTECIPADA — pagou antes de existir");
   const ctx = contexto({ titulos: [t], baixas: [baixa({ tituloId: t.id, dataBaixa: d("2026-08-01") })] });
   conferir("título sem emissão não pode ser julgado", rodar(ctx, "FR-BAIXA-ANTECIPADA").length, 0);
 }
+{
+  // Lançamento até uma semana depois do pagamento é rotina de quem digita a
+  // nota depois de pagar, não ordem invertida.
+  const t = titulo({ dataEmissao: d("2026-08-10") });
+  const ctx = contexto({ titulos: [t], baixas: [baixa({ tituloId: t.id, dataBaixa: d("2026-08-04") })] });
+  conferir("seis dias de atraso de lançamento: silêncio", rodar(ctx, "FR-BAIXA-ANTECIPADA").length, 0);
+}
+{
+  // Débito automático do banco lançado depois: não é a regra.
+  const t = titulo({ dataEmissao: d("2026-01-27"), parceiroNome: "BANCO DO BRASIL SA", valorDocumentoCents: 6_453_43 });
+  const ctx = contexto({ titulos: [t], baixas: [baixa({ tituloId: t.id, dataBaixa: d("2026-01-11"), valorCents: 6_453_43 })] });
+  conferir("débito automático de banco: silêncio", rodar(ctx, "FR-BAIXA-ANTECIPADA").length, 0);
+}
+{
+  // Baixa de valor zero é ajuste, não pagamento.
+  const t = titulo({ dataEmissao: d("2026-03-17"), parceiroNome: "FORNECEDOR COMUM" });
+  const ctx = contexto({ titulos: [t], baixas: [baixa({ tituloId: t.id, dataBaixa: d("2026-01-12"), valorCents: 0 })] });
+  conferir("baixa de R$ 0,00: silêncio", rodar(ctx, "FR-BAIXA-ANTECIPADA").length, 0);
+}
 
 // ---------------------------------------------------------- FR-BAIXA-FUTURA
 console.log("\nFR-BAIXA-FUTURA — baixa registrada antes de acontecer");

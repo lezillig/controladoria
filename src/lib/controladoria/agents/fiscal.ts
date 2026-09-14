@@ -276,7 +276,7 @@ function notaSemTitulo(ctx: ContextoAuditoria, materialidade: number): AchadoNov
           valor: n.valorCents,
           emissao: n.dataEmissao.toISOString(),
         })),
-        total: orfas.length,
+        quantidade: orfas.length,
       },
       chave: chaveAchado("FI-NOTA-SEM-TITULO", chaveMes(ctx.dataReferencia)),
     },

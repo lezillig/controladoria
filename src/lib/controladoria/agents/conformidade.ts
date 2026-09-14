@@ -325,7 +325,7 @@ function pontosCegos(ctx: ContextoAuditoria): AchadoNovo[] {
       recomendacao:
         "Ler a lista com esta pergunta: algum destes seria detectável pelos lançamentos? Se sim, vale virar regra e passar a ser monitorado todo dia, não uma vez por mês.",
       dataReferencia: ctx.dataReferencia,
-      evidencia: { semCobertura: semCobertura.length, areas, total: abertos.length },
+      evidencia: { semCobertura: semCobertura.length, areas, quantidade: abertos.length },
       chave: chaveAchado("CONF-PONTO-CEGO", "atual"),
     },
   ];

@@ -67,7 +67,7 @@ function datasIncoerentes(ctx: ContextoAuditoria): AchadoNovo[] {
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
       evidencia: {
-        total: incoerentes.length,
+        quantidade: incoerentes.length,
         titulos: incoerentes
           .sort((a, b) => b.valorDocumentoCents - a.valorDocumentoCents)
           .slice(0, 50)
@@ -271,7 +271,7 @@ export function coberturaDeCampos(ctx: ContextoAuditoria) {
   return [
     {
       entidade: "Títulos",
-      total: titulos.length,
+      quantidade: titulos.length,
       campos: [
         { nome: "categoria", preenchidoPercent: pct(titulos.filter((t) => t.categoriaCodigo).length, titulos.length) },
         { nome: "centro de custo", preenchidoPercent: pct(titulos.filter((t) => t.departamentoCodigo || t.projetoCodigo).length, titulos.length) },
@@ -282,7 +282,7 @@ export function coberturaDeCampos(ctx: ContextoAuditoria) {
     },
     {
       entidade: "Movimentos bancários",
-      total: ctx.movimentos.length,
+      quantidade: ctx.movimentos.length,
       campos: [
         { nome: "categoria", preenchidoPercent: pct(ctx.movimentos.filter((m) => m.categoriaCodigo).length, ctx.movimentos.length) },
         { nome: "conciliado", preenchidoPercent: pct(ctx.movimentos.filter((m) => m.conciliado).length, ctx.movimentos.length) },
@@ -291,7 +291,7 @@ export function coberturaDeCampos(ctx: ContextoAuditoria) {
     },
     {
       entidade: "Parceiros",
-      total: ctx.parceiros.length,
+      quantidade: ctx.parceiros.length,
       campos: [
         { nome: "documento", preenchidoPercent: pct(ctx.parceiros.filter((p) => p.documento).length, ctx.parceiros.length) },
         { nome: "e-mail", preenchidoPercent: pct(ctx.parceiros.filter((p) => p.email).length, ctx.parceiros.length) },
@@ -299,7 +299,7 @@ export function coberturaDeCampos(ctx: ContextoAuditoria) {
     },
     {
       entidade: "Notas fiscais",
-      total: ctx.notas.length,
+      quantidade: ctx.notas.length,
       campos: [
         { nome: "impostos destacados", preenchidoPercent: pct(ctx.notas.filter((n) => n.valorIssCents !== null || n.valorPisCents !== null).length, ctx.notas.length) },
         { nome: "parceiro", preenchidoPercent: pct(ctx.notas.filter((n) => n.parceiroCodigo).length, ctx.notas.length) },
