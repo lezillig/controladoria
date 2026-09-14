@@ -22,6 +22,13 @@
 -- ---------------------------------------------------------------------------
 -- 1. Criar o papel
 -- ---------------------------------------------------------------------------
+-- Antes de tudo: a tela de sincronização da Controladoria, seção "Origem dos
+-- dados da operação", diz se ela já lê a gestão pela MESMA conexão (os dois
+-- sistemas no mesmo banco, em schemas diferentes). Nesse modo nada aqui é
+-- pré-requisito de regra nenhuma — a leitura já funciona com o papel dono.
+-- Este script é o passo para SEPARAR o acesso, e deve ser rodado inteiro, na
+-- ordem, e não só a seção 3 (GRANT para um papel que não existe falha com
+-- "role controladoria_leitura does not exist").
 -- Troque a senha por uma longa e aleatória, gerada no seu gerenciador de
 -- senhas. Ela vai para a variável GESTAO_DATABASE_URL do projeto controladoria
 -- na Vercel, e para mais lugar nenhum.
@@ -33,8 +40,12 @@ CREATE ROLE controladoria_leitura WITH LOGIN PASSWORD 'TROQUE-POR-UMA-SENHA-LONG
 -- ---------------------------------------------------------------------------
 -- CONNECT sozinho não dá acesso a dado nenhum; USAGE no schema permite
 -- referenciar as tabelas, mas ainda não lê-las.
+--
+-- O GRANT exige o nome literal do banco (o Postgres não aceita função ali).
+-- Troque `neondb` pelo nome que aparece no seletor de banco do editor SQL do
+-- Neon, se for outro.
 
-GRANT CONNECT ON DATABASE current_database() TO controladoria_leitura;
+GRANT CONNECT ON DATABASE neondb TO controladoria_leitura;
 GRANT USAGE ON SCHEMA public TO controladoria_leitura;
 
 -- ---------------------------------------------------------------------------
