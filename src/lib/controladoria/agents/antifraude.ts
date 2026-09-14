@@ -477,7 +477,7 @@ function contaBancariaAlterada(ctx: ContextoAuditoria, materialidade: number): A
       entidadeRef: p.nome,
       evidencia: {
         fornecedor: p.nome,
-        documento: p.documento,
+        documento: fmtDocumento(p.documento),
         alteradaEm: p.contaBancariaAlteradaEm?.toISOString() ?? null,
         pagamentosApos: pagamentosDepois.length,
         valorPago: valor,
@@ -799,7 +799,7 @@ function documentoInvalido(ctx: ContextoAuditoria, materialidade: number): Achad
       evidencia: {
         fornecedores: suspeitos.slice(0, 50).map((p) => ({
           nome: p.nome,
-          documento: p.documento,
+          documento: fmtDocumento(p.documento),
           pago: somar(pagamentosPorParceiro.get(p.codigoOmie) ?? [], (t) => t.valorPagoCents),
         })),
         quantidade: suspeitos.length,
@@ -845,7 +845,7 @@ function cadastrosDuplicados(ctx: ContextoAuditoria): AchadoNovo[] {
       entidadeTipo: "OmieParceiro",
       entidadeId: grupo[0].id,
       entidadeRef: `${grupo[0].nome} (${apelido})`,
-      evidencia: { empresa: apelido, documento, cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome, inativo: p.inativo })) },
+      evidencia: { empresa: apelido, documento: fmtDocumento(documento), cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome, inativo: p.inativo })) },
       chave: chaveAchado("FR-CADASTRO-DUPLICADO", apelido, documento),
     });
   }
@@ -904,7 +904,7 @@ function cadastrosDuplicados(ctx: ContextoAuditoria): AchadoNovo[] {
       entidadeTipo: "OmieParceiro",
       entidadeId: grupo[0].id,
       entidadeRef: `${grupo[0].nome} (${apelido})`,
-      evidencia: { empresa: apelido, cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome, documento: p.documento, inativo: p.inativo })) },
+      evidencia: { empresa: apelido, cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome, documento: fmtDocumento(p.documento), inativo: p.inativo })) },
       chave: chaveAchado("FR-CADASTRO-NOME-SIMILAR", apelido, nomeNormalizado),
     });
   }
@@ -1012,7 +1012,7 @@ function fornecedorNovoComValorAlto(ctx: ContextoAuditoria, materialidade: numbe
       entidadeRef: p.nome,
       evidencia: {
         fornecedor: p.nome,
-        documento: p.documento,
+        documento: fmtDocumento(p.documento),
         titulos: titulos.length,
         valor,
         pessoaFisica: ehPessoaFisica(p.documento),
