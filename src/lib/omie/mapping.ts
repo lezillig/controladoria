@@ -3,7 +3,10 @@ import type {
   BaixaNormalizada,
   CategoriaNormalizada,
   ContaCorrenteNormalizada,
+  ContratoNormalizado,
+  CteNormalizado,
   DepartamentoNormalizado,
+  ItemContratoNormalizado,
   MovimentoNormalizado,
   NotaNormalizada,
   OmieNatureza,
@@ -779,5 +782,175 @@ export function normalizarNfse(bruto: Bruto): NotaNormalizada | null {
     cancelada: notaCancelada(str(cabec, "cStatusNFSe", "cStatus", "cSituacao", "situacao")),
     naturezaOperacao: str(cabec, "cNaturezaOperacao", "natureza_operacao"),
     cfop: null,
+  };
+}
+
+// ---------- Contratos de serviço ----------
+//
+// `servicos/contrato/ListarContratos`. Estrutura ANINHADA (SDK do WSDL):
+// { cabecalho: {...}, itensContrato: [{ itemCabecalho: {...} }], infAdic: {...},
+// infoCadastro: {...} }. O `?? bruto` em cada bloco é a mesma defesa dos
+// outros normalizadores: se a conta devolver achatado, lê igual.
+
+// cCodSit — a tabela de situações do contrato. O código cru fica gravado; o
+// texto é para a tela e para a descrição do achado.
+export const SITUACAO_CONTRATO: Record<string, string> = {
+  "00": "Em elaboração",
+  "10": "Ativo",
+  "90": "Suspenso",
+  "99": "Cancelado",
+};
+
+export function contratoAtivo(situacao: string | null): boolean {
+  return situacao === "10";
+}
+
+export function contratoInativo(situacao: string | null): boolean {
+  return situacao === "90" || situacao === "99";
+}
+
+// cTipoFat — a periodicidade do faturamento. Só "01" (mensal) é avaliado
+// pelas regras de faturamento esperado; as outras exigiriam saber em que mês
+// do ciclo se está. NULO conta como mensal: é o padrão da Omie e o caso de
+// praticamente todo contrato de fretamento — tratar ausência como "não sei"
+// deixaria as regras caladas para sempre numa conta que não devolve o campo.
+export const PERIODICIDADE_CONTRATO: Record<string, string> = {
+  "01": "mensal",
+  "02": "bimestral",
+  "03": "trimestral",
+  "06": "semestral",
+  "12": "anual",
+};
+
+export function contratoMensal(periodicidade: string | null): boolean {
+  return periodicidade === null || periodicidade === "01";
+}
+
+// Hash dos campos que, mudando, significam "o contrato mudou": situação,
+// valor mensal, vigência e itens. Nome do cliente, usuário e datas de
+// auditoria ficam de fora de propósito — mudança neles não é alteração
+// contratual, e incluí-los geraria versão nova a cada retoque de cadastro.
+export function hashCamposContrato(c: {
+  situacao: string | null;
+  valorMensalCents: number;
+  vigenciaInicio: Date | null;
+  vigenciaFim: Date | null;
+  itens: ItemContratoNormalizado[];
+}): string {
+  const dia = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
+  const itens = c.itens
+    .map((i) => [i.servico ?? "", i.quantidade ?? "", i.valorUnitarioCents ?? "", i.valorTotalCents ?? ""].join(","))
+    .sort()
+    .join(";");
+  return createHash("sha256")
+    .update([c.situacao ?? "", c.valorMensalCents, dia(c.vigenciaInicio), dia(c.vigenciaFim), itens].join("|"))
+    .digest("hex");
+}
+
+export function normalizarContrato(bruto: Bruto): ContratoNormalizado | null {
+  const cabec = obj(bruto, "cabecalho", "cabecContrato", "cabec") ?? bruto;
+  const infAdic = obj(bruto, "infAdic", "infoAdicionais") ?? bruto;
+  const info = obj(bruto, "infoCadastro", "info") ?? {};
+
+  const codigoOmie = str(cabec, "nCodCtr", "codigo_contrato", "nCodContrato");
+  if (!codigoOmie) return null;
+
+  const itens: ItemContratoNormalizado[] = arr(bruto, "itensContrato", "itens", "itensCadastro")
+    .map((item) => {
+      const ic = obj(item, "itemCabecalho", "cabecalho") ?? item;
+      return {
+        servico: str(ic, "codServico", "cCodServico", "descricao", "cDescricao"),
+        quantidade: num(ic, "quant", "nQtde", "quantidade"),
+        valorUnitarioCents: cents(ic, "valorUnit", "nValUnit", "valor_unitario"),
+        valorTotalCents: cents(ic, "valorTotal", "nValTotal", "valor_total"),
+        descontoCents: cents(ic, "valorDesconto", "nValDesconto"),
+        categoriaCodigo: str(ic, "cCodCategItem", "cCodCateg"),
+      };
+    })
+    .filter((i) => i.servico !== null || i.valorTotalCents !== null);
+
+  const situacao = str(cabec, "cCodSit", "situacao", "cSituacao");
+  // O valor mensal vem no cabeçalho (`nValTotMes`). Sem ele, a soma dos itens
+  // é a melhor estimativa — e zero quando não há nem uma coisa nem outra, que
+  // é o que deixa as regras de faturamento caladas para esse contrato.
+  const valorMensalCents =
+    cents(cabec, "nValTotMes", "valor_mensal", "nValorMensal") ??
+    (itens.length > 0 ? itens.reduce((acc, i) => acc + (i.valorTotalCents ?? 0), 0) : 0);
+  const vigenciaInicio = data(cabec, "dVigInicial", "dVigenciaInicial", "vigencia_inicio");
+  const vigenciaFim = data(cabec, "dVigFinal", "dVigenciaFinal", "vigencia_fim");
+
+  return {
+    codigoOmie,
+    codigoIntegracao: str(cabec, "cCodIntCtr", "codigo_integracao"),
+    numero: str(cabec, "cNumCtr", "numero_contrato", "cNumero"),
+    parceiroCodigo: str(cabec, "nCodCli", "nCodCliente", "codigo_cliente"),
+    // A listagem não traz o nome do cliente; o sync resolve pelo cadastro
+    // espelhado, como faz para os títulos. Os aliases ficam para a conta que
+    // devolver.
+    parceiroNome: str(cabec, "cRazaoSocial", "cNomeCliente", "razao_social"),
+    situacao,
+    situacaoDescricao: situacao ? SITUACAO_CONTRATO[situacao] ?? situacao : null,
+    vigenciaInicio,
+    vigenciaFim,
+    diaFaturamento: num(cabec, "nDiaFat", "dia_faturamento"),
+    valorMensalCents,
+    periodicidade: str(cabec, "cTipoFat", "periodicidade"),
+    categoriaCodigo: str(infAdic, "cCodCateg", "codigo_categoria") ?? str(cabec, "cCodCateg"),
+    itens,
+    usuarioInclusao: str(info, "uInc", "usuario_inclusao"),
+    usuarioAlteracao: str(info, "uAlt", "usuario_alteracao"),
+    dataInclusaoOmie: data(info, "dInc", "data_inclusao"),
+    alteradoEmOmie: data(info, "dAlt", "data_alteracao"),
+    hashCampos: hashCamposContrato({ situacao, valorMensalCents, vigenciaInicio, vigenciaFim, itens }),
+  };
+}
+
+// ---------- CT-e (painel do contador) ----------
+//
+// `contador/xml/ListarDocumentos` com cModelo 57/67. Um registro por XML
+// emitido; `cXml` é ignorado de propósito (ver OmieCte no schema).
+
+// cStatus — "00" autorizado, "10" cancelado, "20" denegado, "30" devolvido,
+// "40" pendente. A leitura por texto cobre a conta que devolver a palavra em
+// vez do código, com a mesma ressalva de `notaCancelada`: "Cancelamento
+// Rejeitado" contém a palavra e significa o contrário.
+export function cteCancelado(status: string | null): boolean {
+  if (!status) return false;
+  const t = status.trim();
+  if (t === "10") return true;
+  if (/^\d+$/.test(t)) return false;
+  return notaCancelada(t);
+}
+
+export function cteAutorizado(status: string | null): boolean {
+  if (!status) return true;
+  const t = status.trim();
+  if (t === "00") return true;
+  if (/^\d+$/.test(t)) return false;
+  return /autorizad/i.test(t);
+}
+
+export function normalizarCte(bruto: Bruto, modelo: "57" | "67"): CteNormalizado | null {
+  const numero = str(bruto, "nNumero", "numero", "nNumCTe", "nNF");
+  const serie = str(bruto, "cSerie", "serie");
+  // A chave de acesso tem 44 dígitos; qualquer outra coisa nesse campo é lixo
+  // (a Omie devolve zero ou vazio quando o documento ainda não foi autorizado).
+  const chaveBruta = str(bruto, "nChave", "cChave", "chave", "cChaveCTe");
+  const chaveAcesso = chaveBruta && /^\d{44}$/.test(chaveBruta.replace(/\D/g, "")) ? chaveBruta.replace(/\D/g, "") : null;
+  const dataEmissao = data(bruto, "dEmissao", "dEmi", "data_emissao", "dDtEmissao");
+  const valorCents = cents(bruto, "nValor", "vTPrest", "valor", "nValorTotal");
+  if (!dataEmissao || valorCents === null || (!chaveAcesso && !numero)) return null;
+
+  const status = str(bruto, "cStatus", "status", "cSituacao");
+  return {
+    chave: chaveAcesso ?? `${modelo}:${numero}:${serie ?? "-"}`,
+    numero,
+    serie,
+    modelo,
+    dataEmissao,
+    valorCents,
+    status,
+    cancelado: cteCancelado(status),
+    idOmie: str(bruto, "nIdCT", "nIdCTe", "nIdNF", "nIdDocumento"),
   };
 }

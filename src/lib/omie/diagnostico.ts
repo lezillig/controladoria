@@ -14,6 +14,8 @@ import {
   paramsNfse,
   type OmieEndpoint,
   type ProblemaCredencial,
+  paramsContratos,
+  paramsCte,
 } from "./client";
 import {
   formatarDataOmie,
@@ -27,6 +29,8 @@ import {
   normalizarParceiro,
   normalizarProjeto,
   normalizarTitulo,
+  normalizarContrato,
+  normalizarCte,
 } from "./mapping";
 
 // DIAGNÓSTICO DA INTEGRAÇÃO COM A OMIE.
@@ -288,6 +292,37 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
       endpoint: OMIE_ENDPOINTS.nfse,
       param: paramsNfse(1, REGISTROS_DE_AMOSTRA, de, ate),
       normalizar: normalizarNfse,
+    },
+    // CONTRATOS DE SERVIÇO — os nomes vêm do WSDL, não de uma conta real. O
+    // que este teste responde: a conta aceita a operação, sob qual nome vem o
+    // array, se `cExibirProdutos` passa (a variante sem ele é a segunda), e
+    // quais campos do cabeçalho o normalizador conseguiu ler — em especial
+    // `cCodSit`, `nValTotMes` e `cTipoFat`, que são os que as regras usam.
+    {
+      chave: "contratos",
+      rotulo: "Contratos de serviço",
+      endpoint: OMIE_ENDPOINTS.contratos,
+      param: paramsContratos(1, REGISTROS_DE_AMOSTRA, null),
+      normalizar: normalizarContrato,
+    },
+    // CT-e PELO PAINEL DO CONTADOR — a hipótese que substitui "não existe
+    // ListarCTe". Um alvo por modelo, porque a recusa (painel desabilitado) e
+    // o vazio (nenhum CT-e OS no período) são respostas diferentes e precisam
+    // aparecer separadas. Os valores de `cStatus` entram na amostra
+    // categórica: é neles que se confirma "10 = cancelado".
+    {
+      chave: "cte57",
+      rotulo: "CT-e (painel do contador, modelo 57)",
+      endpoint: OMIE_ENDPOINTS.cteDocumentos,
+      param: paramsCte(1, REGISTROS_DE_AMOSTRA, "57", de, ate),
+      normalizar: (b) => normalizarCte(b, "57"),
+    },
+    {
+      chave: "cte67",
+      rotulo: "CT-e OS (painel do contador, modelo 67)",
+      endpoint: OMIE_ENDPOINTS.cteDocumentos,
+      param: paramsCte(1, REGISTROS_DE_AMOSTRA, "67", de, ate),
+      normalizar: (b) => normalizarCte(b, "67"),
     },
   ];
 

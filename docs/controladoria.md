@@ -54,10 +54,10 @@ entregaria acesso ao ERP financeiro do grupo.
 
 A escolha por **três camadas** é o que dá confiança ao resultado:
 
-### Camada 1 — Catorze agentes de domínio
+### Camada 1 — Quinze agentes de domínio
 
 Determinísticos e puros: recebem o mesmo retrato dos dados, não consultam banco
-nem API, não escrevem nada. São catorze porque cada um responde a uma pergunta
+nem API, não escrevem nada. São quinze porque cada um responde a uma pergunta
 com **dono diferente na empresa** — o que torna o achado endereçável a alguém.
 
 | Agente | Área | O que procura |
@@ -69,15 +69,16 @@ com **dono diferente na empresa** — o que torna o achado endereçável a algu�
 | `frota` | Operações | Antifraude do combustível, transação a transação no extrato do cartão: abastecimento maior que o tanque ou dois tanques em 12 h, consumo que despenca ou hodômetro que anda para trás, abastecimento em dia sem escala nem uso do veículo, placa fora da frota ou veículo inativo, produto que o motor não usa, posto acima da frota e da ANP, motorista abastecendo vários veículos no dia |
 | `custos` | Controladoria | Variação por categoria, despesa nova, gasto recorrente, valor fora do padrão, divergência combustível Omie × cartão de frota |
 | `padroes` | Controladoria | Cada fornecedor contra o histórico DELE (24 meses): valor fora do padrão, fornecedor efêmero, fornecedor dormente que voltou, reajuste silencioso, prazo antecipado |
-| `fiscal` | Contabilidade | Nota cancelada com título ativo, receita sem nota, nota sem título, carga tributária fora da faixa do Lucro Presumido, falha de sequência |
+| `fiscal` | Contabilidade | Nota cancelada com título ativo, receita sem nota, nota sem título, carga tributária fora da faixa do Lucro Presumido, falha de sequência; **CT-e espelhado × título** — CT-e cancelado com título vivo, CT-e autorizado sem título, valor do título diferente do documento |
 | `fluxo-caixa` | Tesouraria | Projeção 7/15/30/60/90 dias, descasamento da semana, ciclo financeiro (PMR/PMP) |
 | `rentabilidade` | Controladoria | Margem por contrato, contrato no prejuízo, veículo fora do padrão, cobertura do rateio |
 | `oportunidades` | Controladoria | **Onde reduzir custo** (seção 5), juros evitáveis anualizados, tarifas, consolidação de fornecedores, política de alçadas sugerida |
 | `administrativo` | Administrativo | Sync atrasado ou com erro, cadastro incompleto, conta sem extrato, título emitido depois de vencer, achados críticos sem tratativa |
 | `conformidade` | Controladoria | Prazo estourado, risco grave sem responsável, apontamento externo reincidente, apontamento confirmado pelos dados, proposta de leitura não conferida, relatório mensal não recebido, ponto cego do sistema |
 | `pessoal` | RH | O que se paga a CPF de gente da folha cruzado com o rastro operacional da gestão (ponto, escala, uso de veículo, cartão de frota, afastamento): pagamento a quem já saiu, pagamento a quem nunca aparece na operação, diária fora do padrão do departamento ou sem dia trabalhado, reembolso repetido, adiantamento sem acerto, ponto batido em dia de atestado ou férias |
+| `contratos` | Comercial | O que **deveria** ter sido faturado, pelo contrato de serviço da Omie: título em contrato suspenso/cancelado ou depois da vigência, contrato ativo sem título no mês, faturado abaixo de 90% do valor mensal, valor ou situação alterados em silêncio (com o usuário que alterou), vigência terminando em 60 dias |
 
-Um agente que quebra **não derruba os outros treze**.
+Um agente que quebra **não derruba os outros catorze**.
 
 **Frota e combustível — o que cada regra precisa e quando fica calada.** O
 agente lê o extrato do cartão (`FuelTransaction` da gestão) e cruza com escala
@@ -158,6 +159,33 @@ eram chute — a resposta chegava cheia e ninguém a lia), ignora as linhas de
 SALDO e as PREVISTAS, e traz `cSituacao` ("Conciliado"/"Não conciliado"),
 `dDataConciliacao`, `cDocumentoFiscal` e `nCodLancRelac`. As linhas já
 espelhadas só ganham esses campos quando a janela delas for relida.
+
+**Contratos de serviço e CT-e** (migração `20260914180000`, duas fases novas no
+fim do ciclo de sincronização — `contratos` e `cte` —, ambas best-effort como a
+de notas). `OmieContrato` espelha `servicos/contrato/ListarContratos`: código,
+número, cliente, situação (`cCodSit`: 00 elaboração, 10 ativo, 90 suspenso,
+99 cancelado), vigência, dia de faturamento, valor mensal (`nValTotMes`),
+periodicidade (`cTipoFat`), itens e quem incluiu/alterou. Como a Omie só
+devolve o estado atual, o espelho guarda `hashCampos` (situação, valor mensal,
+vigência, itens) e uma lista `versoes` append-only — é o que sustenta
+`CR-CONTRATO-ALTERADO`. O elo título → contrato é `OmieTitulo.contratoCodigo`
+(`nCodCtr`); enquanto nenhum título a receber da base o traz (linhas
+espelhadas antes da coluna existir), as regras de faturamento esperado ficam
+caladas — acusar "sem faturamento" numa base sem elo seria acusar todos os
+contratos de uma vez.
+
+`OmieCte` espelha os CT-e emitidos (modelos 57 e 67) pelo **painel do contador**
+(`contador/xml/ListarDocumentos`) — não existe `ListarCTe` na Omie; foram cinco
+grafias recusadas antes de a conferência virar colagem manual. Só número, série,
+chave de acesso, data, valor e status entram; o XML (`cXml`) é descartado. A
+chamada **depende de o painel do contador estar habilitado na conta**: recusa
+vira erro registrado no run, o diagnóstico ("Testar a integração") mostra se a
+conta aceita e quais campos vieram, e as três regras de CT-e do agente fiscal
+ficam caladas com o motivo escrito pelo supervisor. O casamento CT-e × título
+é a mesma função da tela de conferência (`casarCtesComTitulos` em `cte.ts`):
+chave de acesso, depois número, depois valor e data (±7 dias) — e só os dois
+primeiros sustentam "cancelado com título" e "valor divergente" (> 1% e
+> R$ 10); por valor e data, um cancelado e o seu substituto são indistinguíveis.
 
 ### Camada 2 — Supervisor
 
@@ -600,7 +628,7 @@ hoje é a disciplina de tratar, não o valor):
 Uma única rota agendada, como máquina de estados com cursor persistido:
 
 ```
-por empresa:  cadastros → títulos → movimentos → notas
+por empresa:  cadastros → títulos → movimentos → notas → contratos → CT-e
 depois:       auditoria → conciliação da conformidade → relatório*    (grupo inteiro)
 
 * só com "Relatório diário automático" ligado no modelo de gestão — nasce
@@ -768,6 +796,13 @@ diferentes:
 O extrato é testado por último e usa o código de conta corrente que o próprio
 diagnóstico acabou de obter — não há como consultá-lo sem uma conta válida, e
 testar a cadeia inteira é justamente como o sync funciona.
+
+Três sondas cobrem o que ainda não foi confirmado contra a conta real:
+**Contratos de serviço** (mostra sob qual nome veio o array, se
+`cExibirProdutos` passou e se `cCodSit`, `nValTotMes` e `cTipoFat` chegaram
+preenchidos) e **CT-e pelo painel do contador**, uma por modelo (57 e 67). Se a
+conta não tem o painel habilitado, a sonda mostra a recusa — e é essa recusa,
+não um vazio, que explica por que as regras de CT-e estão caladas.
 
 ---
 

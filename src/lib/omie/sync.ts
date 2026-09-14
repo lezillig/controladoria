@@ -10,6 +10,8 @@ import {
   sleep,
   type OmieEndpoint,
   paramsNfse,
+  paramsContratos,
+  paramsCte,
 } from "./client";
 import {
   formatarDataOmie,
@@ -23,8 +25,11 @@ import {
   ehTrocaDeConta,
   normalizarProjeto,
   normalizarTitulo,
+  normalizarContrato,
+  normalizarCte,
 } from "./mapping";
-import type { OmieNatureza } from "./types";
+import type { OmieNatureza, VersaoContrato } from "./types";
+import type { Prisma } from "@prisma/client";
 
 // Motor de sincronizacao Omie -> espelho local.
 //
@@ -41,7 +46,12 @@ import type { OmieNatureza } from "./types";
 // (retentativa, execucao manual, encadeamento duplicado). Toda escrita aqui
 // e upsert por chave natural da Omie.
 
-export const FASES = ["cadastros", "titulos", "movimentos", "notas"] as const;
+// As duas últimas — contratos e CT-e — vêm DEPOIS das notas e são best-effort
+// como elas: recusa da Omie (painel do contador desabilitado, tag de filtro
+// desconhecida) vira erro registrado no run, nunca aborto. Acrescentadas ao
+// FIM da lista de propósito: o cursor persistido em OmieSyncRun.fase é o nome
+// da fase, e uma execução parada em "notas" continua de "notas".
+export const FASES = ["cadastros", "titulos", "movimentos", "notas", "contratos", "cte"] as const;
 export type FaseSync = (typeof FASES)[number];
 
 export type ResultadoFase = {
@@ -54,6 +64,8 @@ export type ResultadoFase = {
   movimentos: number;
   notas: number;
   erros: string[];
+  contratos: number;
+  ctes: number;
 };
 
 function vazio(): ResultadoFase {
@@ -67,6 +79,8 @@ function vazio(): ResultadoFase {
     movimentos: 0,
     notas: 0,
     erros: [],
+    contratos: 0,
+    ctes: 0,
   };
 }
 
@@ -824,6 +838,217 @@ async function sincronizarNotas(ctx: ContextoFase): Promise<ResultadoFase> {
   return { ...res, faseConcluida: true };
 }
 
+// ---------- Fase 5: contratos de serviço ----------
+// Best-effort, como as notas. Contrato NÃO tem janela: é o estado atual da
+// conta, como o cadastro. A primeira passagem traz tudo (são poucos — dezenas,
+// não milhares); as seguintes pedem só o que foi alterado na janela
+// (`filtrar_apenas_alteracao`), e caem para a lista inteira se a conta recusar
+// o filtro (ver paramsContratos). No backfill, mesma guarda do cadastro: só a
+// primeira janela sincroniza; as demais pulam.
+//
+// O que esta fase faz e nenhuma outra: guarda o HISTÓRICO. A Omie devolve só o
+// estado atual do contrato; comparar o hash dos campos que importam com o que
+// está gravado, e anexar uma versão quando muda, é a única forma de dizer
+// depois "o valor caiu de X para Y em tal dia, alterado por fulano".
+
+type CursorContratos = { pagina: number; completo: boolean };
+
+// Quantas versões ficam na lista. Cinquenta alterações num contrato são anos
+// de história; guardar além disso só engorda o JSON.
+const MAXIMO_VERSOES_CONTRATO = 50;
+
+async function sincronizarContratos(ctx: ContextoFase, backfill: boolean): Promise<ResultadoFase> {
+  const res = vazio();
+
+  const jaTemContrato = await prisma.omieContrato.findFirst({
+    where: { conexaoId: ctx.conexaoId },
+    select: { id: true },
+  });
+  if (backfill && jaTemContrato) return { ...res, faseConcluida: true };
+
+  // Carga completa quando ainda não há contrato espelhado; incremental (só o
+  // alterado na janela) daí em diante. O cursor lembra a decisão para a
+  // invocação seguinte não trocar de modo no meio da paginação.
+  const cursor = lerCursor<CursorContratos>(ctx.cursor, { pagina: 1, completo: !jaTemContrato });
+  let pagina = cursor.pagina;
+  const janela = cursor.completo
+    ? null
+    : { de: formatarDataOmie(ctx.janelaInicio), ate: formatarDataOmie(ctx.janelaFim) };
+
+  for (;;) {
+    if (acabouOTempo(ctx)) {
+      return { ...res, proximoCursor: JSON.stringify({ pagina, completo: cursor.completo } satisfies CursorContratos) };
+    }
+
+    let resposta;
+    try {
+      resposta = await omieCall(OMIE_ENDPOINTS.contratos, paramsContratos(pagina, REGISTROS_POR_PAGINA, janela), {
+        credencialRef: ctx.credencialRef,
+        deadline: ctx.deadline,
+        toleraVazio: true,
+      });
+    } catch (e) {
+      if (!(e instanceof OmieVazioError)) {
+        res.erros.push(`contratos: ${e instanceof Error ? e.message : "erro desconhecido"}`);
+      }
+      break;
+    }
+    await sleep(OMIE_PACE_MS);
+
+    const itens = extrairItens(resposta, OMIE_ENDPOINTS.contratos);
+    res.contratos += await gravarContratos(ctx, itens);
+
+    const totalPaginas = extrairTotalPaginas(resposta);
+    if (itens.length === 0 || pagina >= totalPaginas) break;
+    pagina++;
+  }
+
+  return { ...res, faseConcluida: true };
+}
+
+async function gravarContratos(ctx: ContextoFase, itens: Record<string, unknown>[]): Promise<number> {
+  const normalizados = itens.map(normalizarContrato).filter((c): c is NonNullable<typeof c> => c !== null);
+  if (normalizados.length === 0) return 0;
+  const agora = new Date();
+
+  // Nome do cliente pelo cadastro espelhado, em lote — a listagem de contratos
+  // traz só o código (mesmo caso dos títulos, mesma solução).
+  const codigosSemNome = [
+    ...new Set(normalizados.filter((c) => !c.parceiroNome && c.parceiroCodigo).map((c) => c.parceiroCodigo!)),
+  ];
+  const nomePorCodigo = new Map<string, string>();
+  if (codigosSemNome.length > 0) {
+    const parceiros = await prisma.omieParceiro.findMany({
+      where: { conexaoId: ctx.conexaoId, codigoOmie: { in: codigosSemNome } },
+      select: { codigoOmie: true, nome: true },
+    });
+    for (const p of parceiros) nomePorCodigo.set(p.codigoOmie, p.nome);
+  }
+
+  // O que já está gravado, para decidir se o hash mudou. Uma consulta por
+  // página, não uma por contrato.
+  const anteriores = await prisma.omieContrato.findMany({
+    where: { conexaoId: ctx.conexaoId, codigoOmie: { in: normalizados.map((c) => c.codigoOmie) } },
+    select: { codigoOmie: true, hashCampos: true, versoes: true },
+  });
+  const anteriorPorCodigo = new Map(anteriores.map((a) => [a.codigoOmie, a]));
+
+  await gravarEmLotes(normalizados, (lote) =>
+    prisma.$transaction(
+      lote.map((c) => {
+        const anterior = anteriorPorCodigo.get(c.codigoOmie);
+        const versaoAtual: VersaoContrato = {
+          vistoEm: agora.toISOString(),
+          hashCampos: c.hashCampos,
+          valorMensalCents: c.valorMensalCents,
+          situacao: c.situacao,
+          usuarioAlteracao: c.usuarioAlteracao,
+          alteradoEmOmie: c.alteradoEmOmie ? c.alteradoEmOmie.toISOString() : null,
+        };
+        const versoesAnteriores = Array.isArray(anterior?.versoes) ? (anterior.versoes as unknown as VersaoContrato[]) : [];
+        // Anexa só quando o hash MUDOU. Reler a mesma página amanhã não pode
+        // criar versão — versão é alteração, não sincronização.
+        const versoes =
+          anterior && anterior.hashCampos === c.hashCampos
+            ? versoesAnteriores
+            : [...versoesAnteriores, versaoAtual].slice(-MAXIMO_VERSOES_CONTRATO);
+        const { itens: itensContrato, ...campos } = c;
+        const dados = {
+          ...campos,
+          parceiroNome: c.parceiroNome ?? nomePorCodigo.get(c.parceiroCodigo ?? "") ?? null,
+          itens: itensContrato as unknown as Prisma.InputJsonValue,
+          versoes: versoes as unknown as Prisma.InputJsonValue,
+        };
+        return prisma.omieContrato.upsert({
+          where: { conexaoId_codigoOmie: { conexaoId: ctx.conexaoId, codigoOmie: c.codigoOmie } },
+          create: {
+            companyId: ctx.companyId,
+            conexaoId: ctx.conexaoId,
+            conexaoApelido: ctx.conexaoApelido,
+            ...dados,
+            sincronizadoEm: agora,
+          },
+          update: { ...dados, sincronizadoEm: agora },
+          select: { id: true },
+        });
+      })
+    )
+  );
+  return normalizados.length;
+}
+
+// ---------- Fase 6: CT-e pelo painel do contador ----------
+// Por janela de EMISSÃO, um modelo de cada vez (57 = CT-e, 67 = CT-e OS),
+// só emitidos (cOperacao "1"). Página menor que a dos títulos porque cada
+// registro vem com o XML inteiro em `cXml` — descartado na leitura, mas
+// trafegado na resposta.
+//
+// Se a conta não tem o painel do contador habilitado, a Omie recusa a chamada:
+// o erro fica no run, o diagnóstico mostra a recusa, e a fase conclui.
+
+type CursorCte = { modelo: "57" | "67"; pagina: number };
+const MODELOS_CTE: readonly ("57" | "67")[] = ["57", "67"];
+const REGISTROS_POR_PAGINA_CTE = 50;
+
+async function sincronizarCte(ctx: ContextoFase): Promise<ResultadoFase> {
+  const res = vazio();
+  const cursor = lerCursor<CursorCte>(ctx.cursor, { modelo: "57", pagina: 1 });
+
+  let indice = Math.max(0, MODELOS_CTE.indexOf(cursor.modelo));
+  let pagina = cursor.pagina;
+  const de = formatarDataOmie(ctx.janelaInicio);
+  const ate = formatarDataOmie(ctx.janelaFim);
+
+  for (; indice < MODELOS_CTE.length; indice++) {
+    const modelo = MODELOS_CTE[indice];
+
+    for (;;) {
+      if (acabouOTempo(ctx)) {
+        return { ...res, proximoCursor: JSON.stringify({ modelo, pagina } satisfies CursorCte) };
+      }
+
+      let resposta;
+      try {
+        resposta = await omieCall(OMIE_ENDPOINTS.cteDocumentos, paramsCte(pagina, REGISTROS_POR_PAGINA_CTE, modelo, de, ate), {
+          credencialRef: ctx.credencialRef,
+          deadline: ctx.deadline,
+          toleraVazio: true,
+        });
+      } catch (e) {
+        if (!(e instanceof OmieVazioError)) {
+          res.erros.push(`CT-e modelo ${modelo}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
+        }
+        break;
+      }
+      await sleep(OMIE_PACE_MS);
+
+      const itens = extrairItens(resposta, OMIE_ENDPOINTS.cteDocumentos);
+      const normalizados = itens.map((b) => normalizarCte(b, modelo)).filter((c): c is NonNullable<typeof c> => c !== null);
+      const agora = new Date();
+      await gravarEmLotes(normalizados, (lote) =>
+        prisma.$transaction(
+          lote.map((c) =>
+            prisma.omieCte.upsert({
+              where: { conexaoId_chave: { conexaoId: ctx.conexaoId, chave: c.chave } },
+              create: { companyId: ctx.companyId, conexaoId: ctx.conexaoId, conexaoApelido: ctx.conexaoApelido, ...c, sincronizadoEm: agora },
+              update: { ...c, sincronizadoEm: agora },
+              select: { id: true },
+            })
+          )
+        )
+      );
+      res.ctes += normalizados.length;
+
+      const totalPaginas = extrairTotalPaginas(resposta);
+      if (itens.length === 0 || pagina >= totalPaginas) break;
+      pagina++;
+    }
+    pagina = 1;
+  }
+
+  return { ...res, faseConcluida: true };
+}
+
 export async function executarFase(
   fase: FaseSync,
   ctx: ContextoFase,
@@ -838,6 +1063,10 @@ export async function executarFase(
       return sincronizarMovimentos(ctx);
     case "notas":
       return sincronizarNotas(ctx);
+    case "contratos":
+      return sincronizarContratos(ctx, backfill);
+    case "cte":
+      return sincronizarCte(ctx);
   }
 }
 

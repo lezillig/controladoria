@@ -227,6 +227,10 @@ model OmieConexao {
   conformidadeDocumentos   ConformidadeDocumento[]
   conformidadeApontamentos ConformidadeApontamento[]
 
+  // Contratos de serviço e CT-e: espelhados por conexão como os demais.
+  contratos OmieContrato[]
+  ctes      OmieCte[]
+
   @@unique([companyId, apelido])
   @@unique([companyId, credencialRef])
   @@index([companyId, ativa])
@@ -1436,4 +1440,102 @@ model Investigacao {
   concluidaEm  DateTime?
 
   @@index([companyId, criadoEm])
+}
+
+// ============================================================================
+// Contratos de serviço e CT-e (espelho da Omie, migração 20260914180000)
+// ============================================================================
+// CONTRATO DE SERVIÇO — `servicos/contrato/ListarContratos`.
+//
+// É o documento que diz quanto a empresa DEVERIA faturar por mês de cada
+// cliente. Sem ele, o contas a receber só consegue olhar o que foi cobrado; com
+// ele, passa a enxergar o que não foi: contrato ativo sem título no mês,
+// faturado abaixo do valor contratual, título emitido em contrato cancelado.
+//
+// `hashCampos` e `versoes` são o que sustenta "valor de contrato alterado em
+// silêncio": o espelho guarda o hash dos campos que importam (situação, valor
+// mensal, vigência, itens) e, toda vez que ele muda, anexa uma versão à lista.
+// A Omie não devolve histórico de alteração — só o estado atual e quem alterou
+// por último —, então a única forma de saber que o valor caiu é ter visto o
+// valor anterior. Lista APPEND-ONLY, limitada às últimas versões.
+model OmieContrato {
+  id               String      @id @default(cuid())
+  companyId        String
+  conexaoId        String
+  conexao          OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido   String
+  // nCodCtr — código interno da Omie. É o que `OmieTitulo.contratoCodigo`
+  // carrega (cabecTitulo.nCodCtr).
+  codigoOmie       String
+  codigoIntegracao String?
+  // cNumCtr — o número que a pessoa vê na tela.
+  numero           String?
+  parceiroCodigo   String?
+  parceiroNome     String?
+  // cCodSit cru ("00" elaboração, "10" ativo, "90" suspenso, "99" cancelado)
+  // e a leitura legível ao lado, para a tela não precisar da tabela.
+  situacao          String?
+  situacaoDescricao String?
+  vigenciaInicio    DateTime?
+  vigenciaFim       DateTime?
+  diaFaturamento    Int?
+  // nValTotMes — o valor mensal contratado.
+  valorMensalCents  Int         @default(0)
+  // cTipoFat cru ("01" mensal, "02" bimestral, "03" trimestral, "06"
+  // semestral, "12" anual).
+  periodicidade     String?
+  categoriaCodigo   String?
+  // Resumo dos itens: serviço, quantidade, valor unitário, valor total.
+  itens             Json?
+  usuarioInclusao   String?
+  usuarioAlteracao  String?
+  dataInclusaoOmie  DateTime?
+  alteradoEmOmie    DateTime?
+  hashCampos        String
+  // [{ vistoEm, hashCampos, valorMensalCents, situacao, usuarioAlteracao, alteradoEmOmie }]
+  versoes           Json?
+  sincronizadoEm    DateTime    @default(now())
+
+  @@unique([conexaoId, codigoOmie])
+  @@index([companyId, situacao])
+  @@index([companyId, parceiroCodigo])
+  @@index([companyId, numero])
+}
+
+// CT-e EMITIDO — `contador/xml/ListarDocumentos` (modelos 57 e 67).
+//
+// Não existe "ListarCTe" na Omie: o CT-e sai pelo painel do contador, que
+// lista os XMLs emitidos por modelo e período. Por isso a fase é best-effort e
+// o diagnóstico mostra se a conta aceita a chamada — o painel pode não estar
+// habilitado, e nesse caso a tabela fica vazia e as regras de CT-e caladas.
+//
+// O XML em si (`cXml`) NÃO é gravado: pode ter dezenas de KB por documento e
+// nada aqui precisa dele — número, chave, data, valor e status bastam para
+// casar com o título a receber.
+model OmieCte {
+  id             String      @id @default(cuid())
+  companyId      String
+  conexaoId      String
+  conexao        OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido String
+  // nChave — a chave de acesso de 44 dígitos. Quando a Omie não a devolve, o
+  // normalizador monta `modelo:numero:serie` para o registro não se perder.
+  chave          String
+  numero         String?
+  serie          String?
+  // "57" (CT-e) ou "67" (CT-e OS).
+  modelo         String
+  dataEmissao    DateTime
+  valorCents     Int
+  // cStatus cru ("00" autorizado, "10" cancelado, "20" denegado, "30"
+  // devolvido, "40" pendente) e o booleano que as regras usam.
+  status         String?
+  cancelado      Boolean     @default(false)
+  // nIdCT — id interno da Omie.
+  idOmie         String?
+  sincronizadoEm DateTime    @default(now())
+
+  @@unique([conexaoId, chave])
+  @@index([companyId, dataEmissao])
+  @@index([companyId, numero])
 }

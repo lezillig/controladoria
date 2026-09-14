@@ -16,6 +16,8 @@ import type {
   OmieTituloVersao,
   OmieTitulo,
   OmieVinculoCentroCusto,
+  OmieContrato,
+  OmieCte,
 } from "@prisma/client";
 import type {
   AbastecimentoGestao,
@@ -138,6 +140,15 @@ export type ContextoAuditoria = {
   // Baixado nos últimos 12 meses fechados, do resumo mensal. Base da
   // materialidade quando o ano corrente ainda é curto.
   baixadoEm12MesesCents?: number | null;
+
+  // Contratos de serviço (todos, são poucos) e CT-e emitidos (desde
+  // `janelaDesde`). Opcionais pelo mesmo motivo das leituras de frota: os
+  // testes montam o contexto à mão, e as duas fontes podem simplesmente não
+  // existir na conta (CT-e depende do painel do contador). Ausentes ou vazios,
+  // as regras que dependem deles ficam caladas e o supervisor registra o
+  // motivo — nunca inventam.
+  contratos?: OmieContrato[];
+  ctes?: OmieCte[];
 };
 
 // Um achado emitido por um agente. Ainda nao e o registro do banco: o motor

@@ -200,3 +200,61 @@ export type PaginaOmie<T> = {
   totalPaginas: number;
   totalRegistros: number;
 };
+
+// Item de contrato, como vai gravado no JSON `itens` de OmieContrato. Só o
+// resumo: o que a regra de faturado-a-menor precisa para explicar de onde vem
+// o valor mensal, sem copiar a estrutura inteira da Omie.
+export type ItemContratoNormalizado = {
+  servico: string | null;
+  quantidade: number | null;
+  valorUnitarioCents: number | null;
+  valorTotalCents: number | null;
+  descontoCents: number | null;
+  categoriaCodigo: string | null;
+};
+
+export type ContratoNormalizado = {
+  codigoOmie: string;
+  codigoIntegracao: string | null;
+  numero: string | null;
+  parceiroCodigo: string | null;
+  parceiroNome: string | null;
+  situacao: string | null;
+  situacaoDescricao: string | null;
+  vigenciaInicio: Date | null;
+  vigenciaFim: Date | null;
+  diaFaturamento: number | null;
+  valorMensalCents: number;
+  periodicidade: string | null;
+  categoriaCodigo: string | null;
+  itens: ItemContratoNormalizado[];
+  usuarioInclusao: string | null;
+  usuarioAlteracao: string | null;
+  dataInclusaoOmie: Date | null;
+  alteradoEmOmie: Date | null;
+  // SHA-256 dos campos que importam (situação, valor mensal, vigência, itens).
+  // Muda = versão nova em `versoes`.
+  hashCampos: string;
+};
+
+// Uma entrada da lista `versoes` de OmieContrato.
+export type VersaoContrato = {
+  vistoEm: string;
+  hashCampos: string;
+  valorMensalCents: number;
+  situacao: string | null;
+  usuarioAlteracao: string | null;
+  alteradoEmOmie: string | null;
+};
+
+export type CteNormalizado = {
+  chave: string;
+  numero: string | null;
+  serie: string | null;
+  modelo: string;
+  dataEmissao: Date;
+  valorCents: number;
+  status: string | null;
+  cancelado: boolean;
+  idOmie: string | null;
+};

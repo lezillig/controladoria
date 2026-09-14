@@ -93,6 +93,22 @@ const REGRAS_DEPENDENTES_DE_NOTAS = [
   "FI-SEQUENCIA",
 ];
 
+// Regras que dependem dos CONTRATOS DE SERVIÇO espelhados. Sem contrato na
+// base não há "valor esperado" — e as regras já se calam sozinhas; a lista
+// existe para o motivo ficar escrito no run, não em silêncio.
+const REGRAS_DEPENDENTES_DE_CONTRATOS = [
+  "CR-CONTRATO-INATIVO-FATURADO",
+  "CR-CONTRATO-SEM-FATURAMENTO",
+  "CR-CONTRATO-FATURADO-A-MENOR",
+  "CR-CONTRATO-ALTERADO",
+  "CR-CONTRATO-VENCENDO",
+];
+
+// Regras que dependem dos CT-e espelhados pelo painel do contador. A conta
+// pode não ter o painel habilitado — aí a tabela fica vazia e "CT-e sem
+// título" não é achado, é ausência de fonte.
+const REGRAS_DEPENDENTES_DE_CTE = ["FI-CTE-CANCELADO-COM-TITULO", "FI-CTE-SEM-TITULO", "FI-CTE-VALOR-DIVERGENTE"];
+
 // Pares de regras que descrevem o MESMO fato por caminhos diferentes. A
 // primeira e a principal (mais especifica/acionavel); a segunda vira
 // relacionada, com severidade rebaixada, para o mesmo problema nao ocupar
@@ -298,6 +314,12 @@ export function supervisionar(
   }
   if (!qualidadeDaBase.temNotas) {
     suprimirPorBase(REGRAS_DEPENDENTES_DE_NOTAS, "notas fiscais não sincronizadas nesta base");
+  }
+  if ((ctx.contratos ?? []).length === 0) {
+    suprimirPorBase(REGRAS_DEPENDENTES_DE_CONTRATOS, "contratos de serviço não espelhados nesta base");
+  }
+  if ((ctx.ctes ?? []).length === 0) {
+    suprimirPorBase(REGRAS_DEPENDENTES_DE_CTE, "CT-e não espelhados nesta base (painel do contador indisponível ou fase ainda não rodou)");
   }
 
   // ---- Controle 2: coerência aritmética ----

@@ -127,6 +127,8 @@ export async function carregarContexto(
     versoesDeTitulo,
     pontos,
     afastamentos,
+    contratos,
+    ctes,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -215,6 +217,11 @@ export async function carregarContexto(
     // pessoal compara os dois com os títulos pagos a CPF nesse período.
     lerPontos(companyId, corteRecente),
     lerAfastamentos(companyId, corteRecente),
+    // Contratos inteiros: são dezenas, e um contrato suspenso há dois anos
+    // continua explicando um título de hoje. CT-e pela janela de emissão, como
+    // as notas.
+    prisma.omieContrato.findMany({ where: escopo, orderBy: { codigoOmie: "asc" } }),
+    prisma.omieCte.findMany({ where: { ...escopo, dataEmissao: recorteDeData }, orderBy: { dataEmissao: "asc" } }),
   ]);
 
   return {
@@ -256,6 +263,8 @@ export async function carregarContexto(
     janelaAte: ate,
     pontos,
     afastamentos,
+    contratos,
+    ctes,
   };
 }
 

@@ -12,6 +12,7 @@ import { agenteOportunidades } from "./agents/oportunidades";
 import { agentePadroes } from "./agents/padroes";
 import { agenteRentabilidade } from "./agents/rentabilidade";
 import { agentePessoal } from "./agents/pessoal";
+import { agenteContratos } from "./agents/contratos";
 import type { Agente } from "./types";
 
 // REGISTRO DOS AGENTES
@@ -68,6 +69,10 @@ export const AGENTES: Agente[] = [
   // gente da folha com o ponto, a escala, o uso de veículo e o afastamento
   // da gestão. Quem confere se a pessoa trabalhou é o RH, não o financeiro.
   agentePessoal,
+  // Contratos de serviço: o que DEVERIA ter sido faturado. Área própria
+  // (Comercial) porque contrato sem faturamento, faturado a menor ou alterado
+  // é conversa com quem vende e renova, não com quem baixa título.
+  agenteContratos,
 ];
 
 export function agentePorId(id: string): Agente | undefined {

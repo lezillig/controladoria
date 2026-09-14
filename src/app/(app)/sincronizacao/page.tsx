@@ -248,7 +248,7 @@ export default async function SincronizacaoPage() {
       {progresso.totalJanelas > 0 && (
         <Secao
           titulo="Carga histórica"
-          descricao={`A base é montada mês a mês, por empresa, desde ${fmtData(dataInicioBase)}. Cada janela mensal passa pelas quatro fases de sincronização.`}
+          descricao={`A base é montada mês a mês, por empresa, desde ${fmtData(dataInicioBase)}. Cada janela mensal passa pelas seis fases de sincronização.`}
         >
           <div className="flex items-baseline justify-between">
             <p className="text-sm font-semibold text-slate-900">
@@ -312,7 +312,7 @@ export default async function SincronizacaoPage() {
       {podeSincronizar && (
         <Secao
           titulo="Executar agora"
-          descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → auditoria → relatório."
+          descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → contratos → CT-e → auditoria → relatório."
         >
           <SyncButton temExecucaoTravada={travada} emAndamento={Boolean(emAndamento) && !travada} />
 
