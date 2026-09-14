@@ -14,7 +14,8 @@ import {
   type MedidaDaBaseAntiga,
   type ResultadoDaLimpeza,
 } from "@/lib/controladoria/limpezaHistorica";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
+import { redigir } from "@/lib/controladoria/falhas";
 import { exigirPermissao } from "../_dados";
 
 // Sincronização manual. O ciclo normal é o agendamento diário; este botão
@@ -101,10 +102,12 @@ export async function sincronizarAgora(opts?: { encadear?: boolean }): Promise<R
       }
     }
   } catch (e) {
-    const mensagem = e instanceof Error ? e.message : "erro desconhecido";
+    // Redigida e curta: erro de banco traz o host da conexão, e a mensagem
+    // vai para a tela e para a trilha.
+    const mensagem = redigir(e instanceof Error ? e.message : "erro desconhecido").slice(0, 500);
     await prisma.omieSyncRun.updateMany({
       where: { companyId: session.companyId, status: "EXECUTANDO" },
-      data: { status: "ERRO", finalizadoEm: new Date(), erro: mensagem.slice(0, 2000) },
+      data: { status: "ERRO", finalizadoEm: new Date(), erro: mensagem },
     });
     return { erro: mensagem, mensagens };
   }

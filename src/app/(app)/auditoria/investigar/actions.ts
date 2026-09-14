@@ -6,7 +6,7 @@ import {
   type EstadoInvestigacao,
 } from "@/lib/controladoria/investigador";
 import { exigirPermissao, resolverEscopo } from "../../_dados";
-import { registrarEvento } from "../actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 
 const TAMANHO_MAXIMO_DA_PERGUNTA = 2000;
 

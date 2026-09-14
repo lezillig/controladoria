@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { prismaGestao } from "@/lib/gestao/cliente";
 import { PERMISSOES } from "@/lib/acessos";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // USUÁRIOS E PERFIS.
@@ -55,6 +55,18 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoUsuario
     return { erro: `A senha precisa ter ao menos ${TAMANHO_MINIMO_SENHA} caracteres.` };
   }
   if (!PAPEIS_VALIDOS.includes(role)) return { erro: "Papel inválido." };
+  // TETO DE PAPEL. Quem tem "gerir usuários" por perfil pode ser um GESTOR;
+  // sem esta linha ele criaria um ADMIN da gestão inteira e entraria com ele.
+  // Só ADMIN cria ADMIN.
+  if (role === "ADMIN" && session.role !== "ADMIN") {
+    return { erro: "Só um administrador pode criar outro administrador." };
+  }
+  // O perfil precisa ser desta empresa: um id de outra aplicaria as
+  // permissões dela aqui.
+  if (perfilId) {
+    const perfil = await prisma.perfilAcesso.findFirst({ where: { id: perfilId, companyId: session.companyId }, select: { id: true } });
+    if (!perfil) return { erro: "Perfil não encontrado." };
+  }
 
   // Conferir ANTES de tentar gravar. O banco tem índice único no e-mail e
   // recusaria de qualquer forma, mas a mensagem dele fala de constraint; esta
@@ -134,6 +146,10 @@ export async function atribuirPerfil(formData: FormData): Promise<ResultadoUsuar
   const userNome = String(formData.get("userNome") ?? "").trim() || null;
   const perfilId = String(formData.get("perfilId") ?? "").trim();
   if (!userId) return { erro: "Usuário não informado." };
+  if (perfilId) {
+    const perfil = await prisma.perfilAcesso.findFirst({ where: { id: perfilId, companyId: session.companyId }, select: { id: true } });
+    if (!perfil) return { erro: "Perfil não encontrado." };
+  }
 
   const anterior = await prisma.usuarioPerfil.findUnique({
     where: { companyId_userId: { companyId: session.companyId, userId } },

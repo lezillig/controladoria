@@ -191,6 +191,10 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
       if (!a) return JSON.stringify({ erro: "achado não encontrado nesta empresa" });
       return JSON.stringify({
         ...a,
+        // A evidência é JSON livre dos agentes e pode trazer CPF cru (a regra
+        // de funcionário-fornecedor traz por construção). Mascarado aqui, como
+        // na tela e na ferramenta de parceiro: o modelo não precisa do número.
+        evidencia: mascararDocumentos(a.evidencia),
         valor: fmtBRL(a.valorCents), impacto: a.impactoCents ? fmtBRL(a.impactoCents) : null,
         detectadoEm: fmtData(a.detectadoEm), resolvidoEm: a.resolvidoEm ? fmtData(a.resolvidoEm) : null,
       });
@@ -424,6 +428,17 @@ function mascarar(documento: string | null): string | null {
   if (d.length === 11) return `***.${d.slice(3, 6)}.${d.slice(6, 9)}-**`;
   if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`;
   return documento;
+}
+
+// Percorre um JSON livre (a evidência) e mascara qualquer string de 11
+// dígitos sob chave que fale em documento/CPF/CNPJ, em qualquer nível.
+function mascararDocumentos(valor: unknown, chave = ""): unknown {
+  if (Array.isArray(valor)) return valor.map((v) => mascararDocumentos(v, chave));
+  if (valor && typeof valor === "object") {
+    return Object.fromEntries(Object.entries(valor as Record<string, unknown>).map(([k, v]) => [k, mascararDocumentos(v, k)]));
+  }
+  if (typeof valor === "string" && /documento|cpf|cnpj/i.test(chave) && /^\d{11}$/.test(valor.trim())) return mascarar(valor);
+  return valor;
 }
 
 // RODADAS. Uma investigação são várias chamadas ao modelo, cada uma de dezenas

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { badgeClass, cardClass } from "@/lib/ui";
-import { fmtBRL, fmtBRLCompacto, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtBRLCompacto, fmtData, fmtDocumento, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 
 // Peças visuais compartilhadas pelas telas da Controladoria. São componentes
 // de servidor (sem "use client"): nenhuma delas tem estado — o que mantém o
@@ -359,6 +359,9 @@ function valorLegivel(chave: string, valor: unknown): string {
       const d = new Date(valor);
       return Number.isNaN(d.getTime()) ? valor : fmtData(d);
     }
+    // CPF na evidência sai mascarado, como em toda tela. A evidência é JSON
+    // livre dos agentes e é o único caminho em que o documento chegava cru.
+    if (/documento|cpf|cnpj/i.test(chave) && /^\d{11}$/.test(valor.trim())) return fmtDocumento(valor.trim());
     return valor;
   }
   if (Array.isArray(valor)) return valor.map((v) => valorLegivel(chave, v)).join(", ");

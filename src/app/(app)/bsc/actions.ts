@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { INDICADORES_BSC } from "@/lib/controladoria/bsc";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // Metas do BSC. O catálogo de indicadores (o que é medido e como) vive em

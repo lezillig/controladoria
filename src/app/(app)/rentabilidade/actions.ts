@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { lerClientes, lerMotoristas, lerVeiculos } from "@/lib/gestao/leitura";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // De-para entre a dimensão de custo da Omie (departamento, projeto, categoria,

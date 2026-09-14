@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { credencialConfigurada, normalizarCredencialRef } from "@/lib/omie/client";
 import { diagnosticarConexao, type ResultadoDiagnostico } from "@/lib/omie/diagnostico";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // Cadastro das conexões Omie — uma por CNPJ do grupo.
@@ -43,14 +43,29 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
   });
   if (conflitoApelido) return { erro: `Já existe uma conexão com o apelido ${apelido}.` };
 
+  // A referência é ÚNICA NA INSTALAÇÃO, não só na empresa: ela aponta para
+  // uma variável de ambiente, que é global. Duas empresas com a mesma
+  // referência leriam a mesma conta Omie — e uma delas estaria lendo a conta
+  // da outra. A mensagem não diz de quem é: isso já seria informação.
   const conflitoRef = await prisma.omieConexao.findFirst({
-    where: { companyId: session.companyId, credencialRef, ...(id ? { NOT: { id } } : {}) },
-    select: { id: true, apelido: true },
+    where: { credencialRef, ...(id ? { NOT: { id } } : {}) },
+    select: { id: true, apelido: true, companyId: true },
   });
   if (conflitoRef) {
     return {
-      erro: `A referência de credencial ${credencialRef} já é usada pela conexão ${conflitoRef.apelido}. Duas empresas apontando para a mesma chave sincronizariam a mesma conta duas vezes.`,
+      erro:
+        conflitoRef.companyId === session.companyId
+          ? `A referência de credencial ${credencialRef} já é usada pela conexão ${conflitoRef.apelido}. Duas empresas apontando para a mesma chave sincronizariam a mesma conta duas vezes.`
+          : `A referência de credencial ${credencialRef} já está em uso nesta instalação. Escolha outra.`,
     };
+  }
+
+  // A conexão editada precisa ser DESTA empresa. O id vem do formulário, e
+  // sem esta linha qualquer administrador editaria a conexão de outra
+  // empresa da mesma instalação — inclusive apontando a credencial dela.
+  if (id) {
+    const propria = await prisma.omieConexao.findFirst({ where: { id, companyId: session.companyId }, select: { id: true } });
+    if (!propria) return { erro: "Conexão não encontrada." };
   }
 
   const dados = { nome, apelido, cnpj: cnpjBruto || null, credencialRef };

@@ -10,7 +10,7 @@ import {
 import { fimDoDia, inicioDoDia } from "@/lib/controladoria/periodos";
 import { fmtData } from "@/lib/controladoria/format";
 import { exigirPermissao, resolverEscopo } from "../_dados";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 
 export type EstadoConferencia = {
   resultado?: ResultadoConferencia;

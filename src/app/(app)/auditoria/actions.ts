@@ -1,10 +1,10 @@
 "use server";
 
-import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import type { AuditCategoria, AuditSeveridade, AuditStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { exigirPermissao } from "../_dados";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 
 // Tratativa de achado — a única ação humana do módulo que muda o estado de um
 // alerta. Por isso ela, e não a leitura, é o que exige a permissão mais
@@ -161,43 +161,7 @@ export async function tratarEmLote(formData: FormData): Promise<ResultadoTratati
 const SEVERIDADES: AuditSeveridade[] = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
 const CATEGORIAS: AuditCategoria[] = ["FRAUDE", "ERRO_PROCESSO", "PERDA_FINANCEIRA", "RISCO_FINANCEIRO", "CONFORMIDADE", "OPORTUNIDADE"];
 
-// Registro append-only de ação humana no módulo. Fica em função separada e
-// reutilizável porque toda ação de escrita da Controladoria passa por ela —
-// esquecer a trilha numa delas deixaria um buraco justamente onde a pergunta
-// "quem desligou este alerta?" precisa de resposta.
-export async function registrarEvento(params: {
-  companyId: string;
-  userId?: string | null;
-  userNome?: string | null;
-  userEmail?: string | null;
-  acao: string;
-  entidadeTipo?: string;
-  entidadeId?: string;
-  descricao: string;
-  antes?: unknown;
-  depois?: unknown;
-}): Promise<void> {
-  // IP e user-agent vêm do cabeçalho da requisição: sem eles, "quem" fica
-  // registrado mas "de onde" não — e é justamente o que importa quando a
-  // credencial em si é o que está sob suspeita.
-  const cabecalhos = await headers();
-  const ip =
-    cabecalhos.get("x-forwarded-for")?.split(",")[0]?.trim() ?? cabecalhos.get("x-real-ip") ?? null;
-
-  await prisma.controladoriaEventLog.create({
-    data: {
-      companyId: params.companyId,
-      userId: params.userId ?? null,
-      userNome: params.userNome ?? null,
-      userEmail: params.userEmail ?? null,
-      acao: params.acao,
-      entidadeTipo: params.entidadeTipo ?? null,
-      entidadeId: params.entidadeId ?? null,
-      descricao: params.descricao,
-      antes: params.antes === undefined ? undefined : JSON.parse(JSON.stringify(params.antes)),
-      depois: params.depois === undefined ? undefined : JSON.parse(JSON.stringify(params.depois)),
-      ip,
-      userAgent: cabecalhos.get("user-agent")?.slice(0, 300) ?? null,
-    },
-  });
-}
+// A trilha (registrarEvento) mora em src/lib/controladoria/trilha.ts: este
+// arquivo é "use server", e tudo que ele exporta vira uma ação chamável pelo
+// cliente — uma função que grava trilha para qualquer empresa sem sessão não
+// pode ser uma delas.

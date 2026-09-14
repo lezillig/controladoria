@@ -18,7 +18,7 @@ import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { chaveRecorrencia, competenciaDe, competenciaDeTexto, escolherChaveRecorrencia, rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { DECISOES, PREPARACAO } from "@/lib/conformidade/regime";
 import { parseLocalDate } from "@/lib/date";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // Ações da tela de Conformidade.

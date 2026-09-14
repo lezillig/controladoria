@@ -36,6 +36,13 @@ function origemDaRequisicao(req: NextRequest): string | null {
 }
 
 export async function POST(req: NextRequest) {
+  // Só JSON de verdade. Um <form enctype="text/plain"> de outro site consegue
+  // postar aqui sem CORS — e faria login-CSRF: deixar a vítima logada numa
+  // conta do atacante. Exigir o content-type fecha essa porta, porque um
+  // formulário HTML não consegue enviar application/json entre origens.
+  if (!/^application\/json\b/i.test(req.headers.get("content-type") ?? "")) {
+    return NextResponse.json({ error: "Dados inválidos" }, { status: 400 });
+  }
   const body = await req.json().catch(() => null);
   const parsed = schema.safeParse(body);
   if (!parsed.success) {

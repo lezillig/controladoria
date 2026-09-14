@@ -8,7 +8,7 @@ import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/context
 import { executarAuditoria } from "@/lib/controladoria/engine";
 import { gerarEEnviarRelatorio } from "@/lib/controladoria/relatorio";
 import { parseLocalDate } from "@/lib/date";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // Geração manual do relatório. O caminho normal é o agendamento diário; este

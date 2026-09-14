@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { garantirConfig } from "@/lib/controladoria/contexto";
 import { parseLocalDate } from "@/lib/date";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // Parâmetros do modelo de gestão financeira. São os números que transformam

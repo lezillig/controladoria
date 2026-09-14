@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { LINHAS_CLASSIFICAVEIS, ROTULO_LINHA } from "@/lib/controladoria/dre";
-import { registrarEvento } from "../auditoria/actions";
+import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
 // CLASSIFICAR UMA CATEGORIA NUMA LINHA DO DRE.

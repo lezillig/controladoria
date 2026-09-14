@@ -652,6 +652,10 @@ function nomesDeCampos(registro: Record<string, unknown>, profundidade = 2): str
 // relatório é colado em chat e não pode carregar dado de terceiro.
 const VALOR_CATEGORICO = /^[A-Za-zÀ-ú _\-\/]{1,24}$/;
 const MAXIMO_DE_VALORES = 8;
+// Campo cujo NOME diz que o valor é de terceiro fica fora, mesmo que o valor
+// seja curto: "razao_social" de três registros com nomes de até 24 letras
+// passaria no filtro de forma e sairia num relatório que é colado em chat.
+const CAMPO_DE_TERCEIRO = /nome|raz[aã]o|fantasia|cliente|fornecedor|obs|email|endere|telefone|fone|contato|cidade|bairro|cpf|cnpj|doc/i;
 
 function valoresCategoricos(itens: Record<string, unknown>[]): Record<string, string[]> {
   const vistos = new Map<string, Set<string>>();
@@ -666,6 +670,7 @@ function valoresCategoricos(itens: Record<string, unknown>[]): Record<string, st
         (vistos.get(caminho) ?? vistos.set(caminho, new Set()).get(caminho)!).add(String(valor));
         continue;
       }
+      if (CAMPO_DE_TERCEIRO.test(chave)) continue;
       if (typeof valor !== "string" || !VALOR_CATEGORICO.test(valor.trim()) || valor.trim() === "") continue;
       (vistos.get(caminho) ?? vistos.set(caminho, new Set()).get(caminho)!).add(valor.trim());
     }
