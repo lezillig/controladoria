@@ -307,16 +307,78 @@ console.log("\nCP-DUPLICIDADE — documentos distintos não são duplicidade");
 console.log("\nFR-FORNECEDOR-FUNCIONARIO — só com dinheiro envolvido");
 const motorista = { id: "m1", name: "JOAO MOTORISTA", cpf: "123.456.789-00", active: true } as unknown as Motorista;
 const parceiro = (over: Partial<Parceiro> = {}) =>
-  ({ id: "p1", codigoOmie: "F9", nome: "JOAO MOTORISTA ME", documento: "12345678900", inativo: false, ...over }) as unknown as Parceiro;
+  ({
+    id: "p1", conexaoId: "x", conexaoApelido: "AZUL", codigoOmie: "F9", nome: "JOAO MOTORISTA ME",
+    documento: "12345678900", inativo: false, ...over,
+  }) as unknown as Parceiro;
+const fornecedorFuncionario = (p: Parameters<typeof contexto>[0]) =>
+  auditarFraude(contexto(p)).filter((x) => x.regra === "FR-FORNECEDOR-FUNCIONARIO");
 {
-  const a = auditarFraude(contexto({ parceiros: [parceiro()], motoristas: [motorista] })).filter((x) => x.regra === "FR-FORNECEDOR-FUNCIONARIO");
+  const a = fornecedorFuncionario({ parceiros: [parceiro()], motoristas: [motorista] });
   conferir("cadastro sem título: silêncio", a.length, 0);
 }
 {
-  const t = titulo({ parceiroCodigo: "F9", parceiroNome: "JOAO MOTORISTA ME", valorDocumentoCents: 2_000_00 });
-  const a = auditarFraude(contexto({ titulos: [t], parceiros: [parceiro()], motoristas: [motorista] })).filter((x) => x.regra === "FR-FORNECEDOR-FUNCIONARIO");
-  conferir("com título pago: aponta", a.length, 1);
+  const t = titulo({ parceiroCodigo: "F9", parceiroNome: "JOAO MOTORISTA ME", valorDocumentoCents: 2_000_00, categoriaCodigo: "2.01", categoriaDescricao: "Serviços de terceiros" });
+  const a = fornecedorFuncionario({ titulos: [t], parceiros: [parceiro()], motoristas: [motorista] });
+  conferir("com título em categoria de fornecedor: aponta", a.length, 1);
   conferir("com o valor pago", a[0]?.valorCents, 2_000_00);
+  conferir("como fraude, não informativo", [a[0]?.categoria, a[0]?.severidade !== "INFO"], ["FRAUDE", true]);
+}
+{
+  // Três motoristas recebendo diária: UM achado informativo, com os três na
+  // evidência — não três achados de conflito de interesse.
+  const motoristas = [1, 2, 3].map((i) => ({ id: `m${i}`, name: `MOTORISTA ${i}`, cpf: `0000000000${i}`, active: true }) as unknown as Motorista);
+  const parceiros = [1, 2, 3].map((i) => parceiro({ id: `p${i}`, codigoOmie: `F${i}`, nome: `MOTORISTA ${i}`, documento: `0000000000${i}` } as Partial<Parceiro>));
+  const titulos = [1, 2, 3].map((i) =>
+    titulo({ parceiroCodigo: `F${i}`, parceiroNome: `MOTORISTA ${i}`, valorDocumentoCents: 300_00, categoriaCodigo: "2.05", categoriaDescricao: "Diárias de viagem" })
+  );
+  const a = fornecedorFuncionario({ titulos, parceiros, motoristas });
+  conferir("diária de três motoristas: um achado", a.length, 1);
+  conferir("informativo", a[0]?.severidade, "INFO");
+  conferir("os três na evidência", (a[0]?.evidencia as { funcionarios: unknown[] }).funcionarios.length, 3);
+  conferir("chave por empresa e categoria", a[0]?.chave, "FR-FORNECEDOR-FUNCIONARIO|AZUL|2.05");
+}
+{
+  // Título de OUTRA conexão com o mesmo código de parceiro não conta.
+  const t = titulo({ conexaoId: "y", conexaoApelido: "MCZ", parceiroCodigo: "F9", valorDocumentoCents: 2_000_00 });
+  conferir("código igual em outra conta: silêncio", fornecedorFuncionario({ titulos: [t], parceiros: [parceiro()], motoristas: [motorista] }).length, 0);
+}
+
+// ---------------------------------------------- FR-CADASTRO-DUPLICADO / NOME
+console.log("\nFR-CADASTRO-DUPLICADO — só dentro da mesma conta Omie");
+const cadastros = (parceiros: Parceiro[]) =>
+  auditarFraude(contexto({ parceiros })).filter((x) => x.regra === "FR-CADASTRO-DUPLICADO" || x.regra === "FR-CADASTRO-NOME-SIMILAR");
+{
+  // O mesmo fornecedor na Azul e na MCZ: cada empresa tem o seu cadastro.
+  const a = cadastros([
+    parceiro({ id: "a", conexaoId: "x", conexaoApelido: "AZUL", codigoOmie: "1", nome: "POSTO ALFA LTDA", documento: "11222333000181" } as Partial<Parceiro>),
+    parceiro({ id: "b", conexaoId: "y", conexaoApelido: "MCZ", codigoOmie: "7", nome: "POSTO ALFA LTDA", documento: "11222333000181" } as Partial<Parceiro>),
+  ]);
+  conferir("mesmo documento em contas diferentes: silêncio", a.length, 0);
+}
+{
+  // Duas vezes na MESMA conta: duplicado de verdade.
+  const a = cadastros([
+    parceiro({ id: "a", codigoOmie: "1", nome: "POSTO ALFA LTDA", documento: "11222333000181" } as Partial<Parceiro>),
+    parceiro({ id: "b", codigoOmie: "2", nome: "POSTO ALFA", documento: "11222333000181" } as Partial<Parceiro>),
+  ]);
+  conferir("mesmo documento na mesma conta: aponta", a.map((x) => x.regra), ["FR-CADASTRO-DUPLICADO"]);
+  conferir("chave leva a empresa", a[0]?.chave, "FR-CADASTRO-DUPLICADO|AZUL|11222333000181");
+}
+{
+  // Nome igual, documentos diferentes, em contas diferentes: silêncio.
+  const a = cadastros([
+    parceiro({ id: "a", conexaoId: "x", conexaoApelido: "AZUL", codigoOmie: "1", nome: "OFICINA MECANICA BETA LTDA", documento: "11222333000181" } as Partial<Parceiro>),
+    parceiro({ id: "b", conexaoId: "y", conexaoApelido: "MCZ", codigoOmie: "7", nome: "OFICINA MECANICA BETA LTDA", documento: "99888777000155" } as Partial<Parceiro>),
+  ]);
+  conferir("nome igual em contas diferentes: silêncio", a.length, 0);
+}
+{
+  const a = cadastros([
+    parceiro({ id: "a", codigoOmie: "1", nome: "OFICINA MECANICA BETA LTDA", documento: "11222333000181" } as Partial<Parceiro>),
+    parceiro({ id: "b", codigoOmie: "2", nome: "OFICINA MECANICA BETA LTDA.", documento: "99888777000155" } as Partial<Parceiro>),
+  ]);
+  conferir("nome igual na mesma conta com documentos diferentes: aponta", a.map((x) => x.regra), ["FR-CADASTRO-NOME-SIMILAR"]);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);

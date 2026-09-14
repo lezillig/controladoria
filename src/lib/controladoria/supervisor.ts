@@ -111,6 +111,9 @@ const REGRAS_AGREGADAS = new Set([
   // Um achado por cliente e alíquota, falando do conjunto de títulos que
   // entraram com o mesmo percentual a menos.
   "CR-RETENCAO-PRESUMIDA",
+  // Um achado por empresa e categoria de pagamento, com a lista de pessoas
+  // da folha que receberam por ela na evidência.
+  "FR-FORNECEDOR-FUNCIONARIO",
   "CP-SEM-CATEGORIA",
   "CP-SEM-CENTRO-CUSTO",
   "CP-SEM-DOCUMENTO",

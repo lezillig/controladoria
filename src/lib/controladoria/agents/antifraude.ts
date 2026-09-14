@@ -465,53 +465,108 @@ function fracionamentoDeAlcada(ctx: ContextoAuditoria, materialidade: number): A
 // folha. Nao e necessariamente irregular (motorista autonomo, reembolso), mas
 // e conflito de interesse que precisa ser declarado e aprovado — e e o
 // caminho mais curto para um pagamento a si mesmo.
+//
+// UM ACHADO POR CATEGORIA DE PAGAMENTO, não por pessoa. Depois de exigir
+// dinheiro envolvido, sobraram 331 — porque numa transportadora o motorista
+// RECEBE pelo contas a pagar: diária de viagem, adiantamento, reembolso de
+// pedágio, acerto de rota. É processo, não conflito; e 331 linhas dizendo
+// "conflito de interesse" sobre diária de motorista é o que faz a lista virar
+// papel de parede. O que separa o normal do suspeito não é a pessoa, é a
+// CATEGORIA em que o dinheiro foi lançado: "diária" e "adiantamento" são
+// rotina; "serviços de terceiros" ou "manutenção" pagos a alguém da folha é o
+// caso que a regra existe para achar. Então o agrupamento é por empresa e
+// categoria, com a lista de pessoas na evidência — a pessoa lendo julga a
+// categoria de uma vez, e não 331 vezes.
+const CATEGORIA_DE_ROTINA_DE_MOTORISTA =
+  /di[aá]ria|adiantamento|reembolso|ped[aá]gio|viagem|despesa de viagem|acerto|vale|ajuda de custo|sal[aá]rio|folha|rescis|f[eé]rias|13|pr[oó]-labore|prolabore/i;
+
 function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const cpfsFuncionarios = new Map(
     ctx.motoristas.filter((m) => m.cpf).map((m) => [m.cpf.replace(/\D/g, ""), m])
   );
+  const descricaoDaCategoria = new Map(ctx.categorias.map((c) => [`${c.conexaoId}|${c.codigo}`, c.descricao]));
 
-  const achados: AchadoNovo[] = [];
+  type Linha = { p: ContextoAuditoria["parceiros"][number]; funcionario: ContextoAuditoria["motoristas"][number]; titulos: number; valor: number };
+  const porEmpresaECategoria = new Map<string, { apelido: string; categoriaCodigo: string | null; categoria: string; linhas: Linha[] }>();
+
   for (const p of ctx.parceiros) {
     if (!p.documento) continue;
     const funcionario = cpfsFuncionarios.get(p.documento);
     if (!funcionario) continue;
 
-    const titulos = ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo === p.codigoOmie);
-    const valor = somar(titulos, (t) => t.valorDocumentoCents);
+    // O mesmo código de parceiro existe nas duas contas Omie com pessoas
+    // diferentes: o título precisa ser da MESMA conexão do cadastro.
+    const titulos = ctx.titulos.filter(
+      (t) => t.natureza === "PAGAR" && t.conexaoId === p.conexaoId && t.parceiroCodigo === p.codigoOmie
+    );
     // SÓ COM DINHEIRO ENVOLVIDO. Motorista cadastrado como fornecedor sem
-    // título no período é cadastro, não pagamento — 348 achados dizendo
-    // "conflito de interesse" sobre gente que não recebeu nada. O conflito
-    // existe no dia em que há título; é nesse dia que ele aparece.
+    // título no período é cadastro, não pagamento.
     if (titulos.length === 0) continue;
+
+    const porCategoria = agrupar(titulos, (t) => t.categoriaCodigo ?? "");
+    for (const [categoriaCodigo, doGrupo] of porCategoria) {
+      const chave = `${p.conexaoApelido}|${categoriaCodigo}`;
+      const descricao =
+        doGrupo[0].categoriaDescricao ??
+        descricaoDaCategoria.get(`${p.conexaoId}|${categoriaCodigo}`) ??
+        (categoriaCodigo ? `categoria ${categoriaCodigo}` : "sem categoria");
+      const grupo = porEmpresaECategoria.get(chave) ?? {
+        apelido: p.conexaoApelido,
+        categoriaCodigo: categoriaCodigo || null,
+        categoria: descricao,
+        linhas: [],
+      };
+      grupo.linhas.push({ p, funcionario, titulos: doGrupo.length, valor: somar(doGrupo, (t) => t.valorDocumentoCents) });
+      porEmpresaECategoria.set(chave, grupo);
+    }
+  }
+
+  const achados: AchadoNovo[] = [];
+  for (const [, g] of porEmpresaECategoria) {
+    const valor = somar(g.linhas, (l) => l.valor);
+    const titulos = somar(g.linhas, (l) => l.titulos);
+    const rotina = CATEGORIA_DE_ROTINA_DE_MOTORISTA.test(g.categoria);
+    const pessoas = g.linhas.length;
 
     achados.push({
       regra: "FR-FORNECEDOR-FUNCIONARIO",
       tipo: "ESTADO",
-      severidade: agravar(severidadePorValor(valor, materialidade)),
-      categoria: "FRAUDE",
-      titulo: `Fornecedor com o mesmo CPF de funcionário: ${p.nome}`,
+      severidade: rotina ? "INFO" : agravar(severidadePorValor(valor, materialidade)),
+      categoria: rotina ? "ERRO_PROCESSO" : "FRAUDE",
+      titulo: `${pessoas} funcionário(s) recebem pelo contas a pagar em "${g.categoria}" (${g.apelido})`,
       descricao:
-        `O fornecedor "${p.nome}" (${fmtDocumento(p.documento)}) tem o mesmo CPF do funcionário cadastrado ` +
-        `"${funcionario.name}"${funcionario.active ? "" : " (inativo)"}. ` +
-        `${titulos.length} título(s) a pagar somando ${fmtBRL(valor)} estão vinculados a esse cadastro. ` +
-        `Pode ser reembolso ou serviço autônomo legítimo — e, sendo, precisa estar declarado.`,
-      recomendacao:
-        "Verificar a natureza dos pagamentos e se há autorização formal para contratar pessoa da própria folha. " +
-        "Havendo, registrar a declaração de conflito de interesse; não havendo, suspender novos pagamentos até a apuração. " +
-        "Atenção adicional se os pagamentos forem por serviço que a empresa já remunera via folha (risco trabalhista e fiscal).",
+        `${pessoas} fornecedor(es) com o mesmo CPF de gente da folha receberam ${titulos} título(s) a pagar, ` +
+        `somando ${fmtBRL(valor)}, lançados na categoria "${g.categoria}". ` +
+        (rotina
+          ? "Categoria de rotina de motorista (diária, adiantamento, reembolso): é o processo normal da operação, não conflito de interesse. Fica registrado para a política de conflito cobrir o caso."
+          : "Categoria de fornecedor comum paga a pessoa da própria folha: serviço que a empresa já remunera via folha é risco trabalhista e fiscal, e pagamento a si mesmo é o caminho mais curto para fraude."),
+      recomendacao: rotina
+        ? "Nenhuma ação sobre os pagamentos. Vale só formalizar: política escrita de diária/adiantamento e conferência amostral dos comprovantes."
+        : "Verificar a natureza de cada pagamento da lista e se há autorização formal para contratar pessoa da própria folha. " +
+          "Havendo, registrar a declaração de conflito de interesse; não havendo, suspender novos pagamentos até a apuração.",
       valorCents: valor,
       dataReferencia: ctx.dataReferencia,
-      entidadeTipo: "OmieParceiro",
-      entidadeId: p.id,
-      entidadeRef: p.nome,
+      entidadeTipo: "OmieCategoria",
+      entidadeRef: `${g.categoria} (${g.apelido})`,
       evidencia: {
-        fornecedor: p.nome,
-        funcionario: funcionario.name,
-        funcionarioAtivo: funcionario.active,
-        titulos: titulos.length,
-        valor,
+        empresa: g.apelido,
+        categoria: g.categoria,
+        categoriaCodigo: g.categoriaCodigo,
+        pessoas,
+        titulos,
+        total: valor,
+        funcionarios: g.linhas
+          .sort((a, b) => b.valor - a.valor)
+          .slice(0, 50)
+          .map((l) => ({
+            fornecedor: l.p.nome,
+            funcionario: l.funcionario.name,
+            ativo: l.funcionario.active,
+            titulos: l.titulos,
+            valor: l.valor,
+          })),
       },
-      chave: chaveAchado("FR-FORNECEDOR-FUNCIONARIO", p.codigoOmie),
+      chave: chaveAchado("FR-FORNECEDOR-FUNCIONARIO", g.apelido, g.categoriaCodigo ?? "sem-categoria"),
     });
   }
   return achados;
@@ -569,23 +624,31 @@ function documentoInvalido(ctx: ContextoAuditoria, materialidade: number): Achad
 // FR-CADASTRO-DUPLICADO — o mesmo fornecedor cadastrado duas vezes. Alem de
 // sujar o relatorio (o gasto com ele aparece dividido, e some do ranking de
 // concentracao), e o terreno perfeito para pagar a mesma nota duas vezes.
+//
+// DENTRO DA MESMA CONTA OMIE. O espelho junta os cadastros da Azul e da MCZ, e
+// o mesmo fornecedor existe, com razão, nas duas: cada empresa tem o seu
+// cadastro dele. A versão anterior agrupava por documento sem olhar a conexão
+// e acusava 203 "duplicidades" que eram só o fornecedor comum às duas
+// empresas. Duplicidade é dois cadastros na MESMA conta.
 function cadastrosDuplicados(ctx: ContextoAuditoria): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
 
   const porDocumento = agrupar(
     ctx.parceiros.filter((p) => p.documento),
-    (p) => p.documento!
+    (p) => `${p.conexaoApelido}|${p.documento}`
   );
-  for (const [documento, grupo] of porDocumento) {
+  for (const [, grupo] of porDocumento) {
     if (grupo.length < 2) continue;
+    const documento = grupo[0].documento as string;
+    const apelido = grupo[0].conexaoApelido;
     achados.push({
       regra: "FR-CADASTRO-DUPLICADO",
       tipo: "ESTADO",
       severidade: "MEDIA",
       categoria: "ERRO_PROCESSO",
-      titulo: `${grupo.length} cadastros com o mesmo documento ${fmtDocumento(documento)}`,
+      titulo: `${grupo.length} cadastros com o mesmo documento ${fmtDocumento(documento)} (${apelido})`,
       descricao:
-        `Os cadastros "${grupo.map((p) => p.nome).join('", "')}" compartilham o mesmo CNPJ/CPF. ` +
+        `Na conta ${apelido}, os cadastros "${grupo.map((p) => p.nome).join('", "')}" compartilham o mesmo CNPJ/CPF. ` +
         `Além de dividir o histórico de compras do fornecedor, cadastro duplicado permite que a mesma nota seja ` +
         `lançada e paga duas vezes sem que o sistema perceba.`,
       recomendacao:
@@ -593,36 +656,38 @@ function cadastrosDuplicados(ctx: ContextoAuditoria): AchadoNovo[] {
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieParceiro",
       entidadeId: grupo[0].id,
-      entidadeRef: grupo[0].nome,
-      evidencia: { documento, cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome })) },
-      chave: chaveAchado("FR-CADASTRO-DUPLICADO", documento),
+      entidadeRef: `${grupo[0].nome} (${apelido})`,
+      evidencia: { empresa: apelido, documento, cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome, inativo: p.inativo })) },
+      chave: chaveAchado("FR-CADASTRO-DUPLICADO", apelido, documento),
     });
   }
 
   // Nomes praticamente iguais sem documento em comum: mesma consequencia,
   // mas indicio mais fraco — severidade menor e verificacao antes de agir.
-  const porNome = agrupar(ctx.parceiros, (p) => normalizarRazaoSocial(p.nome));
-  for (const [nomeNormalizado, grupo] of porNome) {
+  const porNome = agrupar(ctx.parceiros, (p) => `${p.conexaoApelido}|${normalizarRazaoSocial(p.nome)}`);
+  for (const [, grupo] of porNome) {
+    const nomeNormalizado = normalizarRazaoSocial(grupo[0].nome);
     if (grupo.length < 2 || nomeNormalizado.length < 6) continue;
     const documentos = new Set(grupo.map((p) => p.documento).filter(Boolean));
     if (documentos.size <= 1) continue; // ja coberto pela regra acima
+    const apelido = grupo[0].conexaoApelido;
 
     achados.push({
       regra: "FR-CADASTRO-NOME-SIMILAR",
       tipo: "ESTADO",
       severidade: "BAIXA",
       categoria: "ERRO_PROCESSO",
-      titulo: `Cadastros com nome muito parecido: ${grupo[0].nome}`,
+      titulo: `Cadastros com nome muito parecido: ${grupo[0].nome} (${apelido})`,
       descricao:
-        `Os cadastros "${grupo.map((p) => p.nome).join('", "')}" têm praticamente o mesmo nome, mas documentos diferentes. ` +
+        `Na conta ${apelido}, os cadastros "${grupo.map((p) => p.nome).join('", "')}" têm praticamente o mesmo nome, mas documentos diferentes. ` +
         `Pode ser matriz e filial (legítimo) ou duplicidade com documento digitado errado.`,
       recomendacao: "Conferir os documentos na Receita e unificar se for o mesmo fornecedor.",
       dataReferencia: ctx.dataReferencia,
       entidadeTipo: "OmieParceiro",
       entidadeId: grupo[0].id,
-      entidadeRef: grupo[0].nome,
-      evidencia: { cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome, documento: p.documento })) },
-      chave: chaveAchado("FR-CADASTRO-NOME-SIMILAR", nomeNormalizado),
+      entidadeRef: `${grupo[0].nome} (${apelido})`,
+      evidencia: { empresa: apelido, cadastros: grupo.map((p) => ({ codigo: p.codigoOmie, nome: p.nome, documento: p.documento, inativo: p.inativo })) },
+      chave: chaveAchado("FR-CADASTRO-NOME-SIMILAR", apelido, nomeNormalizado),
     });
   }
 

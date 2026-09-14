@@ -197,6 +197,15 @@ real, e o teste (`npm run teste:calibragem`) fixa o caso:
 - `CP-DUPLICIDADE` — documento "QUITADO"/"PAGO" vale como documento em branco;
   N parcelas idênticas para banco, financeira ou consórcio ficam informativas
   (em frota, são N contratos), com a leitura provável escrita no achado.
+- `FR-FORNECEDOR-FUNCIONARIO` — motorista recebe pelo contas a pagar (diária,
+  adiantamento, reembolso): 331 linhas de "conflito de interesse" eram
+  processo. Passou a ser um achado por empresa e **categoria** de pagamento,
+  com a lista de pessoas na evidência; categoria de rotina de motorista fica
+  informativa, categoria de fornecedor comum (serviços, manutenção) continua
+  fraude.
+- `FR-CADASTRO-DUPLICADO` / `FR-CADASTRO-NOME-SIMILAR` — só dentro da mesma
+  conta Omie. O mesmo fornecedor existe, com razão, na Azul e na MCZ; 203
+  "duplicidades" eram isso.
 
 **Chave determinística** — o mesmo fato, reavaliado amanhã, produz a mesma chave
 e reencontra o achado, preservando a tratativa que alguém escreveu nele.
