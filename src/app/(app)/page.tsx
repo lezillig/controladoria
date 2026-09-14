@@ -40,6 +40,8 @@ export default async function ControladoriaPage({
   const [achados, bsc, ultimoRelatorio, receitaComp, despesaComp, contagemAchados] = await Promise.all([
     prisma.auditFinding.findMany({
       where: { companyId: ctx.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
+      // O painel mostra seis linhas e soma valores: a evidência não é lida.
+      omit: { evidencia: true },
       orderBy: [{ severidade: "asc" }, { impactoCents: "desc" }],
       take: 200,
     }),

@@ -55,11 +55,15 @@ const CORES_FAROL: Record<string, string> = {
   SEM_DADO: "#cbd5e1",
 };
 
+// Achado como o relatório o lê: tudo menos a evidência (JSON grande, nunca
+// renderizada aqui). Ver relatorio.ts.
+export type AchadoDoRelatorio = Omit<AuditFinding, "evidencia">;
+
 export type DadosRelatorio = {
   empresa: string;
   dataReferencia: Date;
   panorama: PanoramaFinanceiro;
-  achados: AuditFinding[];
+  achados: AchadoDoRelatorio[];
   bsc: IndicadorMedido[];
   narrativa: Narrativa | null;
   qualidadeDaBase: QualidadeDaBase;
@@ -137,7 +141,7 @@ function barra(percentual: number, cor: string): string {
   </table>`;
 }
 
-function blocoAchado(a: AuditFinding): string {
+function blocoAchado(a: AchadoDoRelatorio): string {
   const cor = CORES_SEVERIDADE[a.severidade] ?? CORES_SEVERIDADE.INFO;
   const valores = [
     a.valorCents !== null ? `Valor: ${fmtBRL(a.valorCents)}` : null,

@@ -55,6 +55,9 @@ export async function gerarEEnviarRelatorio(
       // e omiti-la faria o de cada empresa parecer mais tranquilo do que é.
       ...(conexao ? { OR: [{ conexaoId: conexao.id }, { conexaoId: null }] } : {}),
     },
+    // Sem a evidência: o relatório mostra título, descrição e valor; o JSON de
+    // evidência era 90% dos bytes desta leitura (12,5 MB com 4 mil achados).
+    omit: { evidencia: true },
     orderBy: [{ severidade: "asc" }, { impactoCents: "desc" }],
   });
 
