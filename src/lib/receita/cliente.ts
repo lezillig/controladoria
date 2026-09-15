@@ -1,10 +1,18 @@
-// CLIENTE PÚBLICO DE CNPJ — a base da Receita Federal pela BrasilAPI.
+// CLIENTE PÚBLICO DE CNPJ — a base da Receita Federal por duas portas.
 //
-// GET https://brasilapi.com.br/api/cnpj/v1/{cnpj}, sem autenticação. A
-// BrasilAPI republica o cadastro público de CNPJ da Receita (situação,
-// abertura, CNAE, porte, capital social, quadro societário com o CPF já
-// mascarado) — é o que permite conferir um fornecedor sem cadastrar chave em
-// serviço nenhum.
+// GET https://brasilapi.com.br/api/cnpj/v1/{cnpj} e, quando ela recusa,
+// GET https://minhareceita.org/{cnpj}. As duas são gratuitas, sem
+// autenticação, e devolvem o MESMO formato: a BrasilAPI serve o CNPJ a partir
+// do Minha Receita, então o extrator abaixo vale para as duas. O cadastro
+// público (situação, abertura, CNAE, porte, capital social, quadro societário
+// com o CPF já mascarado) é o que permite conferir um fornecedor sem cadastrar
+// chave em serviço nenhum.
+//
+// Por que duas: em 15/09/2026, 65 de 67 consultas saídas da Vercel voltaram
+// HTTP 403 da BrasilAPI (proteção contra robô na borda dela, que barra
+// requisição sem User-Agent identificável) e a fila andava dois CNPJs por
+// rodada. A segunda porta é o que mantém a fila andando quando a primeira
+// fecha por um tempo; o User-Agent identificado é o que evita fechar.
 //
 // Três cuidados que valem para qualquer consulta daqui:
 //
@@ -21,7 +29,13 @@
 //   mais fácil de vazar dado que não é nosso. O que se registra é o campo
 //   já extraído e a mensagem de erro curta.
 
-const BASE_URL = "https://brasilapi.com.br/api/cnpj/v1";
+const FONTES = [
+  { nome: "BrasilAPI", url: (cnpj: string) => `https://brasilapi.com.br/api/cnpj/v1/${cnpj}` },
+  { nome: "Minha Receita", url: (cnpj: string) => `https://minhareceita.org/${cnpj}` },
+] as const;
+// Identifica o sistema para o serviço público — é o que uma borda com
+// proteção contra robô olha primeiro. Sem segredo nenhum aqui.
+const USER_AGENT = "controladoria-transporte/1.0 (auditoria de fornecedores; consulta de cadastro publico)";
 const TIMEOUT_MS = 10_000;
 const INTERVALO_MS = 400;
 
@@ -153,14 +167,28 @@ export async function consultarCnpj(valor: string): Promise<ResultadoConsultaCnp
   const cnpj = normalizarCnpj(valor);
   if (!cnpj) return { status: "erro", motivo: "CNPJ inválido: precisa ter 14 dígitos." };
 
+  // Tenta as fontes na ordem; passa para a seguinte só quando a anterior
+  // não soube responder (recusa, limite, 5xx, rede). "Não encontrado" e
+  // "erro" de uma fonte são resposta final: perguntar de novo a outra porta
+  // do mesmo cadastro não muda o fato.
+  let ultimo: ResultadoConsultaCnpj = { status: "tentar-depois", motivo: "Nenhuma fonte consultada." };
+  for (const fonte of FONTES) {
+    const r = await consultarEm(fonte, cnpj);
+    if (r.status !== "tentar-depois") return r;
+    ultimo = r;
+  }
+  return ultimo;
+}
+
+async function consultarEm(fonte: (typeof FONTES)[number], cnpj: string): Promise<ResultadoConsultaCnpj> {
   await respeitarRitmo();
 
   const controle = new AbortController();
   const relogio = setTimeout(() => controle.abort(), TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}/${cnpj}`, {
-      headers: { Accept: "application/json" },
+    res = await fetch(fonte.url(cnpj), {
+      headers: { Accept: "application/json", "User-Agent": USER_AGENT },
       signal: controle.signal,
       // Sem cache do Next: a situação cadastral de hoje é o dado; a de
       // ontem, guardada em cache de rota, seria justamente o que a regra não
@@ -171,26 +199,31 @@ export async function consultarCnpj(valor: string): Promise<ResultadoConsultaCnp
     const abortou = e instanceof Error && e.name === "AbortError";
     return {
       status: "tentar-depois",
-      motivo: abortou ? `Sem resposta em ${TIMEOUT_MS / 1000} s.` : `Falha de rede: ${e instanceof Error ? e.message.slice(0, 120) : "erro desconhecido"}`,
+      motivo: abortou
+        ? `${fonte.nome}: sem resposta em ${TIMEOUT_MS / 1000} s.`
+        : `${fonte.nome}: falha de rede: ${e instanceof Error ? e.message.slice(0, 100) : "erro desconhecido"}`,
     };
   } finally {
     clearTimeout(relogio);
   }
 
   if (res.status === 404) return { status: "nao-encontrado" };
-  if (res.status === 429 || res.status >= 500) {
-    return { status: "tentar-depois", motivo: `HTTP ${res.status} ${res.statusText}`.trim() };
+  // 403 entra em "tentar depois", e não em "erro": é a borda do serviço
+  // recusando ESTA requisição agora, não um fato sobre o CNPJ — a outra
+  // fonte responde, e amanhã a mesma pode voltar a responder.
+  if (res.status === 403 || res.status === 429 || res.status >= 500) {
+    return { status: "tentar-depois", motivo: `${fonte.nome}: HTTP ${res.status} ${res.statusText}`.trim() };
   }
-  if (!res.ok) return { status: "erro", motivo: `HTTP ${res.status} ${res.statusText}`.trim() };
+  if (!res.ok) return { status: "erro", motivo: `${fonte.nome}: HTTP ${res.status} ${res.statusText}`.trim() };
 
   let corpo: unknown;
   try {
     corpo = await res.json();
   } catch {
-    return { status: "tentar-depois", motivo: "Resposta não é JSON." };
+    return { status: "tentar-depois", motivo: `${fonte.nome}: resposta não é JSON.` };
   }
   if (!corpo || typeof corpo !== "object" || Array.isArray(corpo)) {
-    return { status: "erro", motivo: "Resposta em formato inesperado." };
+    return { status: "erro", motivo: `${fonte.nome}: resposta em formato inesperado.` };
   }
 
   return { status: "ok", dados: extrairDados(cnpj, corpo as Record<string, unknown>) };
