@@ -367,6 +367,14 @@ export default async function SincronizacaoPage() {
                     (receita.ultimaConsulta ? ` — última consulta em ${fmtDataHora(receita.ultimaConsulta)}.` : ".")
                 : " A tabela de consultas ainda não existe neste banco — veja as diferenças de esquema no topo."}
             </p>
+            {receita && receita.motivosDeFalha.length > 0 && (
+              <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Motivo das falhas:{" "}
+                {receita.motivosDeFalha.map((m) => `${m.motivo} (${fmtNumero(m.quantidade)})`).join("; ")}. HTTP 429 é a
+                BrasilAPI limitando o ritmo — a fila volta sozinha no dia seguinte; falha de rede ou sem resposta é a
+                hospedagem não alcançando o serviço.
+              </p>
+            )}
             <ReceitaButton pendentesIniciais={receita?.pendentes ?? 0} />
           </div>
 

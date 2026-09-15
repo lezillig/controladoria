@@ -224,15 +224,31 @@ export async function situacaoDoEnriquecimento(companyId: string): Promise<{
   pendentes: number;
   comErro: number;
   ultimaConsulta: Date | null;
+  // Os motivos das falhas, do mais frequente ao menos, com a contagem. É o
+  // que diferencia "a BrasilAPI está limitando" (HTTP 429), "a rede da
+  // hospedagem não chega lá" (falha de rede) e "demora demais" (sem resposta)
+  // — três problemas com três soluções, e a contagem sozinha não separava
+  // nenhum. O motivo é texto curto do cliente, sem corpo de resposta nem CNPJ.
+  motivosDeFalha: { motivo: string; quantidade: number }[];
 }> {
   const { fila, pendentes } = await pendentesDeConsulta(companyId);
-  if (fila.length === 0) return { fila: 0, consultados: 0, pendentes: 0, comErro: 0, ultimaConsulta: null };
-  const [comErro, ultima] = await Promise.all([
-    prisma.parceiroReceita.count({ where: { cnpj: { in: fila.map((f) => f.cnpj) }, erro: { not: null } } }),
+  if (fila.length === 0) {
+    return { fila: 0, consultados: 0, pendentes: 0, comErro: 0, ultimaConsulta: null, motivosDeFalha: [] };
+  }
+  const cnpjs = fila.map((f) => f.cnpj);
+  const [comErro, ultima, motivos] = await Promise.all([
+    prisma.parceiroReceita.count({ where: { cnpj: { in: cnpjs }, erro: { not: null } } }),
     prisma.parceiroReceita.findFirst({
-      where: { cnpj: { in: fila.map((f) => f.cnpj) } },
+      where: { cnpj: { in: cnpjs } },
       orderBy: { consultadoEm: "desc" },
       select: { consultadoEm: true },
+    }),
+    prisma.parceiroReceita.groupBy({
+      by: ["erro"],
+      where: { cnpj: { in: cnpjs }, erro: { not: null } },
+      _count: { _all: true },
+      orderBy: { _count: { erro: "desc" } },
+      take: 5,
     }),
   ]);
   return {
@@ -241,5 +257,6 @@ export async function situacaoDoEnriquecimento(companyId: string): Promise<{
     pendentes: pendentes.length,
     comErro,
     ultimaConsulta: ultima?.consultadoEm ?? null,
+    motivosDeFalha: motivos.map((m) => ({ motivo: m.erro ?? "sem motivo registrado", quantidade: m._count._all })),
   };
 }
