@@ -723,9 +723,28 @@ async function sincronizarMovimentos(ctx: ContextoFase): Promise<ResultadoFase> 
       await sleep(OMIE_PACE_MS);
     }
 
+    // A chave do extrato é derivada do conteúdo (a Omie não devolve código de
+    // lançamento — ver normalizarMovimentoExtrato). Duas consequências que a
+    // gravação tem que absorver:
+    //
+    //   1. Duas linhas idênticas no mesmo dia (dois pedágios de R$ 12,30 ao
+    //      mesmo parceiro) têm a mesma chave. A repetição é numerada na ordem
+    //      em que a Omie devolve — determinística para a mesma janela, então
+    //      reler não duplica.
+    //   2. Uma linha que a Omie corrigiu ou apagou muda de chave (ou some), e
+    //      a versão antiga ficaria no espelho para sempre. Por isso, ao fim
+    //      da conta, o que tem chave derivada dentro da janela e NÃO veio
+    //      nesta resposta é apagado. Chaves próprias da Omie (quando existirem)
+    //      ficam como estão: essas o upsert já reconhece.
+    const vistas = new Set<string>();
+    const repeticoes = new Map<string, number>();
     for (const bruto of extrairItens(resposta, OMIE_ENDPOINTS.extrato)) {
       const m = normalizarMovimentoExtrato(bruto, codigo);
       if (!m) continue;
+      const vezes = (repeticoes.get(m.codigoLancamento) ?? 0) + 1;
+      repeticoes.set(m.codigoLancamento, vezes);
+      if (vezes > 1) m.codigoLancamento = `${m.codigoLancamento}#${vezes}`;
+      vistas.add(m.codigoLancamento);
       await prisma.omieMovimento.upsert({
         where: {
           conexaoId_codigoLancamento: { conexaoId: ctx.conexaoId, codigoLancamento: m.codigoLancamento },
@@ -744,6 +763,27 @@ async function sincronizarMovimentos(ctx: ContextoFase): Promise<ResultadoFase> 
         update: { ...m, conciliado: m.conciliado ?? false, sincronizadoEm: new Date() },
       });
       res.movimentos++;
+    }
+
+    // Limpeza do que ficou para trás (item 2 acima): só chave derivada, só
+    // esta conta, só dentro da janela relida. Em lotes de id, porque a janela
+    // de releitura pode ter milhares de linhas e um NOT IN gigante não cabe
+    // num parâmetro. Resposta sem linha nenhuma não limpa nada: "vazio" pode
+    // ser a Omie falhando em silêncio, e apagar um mês de extrato por isso
+    // seria pior que deixar uma linha corrigida esperar a próxima releitura.
+    if (vistas.size === 0) continue;
+    const existentes = await prisma.omieMovimento.findMany({
+      where: {
+        conexaoId: ctx.conexaoId,
+        contaCorrenteCodigo: codigo,
+        data: { gte: ctx.janelaInicio, lte: ctx.janelaFim },
+        codigoLancamento: { startsWith: `${codigo}:` },
+      },
+      select: { id: true, codigoLancamento: true },
+    });
+    const obsoletos = existentes.filter((e) => !vistas.has(e.codigoLancamento)).map((e) => e.id);
+    for (let inicio = 0; inicio < obsoletos.length; inicio += 500) {
+      await prisma.omieMovimento.deleteMany({ where: { id: { in: obsoletos.slice(inicio, inicio + 500) } } });
     }
   }
 

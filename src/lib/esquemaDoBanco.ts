@@ -63,3 +63,10 @@ export function tabela(nome: string): Prisma.Sql {
 export function tabelaGestao(nome: string): Prisma.Sql {
   return Prisma.raw(`"${esquemaDaGestao()}"."${nome}"`);
 }
+
+// Tipo (enum) qualificado, para um cast em SQL cru: `::${tipoDoBanco("AuditSeveridade")}`.
+// Enum também mora num schema; `::"AuditSeveridade"` sem qualificar resolve pelo
+// `search_path` exatamente como a tabela, e falha do mesmo jeito silencioso.
+export function tipoDoBanco(nome: string): Prisma.Sql {
+  return Prisma.raw(`"${esquemaDaControladoria()}"."${nome}"`);
+}

@@ -539,16 +539,34 @@ export function normalizarMovimentoExtrato(
   const natureza = str(bruto, "cNatureza", "natureza", "cTipoLancamento");
   const codigo =
     codigoOmie ??
-    // Extrato sem identificador proprio: monta uma chave deterministica a
+    // Extrato sem identificador proprio (é o caso das duas contas: ListarExtrato
+    // não devolve código de lançamento): monta uma chave deterministica a
     // partir do conteudo, para a reimportacao da mesma janela nao duplicar.
+    // O parceiro entra na chave porque dois pagamentos do mesmo valor no mesmo
+    // dia a fornecedores diferentes são dois movimentos — sem ele, o segundo
+    // sobrescrevia o primeiro e o extrato espelhado ficava menor que o real.
+    // Dois iguais ao MESMO parceiro no mesmo dia são desempatados na gravação
+    // (ver sincronizarMovimentos em sync.ts), que numera a repetição.
     `${contaCorrenteCodigo}:${dataMov.toISOString().slice(0, 10)}:${Math.round(valorBruto * 100)}:${
-      str(bruto, "cObservacoes", "observacao") ?? ""
-    }`.slice(0, 180);
+      descricaoDoParceiro ?? ""
+    }:${str(bruto, "cObservacoes", "observacao") ?? ""}`.slice(0, 180);
 
   // Sinal: a Omie ora devolve o valor ja com sinal, ora sempre positivo com
-  // a natureza ("D"/"C") ao lado. Normaliza para valor com sinal aqui, uma
-  // vez so — ver comentario em OmieMovimento (schema).
-  const ehDebito = natureza !== null && /^d/i.test(natureza);
+  // a natureza ao lado. Normaliza para valor com sinal aqui, uma vez so — ver
+  // comentario em OmieMovimento (schema).
+  //
+  // A natureza do extrato real das duas contas é "P"/"R" (pagamento e
+  // recebimento — o diagnóstico de 15/09/2026 mostrou `cNatureza=P|R`), não o
+  // "D"/"C" que o código esperava. Sem esta linha, todo pagamento entrava como
+  // crédito e a conciliação inteira olhava um extrato de sinal trocado. Quando
+  // a natureza falta, a origem textual ("Débito de Transferência", "Conta
+  // Paga", "Conta a Pagar", "Saída ...") decide; e valor já negativo continua
+  // negativo em qualquer caso.
+  const origemTexto = str(bruto, "cOrigem", "origem") ?? "";
+  const ehDebito =
+    natureza !== null
+      ? /^(d|p)/i.test(natureza)
+      : /d[ée]bito|conta paga|conta a pagar|sa[ií]da/i.test(origemTexto);
   const valorCents = Math.round(Math.abs(valorBruto) * 100) * (ehDebito ? -1 : 1);
 
   return {

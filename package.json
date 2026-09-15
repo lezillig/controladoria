@@ -24,6 +24,7 @@
     "teste:pessoal": "tsx scripts/teste-pessoal.ts",
     "teste:contratos": "tsx scripts/teste-contratos.ts",
     "teste:receita": "tsx scripts/teste-receita.ts",
+    "teste:mapeamento": "tsx scripts/teste-mapeamento.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

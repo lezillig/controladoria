@@ -537,8 +537,21 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
         continue;
       }
 
-      const primeiro = itens[0];
-      const mapeado = alvo.normalizar(primeiro);
+      // O primeiro registro que o mapeamento ACEITA, não o primeiro da lista.
+      // No extrato, a primeira linha é o "SALDO ANTERIOR" — cinco campos, sem
+      // código, descartada de propósito — e mapear só ela fazia o diagnóstico
+      // dizer "registro descartado" e listar cinco campos crus para um extrato
+      // de quatro mil linhas com vinte campos cada. O que se descartou até
+      // chegar num registro válido é dito ao lado, para não sumir.
+      let indice = itens.findIndex((item) => alvo.normalizar(item) !== null);
+      const descartados = indice < 0 ? itens.length : indice;
+      if (indice < 0) indice = 0;
+      const amostra = itens[indice];
+      const mapeado = alvo.normalizar(amostra);
+      const notaDescarte =
+        descartados > 0
+          ? [`${descartados} de ${itens.length} da amostra descartado(s) pelo mapeamento (saldo, previsto ou sem data/valor)`]
+          : [];
       return {
         ...base,
         estado: "OK",
@@ -546,9 +559,9 @@ async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpo
         totalNaConta: extrairTotalRegistros(resposta),
         listaEncontradaEm,
         filtroAceito: houveEscolha ? rotuloVariante : null,
-        camposRecebidos: nomesDeCampos(primeiro),
+        camposRecebidos: nomesDeCampos(amostra),
         camposMapeados: mapeado ? preenchidos(mapeado) : [],
-        camposVazios: mapeado ? ausentes(mapeado) : ["registro descartado pelo mapeamento"],
+        camposVazios: mapeado ? [...ausentes(mapeado), ...notaDescarte] : ["registro descartado pelo mapeamento"],
         valoresDeAmostra: valoresCategoricos(itens),
         duracaoMs: Date.now() - inicio,
       };

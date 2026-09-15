@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { tabela, tipoDoBanco } from "@/lib/esquemaDoBanco";
 import { achadosSemTratativa } from "./agents/administrativo";
 import { AGENTES } from "./registry";
 import { chaveDeTratativa, supervisionar, type AchadoRevisado, type HistoricoAchado, type QualidadeDaBase } from "./supervisor";
@@ -384,8 +385,13 @@ export async function persistirAchados(companyId: string, linhas: LinhaDeAchado[
         chaveRelacionada: l.chaveRelacionada,
       }))
     );
+    // Tabela e enums QUALIFICADOS com o schema (esquemaDoBanco.ts). Em produção
+    // sobrou uma `public."AuditFinding"` antiga de antes da mudança de schema,
+    // sem a coluna `tipo`; sem qualificar, o `search_path` da conexão levou a
+    // gravação para lá e a auditoria retroativa caiu com "column tipo does not
+    // exist" — enquanto o cliente do Prisma, que qualifica sempre, lia a certa.
     await prisma.$executeRaw`
-      INSERT INTO "AuditFinding" (
+      INSERT INTO ${tabela("AuditFinding")} (
         id, "companyId", chave, agente, tipo, "conexaoId", "conexaoApelido", regra, severidade, categoria,
         titulo, descricao, recomendacao, "valorCents", "impactoCents", "dataReferencia",
         "entidadeTipo", "entidadeId", "entidadeRef", evidencia, confianca, "notaSupervisor", "chaveRelacionada",
@@ -393,7 +399,7 @@ export async function persistirAchados(companyId: string, linhas: LinhaDeAchado[
       )
       SELECT
         u.id, ${companyId}, u.chave, u.agente, u.tipo, u."conexaoId", u."conexaoApelido", u.regra,
-        u.severidade::"AuditSeveridade", u.categoria::"AuditCategoria",
+        u.severidade::${tipoDoBanco("AuditSeveridade")}, u.categoria::${tipoDoBanco("AuditCategoria")},
         u.titulo, u.descricao, u.recomendacao, u."valorCents", u."impactoCents", u."dataReferencia",
         u."entidadeTipo", u."entidadeId", u."entidadeRef", u.evidencia, u.confianca, u."notaSupervisor", u."chaveRelacionada",
         now()
@@ -426,7 +432,7 @@ export async function persistirAchados(companyId: string, linhas: LinhaDeAchado[
         "notaSupervisor" = EXCLUDED."notaSupervisor",
         "chaveRelacionada" = EXCLUDED."chaveRelacionada",
         "ultimaOcorrencia" = now(),
-        ocorrencias = "AuditFinding".ocorrencias + 1,
+        ocorrencias = ${tabela("AuditFinding")}.ocorrencias + 1,
         "atualizadoEm" = now()
     `;
   }
