@@ -101,7 +101,7 @@ function retratoDaReceita(r: ParceiroReceita) {
     abertura: r.inicioAtividade?.toISOString() ?? null,
     cnae: r.cnaeCodigo ? `${fmtCnae(r.cnaeCodigo)} — ${r.cnaeDescricao ?? ""}`.trim() : null,
     porte: r.porte,
-    capitalSocial: r.capitalSocialCents,
+    capitalSocialCents: r.capitalSocialCents,
     naturezaJuridica: r.naturezaJuridica,
     municipio: r.municipio && r.uf ? `${r.municipio}/${r.uf}` : r.municipio,
     mei: r.mei,
@@ -664,10 +664,13 @@ export function socioQueEFuncionario(ctx: ContextoAuditoria, materialidade: numb
         achados.push({
           regra: "FR-SOCIO-FUNCIONARIO",
           tipo: "ESTADO",
-          // Crítica por desenho: é o conflito de interesse mais direto que
-          // existe — a pessoa da folha do lado de quem recebe — e o valor não
-          // muda isso. A materialidade fica na evidência, para a triagem.
-          severidade: "CRITICA",
+          // CRÍTICA quando a pessoa está na folha hoje e o valor é material.
+          // O primeiro caso real foi um MEI de motorista ativo com um título
+          // de R$ 15,00 — o conflito de interesse existe do mesmo jeito, mas
+          // chamar isso de crítico ao lado de R$ 33 mil numa conta dividida
+          // tira o sentido da palavra. Abaixo da materialidade fica ALTA;
+          // motorista já desligado, MÉDIA: o vínculo a apurar é passado.
+          severidade: !m.active ? "MEDIA" : total >= materialidade ? "CRITICA" : "ALTA",
           categoria: "FRAUDE",
           titulo: `${socio.nome}, ${origem === "razão social" ? "titular" : "sócio"} de ${f.nome}, tem o mesmo nome de motorista da folha`,
           descricao:

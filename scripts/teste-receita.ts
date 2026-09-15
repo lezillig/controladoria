@@ -418,8 +418,22 @@ conferir("só o primeiro nome não cruza", nomeCruzavel(nomeComparavel("JOAO")),
   });
   const r = rodar(ctx, "FR-SOCIO-FUNCIONARIO");
   conferir("sócio com o nome inteiro de motorista da folha é achado", r.length, 1);
-  conferir("é CRÍTICA", r[0]?.severidade, "CRITICA");
+  conferir("é CRÍTICA (motorista ativo, valor material)", r[0]?.severidade, "CRITICA");
   conferir("a chave é CNPJ + motorista", r[0]?.chave, "FR-SOCIO-FUNCIONARIO|12345678000199|m1");
+  // O caso real: MEI de motorista ativo com um título de R$ 15,00. O conflito
+  // existe, mas não ao lado de R$ 33 mil numa conta dividida.
+  const pequeno = contexto({
+    titulos: [...fundo(), titulo({ valorDocumentoCents: 15_00, valorPagoCents: 15_00 })],
+    receita: [receita({ socios: [{ nome: "CARLOS EDUARDO PEREIRA DA ROCHA", qualificacao: "Sócio-Administrador" }] })],
+    motoristas: [{ id: "m1", name: "Carlos Eduardo Pereira da Rocha", cpf: "529.982.247-25", active: true }],
+  });
+  conferir("abaixo da materialidade é ALTA", rodar(pequeno, "FR-SOCIO-FUNCIONARIO")[0]?.severidade, "ALTA");
+  const desligado = contexto({
+    titulos: [...fundo(), titulo({ valorDocumentoCents: 3_000_00, valorPagoCents: 3_000_00 })],
+    receita: [receita({ socios: [{ nome: "CARLOS EDUARDO PEREIRA DA ROCHA", qualificacao: "Sócio-Administrador" }] })],
+    motoristas: [{ id: "m1", name: "Carlos Eduardo Pereira da Rocha", cpf: "529.982.247-25", active: false }],
+  });
+  conferir("motorista desligado é MÉDIA", rodar(desligado, "FR-SOCIO-FUNCIONARIO")[0]?.severidade, "MEDIA");
   conferir("a descrição pede conferir vínculo, não afirma", /conferir parentesco ou vínculo/.test(r[0]?.descricao ?? ""), true);
   conferir("e diz que homônimo existe", /homônimo/.test(r[0]?.descricao ?? ""), true);
 }
