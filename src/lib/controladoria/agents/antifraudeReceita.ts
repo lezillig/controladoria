@@ -627,7 +627,16 @@ function sociosDe(r: ParceiroReceita): { socio: Socio; origem: string }[] {
   }
   const individual = r.mei === true || /individual/i.test(r.naturezaJuridica ?? "");
   if (individual && r.razaoSocial) {
-    lista.push({ socio: { nome: r.razaoSocial, qualificacao: r.mei ? "titular (MEI)" : "titular (empresário individual)" }, origem: "razão social" });
+    // A Receita grava a razão social do MEI como "56.966.710 FULANO DE TAL":
+    // a raiz do CNPJ na frente do nome do titular. Sem tirar a raiz, o achado
+    // dizia "56.966.710 FULANO, titular de 56.966.710 FULANO" — correto e
+    // ilegível. A comparação com a folha já ignora dígitos; aqui é só o nome
+    // que a pessoa lê.
+    const nomeDoTitular = r.razaoSocial.replace(/^[\d.\-\/\s]+/, "").trim() || r.razaoSocial;
+    lista.push({
+      socio: { nome: nomeDoTitular, qualificacao: r.mei ? "titular (MEI)" : "titular (empresário individual)" },
+      origem: "razão social",
+    });
   }
   return lista;
 }
