@@ -92,7 +92,17 @@ export async function filaDeConsulta(companyId: string, agora = new Date()): Pro
     .sort((a, b) => b.valorCents - a.valorCents);
 }
 
-export async function pendentesDeConsulta(companyId: string, agora = new Date()): Promise<{ fila: { cnpj: string; valorCents: number }[]; pendentes: { cnpj: string; valorCents: number }[] }> {
+// `retentarFalhasAgora`: o botão da tela ignora a espera de um dia para quem
+// falhou. Quem clica está dizendo "tenta de novo agora" — depois de uma
+// correção no cliente, por exemplo — e fazê-lo esperar a madrugada só para
+// respeitar um intervalo pensado para o cron não protege ninguém. O cron
+// continua com a espera, porque insistir sozinho contra um serviço que
+// acabou de recusar é o que vira bloqueio de verdade.
+export async function pendentesDeConsulta(
+  companyId: string,
+  agora = new Date(),
+  opts: { retentarFalhasAgora?: boolean } = {}
+): Promise<{ fila: { cnpj: string; valorCents: number }[]; pendentes: { cnpj: string; valorCents: number }[] }> {
   const fila = await filaDeConsulta(companyId, agora);
   if (fila.length === 0) return { fila, pendentes: [] };
 
@@ -107,18 +117,19 @@ export async function pendentesDeConsulta(companyId: string, agora = new Date())
   const pendentes = fila.filter((f) => {
     const linha = porCnpj.get(f.cnpj);
     if (!linha) return true;
-    return linha.erro ? linha.consultadoEm < limiteErro : linha.consultadoEm < limiteOk;
+    if (linha.erro) return opts.retentarFalhasAgora ? true : linha.consultadoEm < limiteErro;
+    return linha.consultadoEm < limiteOk;
   });
   return { fila, pendentes };
 }
 
 export async function enriquecerParceiros(
   companyId: string,
-  opts: { orcamentoMs: number; agora?: Date }
+  opts: { orcamentoMs: number; agora?: Date; retentarFalhasAgora?: boolean }
 ): Promise<ResultadoEnriquecimento> {
   const agora = opts.agora ?? new Date();
   const fim = Date.now() + opts.orcamentoMs;
-  const { fila, pendentes } = await pendentesDeConsulta(companyId, agora);
+  const { fila, pendentes } = await pendentesDeConsulta(companyId, agora, { retentarFalhasAgora: opts.retentarFalhasAgora });
 
   const resultado: ResultadoEnriquecimento = {
     consultados: 0,

@@ -653,7 +653,7 @@ export async function consultarReceitaAgora(): Promise<{
 }> {
   const session = await exigirPermissao("sincronizar");
 
-  const r = await enriquecerParceiros(session.companyId, { orcamentoMs: ORCAMENTO_RECEITA_MS });
+  const r = await enriquecerParceiros(session.companyId, { orcamentoMs: ORCAMENTO_RECEITA_MS, retentarFalhasAgora: true });
 
   // Trilha a cada rodada, e não só ao zerar: cada rodada é uma sequência de
   // consultas a um serviço externo sobre fornecedores da empresa, e "quem

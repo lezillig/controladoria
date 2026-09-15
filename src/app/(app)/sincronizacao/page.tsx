@@ -375,7 +375,9 @@ export default async function SincronizacaoPage() {
                 hospedagem não alcançando o serviço.
               </p>
             )}
-            <ReceitaButton pendentesIniciais={receita?.pendentes ?? 0} />
+            {/* O botão conta as falhas como pendentes: ele tenta de novo quem
+                falhou, sem esperar o dia que o cron espera. */}
+            <ReceitaButton pendentesIniciais={(receita?.pendentes ?? 0) + (receita?.comErro ?? 0)} />
           </div>
 
           {/* O ciclo protege o presente; esta seção olha para trás. Um desvio
