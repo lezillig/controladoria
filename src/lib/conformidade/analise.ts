@@ -255,12 +255,20 @@ export async function lerDocumento(params: {
     // estimativa; cabe no teto de 300 s da função da Vercel, com folga para o
     // upload já feito. Sem retentativa automática: uma segunda tentativa não
     // caberia no mesmo teto, e a tela tem o botão "tentar de novo".
-    const message = await client.beta.messages.parse(
+    // `create` cru, e não o helper `parse`: o helper tenta decodificar o JSON
+    // ANTES de olhar o stop_reason e, quando a saída vem cortada, o erro que
+    // sobe é "Unterminated string in JSON at position 15573" — foi o que a tela
+    // mostrou em 21/09/2026 — em vez do motivo do corte. Aqui a ordem é a
+    // certa: recusa, corte por teto, e só então o JSON.
+    const message = await client.beta.messages.create(
       {
         model: "claude-fable-5-1",
-        // A saída é a lista de apontamentos em JSON, não o documento: 16 mil
-        // tokens comportam dezenas de apontamentos com trecho citado.
-        max_tokens: 16000,
+        // O teto vale para RACIOCÍNIO + resposta. Com 16 mil, o modelo pensou
+        // por ~11 mil tokens num PDF de quinze páginas e a lista de
+        // apontamentos saiu cortada no meio de uma string. 32 mil deixa
+        // espaço para os dois; o timeout explícito abaixo é o que permite
+        // pedir isso sem streaming.
+        max_tokens: 32000,
         // Esforço alto, e o mesmo modelo do analista do relatório diário: esta
         // leitura acontece uma vez por documento, fora da janela do cron, e o
         // custo de errar é alto — um apontamento perdido aqui é um risco que
@@ -307,12 +315,28 @@ export async function lerDocumento(params: {
     if (message.stop_reason === "max_tokens") {
       return {
         ok: false,
-        erro: "O documento é longo demais para uma leitura só — divida-o e envie as partes.",
+        erro: "A leitura estourou o teto de tokens (documento longo ou denso demais para uma leitura só) — divida-o e envie as partes.",
         textoExtraido,
       };
     }
 
-    const leitura = message.parsed_output;
+    const textoDaResposta = message.content
+      .filter(
+        (b): b is Extract<(typeof message.content)[number], { type: "text" }> =>
+          b.type === "text",
+      )
+      .map((b) => b.text)
+      .join("");
+    let leitura: LeituraDocumento | null = null;
+    try {
+      leitura = LeituraSchema.parse(JSON.parse(textoDaResposta));
+    } catch (e) {
+      return {
+        ok: false,
+        erro: `A resposta do modelo não está no formato esperado (${e instanceof Error ? e.message.slice(0, 160) : "erro"}; stop_reason ${message.stop_reason ?? "?"}, ${textoDaResposta.length} caracteres).`,
+        textoExtraido,
+      };
+    }
     if (!leitura)
       return {
         ok: false,
