@@ -53,6 +53,14 @@ type Filtros = { empresa?: string; status?: string; area?: string; natureza?: st
 const AREAS_VALIDAS = AREAS.map((a) => a.valor);
 const NATUREZAS_VALIDAS = NATUREZAS.map((n) => n.valor);
 
+// A leitura de um documento pelo modelo (ação "tentar de novo" / "reler" e o
+// upload) roda dentro da função desta página e leva de um a três minutos num
+// PDF de quinze páginas. Sem este teto explícito a função pode ser encerrada
+// antes de gravar o resultado, e a tela fica com o erro da tentativa anterior
+// para sempre — o timeout da chamada ao modelo (270 s, em analise.ts) foi
+// dimensionado para caber aqui.
+export const maxDuration = 300;
+
 export default async function ConformidadePage({ searchParams }: { searchParams: Promise<Filtros> }) {
   const session = await exigirPermissao("conformidade");
   const filtros = await searchParams;
