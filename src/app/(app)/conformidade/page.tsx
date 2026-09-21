@@ -26,6 +26,7 @@ import { inicioDoDia } from "@/lib/controladoria/periodos";
 import { AvisoVazio, BadgeSeveridade, Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
 import { exigirPermissao, podeAcao, resolverEscopo } from "../_dados";
 import NovoApontamentoForm from "./NovoApontamentoForm";
+import ReprocessarButton from "./ReprocessarButton";
 import TratativaApontamento from "./TratativaApontamento";
 import UploadForm from "./UploadForm";
 import {
@@ -351,9 +352,7 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
                           {d.extracao !== "MANUAL" && (
                             <form action={reprocessarDocumentoPelaTela}>
                               <input type="hidden" name="id" value={d.id} />
-                              <button type="submit" className="text-xs font-medium text-blue-700 hover:underline">
-                                {d.extracao === "ERRO" ? "tentar de novo" : "reler"}
-                              </button>
+                              <ReprocessarButton rotulo={d.extracao === "ERRO" ? "tentar de novo" : "reler"} />
                             </form>
                           )}
                           <form action={excluirDocumento}>
