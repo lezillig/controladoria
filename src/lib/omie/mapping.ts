@@ -713,8 +713,31 @@ export function normalizarNfe(bruto: Bruto): NotaNormalizada | null {
     // vivo e justamente um dos achados do agente fiscal.
     cancelada: data(ide, "dCan") !== null || (str(ide, "cDeneg") ?? "") !== "",
     naturezaOperacao: str(ide, "natOp", "natureza_operacao") ?? str(compl, "natOp"),
-    cfop: str(bruto, "cfop", "CFOP"),
+    cfop: str(bruto, "cfop", "CFOP") ?? cfopDominante(bruto),
+    issRetido: null,
   };
+}
+
+// O CFOP mora em cada ITEM (`det[].prod.CFOP`), não na nota. O diagnóstico
+// mostrou `cfop` sempre vazio nas duas contas por isso. Fica o mais frequente
+// entre os itens; numa nota com um item, é o dele.
+function cfopDominante(bruto: Bruto): string | null {
+  const contagem = new Map<string, number>();
+  for (const item of arr(bruto, "det", "itens")) {
+    const prod = obj(item, "prod") ?? item;
+    const cfop = str(prod, "CFOP", "cfop");
+    if (!cfop) continue;
+    contagem.set(cfop, (contagem.get(cfop) ?? 0) + 1);
+  }
+  let melhor: string | null = null;
+  let vezes = 0;
+  for (const [cfop, n] of contagem) {
+    if (n > vezes) {
+      melhor = cfop;
+      vezes = n;
+    }
+  }
+  return melhor;
 }
 
 // NFS-e — a estrutura real de `ListarNFSEs` na conta do grupo, conferida pelo
@@ -774,6 +797,27 @@ export function normalizarNfse(bruto: Bruto): NotaNormalizada | null {
   if (!numero || !dataEmissao || valorCents === null) return null;
 
   const serie = str(rps, "cSerieRPS") ?? str(cabec, "cSerie", "serie");
+
+  // Os tributos da NFS-e vêm POR ITEM (`ListaServicos[].nValorISS` etc.), e
+  // `Valores` só traz o líquido e o marcador de retenção. O diagnóstico
+  // mostrou ISS, PIS, COFINS, IR, CSLL e INSS sempre vazios nas duas contas
+  // por isso — e com ISS zero a regra de carga tributária nunca falava. Soma
+  // os itens quando o bloco de impostos não tem o total.
+  const itens = arr(bruto, "ListaServicos", "servicos", "itens");
+  const somaItens = (...chaves: string[]): number | null => {
+    let total = 0;
+    let algum = false;
+    for (const item of itens) {
+      const v = cents(item, ...chaves);
+      if (v === null) continue;
+      total += v;
+      algum = true;
+    }
+    return algum ? total : null;
+  };
+  const issRetidoTexto = str(valores, "cIssRetido", "cISSRetido", "iss_retido");
+  const issRetido = issRetidoTexto === null ? null : /^s/i.test(issRetidoTexto);
+
   return {
     tipo: "NFSE",
     chave: `NFSE:${numero}:${serie ?? "-"}`,
@@ -788,18 +832,19 @@ export function normalizarNfse(bruto: Bruto): NotaNormalizada | null {
     parceiroNome: str(cabec, "cRazaoDestinatario", "cRazaoSocial", "cNomeCliente", "razao_social"),
     valorCents,
     valorServicosCents: cents(valores, "nValorTotalServicos", "nValorServico", "valor_servico"),
-    baseIssCents: cents(impostos, "nBaseIss", "nValorBaseIss"),
-    valorIssCents: cents(impostos, "nValorIss", "nIss"),
-    valorPisCents: cents(impostos, "nValorPis", "nPis"),
-    valorCofinsCents: cents(impostos, "nValorCofins", "nCofins"),
+    baseIssCents: cents(impostos, "nBaseIss", "nValorBaseIss") ?? somaItens("nValorServico", "nValorTotal"),
+    valorIssCents: cents(impostos, "nValorIss", "nIss") ?? somaItens("nValorISS", "nValorIss"),
+    valorPisCents: cents(impostos, "nValorPis", "nPis") ?? somaItens("nValorPIS", "nValorPis"),
+    valorCofinsCents: cents(impostos, "nValorCofins", "nCofins") ?? somaItens("nValorCOFINS", "nValorCofins"),
     valorIcmsCents: null,
     valorIpiCents: null,
-    valorIrCents: cents(impostos, "nValorIr", "nIr"),
-    valorCsllCents: cents(impostos, "nValorCsll", "nCsll"),
-    valorInssCents: cents(impostos, "nValorInss", "nInss"),
+    valorIrCents: cents(impostos, "nValorIr", "nIr") ?? somaItens("nValorIR", "nValorIr"),
+    valorCsllCents: cents(impostos, "nValorCsll", "nCsll") ?? somaItens("nValorCSLL", "nValorCsll"),
+    valorInssCents: cents(impostos, "nValorInss", "nInss") ?? somaItens("nValorINSS", "nValorInss"),
     cancelada: notaCancelada(str(cabec, "cStatusNFSe", "cStatus", "cSituacao", "situacao")),
     naturezaOperacao: str(cabec, "cNaturezaOperacao", "natureza_operacao"),
     cfop: null,
+    issRetido,
   };
 }
 

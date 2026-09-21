@@ -649,7 +649,12 @@ model OmieNota {
   valorInssCents     Int?
   cancelada          Boolean     @default(false)
   naturezaOperacao   String?
+  // NF-e: o CFOP mais frequente entre os itens (a nota não tem CFOP próprio,
+  // cada item tem o seu). É o que separa venda de mercadoria (5102/6102) de
+  // remessa, devolução e venda de ativo — ver FI-NFE-VENDA-MERCADORIA.
   cfop               String?
+  // NFS-e: ISS retido pelo tomador. Nulo quando a nota não diz.
+  issRetido          Boolean?
   sincronizadoEm     DateTime    @default(now())
 
   @@unique([conexaoId, chave])

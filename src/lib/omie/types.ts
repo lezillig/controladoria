@@ -192,6 +192,10 @@ export type NotaNormalizada = {
   cancelada: boolean;
   naturezaOperacao: string | null;
   cfop: string | null;
+  // NFS-e: o ISS foi retido pelo tomador (`cIssRetido`). Decide se a nota
+  // entra na conta do ISS que a EMPRESA recolhe — nota com ISS retido é o
+  // tomador quem recolhe, e somá-la faria a guia parecer sempre a menor.
+  issRetido: boolean | null;
 };
 
 export type PaginaOmie<T> = {

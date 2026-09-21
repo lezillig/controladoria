@@ -40,7 +40,7 @@ export const agenteFiscal: Agente = {
   nome: "Fiscal e contábil",
   area: "Contabilidade",
   descricao:
-    "Confronta notas fiscais e títulos: receita sem nota, nota sem título, notas canceladas com título ativo, título de documento fiscal sem número, carga tributária efetiva fora da faixa esperada para o Lucro Presumido e falhas na sequência de numeração.",
+    "Confronta notas fiscais e títulos: receita sem nota, nota sem título, notas canceladas com título ativo, título de documento fiscal sem número, carga tributária efetiva fora da faixa esperada para o Lucro Presumido, ISS recolhido abaixo do destacado nas notas, NF-e de venda de mercadoria (risco do Bloco K) e falhas na sequência de numeração.",
   executar: auditarFiscal,
 };
 
@@ -52,6 +52,8 @@ function auditarFiscal(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...receitaSemNota(ctx, materialidade));
   achados.push(...notaSemTitulo(ctx, materialidade));
   achados.push(...cargaTributaria(ctx));
+  achados.push(...issRecolhidoAMenor(ctx, materialidade));
+  achados.push(...nfeDeVendaDeMercadoria(ctx, materialidade));
   achados.push(...falhaNaSequencia(ctx));
   achados.push(...documentoSemNumero(ctx, materialidade));
   achados.push(...regrasDeCte(ctx, materialidade));
@@ -560,6 +562,170 @@ function cargaTributaria(ctx: ContextoAuditoria): AchadoNovo[] {
     });
   }
 
+  return achados;
+}
+
+// ---------------------------------------------------------------------------
+// O QUE O RELATÓRIO DE CONFORMIDADE FISCAL DA CONSULTORIA CONFERE TODO MÊS
+//
+// O relatório de 17/09/2026 (Azul, jan–jul/26) faz duas contas que o espelho
+// da Omie permite refazer sozinho, todo dia, sem esperar o PDF:
+//
+//   1. ISS apurado (total de serviços × alíquota) contra a GUIA paga. Em
+//      março a guia saiu R$ 206 abaixo do apurado; em abril, R$ 1.237. É
+//      pouco, e é exatamente o tipo de diferença que vira auto de infração
+//      com multa de 20% e juros quando o município cruza a NFS-e com o
+//      recolhimento — e que ninguém percebe sem somar.
+//
+//   2. Produto cadastrado como "Tipo 00 — Mercadoria para Revenda" numa
+//      empresa que não vende mercadoria. A consultoria classificou o risco
+//      do Bloco K como altíssimo: o cruzamento automatizado do fisco lê isso
+//      como omissão de receita ou fraude na produção. O tipo do item mora no
+//      cadastro de produtos, que o espelho não tem; o que o espelho tem é a
+//      NF-e emitida com o CFOP de cada item — e CFOP de VENDA de mercadoria
+//      (5101/5102/6101/6102 e a família de ST) numa transportadora é o mesmo
+//      sintoma visto pela nota, não pelo cadastro.
+// ---------------------------------------------------------------------------
+
+// Categoria de título que é recolhimento de ISS. Pela descrição da categoria
+// (ou do título), porque a Omie não tem "tipo de tributo": "ISS", "ISSQN",
+// "Imposto sobre serviços". "ISS retido" fica de fora — é o ISS que a empresa
+// reteve de terceiros, outra conta.
+const PADRAO_CATEGORIA_ISS = /\b(iss|issqn)\b|imposto sobre servi/i;
+const PADRAO_ISS_RETIDO = /retid/i;
+
+// Diferença que vira achado: pelo menos R$ 100 E 0,1% do apurado. O piso
+// absorve arredondamento de guia (a consultoria viu R$ 0,13 a R$ 0,16 em
+// três meses e não apontou); o percentual só importa em guia muito grande.
+// Os R$ 206 de março que a consultoria apontou passam — é a referência.
+const ISS_TOLERANCIA_PERCENT = 0.001;
+const ISS_DIFERENCA_MINIMA_CENTS = 100_00;
+
+function ehTituloDeIss(t: OmieTitulo, categorias: Map<string, string>): boolean {
+  const descricao = `${t.categoriaDescricao ?? ""} ${categorias.get(t.categoriaCodigo ?? "") ?? ""}`;
+  if (PADRAO_ISS_RETIDO.test(descricao)) return false;
+  return PADRAO_CATEGORIA_ISS.test(descricao);
+}
+
+function mesSeguinte(chaveMesAno: string): string {
+  const [ano, mes] = chaveMesAno.split("-").map(Number);
+  const d = new Date(ano, mes, 1); // mes é 1-based na chave; Date usa 0-based → já é o seguinte
+  return chaveMes(d);
+}
+
+// FI-ISS-RECOLHIDO-A-MENOR — por competência fechada: ISS destacado nas
+// NFS-e sem retenção contra os títulos de ISS pagos ou a pagar com vencimento
+// no mês seguinte (a guia do serviço de março vence em abril).
+//
+// Cala quando: não há NFS-e com ISS no mês; ou a base não tem NENHUM título
+// de ISS na janela (a categoria pode ter outro nome — apontar "guia zero"
+// nesse caso seria acusar a categoria, não o recolhimento); ou o mês ainda
+// não fechou.
+function issRecolhidoAMenor(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c.descricao]));
+  const titulosIss = titulosAtivos(ctx, "PAGAR").filter((t) => ehTituloDeIss(t, categorias));
+  if (titulosIss.length === 0) return [];
+
+  const mesAtual = chaveMes(inicioDoMes(ctx.dataReferencia));
+  const notas = ctx.notas.filter(
+    (n) => n.tipo === "NFSE" && !n.cancelada && n.issRetido !== true && (n.valorIssCents ?? 0) > 0
+  );
+  const porMes = agrupar(notas, (n) => chaveMes(n.dataEmissao));
+  const guiasPorVencimento = agrupar(titulosIss, (t) => chaveMes(t.dataVencimento));
+
+  const achados: AchadoNovo[] = [];
+  for (const [mes, notasDoMes] of porMes) {
+    // Só competência FECHADA: as notas do mês corrente ainda estão sendo
+    // emitidas e a guia ainda não venceu.
+    if (mes >= mesAtual) continue;
+    const apurado = somar(notasDoMes, (n) => n.valorIssCents ?? 0);
+    const guias = guiasPorVencimento.get(mesSeguinte(mes)) ?? [];
+    // A guia que ainda não venceu não é "a menor" — é "a pagar".
+    const vencimentoDaGuia = new Date(Number(mesSeguinte(mes).slice(0, 4)), Number(mesSeguinte(mes).slice(5, 7)), 0);
+    if (vencimentoDaGuia >= ctx.dataReferencia) continue;
+    const recolhido = somar(guias, (t) => t.valorDocumentoCents);
+    const diferenca = apurado - recolhido;
+    if (diferenca < ISS_DIFERENCA_MINIMA_CENTS || diferenca < apurado * ISS_TOLERANCIA_PERCENT) continue;
+
+    achados.push({
+      regra: "FI-ISS-RECOLHIDO-A-MENOR",
+      tipo: "EVENTO",
+      severidade: severidadePorValor(diferenca, materialidade),
+      categoria: "CONFORMIDADE",
+      titulo: `ISS de ${mes}: ${fmtBRL(recolhido)} recolhido contra ${fmtBRL(apurado)} destacado nas notas`,
+      descricao:
+        `As ${notasDoMes.length} NFS-e de ${mes} sem ISS retido destacam ${fmtBRL(apurado)} de ISS. ` +
+        `Os títulos de ISS com vencimento em ${mesSeguinte(mes)} somam ${fmtBRL(recolhido)}` +
+        (guias.length === 0 ? " (nenhum título de ISS encontrado para esse vencimento)" : ` (${guias.length} título(s))`) +
+        `. Faltam ${fmtBRL(diferenca)}. O município cruza a NFS-e com o recolhimento; diferença a menor vira ` +
+        `auto de infração com multa e juros, e é o que o relatório de conformidade fiscal aponta mês a mês.`,
+      recomendacao:
+        "Conferir com a contabilidade a guia do mês: se houve nota substituída ou cancelada depois da apuração, " +
+        "documentar; se a guia saiu a menor, recolher a diferença por guia complementar antes de qualquer " +
+        "cruzamento. Se o ISS desse mês foi pago sob outra categoria na Omie, reclassificar o título.",
+      valorCents: diferenca,
+      impactoCents: diferenca,
+      dataReferencia: notasDoMes[0].dataEmissao,
+      evidencia: {
+        competencia: mes,
+        vencimentoDaGuia: mesSeguinte(mes),
+        notas: notasDoMes.length,
+        issApurado: apurado,
+        issRecolhido: recolhido,
+        diferenca,
+        titulosDeIss: guias.map((t) => ({ ref: refTitulo(t), valor: t.valorDocumentoCents, vencimento: fmtData(t.dataVencimento), status: t.status })),
+      },
+      chave: chaveAchado("FI-ISS-RECOLHIDO-A-MENOR", mes),
+    });
+  }
+  return achados;
+}
+
+// CFOP de VENDA de mercadoria (dentro e fora do estado, própria e com ST).
+// Remessa (5949/6949), devolução (5202/6202), venda de ativo (5551/6551),
+// transferência (5152/6152) e serviço de transporte (5351–5360/6351–6360)
+// NÃO estão aqui: são as saídas normais de uma transportadora.
+const CFOP_VENDA_MERCADORIA = /^(5101|5102|5103|5104|5105|5106|5109|5110|5111|5112|5113|5114|5115|5116|5117|5118|5119|5120|5401|5402|5403|5405|6101|6102|6103|6104|6105|6106|6107|6108|6109|6110|6111|6112|6113|6114|6115|6116|6117|6118|6119|6120|6401|6402|6403|6404)$/;
+
+// FI-NFE-VENDA-MERCADORIA — NF-e emitida com CFOP de venda de mercadoria,
+// por mês. Um achado por mês, com a lista das notas.
+function nfeDeVendaDeMercadoria(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const notas = ctx.notas.filter((n) => n.tipo === "NFE" && !n.cancelada && n.cfop && CFOP_VENDA_MERCADORIA.test(n.cfop));
+  if (notas.length === 0) return [];
+  const achados: AchadoNovo[] = [];
+  for (const [mes, doMes] of agrupar(notas, (n) => chaveMes(n.dataEmissao))) {
+    const total = somar(doMes, (n) => n.valorCents);
+    const cfops = [...new Set(doMes.map((n) => n.cfop))].join(", ");
+    achados.push({
+      regra: "FI-NFE-VENDA-MERCADORIA",
+      tipo: "EVENTO",
+      // Não é dinheiro saindo: é exposição fiscal. Fica em MÉDIA quando o
+      // volume é material, BAIXA abaixo disso — e só sobe na mão de quem
+      // souber que o item está mesmo como "mercadoria para revenda".
+      severidade: total >= materialidade ? "MEDIA" : "BAIXA",
+      categoria: "CONFORMIDADE",
+      titulo: `${doMes.length} NF-e de venda de mercadoria em ${mes} (CFOP ${cfops}), ${fmtBRL(total)}`,
+      descricao:
+        `Em ${mes} a empresa emitiu ${doMes.length} NF-e com CFOP de venda de mercadoria (${cfops}), somando ${fmtBRL(total)}. ` +
+        `Transportadora de passageiros não revende mercadoria: o item por trás dessas notas provavelmente está ` +
+        `cadastrado na Omie como "Tipo 00 — Mercadoria para Revenda", e é exatamente o que a consultoria fiscal ` +
+        `apontou como risco altíssimo no Bloco K — o cruzamento automatizado do fisco lê isso como omissão de ` +
+        `receita ou fraude na produção. Venda de combustível, sucata ou ativo tem CFOP e tipo de item próprios.`,
+      recomendacao:
+        "Abrir na Omie o cadastro do produto de cada nota e conferir o Tipo do Item: o que não é revenda deve estar " +
+        "como 'Outros insumos', 'Ativo imobilizado' ou 'Material de uso e consumo', com o CFOP de saída " +
+        "correspondente. Corrigir o cadastro para as próximas emissões e avisar a contabilidade sobre as já emitidas.",
+      valorCents: total,
+      dataReferencia: doMes[0].dataEmissao,
+      evidencia: {
+        competencia: mes,
+        quantidade: doMes.length,
+        total,
+        notas: doMes.slice(0, 20).map((n) => ({ numero: n.numero, serie: n.serie, cfop: n.cfop, emissao: fmtData(n.dataEmissao), valor: n.valorCents, destinatario: n.parceiroNome })),
+      },
+      chave: chaveAchado("FI-NFE-VENDA-MERCADORIA", mes),
+    });
+  }
   return achados;
 }
 
