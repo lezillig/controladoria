@@ -32,6 +32,27 @@ import { rotuloCompetencia } from "./tipos";
 //      como evidência e os apontamentos são cadastrados à mão. A IA acelera a
 //      digitação; ela não é o produto.
 
+// MODELO E ESFORÇO — a escolha barata, e por quê.
+//
+// A tarefa desta chamada é TRANSCREVER E ESTRUTURAR (é o que o prompt abaixo
+// manda, literalmente), não raciocinar sobre a empresa. Os apontamentos estão
+// escritos no documento; o trabalho é copiá-los para o formato do sistema com
+// o trecho de origem junto. É o tipo de tarefa em que esforço alto e modelo de
+// ponta não compram nada — a curva de esforço é plana quando a resposta já
+// está no papel.
+//
+// A conta que motivou a troca, em 21/09/2026: um PDF de quinze páginas custava
+// cerca de US$ 1,45 por leitura em Fable 5.1 com esforço alto, e passa a ~US$
+// 0,21 aqui. São ~12 documentos por ano: US$ 17 contra US$ 2,50.
+//
+// O QUE FARIA VOLTAR ATRÁS: apontamento que só existe em página de imagem
+// (carimbo, print de tela, tabela escaneada) e que o modelo menor não enxerga.
+// A conferência é direta — reler o mesmo documento nos dois e comparar as
+// listas —, e o botão "reler" da tela existe para isso. Se acontecer, voltar
+// para `claude-fable-5-1` com `high` é a troca destas duas linhas.
+const MODELO_LEITURA = "claude-sonnet-5";
+const ESFORCO_LEITURA = "medium" as const;
+
 export function isLeituraDisponivel(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
@@ -262,20 +283,16 @@ export async function lerDocumento(params: {
     // certa: recusa, corte por teto, e só então o JSON.
     const message = await client.beta.messages.create(
       {
-        model: "claude-fable-5-1",
+        model: MODELO_LEITURA,
         // O teto vale para RACIOCÍNIO + resposta. Com 16 mil, o modelo pensou
         // por ~11 mil tokens num PDF de quinze páginas e a lista de
         // apontamentos saiu cortada no meio de uma string. 32 mil deixa
         // espaço para os dois; o timeout explícito abaixo é o que permite
-        // pedir isso sem streaming.
+        // pedir isso sem streaming. É um ANTEPARO, não um controle de custo —
+        // quem regula o gasto é o esforço abaixo.
         max_tokens: 32000,
-        // Esforço alto, e o mesmo modelo do analista do relatório diário: esta
-        // leitura acontece uma vez por documento, fora da janela do cron, e o
-        // custo de errar é alto — um apontamento perdido aqui é um risco que
-        // ninguém mais vai ver. Relatório de consultoria é denso (tabela,
-        // carimbo, imagem de baixa qualidade), que é onde este modelo lê melhor.
         output_config: {
-          effort: "high",
+          effort: ESFORCO_LEITURA,
           format: betaZodOutputFormat(LeituraSchema),
         },
         // Documento de risco fiscal e trabalhista pode esbarrar num classificador
