@@ -28,7 +28,14 @@ import { exigirPermissao, podeAcao, resolverEscopo } from "../_dados";
 import NovoApontamentoForm from "./NovoApontamentoForm";
 import TratativaApontamento from "./TratativaApontamento";
 import UploadForm from "./UploadForm";
-import { confirmarVinculo, descartarApontamento, excluirDocumento, removerVinculo, validarApontamento } from "./actions";
+import {
+  confirmarVinculo,
+  descartarApontamento,
+  excluirDocumento,
+  removerVinculo,
+  reprocessarDocumentoPelaTela,
+  validarApontamento,
+} from "./actions";
 import { larguraPainel } from "@/lib/ui";
 
 // CONFORMIDADE — o que a empresa recebe sobre si mesma.
@@ -337,12 +344,25 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
                   fmtNumero(quantos),
                   ...(podeGerir
                     ? [
-                        <form key="x" action={excluirDocumento}>
-                          <input type="hidden" name="id" value={d.id} />
-                          <button type="submit" className="text-xs font-medium text-slate-500 hover:text-red-700 hover:underline">
-                            excluir
-                          </button>
-                        </form>,
+                        <span key="x" className="flex flex-wrap items-center justify-end gap-3">
+                          {/* Repetir a leitura sem enviar o arquivo de novo. Era a
+                              única saída que a tela não tinha: a ação existia, o
+                              botão não — e "falhou" ficava sem caminho. */}
+                          {d.extracao !== "MANUAL" && (
+                            <form action={reprocessarDocumentoPelaTela}>
+                              <input type="hidden" name="id" value={d.id} />
+                              <button type="submit" className="text-xs font-medium text-blue-700 hover:underline">
+                                {d.extracao === "ERRO" ? "tentar de novo" : "reler"}
+                              </button>
+                            </form>
+                          )}
+                          <form action={excluirDocumento}>
+                            <input type="hidden" name="id" value={d.id} />
+                            <button type="submit" className="text-xs font-medium text-slate-500 hover:text-red-700 hover:underline">
+                              excluir
+                            </button>
+                          </form>
+                        </span>,
                       ]
                     : []),
                 ];
@@ -623,9 +643,13 @@ function StatusLeitura({ extracao, erro }: { extracao: string; erro: string | nu
   if (extracao === "EXTRAIDO") return <span className="text-xs font-medium text-emerald-700">lido</span>;
   if (extracao === "MANUAL") return <span className="text-xs text-slate-500">manual</span>;
   if (extracao === "ERRO") {
+    // O motivo na tela, não só no tooltip: "falhou" sem o porquê manda a
+    // pessoa tentar de novo às cegas, e o erro do modelo (PDF grande demais,
+    // chave ausente, recusa) é o que decide se vale tentar ou cadastrar à mão.
     return (
-      <span className="text-xs font-medium text-amber-700" title={erro ?? undefined}>
-        falhou
+      <span className="block text-xs">
+        <span className="font-medium text-amber-700">falhou</span>
+        {erro && <span className="mt-0.5 block max-w-xs text-slate-500">{erro}</span>}
       </span>
     );
   }

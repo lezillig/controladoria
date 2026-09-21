@@ -191,6 +191,13 @@ export async function reprocessarDocumento(formData: FormData): Promise<Resultad
   return { ok: true, documentoId: documento.id, ...resultado };
 }
 
+// Versão para `<form action>`: a tela só precisa disparar e recarregar. O
+// resultado (ou o erro) fica gravado no documento e aparece na coluna
+// "Leitura" — não há o que devolver ao formulário.
+export async function reprocessarDocumentoPelaTela(formData: FormData): Promise<void> {
+  await reprocessarDocumento(formData);
+}
+
 // Leitura automática de um documento já gravado. Separada do upload porque é
 // exatamente a parte que pode falhar por motivo externo (IA indisponível, PDF
 // grande demais, formato inesperado) — e que precisa poder ser repetida sem

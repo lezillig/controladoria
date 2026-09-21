@@ -1,7 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
-import { anexosRelevantes, classificarArquivo, extrairTexto, mimeParaModelo, type FormatoDocumento } from "./extracao";
+import {
+  anexosRelevantes,
+  classificarArquivo,
+  extrairTexto,
+  mimeParaModelo,
+  type FormatoDocumento,
+} from "./extracao";
 import { fundamentacaoParaLeitura } from "./obrigacoes";
 import { fundamentacaoDaTransicao } from "./regime";
 import { lerMsg } from "./outlook";
@@ -43,48 +49,95 @@ const AREAS_VALIDAS = [
   "OUTRO",
 ] as const;
 
-const NATUREZAS_VALIDAS = ["RISCO", "DOCUMENTO", "QUESTIONAMENTO", "DIVERGENCIA", "OBRIGACAO", "OPORTUNIDADE"] as const;
+const NATUREZAS_VALIDAS = [
+  "RISCO",
+  "DOCUMENTO",
+  "QUESTIONAMENTO",
+  "DIVERGENCIA",
+  "OBRIGACAO",
+  "OPORTUNIDADE",
+] as const;
 
 const ApontamentoSchema = z.object({
-  titulo: z.string().describe("Uma linha, específica. Não use 'Risco fiscal' — diga qual risco fiscal."),
-  descricao: z.string().describe("O que o documento afirma, em 2 a 4 frases, sem opinião própria."),
+  titulo: z
+    .string()
+    .describe(
+      "Uma linha, específica. Não use 'Risco fiscal' — diga qual risco fiscal.",
+    ),
+  descricao: z
+    .string()
+    .describe(
+      "O que o documento afirma, em 2 a 4 frases, sem opinião própria.",
+    ),
   area: z.enum(AREAS_VALIDAS),
   natureza: z
     .enum(NATUREZAS_VALIDAS)
     .describe(
-      "DOCUMENTO = a empresa precisa enviar um arquivo. QUESTIONAMENTO = precisa responder. DIVERGENCIA = as duas partes discordam. OBRIGACAO = declaração entregue fora do prazo ou não entregue. RISCO = exposição identificada. OPORTUNIDADE = dinheiro a recuperar."
+      "DOCUMENTO = a empresa precisa enviar um arquivo. QUESTIONAMENTO = precisa responder. DIVERGENCIA = as duas partes discordam. OBRIGACAO = declaração entregue fora do prazo ou não entregue. RISCO = exposição identificada. OPORTUNIDADE = dinheiro a recuperar.",
     ),
   baseLegal: z
     .string()
     .nullable()
-    .describe("A norma citada NO DOCUMENTO, ou a do catálogo de obrigações quando for evidente qual é. Nulo se não houver."),
+    .describe(
+      "A norma citada NO DOCUMENTO, ou a do catálogo de obrigações quando for evidente qual é. Nulo se não houver.",
+    ),
   obrigacaoCodigo: z
     .string()
     .nullable()
-    .describe("Código da obrigação do catálogo (ISS, ICMS-TRANSPORTE, EFD-ICMS-IPI, EFD-CONTRIBUICOES, DCTFWEB, ...). Nulo se nenhuma se aplicar."),
+    .describe(
+      "Código da obrigação do catálogo (ISS, ICMS-TRANSPORTE, EFD-ICMS-IPI, EFD-CONTRIBUICOES, DCTFWEB, ...). Nulo se nenhuma se aplicar.",
+    ),
   severidade: z
     .enum(["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"])
-    .describe("A gravidade que O DOCUMENTO atribui. Se ele não graduar, use MEDIA."),
+    .describe(
+      "A gravidade que O DOCUMENTO atribui. Se ele não graduar, use MEDIA.",
+    ),
   assuntoCanonico: z
     .string()
     .describe(
-      "Assunto em 3 a 6 palavras, sem datas, valores ou nomes próprios. Deve ser IGUAL se o mesmo assunto reaparecer em outro mês."
+      "Assunto em 3 a 6 palavras, sem datas, valores ou nomes próprios. Deve ser IGUAL se o mesmo assunto reaparecer em outro mês.",
     ),
-  recomendacao: z.string().nullable().describe("A providência que o documento recomenda. Nulo se ele não recomendar nada."),
-  trechoOrigem: z.string().nullable().describe("Citação literal do documento, até 300 caracteres. Nunca parafraseie aqui."),
-  paginaOrigem: z.string().nullable().describe("Página, seção ou aba onde o trecho aparece."),
+  recomendacao: z
+    .string()
+    .nullable()
+    .describe(
+      "A providência que o documento recomenda. Nulo se ele não recomendar nada.",
+    ),
+  trechoOrigem: z
+    .string()
+    .nullable()
+    .describe(
+      "Citação literal do documento, até 300 caracteres. Nunca parafraseie aqui.",
+    ),
+  paginaOrigem: z
+    .string()
+    .nullable()
+    .describe("Página, seção ou aba onde o trecho aparece."),
   competenciaAlvo: z
     .string()
     .nullable()
     .describe(
-      "Competência A QUE O APONTAMENTO SE REFERE, em AAAA-MM (para trimestre, o primeiro mês dele). Campo informativo e separado da competência do relatório. Nulo quando o apontamento não se refere a um período específico."
+      "Competência A QUE O APONTAMENTO SE REFERE, em AAAA-MM (para trimestre, o primeiro mês dele). Campo informativo e separado da competência do relatório. Nulo quando o apontamento não se refere a um período específico.",
     ),
-  valorEnvolvidoReais: z.number().nullable().describe("Valor em reais SOMENTE se o documento informar um. Nunca estime."),
-  prazoSugeridoDias: z.number().int().nullable().describe("Prazo em dias se o documento indicar um. Nulo caso contrário."),
+  valorEnvolvidoReais: z
+    .number()
+    .nullable()
+    .describe(
+      "Valor em reais SOMENTE se o documento informar um. Nunca estime.",
+    ),
+  prazoSugeridoDias: z
+    .number()
+    .int()
+    .nullable()
+    .describe("Prazo em dias se o documento indicar um. Nulo caso contrário."),
 });
 
 const LeituraSchema = z.object({
-  resumo: z.string().describe("2 a 4 frases sobre o que é o documento e o que ele conclui no conjunto."),
+  resumo: z
+    .string()
+    .describe(
+      "2 a 4 frases sobre o que é o documento e o que ele conclui no conjunto.",
+    ),
   apontamentos: z.array(ApontamentoSchema).max(40),
 });
 
@@ -154,7 +207,11 @@ export async function lerDocumento(params: {
   const textoExtraido = extracao.texto;
 
   if (!apiKey) {
-    return { ok: false, erro: "Leitura automática indisponível (ANTHROPIC_API_KEY não configurada).", textoExtraido };
+    return {
+      ok: false,
+      erro: "Leitura automática indisponível (ANTHROPIC_API_KEY não configurada).",
+      textoExtraido,
+    };
   }
   if (formato === "NAO_SUPORTADO") {
     return {
@@ -164,10 +221,18 @@ export async function lerDocumento(params: {
     };
   }
   if (extracao.erro) {
-    return { ok: false, erro: `Não foi possível ler o arquivo: ${extracao.erro}`, textoExtraido };
+    return {
+      ok: false,
+      erro: `Não foi possível ler o arquivo: ${extracao.erro}`,
+      textoExtraido,
+    };
   }
   if (formato !== "PDF" && formato !== "IMAGEM" && !textoExtraido?.trim()) {
-    return { ok: false, erro: "O arquivo não tem texto legível — cadastre os apontamentos manualmente.", textoExtraido };
+    return {
+      ok: false,
+      erro: "O arquivo não tem texto legível — cadastre os apontamentos manualmente.",
+      textoExtraido,
+    };
   }
 
   const instrucao = [
@@ -183,27 +248,51 @@ export async function lerDocumento(params: {
 
   try {
     const client = new Anthropic({ apiKey });
-    const message = await client.beta.messages.parse({
-      model: "claude-fable-5-1",
-      max_tokens: 32000,
-      // Esforço alto, e o mesmo modelo do analista do relatório diário: esta
-      // leitura acontece uma vez por documento, fora da janela do cron, e o
-      // custo de errar é alto — um apontamento perdido aqui é um risco que
-      // ninguém mais vai ver. Relatório de consultoria é denso (tabela,
-      // carimbo, imagem de baixa qualidade), que é onde este modelo lê melhor.
-      output_config: { effort: "high", format: betaZodOutputFormat(LeituraSchema) },
-      // Documento de risco fiscal e trabalhista pode esbarrar num classificador
-      // de segurança por engano. Com o fallback, a API refaz a leitura em outro
-      // modelo em vez de devolver o documento sem apontamentos.
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      system: SYSTEM_PROMPT,
-      messages: [
-        { role: "user", content: mensagemDeFundamentacao() },
-        { role: "assistant", content: "Catálogo recebido. Envie o documento." },
-        { role: "user", content: [...blocosDoDocumento(formato, params, textoExtraido), { type: "text", text: instrucao }] },
-      ],
-    });
+    // Sem streaming, o SDK estima a duração pelo max_tokens (60 min por 128 mil
+    // tokens) e RECUSA antes de chamar a API quando passa de 10 minutos — foi
+    // o que fez toda leitura de PDF "falhar" em 21/09/2026 com 32000 tokens de
+    // teto, sem nem sair da hospedagem. O timeout explícito desliga essa
+    // estimativa; cabe no teto de 300 s da função da Vercel, com folga para o
+    // upload já feito. Sem retentativa automática: uma segunda tentativa não
+    // caberia no mesmo teto, e a tela tem o botão "tentar de novo".
+    const message = await client.beta.messages.parse(
+      {
+        model: "claude-fable-5-1",
+        // A saída é a lista de apontamentos em JSON, não o documento: 16 mil
+        // tokens comportam dezenas de apontamentos com trecho citado.
+        max_tokens: 16000,
+        // Esforço alto, e o mesmo modelo do analista do relatório diário: esta
+        // leitura acontece uma vez por documento, fora da janela do cron, e o
+        // custo de errar é alto — um apontamento perdido aqui é um risco que
+        // ninguém mais vai ver. Relatório de consultoria é denso (tabela,
+        // carimbo, imagem de baixa qualidade), que é onde este modelo lê melhor.
+        output_config: {
+          effort: "high",
+          format: betaZodOutputFormat(LeituraSchema),
+        },
+        // Documento de risco fiscal e trabalhista pode esbarrar num classificador
+        // de segurança por engano. Com o fallback, a API refaz a leitura em outro
+        // modelo em vez de devolver o documento sem apontamentos.
+        betas: ["server-side-fallback-2026-07-01"],
+        fallbacks: "default",
+        system: SYSTEM_PROMPT,
+        messages: [
+          { role: "user", content: mensagemDeFundamentacao() },
+          {
+            role: "assistant",
+            content: "Catálogo recebido. Envie o documento.",
+          },
+          {
+            role: "user",
+            content: [
+              ...blocosDoDocumento(formato, params, textoExtraido),
+              { type: "text", text: instrucao },
+            ],
+          },
+        ],
+      },
+      { timeout: 270_000, maxRetries: 0 },
+    );
 
     // Recusa vem como HTTP 200 com stop_reason próprio, possivelmente sem
     // conteúdo. Conferida antes de ler o resultado, e explicada na tela: a
@@ -216,11 +305,20 @@ export async function lerDocumento(params: {
       };
     }
     if (message.stop_reason === "max_tokens") {
-      return { ok: false, erro: "O documento é longo demais para uma leitura só — divida-o e envie as partes.", textoExtraido };
+      return {
+        ok: false,
+        erro: "O documento é longo demais para uma leitura só — divida-o e envie as partes.",
+        textoExtraido,
+      };
     }
 
     const leitura = message.parsed_output;
-    if (!leitura) return { ok: false, erro: "A leitura automática não devolveu um resultado utilizável.", textoExtraido };
+    if (!leitura)
+      return {
+        ok: false,
+        erro: "A leitura automática não devolveu um resultado utilizável.",
+        textoExtraido,
+      };
     return { ok: true, leitura, textoExtraido };
   } catch (e) {
     // A falha é registrada no documento e mostrada na tela com o botão de
@@ -236,10 +334,11 @@ export async function lerDocumento(params: {
 function blocosDoDocumento(
   formato: FormatoDocumento,
   params: { conteudo: Buffer; arquivoNome: string },
-  texto: string | null
+  texto: string | null,
 ): Anthropic.Beta.BetaContentBlockParam[] {
   if (formato === "PDF") return [blocoPdf(params.conteudo)];
-  if (formato === "IMAGEM") return [blocoImagem(params.conteudo, params.arquivoNome)];
+  if (formato === "IMAGEM")
+    return [blocoImagem(params.conteudo, params.arquivoNome)];
 
   // E-mail: os anexos entram como documento, e o corpo entra como texto DEPOIS
   // deles. A ordem importa — o corpo é o que dá contexto ("resumo da reunião de
@@ -248,24 +347,51 @@ function blocosDoDocumento(
   if (formato === "EMAIL") {
     const { anexos } = anexosRelevantes(params.conteudo);
     const blocos = anexos.map((a) =>
-      a.formato === "PDF" ? blocoPdf(a.conteudo) : blocoImagem(a.conteudo, a.nome)
+      a.formato === "PDF"
+        ? blocoPdf(a.conteudo)
+        : blocoImagem(a.conteudo, a.nome),
     );
-    return [...blocos, { type: "text", text: `<email arquivo="${params.arquivoNome}">\n${texto ?? ""}\n</email>` }];
+    return [
+      ...blocos,
+      {
+        type: "text",
+        text: `<email arquivo="${params.arquivoNome}">\n${texto ?? ""}\n</email>`,
+      },
+    ];
   }
 
-  return [{ type: "text", text: `<documento nome="${params.arquivoNome}">\n${texto ?? ""}\n</documento>` }];
+  return [
+    {
+      type: "text",
+      text: `<documento nome="${params.arquivoNome}">\n${texto ?? ""}\n</documento>`,
+    },
+  ];
 }
 
 function blocoPdf(conteudo: Buffer): Anthropic.Beta.BetaContentBlockParam {
-  return { type: "document", source: { type: "base64", media_type: "application/pdf", data: conteudo.toString("base64") } };
+  return {
+    type: "document",
+    source: {
+      type: "base64",
+      media_type: "application/pdf",
+      data: conteudo.toString("base64"),
+    },
+  };
 }
 
-function blocoImagem(conteudo: Buffer, nome: string): Anthropic.Beta.BetaContentBlockParam {
+function blocoImagem(
+  conteudo: Buffer,
+  nome: string,
+): Anthropic.Beta.BetaContentBlockParam {
   return {
     type: "image",
     source: {
       type: "base64",
-      media_type: mimeParaModelo("IMAGEM", nome) as "image/png" | "image/jpeg" | "image/webp" | "image/gif",
+      media_type: mimeParaModelo("IMAGEM", nome) as
+        | "image/png"
+        | "image/jpeg"
+        | "image/webp"
+        | "image/gif",
       data: conteudo.toString("base64"),
     },
   };
@@ -274,12 +400,20 @@ function blocoImagem(conteudo: Buffer, nome: string): Anthropic.Beta.BetaContent
 // Dados que o próprio e-mail já responde e que a pessoa teria de digitar:
 // quem enviou e quando. Usados apenas para preencher o que ficou em branco no
 // formulário — nunca para sobrescrever o que alguém informou.
-export type SugestoesDoEmail = { emissor: string | null; dataDocumento: Date | null; assunto: string | null };
+export type SugestoesDoEmail = {
+  emissor: string | null;
+  dataDocumento: Date | null;
+  assunto: string | null;
+};
 
 export function sugestoesDoEmail(conteudo: Buffer): SugestoesDoEmail | null {
   try {
     const m = lerMsg(conteudo);
-    return { emissor: m.remetenteNome ?? m.remetenteEmail, dataDocumento: m.data, assunto: m.assunto };
+    return {
+      emissor: m.remetenteNome ?? m.remetenteEmail,
+      dataDocumento: m.data,
+      assunto: m.assunto,
+    };
   } catch {
     return null;
   }
@@ -292,5 +426,7 @@ function mensagemDeErro(e: unknown): string {
     // um "erro ao processar" genérico.
     return `${e.status ?? "erro"}: ${e.message}`.slice(0, 500);
   }
-  return e instanceof Error ? e.message.slice(0, 500) : "erro desconhecido na leitura automática";
+  return e instanceof Error
+    ? e.message.slice(0, 500)
+    : "erro desconhecido na leitura automática";
 }
