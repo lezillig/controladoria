@@ -125,6 +125,10 @@ const CORES_SEVERIDADE: Record<string, { classe: string; rotulo: string }> = {
   INFO: { classe: "bg-slate-100 text-slate-600", rotulo: "Informativo" },
 };
 
+export function rotuloSeveridade(severidade: string): string {
+  return (CORES_SEVERIDADE[severidade] ?? CORES_SEVERIDADE.INFO).rotulo;
+}
+
 export function BadgeSeveridade({ severidade }: { severidade: string }) {
   const cor = CORES_SEVERIDADE[severidade] ?? CORES_SEVERIDADE.INFO;
   return <span className={`${badgeClass} ${cor.classe}`}>{cor.rotulo}</span>;
@@ -138,6 +142,10 @@ const CORES_CATEGORIA: Record<string, { classe: string; rotulo: string }> = {
   CONFORMIDADE: { classe: "bg-violet-50 text-violet-700 ring-1 ring-violet-200", rotulo: "Conformidade" },
   OPORTUNIDADE: { classe: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200", rotulo: "Oportunidade" },
 };
+
+export function rotuloCategoria(categoria: string): string {
+  return (CORES_CATEGORIA[categoria] ?? CORES_CATEGORIA.ERRO_PROCESSO).rotulo;
+}
 
 export function BadgeCategoria({ categoria }: { categoria: string }) {
   const cor = CORES_CATEGORIA[categoria] ?? CORES_CATEGORIA.ERRO_PROCESSO;
@@ -318,6 +326,59 @@ export function Fatias({
           </div>
         </li>
       ))}
+    </ul>
+  );
+}
+
+// LINHAS DE RÓTULO E VALOR para dentro de um KPI aberto.
+//
+// Irmã de `Fatias`, para o que NÃO é parte de um todo: uma conta de resultado
+// (receita, menos despesa, igual a resultado), um saldo por conta bancária que
+// pode ser negativo, uma contagem. Barra de participação ali mentiria — 100%
+// de quê? —, então aqui só há o número, alinhado à direita e tabular para as
+// casas baterem na vertical.
+export function LinhasDeValor({
+  linhas,
+  vazio = "Nada no período.",
+}: {
+  linhas: {
+    rotulo: string;
+    valor: string;
+    detalhe?: string;
+    // Fecha um bloco (o "= Resultado" depois de receita e despesa): ganha
+    // traço em cima e peso, para a conta ser lida como conta.
+    destaque?: boolean;
+    tom?: "neutro" | "bom" | "ruim";
+    href?: string;
+  }[];
+  vazio?: string;
+}) {
+  if (linhas.length === 0) return <p className="text-xs text-slate-500">{vazio}</p>;
+  return (
+    <ul className="space-y-1.5">
+      {linhas.map((l, i) => {
+        const cor = { neutro: "text-slate-900", bom: "text-emerald-700", ruim: "text-red-700" }[l.tom ?? "neutro"];
+        return (
+          <li
+            key={`${l.rotulo}-${i}`}
+            className={l.destaque ? "mt-2 border-t border-slate-200 pt-2 text-xs" : "text-xs"}
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className={`truncate ${l.destaque ? "font-medium text-slate-800" : "text-slate-700"}`}>
+                {l.href ? (
+                  <Link href={l.href} className="hover:underline">
+                    {l.rotulo}
+                  </Link>
+                ) : (
+                  l.rotulo
+                )}
+              </span>
+              <span className={`shrink-0 tabular-nums ${l.destaque ? "font-semibold" : ""} ${cor}`}>{l.valor}</span>
+            </div>
+            {l.detalhe && <p className="mt-0.5 truncate text-[11px] text-slate-400">{l.detalhe}</p>}
+          </li>
+        );
+      })}
     </ul>
   );
 }

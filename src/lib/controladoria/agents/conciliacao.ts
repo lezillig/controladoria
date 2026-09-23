@@ -379,6 +379,44 @@ function saldoAbaixoDoMinimo(ctx: ContextoAuditoria): AchadoNovo[] {
 // espelhados. Aproximacao explicita: so e exato se o extrato foi importado
 // desde a data do saldo inicial. A tela de sincronizacao mostra essa
 // limitacao junto do numero, em vez de apresenta-lo como verdade absoluta.
+// SALDO POR CONTA — a abertura do número acima, e ela TEM que somar o total.
+//
+// Duas assimetrias herdadas de `saldoAtualCents` e preservadas aqui de
+// propósito, para as duas leituras nunca divergirem: conta inativa não traz
+// saldo inicial (o total ignora o dela), mas o movimento que passou por ela
+// conta — é dinheiro que entrou ou saiu de verdade; e movimento de conta que
+// não está no cadastro vira uma linha própria em vez de sumir.
+export function saldoPorContaCents(
+  ctx: ContextoAuditoria
+): { conta: string; empresa: string; inativa: boolean; saldoCents: number }[] {
+  const movimentado = new Map<string, number>();
+  for (const m of ctx.movimentos) {
+    if (m.data > ctx.dataReferencia) continue;
+    const chave = `${m.conexaoId}:${m.contaCorrenteCodigo}`;
+    movimentado.set(chave, (movimentado.get(chave) ?? 0) + m.valorCents);
+  }
+
+  const linhas = ctx.contasCorrentes.map((c) => {
+    const chave = `${c.conexaoId}:${c.codigo}`;
+    const mov = movimentado.get(chave) ?? 0;
+    movimentado.delete(chave);
+    return {
+      conta: c.descricao,
+      empresa: c.conexaoApelido,
+      inativa: c.inativa,
+      saldoCents: (c.inativa ? 0 : c.saldoInicialCents) + mov,
+    };
+  });
+
+  let semCadastro = 0;
+  for (const v of movimentado.values()) semCadastro += v;
+  if (semCadastro !== 0) {
+    linhas.push({ conta: "Conta não cadastrada no espelho", empresa: "—", inativa: false, saldoCents: semCadastro });
+  }
+
+  return linhas.filter((l) => l.saldoCents !== 0).sort((a, b) => b.saldoCents - a.saldoCents);
+}
+
 export function saldoAtualCents(ctx: ContextoAuditoria): number {
   const inicial = somar(
     ctx.contasCorrentes.filter((c) => !c.inativa),

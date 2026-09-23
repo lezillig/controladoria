@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { AlertTriangle, Banknote, Landmark, Lightbulb, TrendingDown, TrendingUp } from "lucide-react";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { montarPanorama } from "@/lib/controladoria/analytics";
+import { saldoPorContaCents } from "@/lib/controladoria/agents/conciliacao";
 import { agruparComposicao, composicaoDoPeriodo } from "@/lib/controladoria/composicao";
 import { medirBsc, PERSPECTIVAS } from "@/lib/controladoria/bsc";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent, fmtVariacao } from "@/lib/controladoria/format";
@@ -9,7 +11,20 @@ import { avaliarQualidadeDaBase } from "@/lib/controladoria/supervisor";
 import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { competenciasDisponiveis, contextoDaPagina } from "./_dados";
-import { AvisoVazio, BadgeSeveridade, Barra, Farol, Fatias, Kpi, KpiExpansivel, Secao, Tabela, Variacao } from "./_componentes";
+import {
+  AvisoVazio,
+  BadgeSeveridade,
+  Barra,
+  Farol,
+  Fatias,
+  KpiExpansivel,
+  LinhasDeValor,
+  rotuloCategoria,
+  rotuloSeveridade,
+  Secao,
+  Tabela,
+  Variacao,
+} from "./_componentes";
 import Filtros from "./Filtros";
 import { larguraPainel } from "@/lib/ui";
 
@@ -37,7 +52,22 @@ export default async function ControladoriaPage({
   // A composição dos dois primeiros números do painel: de onde vem cada
   // real. Somada no banco, no mesmo recorte de empresa e mês do comparativo.
   const escopoComposicao = { companyId: ctx.companyId, conexaoId: escopo.conexaoId, periodo: c.janelas.mesAtual };
-  const [achados, bsc, ultimoRelatorio, receitaComp, despesaComp, contagemAchados] = await Promise.all([
+  const abertos: Prisma.AuditFindingWhereInput = {
+    companyId: ctx.companyId,
+    status: { in: ["ABERTO", "EM_ANALISE"] },
+  };
+  const [
+    achados,
+    bsc,
+    ultimoRelatorio,
+    receitaComp,
+    despesaComp,
+    contagemAchados,
+    somaOportunidades,
+    somaPerdas,
+    maioresOportunidades,
+    maioresPerdas,
+  ] = await Promise.all([
     prisma.auditFinding.findMany({
       where: { companyId: ctx.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
       // O painel mostra seis linhas e soma valores: a evidência não é lida.
@@ -61,6 +91,26 @@ export default async function ControladoriaPage({
       where: { companyId: ctx.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
       _count: true,
     }),
+    // Os dois cartões de dinheiro dos achados, somados NO BANCO — pelo mesmo
+    // motivo que a contagem acima: a lista de `achados` para de propósito em
+    // 200 linhas, e somar só elas dava um total que encolhia conforme a fila
+    // crescia. É o mesmo defeito que o cartão "em aberto" já teve.
+    prisma.auditFinding.aggregate({ where: { ...abertos, categoria: "OPORTUNIDADE" }, _sum: { impactoCents: true } }),
+    prisma.auditFinding.aggregate({ where: { ...abertos, categoria: "PERDA_FINANCEIRA" }, _sum: { valorCents: true } }),
+    // As maiores de cada um, para a abertura do cartão. Consulta própria
+    // porque a ordenação é outra: aqui manda o valor, não a severidade.
+    prisma.auditFinding.findMany({
+      where: { ...abertos, categoria: "OPORTUNIDADE" },
+      select: { id: true, titulo: true, impactoCents: true, conexaoApelido: true },
+      orderBy: { impactoCents: "desc" },
+      take: 6,
+    }),
+    prisma.auditFinding.findMany({
+      where: { ...abertos, categoria: "PERDA_FINANCEIRA" },
+      select: { id: true, titulo: true, valorCents: true, conexaoApelido: true },
+      orderBy: { valorCents: "desc" },
+      take: 6,
+    }),
   ]);
   const totalEmAberto = contagemAchados.reduce((acc, g) => acc + g._count, 0);
   const totalCriticosAltos = contagemAchados
@@ -83,12 +133,19 @@ export default async function ControladoriaPage({
   }
 
   const criticos = achados.filter((a) => a.severidade === "CRITICA" || a.severidade === "ALTA");
-  const economia = achados
-    .filter((a) => a.categoria === "OPORTUNIDADE")
-    .reduce((acc, a) => acc + (a.impactoCents ?? 0), 0);
-  const perdas = achados
-    .filter((a) => a.categoria === "PERDA_FINANCEIRA")
-    .reduce((acc, a) => acc + (a.valorCents ?? 0), 0);
+  const economia = somaOportunidades._sum.impactoCents ?? 0;
+  const perdas = somaPerdas._sum.valorCents ?? 0;
+
+  // Abertura do cartão de achados: a mesma contagem do banco, quebrada nos
+  // dois eixos que decidem por onde começar — quão grave, e de que tipo.
+  const porSeveridade = new Map<string, number>();
+  const porCategoria = new Map<string, number>();
+  for (const g of contagemAchados) {
+    porSeveridade.set(g.severidade, (porSeveridade.get(g.severidade) ?? 0) + g._count);
+    porCategoria.set(g.categoria, (porCategoria.get(g.categoria) ?? 0) + g._count);
+  }
+  const ORDEM_SEVERIDADE = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
+  const saldos = saldoPorContaCents(ctx);
 
   const ruptura = panorama.projecao.find((p) => p.saldoProjetadoCents < 0);
 
@@ -152,48 +209,181 @@ export default async function ControladoriaPage({
             Composição completa e maiores títulos →
           </Link>
         </KpiExpansivel>
-        <Kpi
+        {/* A conta do mês, na ordem em que se lê: receita, menos despesa,
+            igual a resultado — e o mesmo do mês anterior embaixo, porque
+            "R$ 1,7 milhão" só quer dizer alguma coisa ao lado do mês que
+            passou. */}
+        <KpiExpansivel
           rotulo="Resultado do mês"
           valor={fmtBRL(c.mesAtual.resultadoCents)}
-          apoio={`Margem ${fmtPercent(c.mesAtual.margemPercent)}`}
+          apoio={`Margem ${fmtPercent(c.mesAtual.margemPercent)} · clique para abrir`}
           tom={c.mesAtual.resultadoCents >= 0 ? "bom" : "ruim"}
-        />
-        <Kpi
+        >
+          <LinhasDeValor
+            linhas={[
+              { rotulo: "Receita do mês", valor: fmtBRL(c.mesAtual.receitaCents) },
+              { rotulo: "(−) Despesa do mês", valor: fmtBRL(c.mesAtual.despesaCents) },
+              {
+                rotulo: "= Resultado",
+                valor: fmtBRL(c.mesAtual.resultadoCents),
+                destaque: true,
+                tom: c.mesAtual.resultadoCents >= 0 ? "bom" : "ruim",
+              },
+              {
+                rotulo: "Mês anterior",
+                valor: fmtBRL(c.mesAnterior.resultadoCents),
+                detalhe: `Margem ${fmtPercent(c.mesAnterior.margemPercent)} · ${fmtVariacao(c.variacoes.receitaMesVsAnterior)} de receita`,
+                tom: c.mesAnterior.resultadoCents >= 0 ? "bom" : "ruim",
+              },
+              {
+                rotulo: "Mesmo mês do ano passado",
+                valor: fmtBRL(c.mesmoMesAnoAnterior.resultadoCents),
+                detalhe: `Margem ${fmtPercent(c.mesmoMesAnoAnterior.margemPercent)}`,
+                tom: c.mesmoMesAnoAnterior.resultadoCents >= 0 ? "bom" : "ruim",
+              },
+            ]}
+          />
+          <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+            DRE completo, mês a mês →
+          </Link>
+        </KpiExpansivel>
+        {/* Saldo conta a conta. O total do cartão é a soma exata destas linhas
+            (ver saldoPorContaCents), inclusive quando uma delas é negativa —
+            é justamente a conta no vermelho que precisa aparecer. */}
+        <KpiExpansivel
           rotulo="Saldo em caixa"
           valor={fmtBRL(panorama.saldoAtualCents)}
-          apoio={`A pagar em aberto ${fmtBRL(panorama.aPagarEmAbertoCents)}`}
+          apoio={`A pagar em aberto ${fmtBRL(panorama.aPagarEmAbertoCents)} · clique para abrir`}
           tom={panorama.saldoAtualCents >= 0 ? "neutro" : "ruim"}
           icone={<Banknote className="h-4 w-4" />}
-        />
+        >
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por conta</p>
+          <LinhasDeValor
+            vazio="Nenhuma conta com saldo. Sem extrato bancário espelhado, o saldo vem só do saldo inicial cadastrado."
+            linhas={saldos.map((l) => ({
+              rotulo: l.conta,
+              valor: fmtBRL(l.saldoCents),
+              detalhe: `${l.empresa}${l.inativa ? " · conta inativa" : ""}`,
+              tom: l.saldoCents < 0 ? ("ruim" as const) : ("neutro" as const),
+            }))}
+          />
+          <Link href="/fluxo-caixa" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+            Projeção de caixa e conciliação →
+          </Link>
+        </KpiExpansivel>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi
+        {/* As quatro perdas são partes de um todo, então aqui a barra de
+            participação diz alguma coisa: ela aponta qual delas atacar. */}
+        <KpiExpansivel
           rotulo="Perdas do mês"
           valor={fmtBRL(c.mesAtual.perdaTotalCents)}
-          apoio="Juros, multa, tarifa e desconto concedido"
+          apoio="Juros, multa, tarifa e desconto concedido · clique para abrir"
           tom={c.mesAtual.perdaTotalCents > 0 ? "ruim" : "bom"}
-        />
-        <Kpi
+        >
+          <Fatias
+            vazio="Nenhuma perda no mês."
+            fatias={[
+              { rotulo: "Juros por atraso", valorCents: c.mesAtual.jurosCents },
+              { rotulo: "Multa por atraso", valorCents: c.mesAtual.multaCents },
+              { rotulo: "Tarifa bancária", valorCents: c.mesAtual.tarifaCents },
+              { rotulo: "Desconto concedido a cliente", valorCents: c.mesAtual.descontoCents },
+            ]
+              .filter((l) => l.valorCents > 0)
+              .map((l) => ({
+                ...l,
+                quantidade: 0,
+                participacaoPercent:
+                  c.mesAtual.perdaTotalCents > 0 ? (l.valorCents / c.mesAtual.perdaTotalCents) * 100 : 0,
+              }))}
+          />
+          <p className="mt-3 text-[11px] text-slate-500">
+            Dinheiro que saiu sem comprar nada. Juros e multa são prazo perdido; tarifa é preço de conta; desconto
+            concedido é margem entregue na baixa.
+          </p>
+        </KpiExpansivel>
+        <KpiExpansivel
           rotulo="Economia identificada"
           valor={fmtBRL(economia)}
-          apoio="Impacto anual estimado das oportunidades"
+          apoio="Impacto anual estimado das oportunidades · clique para abrir"
           tom={economia > 0 ? "bom" : "neutro"}
           icone={<Lightbulb className="h-4 w-4" />}
-        />
-        <Kpi
+        >
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Maiores oportunidades</p>
+          <LinhasDeValor
+            vazio="Nenhuma oportunidade em aberto."
+            linhas={maioresOportunidades.map((a) => ({
+              rotulo: a.titulo,
+              valor: fmtBRL(a.impactoCents ?? 0),
+              detalhe: a.conexaoApelido ?? "grupo",
+              tom: "bom" as const,
+              href: `/auditoria?achado=${a.id}`,
+            }))}
+          />
+          <Link
+            href="/auditoria?categoria=OPORTUNIDADE"
+            className="mt-3 block text-xs font-medium text-blue-700 hover:underline"
+          >
+            Todas as oportunidades →
+          </Link>
+        </KpiExpansivel>
+        {/* Contagem, não dinheiro: por isso linhas e não fatias com barra. Os
+            dois eixos respondem a perguntas diferentes — "quão grave" decide a
+            ordem de ataque, "de que tipo" decide quem trata. */}
+        <KpiExpansivel
           rotulo="Achados em aberto"
           valor={fmtNumero(totalEmAberto)}
-          apoio={`${fmtNumero(totalCriticosAltos)} crítico(s)/alto(s) · ${fmtNumero(totalFraude)} indício(s) de fraude`}
+          apoio={`${fmtNumero(totalCriticosAltos)} crítico(s)/alto(s) · ${fmtNumero(totalFraude)} indício(s) de fraude · clique para abrir`}
           tom={totalCriticosAltos > 0 ? "atencao" : "bom"}
           icone={<AlertTriangle className="h-4 w-4" />}
-        />
-        <Kpi
+        >
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por severidade</p>
+          <LinhasDeValor
+            linhas={ORDEM_SEVERIDADE.filter((sev) => (porSeveridade.get(sev) ?? 0) > 0).map((sev) => ({
+              rotulo: rotuloSeveridade(sev),
+              valor: fmtNumero(porSeveridade.get(sev) ?? 0),
+              href: `/auditoria?severidade=${sev}`,
+            }))}
+          />
+          <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por tipo</p>
+          <LinhasDeValor
+            linhas={[...porCategoria.entries()]
+              .sort((a, b) => b[1] - a[1])
+              .map(([cat, n]) => ({
+                rotulo: rotuloCategoria(cat),
+                valor: fmtNumero(n),
+                href: `/auditoria?categoria=${cat}`,
+              }))}
+          />
+          <Link href="/auditoria" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+            Abrir a triagem →
+          </Link>
+        </KpiExpansivel>
+        <KpiExpansivel
           rotulo="Perdas apontadas"
           valor={fmtBRL(perdas)}
-          apoio="Soma dos achados de perda em aberto"
+          apoio="Soma dos achados de perda em aberto · clique para abrir"
           tom={perdas > 0 ? "atencao" : "bom"}
-        />
+        >
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Maiores perdas</p>
+          <LinhasDeValor
+            vazio="Nenhuma perda apontada em aberto."
+            linhas={maioresPerdas.map((a) => ({
+              rotulo: a.titulo,
+              valor: fmtBRL(a.valorCents ?? 0),
+              detalhe: a.conexaoApelido ?? "grupo",
+              tom: "ruim" as const,
+              href: `/auditoria?achado=${a.id}`,
+            }))}
+          />
+          <Link
+            href="/auditoria?categoria=PERDA_FINANCEIRA"
+            className="mt-3 block text-xs font-medium text-blue-700 hover:underline"
+          >
+            Todas as perdas apontadas →
+          </Link>
+        </KpiExpansivel>
       </div>
 
       {ruptura && (
