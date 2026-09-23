@@ -126,7 +126,7 @@ export async function composicaoDoPeriodo(params: {
     SELECT COALESCE(
              NULLIF(TRIM(t."categoriaDescricao"), ''),
              ${descricaoDaCategoria}
-             t."categoriaCodigo"
+             NULLIF(TRIM(t."categoriaCodigo"), '')
            ) AS categoria,
            t."tipoDocumento" AS tipo,
            COALESCE(NULLIF(TRIM(cc.descricao), ''), cc."numeroConta", t."contaCorrenteCodigo") AS conta,
@@ -257,6 +257,26 @@ const ROTULO_TIPO_DOCUMENTO: Record<string, string> = {
 export function rotuloTipoDocumento(codigo: string): string {
   const chave = codigo.trim().toUpperCase();
   return ROTULO_TIPO_DOCUMENTO[chave] ?? codigo;
+}
+
+// O CAMINHO DE VOLTA: do rótulo para os códigos que o produzem.
+//
+// Existe para o detalhamento (detalhamento.ts). A tela agrupa "CTE", "CT-E" e
+// "CTRC" numa fatia só chamada "CT-e"; ao descer para a lista de títulos, o
+// filtro precisa aceitar os três, senão a soma da tela de detalhe fica menor
+// que a fatia clicada — e um detalhe que não fecha com o total é o que ensina
+// a desconfiar do painel.
+//
+// O próprio rótulo entra na lista porque código desconhecido aparece como veio
+// (ver acima): nesse caso rótulo e código são a mesma coisa.
+export function codigosDoTipoDocumento(rotulo: string): string[] {
+  const alvo = rotulo.trim();
+  const codigos = Object.entries(ROTULO_TIPO_DOCUMENTO)
+    .filter(([, r]) => r === alvo)
+    .map(([codigo]) => codigo);
+  const proprio = alvo.toUpperCase();
+  if (!codigos.includes(proprio)) codigos.push(proprio);
+  return codigos;
 }
 
 export type FatiaComposicao = { rotulo: string; valorCents: number; quantidade: number; participacaoPercent: number };

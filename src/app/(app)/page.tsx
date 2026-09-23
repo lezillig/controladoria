@@ -147,6 +147,30 @@ export default async function ControladoriaPage({
   const ORDEM_SEVERIDADE = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
   const saldos = saldoPorContaCents(ctx);
 
+  // LINK PARA O DETALHAMENTO, preservando o recorte da tela.
+  //
+  // Empresa e competência viajam junto porque o detalhe TEM que ler o mesmo
+  // recorte do cartão: abrir a fatia de setembro da Azul e cair no grupo
+  // inteiro do mês corrente daria um total diferente do que estava na tela, e
+  // é assim que se perde a confiança no painel. `volta` devolve a pessoa para
+  // o painel no mesmo filtro em que ela estava.
+  const recorte = new URLSearchParams();
+  if (escopo.conexaoId) recorte.set("empresa", escopo.conexaoId);
+  if (periodo.competencia) recorte.set("competencia", periodo.competencia);
+  const voltaParaOPainel = recorte.size > 0 ? `/?${recorte}` : "/";
+
+  const detalhe = (campos: Record<string, string>) => {
+    const busca = new URLSearchParams({ ...Object.fromEntries(recorte), ...campos, volta: voltaParaOPainel });
+    return `/detalhamento?${busca}`;
+  };
+  // "Outros (12)" é um resto, não um filtro: não há lista que corresponda
+  // exatamente a ele, e um link que leva a outra coisa mente.
+  const comLink = (fatias: ReturnType<typeof agruparComposicao>, natureza: "PAGAR" | "RECEBER", dimensao: "tipo" | "categoria") =>
+    fatias.map((f) => ({
+      ...f,
+      href: /^Outros \(\d+\)$/.test(f.rotulo) ? undefined : detalhe({ fonte: "titulos", natureza, dimensao, valor: f.rotulo }),
+    }));
+
   const ruptura = panorama.projecao.find((p) => p.saldoProjetadoCents < 0);
 
   return (
@@ -188,9 +212,9 @@ export default async function ControladoriaPage({
           icone={<TrendingUp className="h-4 w-4" />}
         >
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por tipo de documento</p>
-          <Fatias fatias={agruparComposicao(receitaComp, "tipo", 6)} />
+          <Fatias fatias={comLink(agruparComposicao(receitaComp, "tipo", 6), "RECEBER", "tipo")} />
           <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por categoria</p>
-          <Fatias fatias={agruparComposicao(receitaComp, "categoria", 6)} />
+          <Fatias fatias={comLink(agruparComposicao(receitaComp, "categoria", 6), "RECEBER", "categoria")} />
           <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
             Composição completa e maiores títulos →
           </Link>
@@ -202,9 +226,9 @@ export default async function ControladoriaPage({
           icone={<TrendingDown className="h-4 w-4" />}
         >
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por categoria</p>
-          <Fatias fatias={agruparComposicao(despesaComp, "categoria", 8)} />
+          <Fatias fatias={comLink(agruparComposicao(despesaComp, "categoria", 8), "PAGAR", "categoria")} />
           <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por tipo de documento</p>
-          <Fatias fatias={agruparComposicao(despesaComp, "tipo", 6)} />
+          <Fatias fatias={comLink(agruparComposicao(despesaComp, "tipo", 6), "PAGAR", "tipo")} />
           <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
             Composição completa e maiores títulos →
           </Link>
@@ -221,8 +245,16 @@ export default async function ControladoriaPage({
         >
           <LinhasDeValor
             linhas={[
-              { rotulo: "Receita do mês", valor: fmtBRL(c.mesAtual.receitaCents) },
-              { rotulo: "(−) Despesa do mês", valor: fmtBRL(c.mesAtual.despesaCents) },
+              {
+                rotulo: "Receita do mês",
+                valor: fmtBRL(c.mesAtual.receitaCents),
+                href: detalhe({ fonte: "titulos", natureza: "RECEBER" }),
+              },
+              {
+                rotulo: "(−) Despesa do mês",
+                valor: fmtBRL(c.mesAtual.despesaCents),
+                href: detalhe({ fonte: "titulos", natureza: "PAGAR" }),
+              },
               {
                 rotulo: "= Resultado",
                 valor: fmtBRL(c.mesAtual.resultadoCents),
@@ -265,6 +297,7 @@ export default async function ControladoriaPage({
               valor: fmtBRL(l.saldoCents),
               detalhe: `${l.empresa}${l.inativa ? " · conta inativa" : ""}`,
               tom: l.saldoCents < 0 ? ("ruim" as const) : ("neutro" as const),
+              href: l.chave ? detalhe({ fonte: "caixa", conta: l.chave }) : undefined,
             }))}
           />
           <Link href="/fluxo-caixa" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
@@ -285,17 +318,18 @@ export default async function ControladoriaPage({
           <Fatias
             vazio="Nenhuma perda no mês."
             fatias={[
-              { rotulo: "Juros por atraso", valorCents: c.mesAtual.jurosCents },
-              { rotulo: "Multa por atraso", valorCents: c.mesAtual.multaCents },
-              { rotulo: "Tarifa bancária", valorCents: c.mesAtual.tarifaCents },
-              { rotulo: "Desconto concedido a cliente", valorCents: c.mesAtual.descontoCents },
+              { rotulo: "Juros por atraso", valorCents: c.mesAtual.jurosCents, parte: "juros" },
+              { rotulo: "Multa por atraso", valorCents: c.mesAtual.multaCents, parte: "multa" },
+              { rotulo: "Tarifa bancária", valorCents: c.mesAtual.tarifaCents, parte: "tarifa" },
+              { rotulo: "Desconto concedido a cliente", valorCents: c.mesAtual.descontoCents, parte: "desconto" },
             ]
               .filter((l) => l.valorCents > 0)
-              .map((l) => ({
+              .map(({ parte, ...l }) => ({
                 ...l,
                 quantidade: 0,
                 participacaoPercent:
                   c.mesAtual.perdaTotalCents > 0 ? (l.valorCents / c.mesAtual.perdaTotalCents) * 100 : 0,
+                href: detalhe({ fonte: "perda", parte }),
               }))}
           />
           <p className="mt-3 text-[11px] text-slate-500">

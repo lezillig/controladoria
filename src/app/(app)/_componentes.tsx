@@ -303,7 +303,11 @@ export function Fatias({
   fatias,
   vazio = "Nada no período.",
 }: {
-  fatias: { rotulo: string; valorCents: number; quantidade: number; participacaoPercent: number }[];
+  // `href` opcional: a fatia que tem para onde descer vira link — é o degrau
+  // do total para a linha (ver /detalhamento). A que não tem (o "Outros (12)",
+  // que é um resto e não um filtro) fica texto, porque um link que leva a uma
+  // lista diferente da fatia seria pior que nenhum link.
+  fatias: { rotulo: string; valorCents: number; quantidade: number; participacaoPercent: number; href?: string }[];
   vazio?: string;
 }) {
   if (fatias.length === 0) return <p className="text-xs text-slate-500">{vazio}</p>;
@@ -312,7 +316,15 @@ export function Fatias({
       {fatias.map((f) => (
         <li key={f.rotulo} className="text-xs">
           <div className="flex items-baseline justify-between gap-2">
-            <span className="truncate text-slate-700">{f.rotulo}</span>
+            <span className="truncate text-slate-700">
+              {f.href ? (
+                <Link href={f.href} className="hover:underline">
+                  {f.rotulo}
+                </Link>
+              ) : (
+                f.rotulo
+              )}
+            </span>
             <span className="shrink-0 tabular-nums text-slate-900">
               {fmtBRLCompacto(f.valorCents)}
               <span className="ml-1 text-slate-400">{fmtPercent(f.participacaoPercent, 0)}</span>

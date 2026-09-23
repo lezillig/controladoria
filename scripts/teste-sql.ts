@@ -280,6 +280,93 @@ async function principal() {
   conferir("campo calculado é atualizado", lote2[0].valorCents, 99_999);
   await prisma.auditFinding.deleteMany({ where: { companyId: EMPRESA } });
 
+  // ------------------------------------------------------------------ detalhe
+  // O INVARIANTE DO DETALHAMENTO: a lista de linhas soma o mesmo que a fatia
+  // que a abriu. As duas consultas são escritas à mão, em arquivos diferentes,
+  // e é só isto que as amarra — um TRIM a mais num lado, um filtro de
+  // cancelado esquecido no outro, e o painel passa a discordar de si mesmo sem
+  // erro nenhum aparecer. Por isso o teste compara os dois números entre si, e
+  // não contra uma constante: constante eu teria ajustado para o valor errado
+  // sem perceber.
+  //
+  // FIXTURES PRÓPRIAS, em junho: o bloco de histórico acima apaga os títulos do
+  // fornecedor F1 no meio do caminho, e escrever este teste em cima do que
+  // sobrou foi exatamente como ele nasceu passando em cima de base vazia.
+  {
+    const { composicaoDoPeriodo, agruparComposicao } = await import("../src/lib/controladoria/composicao");
+    const { detalharTitulos } = await import("../src/lib/controladoria/detalhamento");
+
+    const emJunho = {
+      companyId: EMPRESA,
+      conexaoId: conexao.id,
+      conexaoApelido: "TESTE",
+      natureza: "PAGAR" as const,
+      status: "ABERTO",
+      parceiroCodigo: "F9",
+      parceiroNome: "Posto Junho",
+      categoriaCodigo: "C1",
+      categoriaDescricao: "Combustível",
+    };
+    await prisma.omieTitulo.createMany({
+      data: [
+        { ...emJunho, codigoLancamento: "j1", dataEmissao: new Date(2026, 5, 5), dataVencimento: new Date(2026, 5, 15), valorDocumentoCents: 100_000 },
+        { ...emJunho, codigoLancamento: "j2", dataEmissao: new Date(2026, 5, 30, 23, 30), dataVencimento: new Date(2026, 6, 10), valorDocumentoCents: 50_000 },
+        // Cancelado: não entra em nenhum dos dois lados.
+        { ...emJunho, codigoLancamento: "j3", dataEmissao: new Date(2026, 5, 20), dataVencimento: new Date(2026, 5, 25), valorDocumentoCents: 999_999, cancelado: true },
+        // Categoria com espaço sobrando: o painel mostra "Combustível" (o
+        // agrupamento faz trim), e o detalhe precisa achar este título também.
+        { ...emJunho, codigoLancamento: "j4", categoriaDescricao: "  Combustível  ", dataEmissao: new Date(2026, 5, 7), dataVencimento: new Date(2026, 5, 17), valorDocumentoCents: 11_000 },
+        // Dois códigos de tipo que viram o MESMO rótulo "CT-e". É o caso que
+        // `codigosDoTipoDocumento` existe para cobrir.
+        { ...emJunho, codigoLancamento: "j5", tipoDocumento: "CTE", dataEmissao: new Date(2026, 5, 10), dataVencimento: new Date(2026, 5, 20), valorDocumentoCents: 70_000 },
+        { ...emJunho, codigoLancamento: "j6", tipoDocumento: "CT-E", dataEmissao: new Date(2026, 5, 11), dataVencimento: new Date(2026, 5, 21), valorDocumentoCents: 20_000 },
+        // Sem emissão: a competência cai no vencimento, nos dois lados.
+        { ...emJunho, codigoLancamento: "j7", categoriaCodigo: "C2", categoriaDescricao: "Manutenção", dataVencimento: new Date(2026, 5, 8), valorDocumentoCents: 30_000 },
+      ],
+    });
+
+    const junho = { inicio: new Date(2026, 5, 1), fim: new Date(2026, 5, 30, 23, 59, 59, 999), rotulo: "junho/2026" };
+    const escopo = { companyId: EMPRESA, conexaoId: conexao.id, periodo: junho, natureza: "PAGAR" as const };
+
+    const comp = await composicaoDoPeriodo(escopo);
+    conferir("a composição do mês soma os não cancelados", comp.totalCents, 281_000);
+
+    const combustivel = agruparComposicao(comp, "categoria", 8).find((f) => f.rotulo === "Combustível");
+    const detCategoria = await detalharTitulos({ ...escopo, dimensao: "categoria", valor: "Combustível" });
+    conferir("detalhe por categoria soma o mesmo que a fatia", detCategoria.totalCents, combustivel?.valorCents);
+    conferir("e traz a mesma quantidade de títulos", detCategoria.quantidade, combustivel?.quantidade);
+    conferir("inclusive o de categoria com espaço sobrando", detCategoria.totalCents, 251_000);
+    conferir(
+      "a lista vem da maior para a menor",
+      detCategoria.linhas.map((l) => l.valorCents),
+      [100_000, 70_000, 50_000, 20_000, 11_000]
+    );
+    conferir("com parceiro, para a conferência", detCategoria.linhas[0]?.parceiro, "Posto Junho");
+
+    // "CTE" e "CT-E" são uma fatia só no painel; o detalhe tem que trazer as duas.
+    const cte = agruparComposicao(comp, "tipo", 8).find((f) => f.rotulo === "CT-e");
+    const detCte = await detalharTitulos({ ...escopo, dimensao: "tipo", valor: "CT-e" });
+    conferir("dois códigos, um rótulo: o detalhe soma os dois", detCte.totalCents, cte?.valorCents);
+    conferir("e o valor é a soma deles", detCte.totalCents, 90_000);
+
+    // Sem tipo preenchido: o filtro precisa entender nulo.
+    const semTipo = agruparComposicao(comp, "tipo", 8).find((f) => f.rotulo === "Sem tipo");
+    const detSemTipo = await detalharTitulos({ ...escopo, dimensao: "tipo", valor: "Sem tipo" });
+    conferir("detalhe de 'Sem tipo' soma o mesmo que a fatia", detSemTipo.totalCents, semTipo?.valorCents);
+    conferir("e não é zero", detSemTipo.totalCents, 191_000);
+
+    // Sem fatia: é o total do cartão inteiro.
+    const detTudo = await detalharTitulos({ ...escopo, dimensao: null });
+    conferir("sem fatia, soma o total da composição", detTudo.totalCents, comp.totalCents);
+    conferir("e conta todos os títulos do mês", detTudo.quantidade, 6);
+
+    // A natureza do outro lado não empresta título nenhum.
+    const detReceber = await detalharTitulos({ ...escopo, natureza: "RECEBER", dimensao: null });
+    conferir("a receber não traz os títulos a pagar", [detReceber.quantidade, detReceber.totalCents], [0, 0]);
+
+    await prisma.omieTitulo.deleteMany({ where: { companyId: EMPRESA, parceiroCodigo: "F9" } });
+  }
+
   await limpar();
 }
 

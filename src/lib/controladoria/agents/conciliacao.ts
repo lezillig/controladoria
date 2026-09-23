@@ -388,7 +388,7 @@ function saldoAbaixoDoMinimo(ctx: ContextoAuditoria): AchadoNovo[] {
 // não está no cadastro vira uma linha própria em vez de sumir.
 export function saldoPorContaCents(
   ctx: ContextoAuditoria
-): { conta: string; empresa: string; inativa: boolean; saldoCents: number }[] {
+): { chave: string; conta: string; empresa: string; inativa: boolean; saldoCents: number }[] {
   const movimentado = new Map<string, number>();
   for (const m of ctx.movimentos) {
     if (m.data > ctx.dataReferencia) continue;
@@ -401,6 +401,9 @@ export function saldoPorContaCents(
     const mov = movimentado.get(chave) ?? 0;
     movimentado.delete(chave);
     return {
+      // `conexaoId:codigo` — o código da conta é único por conexão, não no
+      // grupo, e é o que o detalhamento precisa para achar o extrato certo.
+      chave,
       conta: c.descricao,
       empresa: c.conexaoApelido,
       inativa: c.inativa,
@@ -411,7 +414,7 @@ export function saldoPorContaCents(
   let semCadastro = 0;
   for (const v of movimentado.values()) semCadastro += v;
   if (semCadastro !== 0) {
-    linhas.push({ conta: "Conta não cadastrada no espelho", empresa: "—", inativa: false, saldoCents: semCadastro });
+    linhas.push({ chave: "", conta: "Conta não cadastrada no espelho", empresa: "—", inativa: false, saldoCents: semCadastro });
   }
 
   return linhas.filter((l) => l.saldoCents !== 0).sort((a, b) => b.saldoCents - a.saldoCents);
