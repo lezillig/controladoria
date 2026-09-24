@@ -234,7 +234,10 @@ export function avaliarQualidadeDaBase(ctx: ContextoAuditoria): QualidadeDaBase 
   if (syncAtrasadoDias === null) {
     score -= 10;
     limitacoes.push("Sem registro de sincronização concluída — os dados podem não refletir D-1.");
-  } else if (syncAtrasadoDias > 2) {
+    // DOIS dias, não três. O ciclo é diário: com `> 2` o aviso só aparecia no
+    // terceiro dia parado, e dois ciclos perdidos passavam em silêncio atrás
+    // de um cabeçalho que continuava anunciando D-1.
+  } else if (syncAtrasadoDias > 1) {
     score -= Math.min(30, syncAtrasadoDias * 5);
     limitacoes.push(`Última sincronização há ${syncAtrasadoDias} dias — a base não está em D-1.`);
   }

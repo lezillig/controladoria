@@ -6,7 +6,8 @@ import { montarPanorama } from "@/lib/controladoria/analytics";
 import { saldoPorContaCents } from "@/lib/controladoria/agents/conciliacao";
 import { agruparComposicao, composicaoDoPeriodo } from "@/lib/controladoria/composicao";
 import { medirBsc, PERSPECTIVAS } from "@/lib/controladoria/bsc";
-import { fmtBRL, fmtData, fmtNumero, fmtPercent, fmtVariacao } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent, fmtVariacao } from "@/lib/controladoria/format";
+import { inicioDoDia, somarDias } from "@/lib/controladoria/periodos";
 import { avaliarQualidadeDaBase } from "@/lib/controladoria/supervisor";
 import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { rotuloCompetencia } from "@/lib/conformidade/tipos";
@@ -117,11 +118,16 @@ export default async function ControladoriaPage({
     .filter((g) => g.severidade === "CRITICA" || g.severidade === "ALTA")
     .reduce((acc, g) => acc + g._count, 0);
   const totalFraude = contagemAchados.filter((g) => g.categoria === "FRAUDE").reduce((acc, g) => acc + g._count, 0);
+  // `finalizadoEm` quando existe: é o fim do ciclo, não o começo. Um ciclo que
+  // começou e morreu no meio não torna a base atual, e usar `iniciadoEm` aqui
+  // faria o cabeçalho dar por atualizado justamente o caso que ele existe para
+  // mostrar.
+  const ultimoSyncEm = ctx.ultimoSyncConcluido?.finalizadoEm ?? null;
 
   if (!qualidade.temTitulos) {
     return (
       <div className={larguraPainel}>
-        <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} />
+        <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} ultimoSync={ultimoSyncEm} />
         <AvisoVazio
           titulo="Nenhum dado da Omie ainda"
           descricao="O sistema espelha o ERP para poder auditar. Cadastre as conexões das empresas do grupo e rode a primeira sincronização — a carga histórica roda em segundo plano, mês a mês, e o relatório diário passa a sair sozinho a partir do dia seguinte."
@@ -175,7 +181,7 @@ export default async function ControladoriaPage({
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
-      <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} />
+      <Cabecalho dataReferencia={ctx.dataReferencia} competencia={periodo.competencia} ultimoSync={ultimoSyncEm} />
 
       <Filtros
         conexoes={ctx.conexoes}
@@ -676,7 +682,30 @@ function NumeroConformidade({
 // Um painel de competência passada exibindo "(D-1)" convidaria alguém a ler os
 // números de março como se fossem de hoje. A data de referência precisa dizer
 // em voz alta que recorte está na tela.
-function Cabecalho({ dataReferencia, competencia }: { dataReferencia: Date; competencia: string | null }) {
+// A DATA DO CABEÇALHO ERA UMA PROMESSA, NÃO UM FATO.
+//
+// "dados de 22/09 (D-1)" é conta de relógio: D-1 de agora, sempre, tenha o
+// ciclo rodado ou não. Quando o ciclo falha, a frase continua idêntica e o
+// painel segue afirmando uma atualidade que ninguém conferiu — e o aviso de
+// base desatualizada só aparecia depois de TRÊS dias parado.
+//
+// Agora o cabeçalho diz as duas coisas: a referência pedida e quando o ciclo
+// de fato terminou. Quando a segunda não cobre a primeira, isso fica escrito
+// aqui, com o caminho para resolver ao lado — é a primeira linha da tela, que
+// é onde a pergunta "isto está atualizado?" nasce.
+function Cabecalho({
+  dataReferencia,
+  competencia,
+  ultimoSync,
+}: {
+  dataReferencia: Date;
+  competencia: string | null;
+  ultimoSync: Date | null;
+}) {
+  // O ciclo da referência D roda em D+1. A base cobre D quando a última
+  // execução concluída terminou depois da virada de D+1.
+  const cobre = ultimoSync !== null && ultimoSync >= somarDias(inicioDoDia(dataReferencia), 1);
+
   return (
     <div>
       <h1 className="text-xl font-semibold text-slate-900">Controladoria</h1>
@@ -686,6 +715,22 @@ function Cabecalho({ dataReferencia, competencia }: { dataReferencia: Date; comp
           ? `competência ${rotuloCompetencia(dataReferencia)}, fechada em ${fmtData(dataReferencia)}.`
           : `dados de ${fmtData(dataReferencia)} (D-1).`}
       </p>
+      {cobre ? (
+        <p className="mt-1 text-xs text-slate-400">
+          Última sincronização concluída em {fmtDataHora(ultimoSync)}.
+        </p>
+      ) : (
+        <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <strong>A base ainda não tem {fmtData(dataReferencia)}.</strong>{" "}
+          {ultimoSync
+            ? `O último ciclo concluído terminou em ${fmtDataHora(ultimoSync)}, antes desta referência — os números abaixo são os da leitura anterior.`
+            : "Nenhum ciclo concluído foi registrado — os números abaixo podem não refletir a Omie."}{" "}
+          <Link href="/sincronizacao" className="font-medium underline">
+            Sincronizar agora
+          </Link>
+          .
+        </p>
+      )}
     </div>
   );
 }
