@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import { sugerirAlcadas } from "@/lib/controladoria/agents/oportunidades";
-import { fmtBRL, fmtData, fmtDiaDoInstante } from "@/lib/controladoria/format";
+import { fmtBRL, fmtDiaDoInstante } from "@/lib/controladoria/format";
 import { Secao, Tabela } from "../_componentes";
 import { exigirPermissao } from "../_dados";
 import ConfiguracaoForm from "./ConfiguracaoForm";
