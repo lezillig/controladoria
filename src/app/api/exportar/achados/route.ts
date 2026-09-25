@@ -47,7 +47,10 @@ export async function GET(req: NextRequest) {
 
   const achados = await prisma.auditFinding.findMany({
     where,
-    orderBy: [{ severidade: "asc" }, { impactoCents: "desc" }, { detectadoEm: "desc" }],
+    // A MESMA ORDEM DA TELA: do mais recente para o mais antigo. Planilha que
+    // sai em ordem diferente da lista que a gerou é planilha que ninguém
+    // consegue conferir contra a tela.
+    orderBy: [{ detectadoEm: "desc" }, { severidade: "asc" }, { impactoCents: "desc" }],
     take: LIMITE,
     select: {
       id: true,

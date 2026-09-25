@@ -74,7 +74,19 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
   const [achados, contagens, porRegra, porAgente] = await Promise.all([
     prisma.auditFinding.findMany({
       where,
-      orderBy: [{ severidade: "asc" }, { impactoCents: "desc" }, { detectadoEm: "desc" }],
+      // DO MAIS RECENTE PARA O MAIS ANTIGO, em qualquer filtro — em aberto,
+      // resolvidos, não se aplica ou todos. A data é a MESMA que o cartão
+      // exibe ("detectado em"), para a ordem da lista ser conferível olhando:
+      // ordenar por um campo invisível faz a tela parecer desordenada.
+      //
+      // A severidade continua decidindo o desempate dentro do mesmo instante —
+      // uma execução do ciclo grava dezenas de achados no mesmo segundo, e ali
+      // o crítico aparece antes do informativo.
+      //
+      // CONSEQUÊNCIA DO CORTE DE 300: a página passa a trazer os 300 MAIS
+      // RECENTES, e não os 300 mais graves. Com a base grande, um crítico
+      // antigo só aparece filtrando por severidade ou categoria.
+      orderBy: [{ detectadoEm: "desc" }, { severidade: "asc" }, { impactoCents: "desc" }],
       take: 300,
     }),
     prisma.auditFinding.groupBy({
