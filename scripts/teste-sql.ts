@@ -367,6 +367,135 @@ async function principal() {
     await prisma.omieTitulo.deleteMany({ where: { companyId: EMPRESA, parceiroCodigo: "F9" } });
   }
 
+  // ------------------------------------------------- títulos do contexto
+  // A CONSULTA MAIS CARA DO MÓDULO FOI PARA SQL CRU (ver contexto.ts): 3,3x
+  // mais rápida que o cliente do Prisma com as mesmas linhas. O que torna a
+  // troca segura não é a leitura do código — é este caso.
+  //
+  // Ele roda as DUAS consultas contra o mesmo banco e exige linhas idênticas,
+  // campo a campo. Uma coluna nova no schema, um `@map`, um tipo que o driver
+  // devolva diferente: qualquer um quebra aqui, e não em produção com o
+  // número errado na tela.
+  {
+    const { Prisma: P } = await import("@prisma/client");
+    const { tabela } = await import("../src/lib/esquemaDoBanco");
+
+    const cx2 = await prisma.omieConexao.create({
+      data: { companyId: EMPRESA, nome: "Espelho LTDA", apelido: "ESP", credencialRef: "ESP" },
+    });
+    const comum = {
+      companyId: EMPRESA,
+      conexaoId: cx2.id,
+      conexaoApelido: "ESP",
+      natureza: "PAGAR" as const,
+      status: "ABERTO",
+    };
+    await prisma.omieTitulo.createMany({
+      data: [
+        // Um de cada forma que o registro aparece: cheio, com nulos, com
+        // acento e aspas no texto, cancelado, liquidado, valor negativo.
+        { ...comum, codigoLancamento: "r1", parceiroNome: "Café & Cia \"Ltda\"", parceiroDocumento: "12345678000199",
+          numeroDocumento: "NF 1", numeroParcela: "1/3", tipoDocumento: "CTE", categoriaCodigo: "C1",
+          categoriaDescricao: "Combustível", departamentoCodigo: "D1", projetoCodigo: "PJ1", contaCorrenteCodigo: "100",
+          observacao: "linha com\nquebra", origem: "APIP", usuarioInclusao: "WEBSERVICE",
+          dataEmissao: new Date(2026, 6, 1), dataVencimento: new Date(2026, 6, 10),
+          dataUltimaBaixa: new Date(2026, 6, 15), alteradoEmOmie: new Date(2026, 6, 16),
+          valorDocumentoCents: 123_456, saldoCents: 1, valorPagoCents: 123_456,
+          jurosCents: 1, multaCents: 2, descontoCents: 3, tarifaCents: 4,
+          retencaoIrCents: 5, retencaoIssCents: 6, retencaoPisCents: 7,
+          retencaoCofinsCents: 8, retencaoCsllCents: 9, retencaoInssCents: 10,
+          liquidado: true },
+        // Tudo que é opcional, nulo.
+        { ...comum, codigoLancamento: "r2", dataVencimento: new Date(2026, 6, 20), valorDocumentoCents: -5_000 },
+        // Cancelado e liquidado: entra pela janela, não pelo "em aberto".
+        { ...comum, codigoLancamento: "r3", dataVencimento: new Date(2026, 6, 25), valorDocumentoCents: 7_000,
+          cancelado: true, liquidado: true },
+        // Em aberto FORA da janela: só entra pela terceira condição do OR.
+        { ...comum, codigoLancamento: "r4", dataVencimento: new Date(2020, 0, 5), valorDocumentoCents: 9_000 },
+        // Liquidado fora da janela: não entra por nenhuma.
+        { ...comum, codigoLancamento: "r5", dataVencimento: new Date(2020, 0, 6), valorDocumentoCents: 11_000,
+          liquidado: true },
+      ],
+    });
+
+    const desde = new Date(2026, 6, 1);
+    // As duas formas da consulta de produção: com `ate` (usa `Prisma.sql`) e
+    // sem (usa `Prisma.empty`). O fragmento no lugar errado quebra o SQL, e é
+    // o tipo de erro que só aparece no caminho que ninguém testou.
+    const carregar = async (ate: Date | null) => {
+      const janela = ate ? { gte: desde, lte: ate } : { gte: desde };
+      const porCliente = await prisma.omieTitulo.findMany({
+        where: {
+          companyId: EMPRESA,
+          conexaoId: cx2.id,
+          OR: [{ dataVencimento: janela }, { dataEmissao: janela }, { liquidado: false, cancelado: false }],
+        },
+        orderBy: { dataVencimento: "asc" },
+      });
+      const porSql = await prisma.$queryRaw<(typeof porCliente)[number][]>`
+        SELECT t.* FROM ${tabela("OmieTitulo")} t
+         WHERE t."companyId" = ${EMPRESA}
+           ${cx2.id ? P.sql`AND t."conexaoId" = ${cx2.id}` : P.empty}
+           AND (
+                (t."dataVencimento" >= ${desde} ${ate ? P.sql`AND t."dataVencimento" <= ${ate}` : P.empty})
+             OR (t."dataEmissao"    >= ${desde} ${ate ? P.sql`AND t."dataEmissao"    <= ${ate}` : P.empty})
+             OR (t.liquidado = false AND t.cancelado = false)
+           )
+         ORDER BY t."dataVencimento" ASC
+      `;
+      return { porCliente, porSql };
+    };
+
+    // COMPARAÇÃO POR VALOR, NÃO POR ORDEM DE COLUNA. O cliente do Prisma
+    // devolve os campos na ordem do schema; `SELECT t.*` devolve na ordem
+    // física da tabela, que é a ordem em que as migrações criaram as colunas.
+    // As duas listas de chaves são conferidas em separado logo abaixo; aqui o
+    // que interessa é o conteúdo de cada campo.
+    const porValor = (linhas: unknown[]) =>
+      JSON.stringify(
+        linhas.map((l) => {
+          const linha = l as Record<string, unknown>;
+          return Object.keys(linha)
+            .sort()
+            .map((k) => [k, linha[k]]);
+        })
+      );
+
+    const { porCliente, porSql } = await carregar(new Date(2026, 6, 31));
+
+    conferir("as duas consultas trazem a mesma quantidade", porSql.length, porCliente.length);
+    conferir("e são os títulos certos", porSql.map((t) => t.codigoLancamento), ["r4", "r1", "r2", "r3"]);
+    conferir("o liquidado fora da janela fica de fora", porSql.some((t) => t.codigoLancamento === "r5"), false);
+    // A comparação que importa: campo a campo, incluindo nulos, datas,
+    // booleanos e texto com acento e quebra de linha.
+    conferir("linha a linha, campo a campo, idênticas", porValor(porSql), porValor(porCliente));
+
+    // E a mesma exigência sem o fim da janela, onde o fragmento vira vazio.
+    const aberta = await carregar(null);
+    conferir("sem fim de janela, idênticas também", porValor(aberta.porSql), porValor(aberta.porCliente));
+    conferir("e a janela aberta traz os mesmos títulos", aberta.porSql.length, porSql.length);
+    // E os tipos de verdade, que JSON esconde: Date é Date, não string.
+    conferir("data volta como Date", porSql[0]?.dataVencimento instanceof Date, true);
+    conferir("inteiro volta como number", typeof porSql.find((t) => t.codigoLancamento === "r1")?.valorDocumentoCents, "number");
+    conferir("booleano volta como boolean", typeof porSql[0]?.cancelado, "boolean");
+    conferir("nulo continua nulo", porSql.find((t) => t.codigoLancamento === "r2")?.categoriaCodigo, null);
+    conferir("enum volta como o mesmo texto", porSql[0]?.natureza, "PAGAR");
+    conferir(
+      "negativo preserva o sinal",
+      porSql.find((t) => t.codigoLancamento === "r2")?.valorDocumentoCents,
+      -5_000
+    );
+
+    // TODA coluna do modelo tem que vir: `SELECT t.*` traz o que existe no
+    // BANCO, e se o schema ganhar uma coluna que a migração não aplicou, é
+    // aqui que aparece.
+    const colunas = Object.keys(porCliente[0] ?? {}).sort();
+    conferir("nenhuma coluna a menos no SQL cru", Object.keys(porSql[0] ?? {}).sort(), colunas);
+
+    await prisma.omieTitulo.deleteMany({ where: { conexaoId: cx2.id } });
+    await prisma.omieConexao.delete({ where: { id: cx2.id } });
+  }
+
   await limpar();
 }
 

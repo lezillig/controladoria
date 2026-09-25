@@ -1,5 +1,7 @@
-import type { ControladoriaConfig } from "@prisma/client";
+import { Prisma } from "@prisma/client";
+import type { ControladoriaConfig, OmieTitulo } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
 import { parseLocalDate } from "@/lib/date";
 import {
   disponibilidadeGestao,
@@ -138,17 +140,39 @@ export async function carregarContexto(
     // de fora dela. Um título vencido há dois anos é o registro mais grave da
     // base — e some da tela de atrasos justamente por ser antigo, que é o
     // oposto do que uma auditoria deve fazer.
-    prisma.omieTitulo.findMany({
-      where: {
-        ...escopo,
-        OR: [
-          { dataVencimento: recorteDeData },
-          { dataEmissao: recorteDeData },
-          { liquidado: false, cancelado: false },
-        ],
-      },
-      orderBy: { dataVencimento: "asc" },
-    }),
+    // SQL CRU, E NÃO O CLIENTE DO PRISMA — a única consulta do sistema em que
+    // isso se justifica, e o motivo está medido.
+    //
+    // Esta é a consulta mais cara do módulo: ela abre TODA tela, e traz dezenas
+    // de milhares de linhas. Em Postgres local com 50 mil títulos, mediana de
+    // cinco rodadas alternadas (scripts/bench-contexto.ts):
+    //
+    //   prisma.omieTitulo.findMany  4.037 a 4.206 ms
+    //   $queryRaw, mesmas colunas   1.221 a 1.516 ms   → ~3x
+    //
+    // Mesmo banco, mesmo plano, mesmas linhas: a diferença é a hidratação de
+    // 50 mil objetos pelo cliente. Projetar colunas foi tentado antes e não
+    // rendeu nada (o código lê 47 das 51), e índice não ajuda porque a consulta
+    // traz quase a tabela inteira — está no histórico do repositório para
+    // ninguém refazer o caminho.
+    //
+    // O QUE TORNA ISTO SEGURO: `OmieTitulo` não tem `@map`, então o nome da
+    // coluna no banco é o nome do campo no tipo, e `int4`, `bool`, `text` e
+    // `timestamp` já voltam como number, boolean, string e Date. O que sustenta
+    // a equivalência não é este comentário: é o caso em `scripts/teste-sql.ts`
+    // que roda as duas consultas contra o mesmo banco e exige linhas idênticas,
+    // campo a campo — uma coluna nova no schema quebra ali, não em produção.
+    prisma.$queryRaw<OmieTitulo[]>`
+      SELECT t.* FROM ${tabela("OmieTitulo")} t
+       WHERE t."companyId" = ${companyId}
+         ${conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty}
+         AND (
+              (t."dataVencimento" >= ${desde} ${ate ? Prisma.sql`AND t."dataVencimento" <= ${ate}` : Prisma.empty})
+           OR (t."dataEmissao"    >= ${desde} ${ate ? Prisma.sql`AND t."dataEmissao"    <= ${ate}` : Prisma.empty})
+           OR (t.liquidado = false AND t.cancelado = false)
+         )
+       ORDER BY t."dataVencimento" ASC
+    `,
     // AS BAIXAS DOS TÍTULOS CARREGADOS, e não "as baixas desde a janela". Um
     // título de fevereiro pago em parte em dezembro tinha só a baixa de
     // janeiro aqui, e a regra de divergência lia "falta baixa no espelho". A

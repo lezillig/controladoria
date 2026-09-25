@@ -103,7 +103,17 @@ async function principal() {
   const recorte = { gte: desde };
   const escopo = { companyId: EMPRESA };
 
+  const { Prisma } = await import("@prisma/client");
+  const { tabela } = await import("../src/lib/esquemaDoBanco");
   const resultados = [
+    await medir("títulos via $queryRaw (mesmas colunas)", () =>
+      prisma.$queryRaw(Prisma.sql`
+        SELECT * FROM ${tabela("OmieTitulo")} t
+         WHERE t."companyId" = ${EMPRESA}
+           AND (t."dataVencimento" >= ${desde} OR t."dataEmissao" >= ${desde}
+                OR (t.liquidado = false AND t.cancelado = false))
+         ORDER BY t."dataVencimento" ASC`)
+    ),
     await medir("títulos (janela + tudo em aberto)", () =>
       prisma.omieTitulo.findMany({
         where: { ...escopo, OR: [{ dataVencimento: recorte }, { dataEmissao: recorte }, { liquidado: false, cancelado: false }] },
