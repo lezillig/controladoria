@@ -1,15 +1,17 @@
-import { montarComparativo, ranking } from "@/lib/controladoria/analytics";
-import { montarDre, montarDreAnual } from "@/lib/controladoria/dre";
+import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
+import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
+import { montarDreNoBanco, montarDreAnualNoBanco } from "@/lib/controladoria/dreNoBanco";
 import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
-import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
+import { ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
+import { analisarEstrategiaNoBanco } from "@/lib/controladoria/estrategiaCustoNoBanco";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import {
   anosDisponiveis,
   competenciasDisponiveis,
-  contextoDaPagina,
+  escopoDaPagina,
   podeAcao,
   resolverAno,
   resolverPeriodo,
@@ -56,6 +58,11 @@ export default async function CustosPage({
   // títulos em toda abertura de tela foi o que já esgotou a franquia de
   // transferência do banco uma vez, derrubando junto o sistema de gestão que
   // divide o mesmo Postgres. Quem pede o ano paga pelo ano.
+  //
+  // "Carregar" aqui já não significa trazer linha: desde que as somas passaram
+  // para o banco (ver dreNoBanco.ts), o que a janela faz é RECORTAR o que a
+  // soma enxerga — o mesmo recorte que o contexto aplicaria, para os números
+  // continuarem exatamente os de antes.
   const anual = params.visao === "ano";
   // NA VISÃO ANUAL O MESMO PARÂMETRO CARREGA UM ANO, não uma competência —
   // "2026" em vez de "2026-07". A caixa de seleção é a mesma; o que ela oferece
@@ -70,23 +77,39 @@ export default async function CustosPage({
   // em vez de três. É o custo do comparativo ano contra ano, e ele é pago só
   // aqui: nenhuma outra tela precisa dessa profundidade.
   const referenciaProvisoria = resolverPeriodo(anual ? `${anoDaTela}-12` : params.competencia).dataReferencia;
-  const { session, ctx, escopo, periodo } = await contextoDaPagina(
+  const { session, escopo, periodo, config, conexoes } = await escopoDaPagina(
     "custos",
     params.empresa,
-    anual ? `${anoDaTela}-12` : params.competencia,
-    anual
-      ? new Date(anoDaTela, 0, 1)
-      : new Date(referenciaProvisoria.getFullYear() - 1, referenciaProvisoria.getMonth(), 1)
+    anual ? `${anoDaTela}-12` : params.competencia
   );
+  const desde = anual
+    ? new Date(anoDaTela, 0, 1)
+    : new Date(referenciaProvisoria.getFullYear() - 1, referenciaProvisoria.getMonth(), 1);
+  const escopoSql = {
+    companyId: session.companyId,
+    conexaoId: escopo.conexaoId,
+    janela: { desde, ate: null },
+  };
   const regime = resolverRegime(params.regime);
   const podeClassificar = await podeAcao(session, "classificar-dre");
 
-  const comparativo = await montarComparativo(ctx);
+  const [comparativo, guardadas, categorias] = await Promise.all([
+    comparativoDoEscopo({
+      companyId: session.companyId,
+      conexaoId: escopo.conexaoId,
+      dataReferencia: periodo.dataReferencia,
+      dataInicioBase: config.dataInicioBase,
+    }),
+    prisma.dreClassificacao.findMany({
+      where: { companyId: session.companyId },
+      select: { categoriaCodigo: true, linha: true, subgrupo: true, origem: true },
+    }),
+    prisma.omieCategoria.findMany({
+      where: { companyId: session.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
+      select: { codigo: true, codigoDre: true, tipoCategoria: true, contaReceita: true, contaDespesa: true },
+    }),
+  ]);
 
-  const guardadas = await prisma.dreClassificacao.findMany({
-    where: { companyId: ctx.companyId },
-    select: { categoriaCodigo: true, linha: true, subgrupo: true, origem: true },
-  });
   const classificacoes = new Map(
     guardadas.map((c) => [
       c.categoriaCodigo,
@@ -97,7 +120,7 @@ export default async function CustosPage({
   // e mandar o cadastro inteiro de categorias para o navegador só para extrair
   // quatro campos seria carga que ninguém vê e todos pagam.
   const marcasPorCategoria: Record<string, string> = {};
-  for (const c of ctx.categorias) {
+  for (const c of categorias) {
     const marcas = [
       c.codigoDre ? `DRE ${c.codigoDre}` : null,
       c.tipoCategoria,
@@ -109,19 +132,19 @@ export default async function CustosPage({
   const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
 
   const dreAnual = anual
-    ? montarDreAnual(ctx, anoDaTela, classificacoes, {
-        somarRetencoes: ctx.config.retencoesNasDeducoes,
+    ? await montarDreAnualNoBanco(escopoSql, anoDaTela, periodo.dataReferencia, classificacoes, {
+        somarRetencoes: config.retencoesNasDeducoes,
         regime,
       })
     : null;
 
-  const dre = montarDre(
-    ctx,
+  const dre = await montarDreNoBanco(
+    escopoSql,
     comparativo.janelas.mesAtual,
     comparativo.janelas.mesAnterior,
     classificacoes,
     {
-      somarRetencoes: ctx.config.retencoesNasDeducoes,
+      somarRetencoes: config.retencoesNasDeducoes,
       regime,
       periodoAnoAnterior: anual ? undefined : mesmoMesAnoAnterior(comparativo.janelas.mesAtual),
     }
@@ -166,8 +189,10 @@ export default async function CustosPage({
     .filter((l) => l.tipo === "GRUPO" && l.chave !== "RECEITA_BRUTA" && l.chave !== "RECEITA_FINANCEIRA")
     .reduce((a, l) => a + l.valorCents, 0);
 
-  const fornecedores = ranking(ctx, comparativo.janelas.mesAtual, "PAGAR", 15);
-  const estrategia = analisarEstrategiaDeCusto(ctx);
+  const [fornecedores, estrategia] = await Promise.all([
+    rankingNoBanco(escopoSql, comparativo.janelas.mesAtual, "PAGAR", 15),
+    analisarEstrategiaNoBanco(escopoSql, periodo.dataReferencia),
+  ]);
 
   const filtros = new URLSearchParams();
   if (escopo.conexaoId) filtros.set("empresa", escopo.conexaoId);
@@ -191,7 +216,7 @@ export default async function CustosPage({
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {comparativo.janelas.mesAtual.rotulo} até {fmtData(ctx.dataReferencia)}, comparado ao mês anterior inteiro.
+            {comparativo.janelas.mesAtual.rotulo} até {fmtData(periodo.dataReferencia)}, comparado ao mês anterior inteiro.
             {regime === "caixa"
               ? "Regime de CAIXA: entra o que foi pago ou recebido no mês, pela data da baixa."
               : "Regime de COMPETÊNCIA, pela data de emissão do documento."}
@@ -262,9 +287,9 @@ export default async function CustosPage({
       </div>
 
       <Filtros
-        conexoes={ctx.conexoes}
+        conexoes={conexoes}
         empresaAtiva={escopo.conexaoId}
-        competencias={anual ? anosDisponiveis(ctx.config.dataInicioBase) : competenciasDisponiveis(ctx.config.dataInicioBase)}
+        competencias={anual ? anosDisponiveis(config.dataInicioBase) : competenciasDisponiveis(config.dataInicioBase)}
         competenciaAtiva={anual ? (anoDaTela === new Date().getFullYear() ? null : String(anoDaTela)) : periodo.competencia}
         regimeAtivo={regime}
         rotuloPeriodo={anual ? "Ano" : "Competência"}

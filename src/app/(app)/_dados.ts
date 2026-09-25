@@ -4,8 +4,9 @@ import { requireRole } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/auth";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { fimDoMes, inicioDoDia, rotuloMes } from "@/lib/controladoria/periodos";
-import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
+import { carregarContexto, garantirConfig, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import type { ContextoAuditoria } from "@/lib/controladoria/types";
+import type { ControladoriaConfig, OmieConexao } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolverAcesso, type AcessoResolvido, type Permissao } from "@/lib/acessos";
 
@@ -113,6 +114,43 @@ export async function contextoDaPagina(
     desde: desdeParam ?? janelaDeAuditoria(periodo.dataReferencia),
   });
   return { session, ctx, escopo, periodo };
+}
+
+// A PORTA DE ENTRADA DAS TELAS QUE SÓ PRECISAM DE SOMAS.
+//
+// `contextoDaPagina` carrega as linhas — títulos, baixas, notas, parceiros —
+// porque os agentes precisam delas. A tela de Custos e DRE não precisa de linha
+// nenhuma: ela exibe quarenta somas, e carregava treze meses de títulos para
+// chegar a elas. Em Postgres local com 50 mil títulos, as linhas custam
+// 1.040 ms e as somas 24 ms; pela rede a diferença é entre dezenas de
+// megabytes e alguns kilobytes.
+//
+// O que esta função devolve é o mínimo que qualquer tela precisa para SE
+// DESENHAR — permissão, empresa escolhida, competência, configuração e a lista
+// de empresas do seletor. Os números vêm depois, de quem sabe somá-los no
+// banco.
+export async function escopoDaPagina(
+  permissao: Permissao,
+  empresaParam?: string,
+  competenciaParam?: string
+): Promise<{
+  session: SessionPayload;
+  escopo: EscopoEmpresa;
+  periodo: EscopoPeriodo;
+  config: ControladoriaConfig;
+  conexoes: OmieConexao[];
+}> {
+  const session = await exigirPermissao(permissao);
+  const [escopo, config, conexoes] = await Promise.all([
+    resolverEscopo(session.companyId, empresaParam),
+    garantirConfig(session.companyId),
+    // O MESMO recorte e a mesma ordem que o contexto usa para montar o seletor
+    // de empresa: só as conexões ativas, na ordem cadastrada. Duas listas de
+    // empresas com critérios diferentes fariam o seletor mudar de conteúdo
+    // conforme a tela.
+    prisma.omieConexao.findMany({ where: { companyId: session.companyId, ativa: true }, orderBy: { ordem: "asc" } }),
+  ]);
+  return { session, escopo, periodo: resolverPeriodo(competenciaParam), config, conexoes };
 }
 
 // Páginas que só precisam da sessão (listagens que consultam o banco direto,

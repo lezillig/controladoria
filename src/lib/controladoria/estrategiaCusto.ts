@@ -87,19 +87,40 @@ const PERCENTUAL_REDUCAO_REALISTA: Record<ClassificacaoCusto, number> = {
 
 type SerieMensal = { mes: string; custo: number; receita: number };
 
-function seriesMensais(ctx: ContextoAuditoria): { meses: string[]; porCategoria: Map<string, Map<string, number>>; receitaPorMes: Map<string, number> } {
-  const primeiroMes = inicioDoMes(
-    new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth() - (MESES_ANALISE - 1), 1)
-  );
+// AS SÉRIES QUE A ANÁLISE CONSOME, separadas de onde elas são lidas.
+//
+// Mesma separação do DRE, e pela mesma medida: a análise precisa de doze meses
+// de custo por categoria, e lê-los como LINHAS custa cinquenta vezes o que
+// custa somá-los no banco. `seriesMensais` colhe da memória (é o que o agente
+// de oportunidades usa, dentro do ciclo, sobre o contexto já carregado);
+// `estrategiaCustoNoBanco.ts` colhe em SQL, para a tela. A análise em si é uma
+// função só, e há teste diferencial exigindo o mesmo resultado das duas.
+export type SeriesDeCusto = {
+  meses: string[];
+  porCategoria: Map<string, Map<string, number>>;
+  receitaPorMes: Map<string, number>;
+};
 
+export const chaveMes = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+// A JANELA DA ANÁLISE: doze meses terminando no mês da data de referência, e o
+// último mês vai só até o dia da referência. Uma função só, usada pelas duas
+// colheitas — duas contagens de mês divergiriam na virada do ano.
+export function janelaDeAnalise(dataReferencia: Date): { primeiroMes: Date; meses: string[] } {
+  const primeiroMes = inicioDoMes(
+    new Date(dataReferencia.getFullYear(), dataReferencia.getMonth() - (MESES_ANALISE - 1), 1)
+  );
   const meses: string[] = [];
   for (let i = 0; i < MESES_ANALISE; i++) {
     const d = new Date(primeiroMes.getFullYear(), primeiroMes.getMonth() + i, 1);
-    if (d > ctx.dataReferencia) break;
-    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    if (d > dataReferencia) break;
+    meses.push(chaveMes(d));
   }
+  return { primeiroMes, meses };
+}
 
-  const chaveMes = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
+  const { primeiroMes, meses } = janelaDeAnalise(ctx.dataReferencia);
 
   const porCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "PAGAR")) {
@@ -162,15 +183,26 @@ function classificar(descolamentoPontos: number | null, variacaoCusto: number | 
   return "VARIAVEL_ACOPLADO";
 }
 
-export function analisarEstrategiaDeCusto(ctx: ContextoAuditoria): {
+export type AnaliseDeCusto = {
   linhas: LinhaEstrategia[];
   custoTotalMensalCents: number;
   economiaAnualTotalCents: number;
   mesesAnalisados: number;
   baseSuficiente: boolean;
-} {
-  const { meses, porCategoria, receitaPorMes } = seriesMensais(ctx);
-  const descricaoPorCodigo = new Map(ctx.categorias.map((c) => [c.codigo, c.descricao]));
+};
+
+export function analisarEstrategiaDeCusto(ctx: ContextoAuditoria): AnaliseDeCusto {
+  return analisarEstrategiaDeSeries(
+    seriesMensais(ctx),
+    new Map(ctx.categorias.map((c) => [c.codigo, c.descricao]))
+  );
+}
+
+export function analisarEstrategiaDeSeries(
+  series: SeriesDeCusto,
+  descricaoPorCodigo: Map<string, string>
+): AnaliseDeCusto {
+  const { meses, porCategoria, receitaPorMes } = series;
 
   const linhasBrutas = [...porCategoria.entries()].map(([codigo, serieCusto]) => {
     const serie: SerieMensal[] = meses.map((mes) => ({

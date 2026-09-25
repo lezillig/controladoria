@@ -1,9 +1,10 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
-import type { ResumoPeriodo } from "./analytics";
+import type { LinhaRanking, ResumoPeriodo } from "./analytics";
 import type { Periodo } from "./periodos";
 import { competenciaSql } from "./competencia";
+import { filtroConexaoTitulo, naJanela, type EscopoSql } from "./escopoSql";
 
 // RESUMO DE UM PERÍODO, SOMADO NO BANCO.
 //
@@ -128,4 +129,62 @@ export async function resumoDoPeriodoNoBanco(params: {
     titulosPagar: Number(pagar?.quantidade ?? 0),
     titulosReceber: Number(receber?.quantidade ?? 0),
   };
+}
+
+// ---------------------------------------------------------------------------
+// O RANKING DE PARCEIROS, SOMADO NO BANCO
+//
+// Gêmeo de `ranking` do analytics. Mesma regra: título ativo, competência
+// dentro do período, agrupado pelo código do parceiro (ou pelo nome, quando o
+// código falta), do maior para o menor.
+//
+// O NOME sai do cadastro de parceiros em memória, como no original — é uma
+// tabela pequena, e resolvê-la no JavaScript evita um LEFT JOIN que multiplicaria
+// linhas quando o mesmo código existe nas duas empresas do grupo.
+// ---------------------------------------------------------------------------
+
+type LinhaRankingSql = {
+  codigo: string;
+  nome: string | null;
+  valor: bigint;
+  quantidade: bigint;
+};
+
+export async function rankingNoBanco(
+  escopo: EscopoSql,
+  periodo: Periodo,
+  natureza: "PAGAR" | "RECEBER",
+  limite = 10
+): Promise<LinhaRanking[]> {
+  const [linhas, parceiros] = await Promise.all([
+    prisma.$queryRaw<LinhaRankingSql[]>`
+      SELECT COALESCE(t."parceiroCodigo", t."parceiroNome", '?') AS codigo,
+             (ARRAY_AGG(t."parceiroNome" ORDER BY t."dataVencimento" ASC, t.id ASC))[1] AS nome,
+             COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS valor,
+             COUNT(*)::bigint AS quantidade
+        FROM ${tabela("OmieTitulo")} t
+       WHERE t."companyId" = ${escopo.companyId}
+         AND t.cancelado = false
+         AND t.natureza::text = ${natureza}
+         AND ${competenciaSql("t")} >= ${periodo.inicio}
+         AND ${competenciaSql("t")} <= ${periodo.fim}
+         ${filtroConexaoTitulo(escopo.conexaoId)}
+         ${naJanela(escopo.janela)}
+       GROUP BY 1
+       ORDER BY valor DESC
+       LIMIT ${limite}
+    `,
+    prisma.omieParceiro.findMany({
+      where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
+      select: { codigoOmie: true, nome: true },
+    }),
+  ]);
+
+  const nomePorCodigo = new Map(parceiros.map((p) => [p.codigoOmie, p.nome]));
+  return linhas.map((l) => ({
+    codigo: l.codigo,
+    nome: nomePorCodigo.get(l.codigo) ?? l.nome ?? "(não identificado)",
+    valorCents: Number(l.valor),
+    quantidade: Number(l.quantidade),
+  }));
 }

@@ -7,6 +7,7 @@
 //
 // Uso: TESTE_DATABASE_URL=... TITULOS=50000 npx tsx scripts/bench-contexto.ts
 import { PrismaClient } from "@prisma/client";
+import { semear } from "./_semente-bench";
 
 const url = process.env.TESTE_DATABASE_URL;
 if (!url) {
@@ -21,63 +22,6 @@ if (!url) {
 process.env.DATABASE_URL = url;
 const prisma = new PrismaClient({ datasources: { db: { url } } });
 const EMPRESA = "bench";
-
-async function semear(titulos: number) {
-  for (const t of ["omieBaixa", "omieTitulo", "omieMovimento", "omieParceiro", "omieConexao", "controladoriaConfig"] as const) {
-    await (prisma[t] as { deleteMany: (a: unknown) => Promise<unknown> }).deleteMany({ where: { companyId: EMPRESA } });
-  }
-  const cx = await prisma.omieConexao.create({
-    data: { companyId: EMPRESA, nome: "Bench", apelido: "BENCH", credencialRef: "B" },
-  });
-  await prisma.controladoriaConfig.create({ data: { companyId: EMPRESA, dataInicioBase: new Date(2025, 0, 1) } });
-  const base = { companyId: EMPRESA, conexaoId: cx.id, conexaoApelido: "BENCH", status: "ABERTO" };
-  for (let lote = 0; lote < Math.ceil(titulos / 5000); lote++) {
-    await prisma.omieTitulo.createMany({
-      data: Array.from({ length: 5000 }, (_, i) => {
-        const n = lote * 5000 + i;
-        const dia = new Date(2026, 0, 1 + (n % 265));
-        return {
-          ...base,
-          natureza: (n % 3 === 0 ? "RECEBER" : "PAGAR") as "RECEBER" | "PAGAR",
-          codigoLancamento: `L${n}`,
-          parceiroCodigo: `P${n % 800}`,
-          parceiroNome: `Fornecedor ${n % 800}`,
-          parceiroDocumento: String(10000000000000 + (n % 800)),
-          categoriaCodigo: `C${n % 40}`,
-          categoriaDescricao: `Categoria ${n % 40}`,
-          numeroDocumento: String(n),
-          observacao: "x".repeat(120),
-          dataEmissao: dia,
-          dataVencimento: dia,
-          valorDocumentoCents: 10_000 + (n % 9999),
-          valorPagoCents: 10_000,
-          liquidado: n % 4 !== 0,
-        };
-      }),
-    });
-  }
-  await prisma.omieBaixa.createMany({
-    data: Array.from({ length: Math.min(titulos, 20000) }, (_, i) => ({
-      companyId: EMPRESA, conexaoId: cx.id, tituloId: "x", chave: `B${i}`,
-      dataBaixa: new Date(2026, 0, 1 + (i % 265)), valorCents: 10_000,
-    })),
-    skipDuplicates: true,
-  }).catch(() => undefined);
-  await prisma.omieMovimento.createMany({
-    data: Array.from({ length: 15000 }, (_, i) => ({
-      companyId: EMPRESA, conexaoId: cx.id, conexaoApelido: "BENCH",
-      contaCorrenteCodigo: String(100 + (i % 6)), codigoLancamento: `M${i}`,
-      data: new Date(2026, 0, 1 + (i % 265)), valorCents: (i % 2 ? 1 : -1) * (5_000 + i),
-    })),
-  });
-  await prisma.omieParceiro.createMany({
-    data: Array.from({ length: 800 }, (_, i) => ({
-      companyId: EMPRESA, conexaoId: cx.id, conexaoApelido: "BENCH",
-      codigoOmie: `P${i}`, nome: `Fornecedor ${i}`, documento: String(10000000000000 + i),
-    })),
-  });
-  return cx.id;
-}
 
 const RODADAS = 5;
 async function medir(nome: string, f: () => Promise<unknown>) {
@@ -96,7 +40,7 @@ async function medir(nome: string, f: () => Promise<unknown>) {
 async function principal() {
   const alvo = Number(process.env.TITULOS ?? 50000);
   console.log(`semeando ${alvo} títulos...`);
-  await semear(alvo);
+  await semear(prisma, alvo);
   await prisma.$executeRawUnsafe("ANALYZE");
 
   const desde = new Date(2026, 0, 1);
@@ -128,6 +72,29 @@ async function principal() {
     await medir("movimentos", () => prisma.omieMovimento.findMany({ where: { ...escopo, data: recorte }, orderBy: { data: "asc" } })),
     await medir("parceiros", () => prisma.omieParceiro.findMany({ where: escopo })),
     await medir("categorias", () => prisma.omieCategoria.findMany({ where: escopo })),
+    // O QUE A TELA DE CUSTOS REALMENTE PRECISA: a soma por categoria, não as
+    // linhas. Mesma janela, mesmo filtro; o que muda é o que volta pela rede —
+    // dezenas de linhas em vez de dezenas de milhares.
+    await medir("DRE por categoria (GROUP BY)", () =>
+      prisma.$queryRaw(Prisma.sql`
+        SELECT COALESCE(t."categoriaCodigo", 'SEM_CATEGORIA') AS categoria,
+               SUM(t."valorDocumentoCents")::bigint AS cents
+          FROM ${tabela("OmieTitulo")} t
+         WHERE t."companyId" = ${EMPRESA} AND t.cancelado = false
+           AND COALESCE(t."dataEmissao", t."dataVencimento") >= ${desde}
+         GROUP BY 1`)
+    ),
+    await medir("20 maiores títulos por categoria (janela)", () =>
+      prisma.$queryRaw(Prisma.sql`
+        SELECT * FROM (
+          SELECT t.id, t."categoriaCodigo", t."valorDocumentoCents",
+                 ROW_NUMBER() OVER (PARTITION BY t."categoriaCodigo"
+                                    ORDER BY ABS(t."valorDocumentoCents") DESC) AS pos
+            FROM ${tabela("OmieTitulo")} t
+           WHERE t."companyId" = ${EMPRESA} AND t.cancelado = false
+             AND COALESCE(t."dataEmissao", t."dataVencimento") >= ${desde}
+        ) x WHERE x.pos <= 20`)
+    ),
   ];
 
   console.log(`\n--- mediana de ${RODADAS} rodadas, Postgres local (sem latência de rede) ---`);

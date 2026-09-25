@@ -123,8 +123,27 @@ export type ComparativoRelatorio = {
 // teste diferencial que roda as duas sobre os mesmos dados e exige resultado
 // idêntico, campo a campo.
 export async function montarComparativo(ctx: ContextoAuditoria): Promise<ComparativoRelatorio> {
-  const janelas = montarJanelas(ctx.dataReferencia);
-  const escopo = { companyId: ctx.companyId, conexaoId: ctx.conexaoId };
+  return comparativoDoEscopo({
+    companyId: ctx.companyId,
+    conexaoId: ctx.conexaoId,
+    dataReferencia: ctx.dataReferencia,
+    dataInicioBase: ctx.config.dataInicioBase,
+  });
+}
+
+// O MESMO COMPARATIVO SEM CONTEXTO NENHUM.
+//
+// Ele já somava tudo no banco; o contexto entrava só por quatro campos. As
+// telas que não precisam de linha nenhuma (Custos e DRE) chamam esta, e assim
+// não carregam treze meses de títulos para exibir seis totais.
+export async function comparativoDoEscopo(params: {
+  companyId: string;
+  conexaoId: string | null;
+  dataReferencia: Date;
+  dataInicioBase: Date;
+}): Promise<ComparativoRelatorio> {
+  const janelas = montarJanelas(params.dataReferencia);
+  const escopo = { companyId: params.companyId, conexaoId: params.conexaoId };
 
   const [dia, mesAtual, mesAnterior, ano, anoAnterior, mesmoMesAnoAnterior] = await Promise.all([
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.dia }),
@@ -135,7 +154,7 @@ export async function montarComparativo(ctx: ContextoAuditoria): Promise<Compara
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesmoMesAnoAnterior }),
   ]);
 
-  const semBaseAnoAnterior = ctx.config.dataInicioBase > janelas.anoAnterior.inicio;
+  const semBaseAnoAnterior = params.dataInicioBase > janelas.anoAnterior.inicio;
 
   return {
     janelas,

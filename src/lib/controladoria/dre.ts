@@ -380,11 +380,33 @@ export type ResultadoDre = {
 // Somar por conta própria seria arriscar inflar a carga tributária do DRE em
 // centenas de milhares de reais, e o erro apareceria como margem pior — que é
 // o tipo de número que ninguém questiona.
+export type Retencoes = {
+  issCents: number;
+  pisCents: number;
+  cofinsCents: number;
+  csllCents: number;
+  irCents: number;
+  inssCents: number;
+  totalCents: number;
+  titulosComRetencao: number;
+};
+
+export const RETENCOES_ZERADAS: Retencoes = {
+  issCents: 0,
+  pisCents: 0,
+  cofinsCents: 0,
+  csllCents: 0,
+  irCents: 0,
+  inssCents: 0,
+  totalCents: 0,
+  titulosComRetencao: 0,
+};
+
 function retencoesDoPeriodo(
   ctx: ContextoAuditoria,
   periodo: Periodo,
   regime: "competencia" | "caixa" = "competencia"
-) {
+): Retencoes {
   // NO CAIXA a retenção acompanha o RECEBIMENTO, não a emissão — e ela é
   // gravada no título, não na baixa. Um título recebido pela metade teve
   // metade da retenção; por isso a proporção, e não o valor cheio. É
@@ -473,14 +495,57 @@ export type OpcoesDre = {
   periodoAnoAnterior?: Periodo;
 };
 
-export function montarDre(
+// O QUE A DEMONSTRAÇÃO CONSOME, separado de ONDE ISSO É LIDO.
+//
+// A conta do DRE — as somas por linha, os subtotais na ordem da lei, os
+// percentuais — é a mesma independentemente de os números virem de títulos já
+// carregados na memória ou de um GROUP BY no banco. O que muda é só a colheita.
+//
+// A separação existe por medida, não por gosto: a tela de Custos e DRE lia
+// treze meses de títulos para mostrar quarenta linhas de soma. Em Postgres
+// local com 50 mil títulos, as linhas custam 1.040 ms e as somas 24 ms — e pela
+// rede a diferença é entre dezenas de megabytes e alguns kilobytes.
+//
+// `insumosDoContexto` é a colheita em memória (a original, que os agentes e o
+// relatório usam); `dreNoBanco.ts` é a colheita em SQL. As duas alimentam
+// `montarDreDeInsumos`, então não existe uma segunda implementação da conta
+// para divergir da primeira — e há teste diferencial exigindo que as duas
+// colheitas devolvam a MESMA demonstração sobre os mesmos dados.
+export type CategoriaParaDre = {
+  descricao: string;
+  natureza: string | null;
+  contaReceita: boolean;
+  contaDespesa: boolean;
+};
+
+export type InsumosDre = {
+  // Soma por categoria em cada janela. `anoAnterior` é nulo quando a leitura
+  // não cobre o mesmo mês do ano passado — e nulo vira "—" na tela, nunca zero.
+  atual: Map<string, number>;
+  anterior: Map<string, number>;
+  anoAnterior: Map<string, number> | null;
+  // De que lado cada categoria vive, apurado sobre TODA a janela lida.
+  movimento: Map<string, { receberCents: number; pagarCents: number }>;
+  // Os registros por categoria na janela atual, para o drill-down.
+  titulos: Map<string, TituloDoDre[]>;
+  // QUANTOS registros cada categoria tem, quando a lista acima já vem cortada.
+  // A colheita em memória tem a lista inteira, e o tamanho dela é a resposta; a
+  // colheita em SQL traz só os vinte maiores, e sem este mapa a tela diria
+  // "20 de 20" onde são 20 de 4.312.
+  totalDeTitulosPorCategoria?: Map<string, number>;
+  retencoes: Retencoes;
+  retencoesAnteriores: Retencoes;
+  retencoesAnoAnterior: Retencoes | null;
+  categorias: Map<string, CategoriaParaDre>;
+};
+
+export function insumosDoContexto(
   ctx: ContextoAuditoria,
   periodo: Periodo,
   periodoAnterior: Periodo,
-  classificacoes: Map<string, Classificacao>,
   opcoes: OpcoesDre = {}
-): ResultadoDre {
-  const { somarRetencoes = false, regime = "competencia", incluirTitulos = true, periodoAnoAnterior } = opcoes;
+): InsumosDre {
+  const { regime = "competencia", incluirTitulos = true, periodoAnoAnterior } = opcoes;
   const porTitulo = new Map(ctx.titulos.map((t) => [t.id, t]));
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
 
@@ -587,9 +652,43 @@ export function montarDre(
     }
   }
 
-  const atual = porCategoria(periodo);
-  const anterior = porCategoria(periodoAnterior);
-  const anoAnterior = periodoAnoAnterior ? porCategoria(periodoAnoAnterior) : null;
+  return {
+    atual: porCategoria(periodo),
+    anterior: porCategoria(periodoAnterior),
+    anoAnterior: periodoAnoAnterior ? porCategoria(periodoAnoAnterior) : null,
+    movimento: movimentoPorCategoria,
+    titulos: titulosPorCategoria,
+    retencoes: retencoesDoPeriodo(ctx, periodo, regime),
+    retencoesAnteriores: retencoesDoPeriodo(ctx, periodoAnterior, regime),
+    retencoesAnoAnterior: periodoAnoAnterior ? retencoesDoPeriodo(ctx, periodoAnoAnterior, regime) : null,
+    categorias,
+  };
+}
+
+export function montarDre(
+  ctx: ContextoAuditoria,
+  periodo: Periodo,
+  periodoAnterior: Periodo,
+  classificacoes: Map<string, Classificacao>,
+  opcoes: OpcoesDre = {}
+): ResultadoDre {
+  return montarDreDeInsumos(insumosDoContexto(ctx, periodo, periodoAnterior, opcoes), classificacoes, opcoes);
+}
+
+export function montarDreDeInsumos(
+  insumos: InsumosDre,
+  classificacoes: Map<string, Classificacao>,
+  opcoes: Pick<OpcoesDre, "somarRetencoes" | "regime"> = {}
+): ResultadoDre {
+  const { somarRetencoes = false, regime = "competencia" } = opcoes;
+  const {
+    atual,
+    anterior,
+    anoAnterior,
+    movimento: movimentoPorCategoria,
+    titulos: titulosPorCategoria,
+    categorias,
+  } = insumos;
 
   const itensPorLinha = new Map<string, ItemDre[]>();
   let naoConfirmado = 0;
@@ -641,7 +740,7 @@ export function montarDre(
       valorAnteriorCents: valorAnterior,
       valorAnoAnteriorCents: valorAnoAnterior,
       titulos: doMes.slice(0, TITULOS_POR_CATEGORIA_NA_TELA),
-      totalDeTitulos: doMes.length,
+      totalDeTitulos: insumos.totalDeTitulosPorCategoria?.get(codigo) ?? doMes.length,
     });
     itensPorLinha.set(linha, lista);
   }
@@ -702,8 +801,7 @@ export function montarDre(
   // títulos de imposto — e se um dia passar a duplicar, a duplicidade fica
   // visível como duas entradas do mesmo tributo, em vez de um total que
   // simplesmente dobrou sem explicação.
-  const retencoes = retencoesDoPeriodo(ctx, periodo, regime);
-  const retencoesAnteriores = retencoesDoPeriodo(ctx, periodoAnterior, regime);
+  const { retencoes, retencoesAnteriores, retencoesAnoAnterior } = insumos;
   if (somarRetencoes && retencoes.totalCents > 0) {
     const lista = itensPorLinha.get("DEDUCOES") ?? [];
     lista.push({
@@ -717,9 +815,7 @@ export function montarDre(
       ehReceita: false,
       valorCents: retencoes.totalCents,
       valorAnteriorCents: retencoesAnteriores.totalCents,
-      valorAnoAnteriorCents: periodoAnoAnterior
-        ? retencoesDoPeriodo(ctx, periodoAnoAnterior, regime).totalCents
-        : null,
+      valorAnoAnteriorCents: retencoesAnoAnterior ? retencoesAnoAnterior.totalCents : null,
       titulos: [],
       totalDeTitulos: 0,
     });
@@ -728,7 +824,7 @@ export function montarDre(
 
   const sub = calc("valorCents");
   const subAnterior = calc("valorAnteriorCents");
-  const subAnoAnterior = periodoAnoAnterior ? calc("valorAnoAnteriorCents") : null;
+  const subAnoAnterior = anoAnterior ? calc("valorAnoAnteriorCents") : null;
   const receitaLiquida = sub.RECEITA_LIQUIDA;
 
   const linhas: LinhaDreCalculada[] = LINHAS_DRE.map((def) => {
@@ -738,7 +834,7 @@ export function montarDre(
     const valor = def.tipo === "SUBTOTAL" ? (sub[def.chave] ?? 0) : totalDe(def.chave, "valorCents");
     const valorAnterior =
       def.tipo === "SUBTOTAL" ? (subAnterior[def.chave] ?? 0) : totalDe(def.chave, "valorAnteriorCents");
-    const valorAnoAnterior = !periodoAnoAnterior
+    const valorAnoAnterior = !anoAnterior
       ? null
       : def.tipo === "SUBTOTAL"
         ? (subAnoAnterior?.[def.chave] ?? 0)
