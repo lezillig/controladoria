@@ -1,5 +1,5 @@
 import type { OmieParceiro, OmieTitulo } from "@prisma/client";
-import { fmtBRL, fmtData, fmtDocumento, fmtPercent } from "../format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtDocumento, fmtPercent } from "../format";
 import { diasEntre } from "../periodos";
 import { ehPessoaFisica } from "../documento";
 import type { AchadoNovo, ContextoAuditoria } from "../types";
@@ -593,7 +593,7 @@ export function contaAlteradaRepetida(ctx: ContextoAuditoria, materialidade: num
       entidadeRef: nome,
       evidencia: {
         fornecedor: nome,
-        trocas: ordenadas.map((t) => ({ em: fmtData(t.detectadoEm), voltouAConta: hashesVistos.has(t.hashNovo) && t.hashNovo !== t.hashAnterior })),
+        trocas: ordenadas.map((t) => ({ em: fmtDiaDoInstante(t.detectadoEm), voltouAConta: hashesVistos.has(t.hashNovo) && t.hashNovo !== t.hashAnterior })),
         pagoDesdeAPrimeiraTroca: pagoDesde,
       },
       chave: chaveAchado("FR-CONTA-ALTERADA-REPETIDA", chave),

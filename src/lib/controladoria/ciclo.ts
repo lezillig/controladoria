@@ -601,7 +601,23 @@ export async function obterOuCriarRun(
 // horário UTC do servidor (a Vercel roda em UTC) — usar a data local do
 // processo faria o cron das 03:10 de Brasília processar "hoje" em vez de
 // "ontem", e o relatório sairia sempre com um dia a mais.
+// D-1 EM BRASÍLIA, seja qual for o fuso do servidor.
+//
+// Era `agora - 3h` lido nos campos locais do servidor: correto enquanto a
+// Vercel roda em UTC, e silenciosamente errado no dia em que alguém definir
+// TZ — aí o deslocamento manual se somaria ao do fuso e a referência pularia
+// para D-2. Perguntar o dia diretamente ao calendário de São Paulo não tem
+// esse problema, e também acerta o horário de verão se ele voltar.
+const DIA_EM_BRASILIA = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "America/Sao_Paulo",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 export function dataReferenciaPadrao(agora = new Date()): Date {
-  const brasilia = new Date(agora.getTime() - 3 * 60 * 60 * 1000);
-  return inicioDoDia(new Date(brasilia.getFullYear(), brasilia.getMonth(), brasilia.getDate() - 1));
+  const [ano, mes, dia] = DIA_EM_BRASILIA.format(agora).split("-").map(Number);
+  // Meia-noite do fuso do SERVIDOR, que é como todo dia de calendário é
+  // guardado aqui (ver o cabeçalho de format.ts).
+  return inicioDoDia(new Date(ano, mes - 1, dia - 1));
 }

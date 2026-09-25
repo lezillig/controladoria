@@ -3,7 +3,7 @@ import { betaZodTool } from "@anthropic-ai/sdk/helpers/beta/zod";
 import type { AuditSeveridade, AuditStatus, Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { fmtBRL, fmtData } from "./format";
+import { fmtBRL, fmtData, fmtDiaDoInstante } from "./format";
 import { AGENTES } from "./registry";
 
 // O investigador roda num modelo mais barato que o analista do relatório
@@ -200,7 +200,7 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
         achados: linhas.map((a) => ({
           ...a,
           valor: fmtBRL(a.valorCents), impacto: a.impactoCents ? fmtBRL(a.impactoCents) : null,
-          detectadoEm: fmtData(a.detectadoEm),
+          detectadoEm: fmtDiaDoInstante(a.detectadoEm),
         })),
       });
     },
@@ -224,7 +224,7 @@ function ferramentas(escopo: { companyId: string; conexaoId: string | null }, co
         // cada rodada seguinte.
         evidencia: limitarTexto(mascararDocumentos(a.evidencia), TETO_DA_EVIDENCIA),
         valor: fmtBRL(a.valorCents), impacto: a.impactoCents ? fmtBRL(a.impactoCents) : null,
-        detectadoEm: fmtData(a.detectadoEm), resolvidoEm: a.resolvidoEm ? fmtData(a.resolvidoEm) : null,
+        detectadoEm: fmtDiaDoInstante(a.detectadoEm), resolvidoEm: a.resolvidoEm ? fmtDiaDoInstante(a.resolvidoEm) : null,
       });
     },
   });

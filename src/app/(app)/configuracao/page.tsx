@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { carregarContexto, janelaDeAuditoria } from "@/lib/controladoria/contexto";
 import { sugerirAlcadas } from "@/lib/controladoria/agents/oportunidades";
-import { fmtBRL, fmtData } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDiaDoInstante } from "@/lib/controladoria/format";
 import { Secao, Tabela } from "../_componentes";
 import { exigirPermissao } from "../_dados";
 import ConfiguracaoForm from "./ConfiguracaoForm";
@@ -78,7 +78,7 @@ export default async function ConfiguracaoPage() {
           vazio="Nenhuma ação registrada ainda."
           linhas={eventos.map((e) => [
             <span key="q" className="text-xs">
-              {fmtData(e.criadoEm)}
+              {fmtDiaDoInstante(e.criadoEm)}
               <span className="block text-slate-400">
                 {e.criadoEm.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
               </span>

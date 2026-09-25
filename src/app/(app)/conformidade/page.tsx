@@ -21,7 +21,7 @@ import {
   STATUS_EM_ABERTO,
 } from "@/lib/conformidade/tipos";
 import { OBRIGACAO_POR_CODIGO, OBRIGACOES, TESES } from "@/lib/conformidade/obrigacoes";
-import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtNumero } from "@/lib/controladoria/format";
 import { inicioDoDia } from "@/lib/controladoria/periodos";
 import { AvisoVazio, BadgeSeveridade, Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
 import { exigirPermissao, podeAcao, resolverEscopo } from "../_dados";
@@ -344,7 +344,7 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
                     <span className="block text-xs text-slate-400">
                       {ROTULO_ORIGEM[d.origem] ?? d.origem}
                       {d.emissor ? ` · ${d.emissor}` : ""} · {(d.tamanhoBytes / 1024).toFixed(0)} KB · enviado em{" "}
-                      {fmtData(d.criadoEm)}
+                      {fmtDiaDoInstante(d.criadoEm)}
                       {d.enviadoPorNome ? ` por ${d.enviadoPorNome}` : ""}
                     </span>
                   </span>,

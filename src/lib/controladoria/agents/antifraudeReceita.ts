@@ -1,5 +1,5 @@
 import type { OmieParceiro, OmieTitulo, ParceiroReceita } from "@prisma/client";
-import { fmtBRL, fmtData, fmtDocumento } from "../format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtDocumento } from "../format";
 import { diasEntre, somarDias } from "../periodos";
 import { normalizarRazaoSocial } from "../documento";
 import type { AchadoNovo, ContextoAuditoria } from "../types";
@@ -149,7 +149,7 @@ export function cnpjIrregular(ctx: ContextoAuditoria, materialidade: number): Ac
         : `CNPJ de ${f.nome} está ${situacao} na Receita e segue recebendo`,
       descricao:
         (naoEncontrada
-          ? `O CNPJ ${fmtDocumento(f.cnpj)} não foi encontrado na base pública da Receita Federal (consulta de ${fmtData(f.receita.consultadoEm)}). ` +
+          ? `O CNPJ ${fmtDocumento(f.cnpj)} não foi encontrado na base pública da Receita Federal (consulta de ${fmtDiaDoInstante(f.receita.consultadoEm)}). ` +
             `Pode ser empresa aberta há poucas semanas, que a base pública ainda não conhece — ou um número que não existe. `
           : `A Receita Federal registra o CNPJ ${fmtDocumento(f.cnpj)} como ${situacao}${desde}. `) +
         (pagos.length > 0

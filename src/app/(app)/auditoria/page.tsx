@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { AuditCategoria, AuditSeveridade, AuditStatus, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { AGENTES } from "@/lib/controladoria/registry";
 import { exigirPermissao, podeAcao } from "../_dados";
 import { AvisoVazio, BadgeCategoria, BadgeSeveridade, Evidencia, Secao, Tabela } from "../_componentes";
@@ -330,7 +330,7 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
                   <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-400">
                     <span>{agente?.nome ?? a.agente}</span>
                     <span>regra {a.regra}</span>
-                    <span>detectado em {fmtData(a.detectadoEm)}</span>
+                    <span>detectado em {fmtDiaDoInstante(a.detectadoEm)}</span>
                     {a.ocorrencias > 1 && <span>{fmtNumero(a.ocorrencias)} execuções seguidas</span>}
                     {a.entidadeRef && <span>{a.entidadeRef}</span>}
                     {agente && <span>responsável: {agente.area}</span>}

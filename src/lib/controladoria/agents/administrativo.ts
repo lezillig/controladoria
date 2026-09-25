@@ -1,4 +1,4 @@
-import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "../format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtNumero, fmtPercent } from "../format";
 import { diasEntre } from "../periodos";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import { agrupar, chaveAchado, somar } from "./comum";
@@ -197,7 +197,7 @@ function erroNoUltimoSync(ctx: ContextoAuditoria): AchadoNovo[] {
       categoria: "CONFORMIDADE",
       titulo: "Última sincronização concluiu com erros parciais",
       descricao:
-        `A sincronização de ${fmtData(ultimo.finalizadoEm ?? ultimo.iniciadoEm)} terminou, mas registrou falhas: ` +
+        `A sincronização de ${fmtDiaDoInstante(ultimo.finalizadoEm ?? ultimo.iniciadoEm)} terminou, mas registrou falhas: ` +
         `${ultimo.erro.slice(0, 300)}. Parte dos dados do período pode estar faltando — e a ausência não aparece ` +
         `como erro nas telas, aparece como número menor.`,
       recomendacao:

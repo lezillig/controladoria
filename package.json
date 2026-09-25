@@ -26,6 +26,7 @@
     "teste:receita": "tsx scripts/teste-receita.ts",
     "teste:mapeamento": "tsx scripts/teste-mapeamento.ts",
     "teste:fiscal": "tsx scripts/teste-fiscal.ts",
+    "teste:datas": "TZ=UTC tsx scripts/teste-datas.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

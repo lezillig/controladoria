@@ -6,7 +6,7 @@ import {
   type ApontamentoConformidade,
 } from "@/lib/conformidade/panorama";
 import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
-import { fmtBRL, fmtData, fmtNumero } from "../format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtNumero } from "../format";
 import { diasEntre } from "../periodos";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import { chaveAchado } from "./comum";
@@ -124,7 +124,7 @@ function graveParado(ctx: ContextoAuditoria): AchadoNovo[] {
       titulo: `Risco grave sem prazo há ${fmtNumero(diasEntre(a.criadoEm, ctx.dataReferencia))} dias: ${a.titulo}`,
       descricao:
         `Apontamento de ${rotuloApontamento(a)} classificado como ${a.severidade.toLowerCase()} está aberto desde ` +
-        `${fmtData(a.criadoEm)} sem responsável nem prazo. Enquanto isso, a empresa tem registrado por escrito que foi avisada.`,
+        `${fmtDiaDoInstante(a.criadoEm)} sem responsável nem prazo. Enquanto isso, a empresa tem registrado por escrito que foi avisada.`,
       recomendacao:
         a.recomendacao ??
         "Atribuir responsável e prazo. Se a conclusão for conviver com o risco, registrar como 'aceito com risco' — que é decisão, e não esquecimento.",

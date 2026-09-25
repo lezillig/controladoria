@@ -50,11 +50,40 @@ export function fmtNumero(valor: number | null | undefined, casas = 0): string {
   return f.format(valor);
 }
 
-const FORMATADOR_DE_DATA = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" });
+// DATA DE CALENDÁRIO ≠ INSTANTE. Os dois são `Date` em JavaScript, e é daí
+// que vem o defeito que esta seção existe para impedir.
+//
+// O sistema guarda DIA — vencimento, emissão, baixa, referência — como a
+// meia-noite do fuso do servidor, que na Vercel é UTC (ver CLAUDE.md,
+// convenções). Um vencimento em 30/09 é o instante 2026-09-30T00:00:00Z.
+//
+// Formatar esse instante em America/Sao_Paulo subtrai três horas e cai em
+// 29/09 21:00 — e a tela escreve 29/09. Foi o que aconteceu: TODA data do
+// sistema aparecia um dia antes, e o sintoma que denunciou foi o cabeçalho do
+// painel dizer "dados de 22/09" no dia em que a referência era 23/09.
+//
+// Por isso o fuso aqui é UTC, explícito: é o mesmo em que o dia foi
+// construído, e é igual no servidor e no navegador (há componentes cliente que
+// chamam isto — sem fuso explícito o navegador usaria o de quem olha, e o erro
+// voltaria só para quem está no Brasil).
+//
+// Para INSTANTE de verdade — "quando isto foi criado, enviado, detectado" —
+// use `fmtDataHora` ou `fmtDiaDoInstante`, que leem em Brasília, porque ali o
+// que importa é a hora local de quem operou.
+const FORMATADOR_DE_DATA = new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" });
 
 export function fmtData(d: Date | null | undefined): string {
   if (!d) return "—";
   return FORMATADOR_DE_DATA.format(d);
+}
+
+// O DIA de um instante, na hora de quem operou. Para `criadoEm`, `enviadoEm`,
+// `detectadoEm` — registros de quando algo aconteceu, não dias de calendário.
+const FORMATADOR_DE_DIA_LOCAL = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo" });
+
+export function fmtDiaDoInstante(d: Date | null | undefined): string {
+  if (!d) return "—";
+  return FORMATADOR_DE_DIA_LOCAL.format(d);
 }
 
 // Data COM HORA. Existe para o registro de falhas: duas falhas no mesmo dia

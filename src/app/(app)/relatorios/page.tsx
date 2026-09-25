@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { isEnvioDisponivel } from "@/lib/email/send";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { garantirConfig, destinatarios } from "@/lib/controladoria/contexto";
-import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtNumero } from "@/lib/controladoria/format";
 import { exigirPermissao, podeAcao } from "../_dados";
 import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
 import GerarRelatorioForm from "./GerarRelatorioForm";
@@ -150,7 +150,7 @@ export default async function RelatoriosPage() {
                           : "font-medium text-slate-600"
                     }
                   >
-                    {r.status === "ENVIADO" ? `Enviado ${fmtData(r.enviadoEm)}` : r.status === "ERRO_ENVIO" ? "Falha no envio" : "Gerado"}
+                    {r.status === "ENVIADO" ? `Enviado ${fmtDiaDoInstante(r.enviadoEm)}` : r.status === "ERRO_ENVIO" ? "Falha no envio" : "Gerado"}
                   </span>
                   {r.erro && <span className="mt-0.5 block max-w-xs text-slate-500">{r.erro.slice(0, 120)}</span>}
                 </span>,

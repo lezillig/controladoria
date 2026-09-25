@@ -12,7 +12,7 @@ import { ultimaMedicaoDaAuditoria } from "@/lib/controladoria/medicaoAuditoria";
 import { driftDoEsquema, ondeOBancoOlha, sobrasEmOutrosEsquemas } from "@/lib/controladoria/esquema";
 import { esquemaDaControladoria } from "@/lib/esquemaDoBanco";
 import { versaoPublicada } from "@/lib/controladoria/versao";
-import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDiaDoInstante, fmtDataHora, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { diasEntre } from "@/lib/controladoria/periodos";
 import { disponibilidadeGestao } from "@/lib/gestao/leitura";
 import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
@@ -233,7 +233,7 @@ export default async function SincronizacaoPage() {
         <Kpi
           rotulo="Base em D-1"
           valor={atrasoDias === null ? "Nunca" : atrasoDias <= 2 ? "Em dia" : `${fmtNumero(atrasoDias)} dias atrás`}
-          apoio={ultimoDiario ? `Última: ${fmtData(ultimoDiario.finalizadoEm ?? ultimoDiario.iniciadoEm)}` : "Sem execução concluída"}
+          apoio={ultimoDiario ? `Última: ${fmtDiaDoInstante(ultimoDiario.finalizadoEm ?? ultimoDiario.iniciadoEm)}` : "Sem execução concluída"}
           tom={atrasoDias !== null && atrasoDias <= 2 ? "bom" : "ruim"}
         />
         <Kpi
@@ -410,7 +410,7 @@ export default async function SincronizacaoPage() {
           )}
           {travada && (
             <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
-              Existe uma execução iniciada em {fmtData(emAndamento!.iniciadoEm)} ainda marcada como em andamento. Enquanto
+              Existe uma execução iniciada em {fmtDiaDoInstante(emAndamento!.iniciadoEm)} ainda marcada como em andamento. Enquanto
               ela existir, o ciclo seguinte não começa — encerre-a para destravar.
             </p>
           )}
@@ -510,7 +510,7 @@ export default async function SincronizacaoPage() {
           vazio="Nenhuma execução registrada ainda."
           linhas={execucoes.map((e) => [
             <span key="i" className="text-xs">
-              {fmtData(e.iniciadoEm)}
+              {fmtDiaDoInstante(e.iniciadoEm)}
               <span className="block text-slate-400">{e.invocacoes} invocação(ões)</span>
             </span>,
             <span key="j" className="text-xs">
