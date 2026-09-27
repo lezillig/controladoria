@@ -188,7 +188,7 @@ function volumeAcimaDoTanque(frota: Frota, recentes: AbastecimentoGestao[], mate
     const doVeiculo = historico;
     if (doVeiculo.length === 0) continue;
 
-    type Caso = { data: string; motorista: string; litros: number; litrosDoTanque: number; excedenteLitros: number; valor: number; posto: string; modo: string };
+    type Caso = { quando: Date; data: string; motorista: string; litros: number; litrosDoTanque: number; excedenteLitros: number; valor: number; posto: string; modo: string };
     const casos: Caso[] = [];
     for (const a of doVeiculo) {
       const excedente = a.volumeLitros - tanque.litros;
@@ -207,6 +207,7 @@ function volumeAcimaDoTanque(frota: Frota, recentes: AbastecimentoGestao[], mate
     function caso(a: AbastecimentoGestao, excedente: number, modo: string): Caso {
       const preco = precoPorLitro(a) ?? 0;
       return {
+        quando: a.dataHora,
         data: fmtData(a.dataHora),
         motorista: frota.motorista(a),
         litros: Math.round(a.volumeLitros * 10) / 10,
@@ -241,7 +242,8 @@ function volumeAcimaDoTanque(frota: Frota, recentes: AbastecimentoGestao[], mate
         entidadeTipo: "Veiculo",
         entidadeId: chave,
         entidadeRef: placa,
-        evidencia: { placa, litrosDoTanque: Math.round(tanque.litros), baseDoTanque: tanque.base, casos: doMes },
+        dataReferencia: ultimaData(doMes.map((c) => c.quando)),
+        evidencia: { placa, litrosDoTanque: Math.round(tanque.litros), baseDoTanque: tanque.base, casos: doMes.map(semQuando) },
         chave: chaveAchado("FR-COMBUSTIVEL-VOLUME", chave, mes),
       });
     }
@@ -323,6 +325,7 @@ function consumoImplausivel(frota: Frota, recentes: AbastecimentoGestao[], mater
         const preco = precoPorLitro(i.a) ?? 0;
         if (i.km < 0) {
           return [{
+            quando: i.a.dataHora,
             data: fmtData(i.a.dataHora),
             motorista: frota.motorista(i.a),
             kmNoIntervalo: i.km,
@@ -337,6 +340,7 @@ function consumoImplausivel(frota: Frota, recentes: AbastecimentoGestao[], mater
         const litrosQueRodaram = i.km / tipico;
         const semRodar = Math.max(0, i.a.volumeLitros - litrosQueRodaram);
         return [{
+          quando: i.a.dataHora,
           data: fmtData(i.a.dataHora),
           motorista: frota.motorista(i.a),
           kmNoIntervalo: i.km,
@@ -373,7 +377,8 @@ function consumoImplausivel(frota: Frota, recentes: AbastecimentoGestao[], mater
         entidadeTipo: "Veiculo",
         entidadeId: chave,
         entidadeRef: placa,
-        evidencia: { placa, kmPorLitroTipico: tipico, intervalosMedidos: consumos.length, casos: doMes },
+        dataReferencia: ultimaData(doMes.map((c) => c.quando)),
+        evidencia: { placa, kmPorLitroTipico: tipico, intervalosMedidos: consumos.length, casos: doMes.map(semQuando) },
         chave: chaveAchado("FR-COMBUSTIVEL-CONSUMO", chave, mes),
       });
     }
@@ -451,6 +456,7 @@ function abastecimentoSemOperacao(
       entidadeTipo: "Veiculo",
       entidadeId: veiculo,
       entidadeRef: placa,
+      dataReferencia: ultimaData(lista.map((a) => a.dataHora)),
       evidencia: {
         placa,
         coberturaDaOperacao: fmtPercent(cobertura * 100, 0),
@@ -466,6 +472,22 @@ function abastecimentoSemOperacao(
     });
   }
   return achados;
+}
+
+// A DATA DO FATO de um achado mensal: o último abastecimento do grupo. É o
+// que permite ao motor saber se uma auditoria retroativa REAVALIOU o mês —
+// sem ela, o evento contava como "dentro de qualquer janela" e uma varredura
+// de 2024 fechava indícios de combustível de 2026 sem ninguém ter olhado.
+function ultimaData(datas: Date[]): Date {
+  return datas.reduce((max, d) => (d > max ? d : max), datas[0]);
+}
+
+// A evidência vai para o banco e para a tela; a data crua que serve ao motor
+// não precisa ir junto (a formatada já está lá).
+function semQuando<T extends { quando: Date }>(caso: T): Omit<T, "quando"> {
+  const { quando: _, ...resto } = caso;
+  void _;
+  return resto;
 }
 
 function chaveDia(d: Date): string {
@@ -621,6 +643,7 @@ function produtoIncompativel(frota: Frota, recentes: AbastecimentoGestao[], mate
         entidadeTipo: "Veiculo",
         entidadeId: chave,
         entidadeRef: placa,
+        dataReferencia: ultimaData(doMes.map((x) => x.a.dataHora)),
         evidencia: {
           placa,
           produtoDoVeiculo: dominante === "DIESEL" ? "diesel" : "gasolina/etanol",
@@ -720,6 +743,7 @@ function postoAcimaDaFrota(ctx: ContextoAuditoria, recentes: AbastecimentoGestao
         entidadeTipo: "Posto",
         entidadeId: posto,
         entidadeRef: rotuloPosto,
+        dataReferencia: ultimaData(doPosto.map((x) => x.a.dataHora)),
         evidencia: {
           posto: rotuloPosto,
           produto,
@@ -775,6 +799,7 @@ function motoristaComVariosVeiculos(frota: Frota, recentes: AbastecimentoGestao[
         entidadeTipo: "Motorista",
         entidadeId: driverId,
         entidadeRef: nome,
+        dataReferencia: ultimaData(doMes.map((d) => d.data)),
         evidencia: {
           motorista: nome,
           diasNoMes: doMes.map((d) => ({ dia: fmtData(d.data), veiculos: d.veiculos, valor: d.valor })),

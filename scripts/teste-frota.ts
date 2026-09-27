@@ -83,7 +83,19 @@ function contexto(p: {
   } as unknown as ContextoAuditoria;
 }
 
-const rodar = (ctx: ContextoAuditoria, regra: string) => auditarFrota(ctx).filter((a) => a.regra === regra);
+// TODO EVENTO PRECISA DA DATA DO FATO. O motor só fecha um EVENTO sozinho
+// quando sabe em que mês ele aconteceu; sem data, a varredura retroativa
+// fechava indícios de combustível do ano corrente. Cada cenário abaixo passa
+// por aqui, então qualquer regra de frota que volte a emitir sem data cai na
+// conferência do fim.
+const eventosSemData: string[] = [];
+const rodar = (ctx: ContextoAuditoria, regra: string) => {
+  const todos = auditarFrota(ctx);
+  for (const a of todos) {
+    if (a.tipo === "EVENTO" && !(a.dataReferencia instanceof Date)) eventosSemData.push(a.regra);
+  }
+  return todos.filter((a) => a.regra === regra);
+};
 
 // Doze abastecimentos "normais" de 100 L, um por semana, para dar base ao
 // veículo — todos com hodômetro coerente (500 km entre eles = 5 km/L).
@@ -374,6 +386,9 @@ console.log("\nFR-COMBUSTIVEL-MOTORISTA — um motorista, vários veículos no m
 // ------------------------------------------------------------------ vazio
 console.log("\nContexto sem abastecimento");
 conferir("sem extrato do cartão, nada é emitido", auditarFrota(contexto({ abastecimentos: [] })).length, 0);
+
+console.log("\nData do fato");
+conferir("todo EVENTO de frota emitido nos cenários tem dataReferencia", [...new Set(eventosSemData)], []);
 
 console.log(falhas === 0 ? "\nTodos os casos passaram." : `\n${falhas} caso(s) falharam.`);
 process.exit(falhas === 0 ? 0 : 1);

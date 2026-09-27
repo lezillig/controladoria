@@ -507,14 +507,21 @@ export function podeFecharSozinho(
   //    A regra estrita ("EVENTO nunca fecha") custou caro: 766 recebimentos a
   //    menor e 850 duplicidades continuaram abertos DEPOIS de a regra ter
   //    sido corrigida, porque nada os fechava. Sem janela informada (chamada
-  //    fora de uma auditoria completa), vale a regra estrita. Achado sem data
-  //    do fato conta como dentro da janela: não há como saber que ficou para
-  //    trás.
+  //    fora de uma auditoria completa), vale a regra estrita.
+  //
+  //    EVENTO SEM DATA DO FATO NÃO FECHA. A versão anterior o contava como
+  //    "dentro da janela" — e os sete achados de combustível nasceram sem
+  //    data: uma varredura de 2024 rodava o agente de frota sobre 2024, não
+  //    reemitia as chaves de 2026, e fechava como OBSOLETO indícios de fraude
+  //    do ano corrente que ninguém tinha olhado. Sem data não há como saber se
+  //    o período foi reavaliado; na dúvida, o fato consumado fica aberto, que
+  //    é o que EVENTO significa.
   if (achado.tipo !== "ESTADO") {
     if (!janela) return false;
     const data = achado.dataReferencia ?? null;
-    if (data && data < janela.desde) return false;
-    if (data && janela.ate && data > janela.ate) return false;
+    if (!data) return false;
+    if (data < janela.desde) return false;
+    if (janela.ate && data > janela.ate) return false;
   }
 
   // 4. O agente dono precisa ter rodado sem erro. Agente que quebrou emite

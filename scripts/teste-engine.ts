@@ -81,7 +81,10 @@ console.log("\n2. O que não pode fechar sozinho");
   conferir("varredura de 2024 fecha evento de 2024 que sumiu", podeFecharSozinho(fora, NENHUMA, TODOS_OK, janela2024), true);
   conferir("varredura de 2024 não fecha evento de 2026", podeFecharSozinho(dentro, NENHUMA, TODOS_OK, janela2024), false);
   const semData = achado({ tipo: "EVENTO", dataReferencia: null });
-  conferir("evento sem data de referência fecha com janela", podeFecharSozinho(semData, NENHUMA, TODOS_OK, janela), true);
+  // Sem data do fato não há como saber se o período foi reavaliado — e foi
+  // assim que a varredura retroativa fechou indícios de combustível do ano
+  // corrente. Fica aberto.
+  conferir("evento sem data de referência NÃO fecha, mesmo com janela", podeFecharSozinho(semData, NENHUMA, TODOS_OK, janela), false);
   conferir("evento dentro da janela ainda detectado não fecha", podeFecharSozinho(dentro, new Set([dentro.chave]), TODOS_OK, janela), false);
   conferir("evento dentro da janela com agente quebrado não fecha", podeFecharSozinho(dentro, NENHUMA, ["conciliacao"], janela), false);
   conferir("estado continua fechando com janela", podeFecharSozinho(achado({ dataReferencia: null }), NENHUMA, TODOS_OK, janela), true);
