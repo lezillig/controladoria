@@ -703,12 +703,17 @@ export function osComCustoSemFaturamento(
   // Projeto vazio não é OS — é título sem classificação, e disso já trata
   // CP-SEM-CENTRO-CUSTO. Agrupar os sem-projeto todos juntos criaria um
   // "projeto fantasma" com o custo de meia empresa dentro.
+  // Projeto é único POR CONEXÃO: a OS 14516 da Azul e a 14516 da MCZ são
+  // ordens diferentes, e agrupar só pelo código dava a receita de uma como
+  // faturamento do custo da outra.
   const comProjeto = ctx.titulos.filter((t) => !t.cancelado && t.projetoCodigo);
-  const porProjeto = agrupar(comProjeto, (t) => t.projetoCodigo!);
+  const porProjeto = agrupar(comProjeto, (t) => `${t.conexaoId}|${t.projetoCodigo}`);
 
-  const nomeProjeto = new Map(ctx.projetos.map((p) => [p.codigo, p.nome]));
+  const nomeProjeto = new Map(ctx.projetos.map((p) => [`${p.conexaoId}|${p.codigo}`, p.nome]));
 
-  for (const [projeto, titulos] of porProjeto) {
+  for (const [chaveProjeto, titulos] of porProjeto) {
+    const projeto = titulos[0].projetoCodigo as string;
+    const apelido = titulos[0].conexaoApelido;
     const custos = titulos.filter((t) => t.natureza === "PAGAR");
     const receitas = titulos.filter((t) => t.natureza === "RECEBER");
     if (custos.length === 0 || receitas.length > 0) continue;
@@ -728,16 +733,16 @@ export function osComCustoSemFaturamento(
     const diasParado = diasEntre(ultimoCusto, ctx.dataReferencia);
     if (diasParado < DIAS_DE_CARENCIA_PARA_FATURAR) continue;
 
-    const rotulo = nomeProjeto.get(projeto) ?? projeto;
+    const rotulo = nomeProjeto.get(chaveProjeto) ?? projeto;
     achados.push({
       regra: "CR-OS-NAO-FATURADA",
       tipo: "ESTADO",
       // Sem receita, o custo inteiro é a perda — não há margem a calcular.
       severidade: severidadePorValor(custoCents, materialidade),
       categoria: "PERDA_FINANCEIRA",
-      titulo: `OS ${rotulo}: ${fmtBRL(custoCents)} de custo e nenhuma cobrança`,
+      titulo: `OS ${rotulo} (${apelido}): ${fmtBRL(custoCents)} de custo e nenhuma cobrança`,
       descricao:
-        `O projeto ${projeto}${rotulo !== projeto ? ` (${rotulo})` : ""} acumula ${fmtBRL(custoCents)} em ` +
+        `O projeto ${projeto}${rotulo !== projeto ? ` (${rotulo})` : ""} da ${apelido} acumula ${fmtBRL(custoCents)} em ` +
         `${custos.length} título(s) a pagar e nenhum título a receber. O último custo foi lançado há ` +
         `${diasParado} dias. Custo pago, serviço prestado, receita nunca faturada.`,
       recomendacao:
@@ -762,7 +767,7 @@ export function osComCustoSemFaturamento(
           .slice(0, 5)
           .map((t) => ({ parceiro: t.parceiroNome, valor: t.valorDocumentoCents, doc: t.numeroDocumento })),
       },
-      chave: chaveAchado("CR-OS-NAO-FATURADA", projeto),
+      chave: chaveAchado("CR-OS-NAO-FATURADA", apelido, projeto),
     });
   }
 

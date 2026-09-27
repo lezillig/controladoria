@@ -59,6 +59,9 @@ const MESES_DE_AUSENCIA = 3;
 
 export type ItemDePadrao = {
   chave: string;
+  // A conexão da série, quando a leitura veio do banco. Entra na chave do
+  // achado: o mesmo código em duas contas Omie são dois fatos.
+  conexaoId?: string | null;
   rotulo: string;
   valorCents: number;
   descricao: string;
@@ -69,14 +72,31 @@ function competenciaDe(d: Date): string {
   return chaveMes(d);
 }
 
+// AGRUPA POR CONEXÃO E CHAVE. O código de parceiro é por conta Omie: sem a
+// conexão no agrupamento, o fornecedor 123 da Azul e o 123 da MCZ viravam uma
+// série só, com dois valores por mês — e o mesmo CNPJ com códigos diferentes
+// nas duas contas virava dois fornecedores. O `chave` devolvido em cada grupo
+// continua sendo o código (é o que a evidência e o baseline usam); a conexão
+// vai à parte, para a chave do achado.
 function porChave(series: SerieMensal[]): Map<string, SerieMensal[]> {
   const mapa = new Map<string, SerieMensal[]>();
   for (const s of series) {
-    const atual = mapa.get(s.chave);
+    const grupo = `${s.conexaoId ?? ""}|${s.chave}`;
+    const atual = mapa.get(grupo);
     if (atual) atual.push(s);
-    else mapa.set(s.chave, [s]);
+    else mapa.set(grupo, [s]);
   }
+  // Devolve com a chave "limpa" quando não há conexão (séries de teste) e com
+  // o prefixo quando há: quem consome extrai o código de `linhas[0].chave`.
   return mapa;
+}
+
+function codigoDe(linhas: SerieMensal[]): string {
+  return linhas[0].chave;
+}
+
+function conexaoDe(linhas: SerieMensal[]): string | null {
+  return linhas[0].conexaoId ?? null;
 }
 
 function rotuloDe(linhas: SerieMensal[], chave: string): string {
@@ -97,7 +117,9 @@ export function foraDoPadrao(
 ): ItemDePadrao[] {
   const achados: ItemDePadrao[] = [];
 
-  for (const [chave, linhas] of porChave(series)) {
+  for (const [, linhas] of porChave(series)) {
+    const chave = codigoDe(linhas);
+    const conexaoId = conexaoDe(linhas);
     const atual = linhas.find((l) => l.competencia === competenciaAtual);
     if (!atual || atual.valorCents <= 0) continue;
 
@@ -116,6 +138,7 @@ export function foraDoPadrao(
 
     achados.push({
       chave,
+      conexaoId,
       rotulo: rotuloDe(linhas, chave),
       valorCents: excedente,
       descricao:
@@ -156,7 +179,9 @@ export function fornecedorEfemero(
   const achados: ItemDePadrao[] = [];
   const limiteDeAusencia = competenciaAnterior(competenciaAtual, MESES_DE_AUSENCIA);
 
-  for (const [chave, linhas] of porChave(series)) {
+  for (const [, linhas] of porChave(series)) {
+    const chave = codigoDe(linhas);
+    const conexaoId = conexaoDe(linhas);
     const ativos = linhas.filter((l) => l.valorCents > 0);
     if (ativos.length === 0 || ativos.length > MESES_DE_EFEMERO) continue;
 
@@ -170,6 +195,7 @@ export function fornecedorEfemero(
 
     achados.push({
       chave,
+      conexaoId,
       rotulo: rotuloDe(linhas, chave),
       valorCents: total,
       descricao:
@@ -214,7 +240,9 @@ export function fornecedorDormente(
   const achados: ItemDePadrao[] = [];
   const competenciaAnteriorAAtual = competenciaAnterior(competenciaAtual, 1);
 
-  for (const [chave, linhas] of porChave(series)) {
+  for (const [, linhas] of porChave(series)) {
+    const chave = codigoDe(linhas);
+    const conexaoId = conexaoDe(linhas);
     const ativos = linhas.filter((l) => l.valorCents > 0).sort((a, b) => a.competencia.localeCompare(b.competencia));
     if (ativos.length < MESES_ATIVOS_PARA_SER_ANTIGO + 1) continue;
     const ultimo = ativos[ativos.length - 1];
@@ -230,6 +258,7 @@ export function fornecedorDormente(
 
     achados.push({
       chave,
+      conexaoId,
       rotulo: rotuloDe(linhas, chave),
       valorCents: ultimo.valorCents,
       descricao:
@@ -269,7 +298,9 @@ const REAJUSTE_ESTIMADO = 0.04;
 
 export function reajusteVencido(series: SerieMensal[], competenciaAtual: string, materialidade: number): ItemDePadrao[] {
   const achados: ItemDePadrao[] = [];
-  for (const [chave, linhas] of porChave(series)) {
+  for (const [, linhas] of porChave(series)) {
+    const chave = codigoDe(linhas);
+    const conexaoId = conexaoDe(linhas);
     const ativos = linhas.filter((l) => l.valorCents > 0 && l.competencia < competenciaAtual).sort((a, b) => a.competencia.localeCompare(b.competencia));
     if (ativos.length < MESES_SEM_REAJUSTE) continue;
     // Consecutivos até o mês anterior ao corrente (no máximo um buraco).
@@ -293,6 +324,7 @@ export function reajusteVencido(series: SerieMensal[], competenciaAtual: string,
 
     achados.push({
       chave,
+      conexaoId,
       rotulo: rotuloDe(linhas, chave),
       valorCents: impacto,
       descricao:
@@ -328,7 +360,9 @@ export function reajusteSilencioso(
 ): ItemDePadrao[] {
   const achados: ItemDePadrao[] = [];
 
-  for (const [chave, linhas] of porChave(series)) {
+  for (const [, linhas] of porChave(series)) {
+    const chave = codigoDe(linhas);
+    const conexaoId = conexaoDe(linhas);
     const ativos = linhas.filter((l) => l.valorCents > 0 && l.competencia <= competenciaAtual);
     // Recorrente de verdade: ao menos doze meses de vida, para haver "antes" e
     // "depois" com significado.
@@ -353,6 +387,7 @@ export function reajusteSilencioso(
 
     achados.push({
       chave,
+      conexaoId,
       rotulo: rotuloDe(linhas, chave),
       valorCents: custoAnual,
       descricao:
@@ -391,7 +426,9 @@ export function prazoAntecipado(
 ): ItemDePadrao[] {
   const achados: ItemDePadrao[] = [];
 
-  for (const [chave, linhas] of porChave(series)) {
+  for (const [, linhas] of porChave(series)) {
+    const chave = codigoDe(linhas);
+    const conexaoId = conexaoDe(linhas);
     const comBaixa = linhas.filter((l) => l.baixas > 0 && l.competencia <= competenciaAtual);
     if (comBaixa.length < 12) continue;
 
@@ -416,6 +453,7 @@ export function prazoAntecipado(
 
     achados.push({
       chave,
+      conexaoId,
       rotulo: rotuloDe(linhas, chave),
       valorCents: valorRecente,
       descricao:
@@ -515,7 +553,7 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
         evidencia: { fornecedor: i.rotulo, ...i.evidencia },
         // A competência entra na chave: o mesmo fornecedor fora do padrão em
         // dois meses diferentes são dois fatos, não uma repetição.
-        chave: chaveAchado(regra, i.chave, competenciaAtual),
+        chave: chaveAchado(regra, ...(i.conexaoId ? [i.conexaoId] : []), i.chave, competenciaAtual),
       });
     }
   };
@@ -595,7 +633,7 @@ async function auditarPadroes(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
       entidadeTipo: "OmieParceiro",
       entidadeRef: i.rotulo,
       evidencia: { cliente: i.rotulo, ...i.evidencia },
-      chave: chaveAchado("HI-REAJUSTE-VENCIDO", i.chave),
+      chave: chaveAchado("HI-REAJUSTE-VENCIDO", ...(i.conexaoId ? [i.conexaoId] : []), i.chave),
     });
   }
 
@@ -642,9 +680,11 @@ export function somenteFornecedores(
     return candidatos.every((p) => parceiroForaDeEscopo(p.nome, p.documento));
   };
   const excluidas = new Set(
-    [...porChave(series)].filter(([chave, linhas]) => foraDeEscopo(chave, rotuloDe(linhas, chave))).map(([chave]) => chave)
+    [...porChave(series)]
+      .filter(([, linhas]) => foraDeEscopo(codigoDe(linhas), rotuloDe(linhas, codigoDe(linhas))))
+      .map(([grupo]) => grupo)
   );
-  return series.filter((s) => !excluidas.has(s.chave));
+  return series.filter((s) => !excluidas.has(`${s.conexaoId ?? ""}|${s.chave}`));
 }
 
 // Crescimento da receita do grupo: mediana dos três meses recentes contra a

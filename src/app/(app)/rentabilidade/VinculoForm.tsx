@@ -6,7 +6,7 @@ import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
 import { salvarVinculo } from "./actions";
 
 export type OpcaoDestino = { valor: string; rotulo: string; grupo: string };
-export type OpcaoOrigem = { tipo: string; codigo: string; rotulo: string };
+export type OpcaoOrigem = { tipo: string; codigo: string; conexaoId?: string | null; rotulo: string };
 
 // Formulário do de-para. Uma linha só: origem (dimensão da Omie) → destino
 // (contrato, veículo ou funcionário) → percentual.
@@ -24,8 +24,9 @@ export default function VinculoForm({
   const [processando, iniciar] = useTransition();
   const router = useRouter();
 
-  const usandoTexto = origem === "TEXTO|";
-  const origemSelecionada = origens.find((o) => `${o.tipo}|${o.codigo}` === origem);
+  const usandoTexto = origem.startsWith("TEXTO|");
+  const chaveDe = (o: OpcaoOrigem) => `${o.tipo}|${o.codigo}|${o.conexaoId ?? ""}`;
+  const origemSelecionada = origens.find((o) => chaveDe(o) === origem);
 
   const grupos = [...new Set(destinos.map((d) => d.grupo))];
 
@@ -34,9 +35,10 @@ export default function VinculoForm({
       className="grid grid-cols-1 gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4"
       action={(formData) => {
         setErro(null);
-        const [tipo, codigo] = origem.split("|");
+        const [tipo, codigo, conexaoId] = origem.split("|");
         formData.set("tipoOrigem", tipo);
         formData.set("valorOrigem", usandoTexto ? textoLivre : codigo);
+        formData.set("conexaoId", usandoTexto ? "" : (conexaoId ?? ""));
         formData.set("rotuloOrigem", usandoTexto ? textoLivre : (origemSelecionada?.rotulo ?? ""));
         iniciar(async () => {
           const resultado = await salvarVinculo(formData);
@@ -53,11 +55,11 @@ export default function VinculoForm({
         <label className={labelClass}>Origem (lado da Omie)</label>
         <select value={origem} onChange={(e) => setOrigem(e.target.value)} className={inputClass}>
           {origens.map((o) => (
-            <option key={`${o.tipo}|${o.codigo}`} value={`${o.tipo}|${o.codigo}`}>
+            <option key={chaveDe(o)} value={chaveDe(o)}>
               {o.rotulo}
             </option>
           ))}
-          <option value="TEXTO|">Texto no documento/observação do título…</option>
+          <option value="TEXTO||">Texto no documento/observação do título…</option>
         </select>
         {usandoTexto && (
           <input

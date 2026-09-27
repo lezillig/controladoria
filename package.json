@@ -29,6 +29,7 @@
     "teste:fiscal": "tsx scripts/teste-fiscal.ts",
     "teste:datas": "TZ=UTC tsx scripts/teste-datas.ts",
     "teste:especialistas": "tsx scripts/teste-especialistas.ts",
+    "teste:conciliacao": "tsx scripts/teste-conciliacao.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

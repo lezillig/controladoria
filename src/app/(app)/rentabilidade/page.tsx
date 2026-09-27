@@ -39,14 +39,18 @@ export default async function RentabilidadePage({
   const vinculos = ctx.vinculos;
   const confirmados = vinculos.filter((v) => !v.sugerido);
 
+  // A CONEXÃO VAI JUNTO com a origem: departamento "1" da Azul e "1" da MCZ
+  // são coisas diferentes, e um vínculo gravado só pelo código caía nos dois —
+  // o custo de uma empresa aparecia no contrato da outra, que é exatamente o
+  // erro que esta tela diz evitar.
   const origens: OpcaoOrigem[] = [
     ...ctx.departamentos
       .filter((d) => !d.inativo)
-      .map((d) => ({ tipo: "DEPARTAMENTO", codigo: d.codigo, rotulo: `Departamento · ${d.descricao}` })),
+      .map((d) => ({ tipo: "DEPARTAMENTO", codigo: d.codigo, conexaoId: d.conexaoId, rotulo: `Departamento · ${d.descricao} (${d.conexaoApelido})` })),
     ...ctx.categorias
       .filter((c) => !c.inativa && !c.totalizadora)
       .slice(0, 200)
-      .map((c) => ({ tipo: "CATEGORIA", codigo: c.codigo, rotulo: `Categoria · ${c.descricao}` })),
+      .map((c) => ({ tipo: "CATEGORIA", codigo: c.codigo, conexaoId: c.conexaoId, rotulo: `Categoria · ${c.descricao} (${c.conexaoApelido})` })),
   ];
 
   const destinos: OpcaoDestino[] = [

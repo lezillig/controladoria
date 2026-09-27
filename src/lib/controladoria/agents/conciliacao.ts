@@ -59,11 +59,41 @@ function movimentosDoPeriodo(ctx: ContextoAuditoria) {
 // rendimento de aplicação e estorno — que não são receita.
 const NAO_E_RECEITA = /transfer|aplica[cç][aã]o|resgate|rendimento|estorno|devolu[cç][aã]o|tarifa|cdb|poupan|juros s\/|cr[eé]dito de juros|entre contas|ted mesma|mesma titularidade/i;
 
+// CASAMENTO ENTRE MOVIMENTO E BAIXA: mesma conexão, mesma conta quando os dois
+// lados a informam, natureza coerente com o sentido do dinheiro, valor a
+// centavos e data a dias. A versão anterior casava por valor e data em TODO
+// o grupo: um débito na conta da Azul era "explicado" por um recebimento da
+// MCZ do mesmo valor, e uma baixa de título a pagar explicava um crédito. Foi
+// a revisão de auditoria que apontou, na regra que o próprio arquivo chama de
+// a mais séria dele.
+function baixaCasaComMovimento(
+  b: { conexaoId: string; contaCorrenteCodigo: string | null; valorCents: number; dataBaixa: Date; tituloId: string },
+  m: { conexaoId: string; contaCorrenteCodigo: string | null; valorCents: number; data: Date },
+  naturezaEsperada: "PAGAR" | "RECEBER",
+  naturezaPorTitulo: Map<string, string>
+): boolean {
+  if (b.conexaoId !== m.conexaoId) return false;
+  if (b.contaCorrenteCodigo && m.contaCorrenteCodigo && b.contaCorrenteCodigo !== m.contaCorrenteCodigo) return false;
+  // Título fora do contexto (baixa órfã): não dá para saber a natureza, e a
+  // dúvida não vira achado.
+  const natureza = naturezaPorTitulo.get(b.tituloId);
+  if (natureza && natureza !== naturezaEsperada) return false;
+  return (
+    Math.abs(Math.abs(b.valorCents) - Math.abs(m.valorCents)) <= TOLERANCIA_CENTAVOS &&
+    Math.abs(diasEntre(b.dataBaixa, m.data)) <= JANELA_CASAMENTO_DIAS
+  );
+}
+
+function naturezasDosTitulos(ctx: ContextoAuditoria): Map<string, string> {
+  return new Map(ctx.titulos.map((t) => [t.id, t.natureza as string]));
+}
+
 function entradaSemTitulo(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const movimentos = movimentosDoPeriodo(ctx);
   const creditos = movimentos.filter((m) => m.valorCents > 0);
   const debitos = movimentos.filter((m) => m.valorCents < 0);
   const baixas = ctx.baixas;
+  const naturezas = naturezasDosTitulos(ctx);
 
   const orfaos = creditos.filter((m) => {
     if (m.tituloCodigo) return false;
@@ -77,11 +107,7 @@ function entradaSemTitulo(ctx: ContextoAuditoria, materialidade: number): Achado
         Math.abs(diasEntre(d.data, m.data)) <= 1
     );
     if (transferencia) return false;
-    return !baixas.some(
-      (b) =>
-        Math.abs(Math.abs(b.valorCents) - m.valorCents) <= TOLERANCIA_CENTAVOS &&
-        Math.abs(diasEntre(b.dataBaixa, m.data)) <= JANELA_CASAMENTO_DIAS
-    );
+    return !baixas.some((b) => baixaCasaComMovimento(b, m, "RECEBER", naturezas));
   });
 
   return orfaos
@@ -162,16 +188,18 @@ function movimentosNaoConciliados(ctx: ContextoAuditoria, materialidade: number)
 function saidaSemTitulo(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const movimentos = movimentosDoPeriodo(ctx).filter((m) => m.valorCents < 0);
   const baixas = ctx.baixas;
+  const naturezas = naturezasDosTitulos(ctx);
+  // O código do lançamento na conta corrente é o casamento exato (a baixa
+  // guarda o nIdLancCC): quem o tem não precisa do casamento aproximado.
+  const lancamentosComBaixa = new Set(baixas.map((b) => b.lancamentoCCCodigo).filter((c): c is string => !!c));
 
   const orfaos = movimentos.filter((m) => {
     if (m.tituloCodigo) return false;
-    // Sem vinculo explicito, tenta casar por valor e data com alguma baixa —
-    // so entra como orfao quando nao ha nem casamento aproximado.
-    return !baixas.some(
-      (b) =>
-        Math.abs(Math.abs(b.valorCents) - Math.abs(m.valorCents)) <= TOLERANCIA_CENTAVOS &&
-        Math.abs(diasEntre(b.dataBaixa, m.data)) <= JANELA_CASAMENTO_DIAS
-    );
+    if (lancamentosComBaixa.has(m.codigoLancamento)) return false;
+    // Sem vinculo explicito, tenta casar por valor e data com alguma baixa da
+    // MESMA conexão e natureza — so entra como orfao quando nao ha nem
+    // casamento aproximado.
+    return !baixas.some((b) => baixaCasaComMovimento(b, m, "PAGAR", naturezas));
   });
 
   if (orfaos.length === 0) return [];
@@ -227,15 +255,17 @@ function baixaSemMovimento(ctx: ContextoAuditoria, materialidade: number): Achad
   // = nCodLancamento da linha do extrato): é o casamento exato. Só quem não
   // tem o código cai no casamento por valor e data.
   const codigosNoExtrato = new Set(movimentos.map((m) => m.codigoLancamento));
+  // Baixa de uma conexão SEM extrato importado não é "baixa sem movimento": é
+  // base incompleta, e disso o supervisor trata. Com o extrato de uma empresa
+  // só, a outra produzia esta regra em massa.
+  const conexoesComExtrato = new Set(movimentos.map((m) => m.conexaoId));
+  const naturezas = naturezasDosTitulos(ctx);
   const semMovimento = baixas.filter(
     (b) =>
+      conexoesComExtrato.has(b.conexaoId) &&
       Math.abs(b.valorCents) >= materialidade &&
       !(b.lancamentoCCCodigo && codigosNoExtrato.has(b.lancamentoCCCodigo)) &&
-      !movimentos.some(
-        (m) =>
-          Math.abs(Math.abs(m.valorCents) - Math.abs(b.valorCents)) <= TOLERANCIA_CENTAVOS &&
-          Math.abs(diasEntre(m.data, b.dataBaixa)) <= JANELA_CASAMENTO_DIAS
-      )
+      !movimentos.some((m) => baixaCasaComMovimento(b, m, (naturezas.get(b.tituloId) as "PAGAR" | "RECEBER" | undefined) ?? (m.valorCents < 0 ? "PAGAR" : "RECEBER"), naturezas))
   );
 
   if (semMovimento.length === 0) return [];

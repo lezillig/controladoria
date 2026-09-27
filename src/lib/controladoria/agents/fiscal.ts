@@ -342,12 +342,15 @@ function notaCanceladaComTitulo(ctx: ContextoAuditoria, materialidade: number): 
   if (canceladas.length === 0) return [];
 
   const achados: AchadoNovo[] = [];
+  // Número de nota é único POR CONEXÃO: a 251 da Azul e a 251 da MCZ são
+  // documentos diferentes, e casar só pelo número acusava o título de uma pelo
+  // cancelamento da outra.
   const receberPorNumero = agrupar(
     titulosAtivos(ctx, "RECEBER").filter((t) => t.numeroDocumento !== null),
-    (t) => t.numeroDocumento as string
+    (t) => `${t.conexaoId}|${t.numeroDocumento}`
   );
   for (const nota of canceladas) {
-    const titulos = nota.numero !== null ? (receberPorNumero.get(nota.numero) ?? []) : [];
+    const titulos = nota.numero !== null ? (receberPorNumero.get(`${nota.conexaoId}|${nota.numero}`) ?? []) : [];
     if (titulos.length === 0) continue;
 
     const valor = somar(titulos, (t) => t.valorDocumentoCents);
@@ -443,14 +446,15 @@ function notaSemTitulo(ctx: ContextoAuditoria, materialidade: number): AchadoNov
   if (notas.length === 0) return [];
 
   const receber = titulosAtivos(ctx, "RECEBER");
-  const numerosDeTitulo = new Set(receber.map((t) => t.numeroDocumento).filter((n): n is string => n !== null));
-  const valoresPorParceiro = agrupar(receber.filter((t) => t.parceiroCodigo), (t) => t.parceiroCodigo as string);
+  // Número e código de cliente são únicos por conexão (ver FI-NOTA-CANCELADA).
+  const numerosDeTitulo = new Set(receber.filter((t) => t.numeroDocumento !== null).map((t) => `${t.conexaoId}|${t.numeroDocumento}`));
+  const valoresPorParceiro = agrupar(receber.filter((t) => t.parceiroCodigo), (t) => `${t.conexaoId}|${t.parceiroCodigo}`);
   const orfas = notas.filter((n) => {
-    if (n.numero && numerosDeTitulo.has(n.numero)) return false;
+    if (n.numero && numerosDeTitulo.has(`${n.conexaoId}|${n.numero}`)) return false;
     // Sem numero em comum, tenta casar por cliente e valor exato — o
     // casamento frouxo evita apontar nota que so foi lancada com outro
     // numero de documento.
-    return !(n.parceiroCodigo ? (valoresPorParceiro.get(n.parceiroCodigo) ?? []) : []).some(
+    return !(n.parceiroCodigo ? (valoresPorParceiro.get(`${n.conexaoId}|${n.parceiroCodigo}`) ?? []) : []).some(
       (t) => Math.abs(t.valorDocumentoCents - n.valorCents) <= 100
     );
   });
@@ -622,24 +626,35 @@ function mesSeguinte(chaveMesAno: string): string {
 // nesse caso seria acusar a categoria, não o recolhimento); ou o mês ainda
 // não fechou.
 function issRecolhidoAMenor(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
-  const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c.descricao]));
-  const titulosIss = titulosAtivos(ctx, "PAGAR").filter((t) => ehTituloDeIss(t, categorias));
+  // Categoria e apuração POR CONEXÃO: cada empresa recolhe o próprio ISS, e
+  // somar as notas das duas contra as guias das duas escondia a diferença de
+  // uma dentro do excesso da outra. O código de categoria também é por conta.
+  const categorias = new Map(ctx.categorias.map((c) => [`${c.conexaoId}|${c.codigo}`, c.descricao]));
+  const titulosIss = titulosAtivos(ctx, "PAGAR").filter((t) =>
+    ehTituloDeIss(t, new Map([[t.categoriaCodigo ?? "", categorias.get(`${t.conexaoId}|${t.categoriaCodigo ?? ""}`) ?? ""]]))
+  );
   if (titulosIss.length === 0) return [];
 
   const mesAtual = chaveMes(inicioDoMes(ctx.dataReferencia));
   const notas = ctx.notas.filter(
     (n) => n.tipo === "NFSE" && !n.cancelada && n.issRetido !== true && (n.valorIssCents ?? 0) > 0
   );
-  const porMes = agrupar(notas, (n) => chaveMes(n.dataEmissao));
-  const guiasPorVencimento = agrupar(titulosIss, (t) => chaveMes(t.dataVencimento));
+  const porMes = agrupar(notas, (n) => `${n.conexaoId}|${chaveMes(n.dataEmissao)}`);
+  const guiasPorVencimento = agrupar(titulosIss, (t) => `${t.conexaoId}|${chaveMes(t.dataVencimento)}`);
+  const conexoesComGuia = new Set(titulosIss.map((t) => t.conexaoId));
 
   const achados: AchadoNovo[] = [];
-  for (const [mes, notasDoMes] of porMes) {
+  for (const [chaveConexaoMes, notasDoMes] of porMes) {
+    const conexaoId = chaveConexaoMes.slice(0, chaveConexaoMes.indexOf("|"));
+    const mes = chaveConexaoMes.slice(chaveConexaoMes.indexOf("|") + 1);
+    // Conexão sem NENHUM título de ISS na janela: a categoria pode ter outro
+    // nome lá, e "guia zero" seria acusar a categoria, não o recolhimento.
+    if (!conexoesComGuia.has(conexaoId)) continue;
     // Só competência FECHADA: as notas do mês corrente ainda estão sendo
     // emitidas e a guia ainda não venceu.
     if (mes >= mesAtual) continue;
     const apurado = somar(notasDoMes, (n) => n.valorIssCents ?? 0);
-    const guias = guiasPorVencimento.get(mesSeguinte(mes)) ?? [];
+    const guias = guiasPorVencimento.get(`${conexaoId}|${mesSeguinte(mes)}`) ?? [];
     // A guia que ainda não venceu não é "a menor" — é "a pagar".
     const vencimentoDaGuia = new Date(Number(mesSeguinte(mes).slice(0, 4)), Number(mesSeguinte(mes).slice(5, 7)), 0);
     if (vencimentoDaGuia >= ctx.dataReferencia) continue;
@@ -652,7 +667,7 @@ function issRecolhidoAMenor(ctx: ContextoAuditoria, materialidade: number): Acha
       tipo: "EVENTO",
       severidade: severidadePorValor(diferenca, materialidade),
       categoria: "CONFORMIDADE",
-      titulo: `ISS de ${mes}: ${fmtBRL(recolhido)} recolhido contra ${fmtBRL(apurado)} destacado nas notas`,
+      titulo: `ISS de ${mes} (${notasDoMes[0].conexaoApelido}): ${fmtBRL(recolhido)} recolhido contra ${fmtBRL(apurado)} destacado nas notas`,
       descricao:
         `As ${notasDoMes.length} NFS-e de ${mes} sem ISS retido destacam ${fmtBRL(apurado)} de ISS. ` +
         `Os títulos de ISS com vencimento em ${mesSeguinte(mes)} somam ${fmtBRL(recolhido)}` +
@@ -675,7 +690,7 @@ function issRecolhidoAMenor(ctx: ContextoAuditoria, materialidade: number): Acha
         diferenca,
         titulosDeIss: guias.map((t) => ({ ref: refTitulo(t), valor: t.valorDocumentoCents, vencimento: fmtData(t.dataVencimento), status: t.status })),
       },
-      chave: chaveAchado("FI-ISS-RECOLHIDO-A-MENOR", mes),
+      chave: chaveAchado("FI-ISS-RECOLHIDO-A-MENOR", notasDoMes[0].conexaoApelido, mes),
     });
   }
   return achados;

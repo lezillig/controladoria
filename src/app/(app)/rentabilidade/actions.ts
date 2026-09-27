@@ -29,6 +29,10 @@ export async function salvarVinculo(formData: FormData): Promise<ResultadoVincul
   const rotuloOrigem = String(formData.get("rotuloOrigem") ?? "").trim() || null;
   const destino = String(formData.get("destino") ?? "");
   const percentualBruto = Number(formData.get("percentual") ?? 100);
+  // A conexão da origem. Departamento, projeto, categoria e parceiro são
+  // códigos POR CONTA Omie; sem a conexão gravada, o vínculo casava o código
+  // igual da outra empresa. Texto livre não tem conexão.
+  const conexaoInformada = String(formData.get("conexaoId") ?? "").trim();
 
   if (!TIPOS_ORIGEM.includes(tipoOrigem)) return { erro: "Origem inválida." };
   if (!valorOrigem) return { erro: "Informe o código (ou texto) do lado da Omie." };
@@ -59,6 +63,14 @@ export async function salvarVinculo(formData: FormData): Promise<ResultadoVincul
       : (await lerMotoristas(session.companyId)).some((m) => m.id === dados.driverId);
   if (!pertence) return { erro: "Destino não encontrado no cadastro desta empresa." };
 
+  let conexaoId: string | null = null;
+  if (tipoOrigem !== "TEXTO") {
+    if (!conexaoInformada) return { erro: "A origem precisa dizer de qual empresa (conexão Omie) é o código." };
+    const conexao = await prisma.omieConexao.findFirst({ where: { id: conexaoInformada, companyId: session.companyId }, select: { id: true } });
+    if (!conexao) return { erro: "Conexão Omie não encontrada nesta empresa." };
+    conexaoId = conexao.id;
+  }
+
   // Sem upsert por chave composta: a constraint única inclui colunas
   // opcionais (clienteId/vehicleId/driverId são nulos conforme o destino), e
   // o Prisma não aceita nulo dentro de uma chave composta de `where`.
@@ -68,6 +80,7 @@ export async function salvarVinculo(formData: FormData): Promise<ResultadoVincul
       companyId: session.companyId,
       tipoOrigem,
       valorOrigem,
+      conexaoId,
       clienteId: dados.clienteId,
       vehicleId: dados.vehicleId,
       driverId: dados.driverId,
@@ -92,6 +105,7 @@ export async function salvarVinculo(formData: FormData): Promise<ResultadoVincul
         companyId: session.companyId,
         tipoOrigem,
         valorOrigem,
+        conexaoId,
         rotuloOrigem,
         ...dados,
         percentual: percentualBruto,

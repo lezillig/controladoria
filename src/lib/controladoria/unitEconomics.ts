@@ -71,7 +71,11 @@ function valorDaOrigem(titulo: OmieTitulo, tipoOrigem: string): string | null {
 // sugestao automatica nunca move dinheiro sozinha (mesma regra da extracao de
 // CCT por IA neste projeto — a maquina sugere, a pessoa confirma).
 export function resolverDestinos(ctx: ContextoAuditoria, titulo: OmieTitulo): Destino[] {
-  const confirmados = ctx.vinculos.filter((v) => !v.sugerido);
+  // Vínculo com conexão só vale para títulos daquela conexão: o código de
+  // departamento/categoria/parceiro é por conta Omie. Vínculo sem conexão
+  // (texto livre, ou gravado antes de a coluna ser preenchida) vale para as
+  // duas — é o comportamento antigo, mantido para não apagar de-para feito.
+  const confirmados = ctx.vinculos.filter((v) => !v.sugerido && (!v.conexaoId || v.conexaoId === titulo.conexaoId));
 
   for (const tipo of PRECEDENCIA) {
     if (tipo === "TEXTO") {

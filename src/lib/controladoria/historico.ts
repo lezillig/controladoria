@@ -316,6 +316,11 @@ export function competenciasDaJanela(inicio: Date, fim: Date): string[] {
 
 export type SerieMensal = {
   chave: string;
+  // A conexão da linha. Sem ela, duas séries de conexões diferentes com o
+  // mesmo código de parceiro se fundiam numa só (dois fornecedores viravam
+  // um, com meses duplicados inflando a base). Opcional porque as regras
+  // puras recebem séries montadas à mão nos testes.
+  conexaoId?: string | null;
   rotulo: string | null;
   competencia: string;
   titulos: number;
@@ -345,7 +350,7 @@ export async function lerSeries(params: {
 }): Promise<SerieMensal[]> {
   const { companyId, conexaoId, dimensao, natureza, de, ate } = params;
   return prisma.$queryRaw<SerieMensal[]>`
-    SELECT chave, rotulo, competencia, titulos,
+    SELECT chave, "conexaoId", rotulo, competencia, titulos,
            "valorCents", "valorMaximoCents", baixas, "valorBaixadoCents", "diasPagamentoSoma"
       FROM ${tabela("HistoricoMensal")}
      WHERE "companyId" = ${companyId}

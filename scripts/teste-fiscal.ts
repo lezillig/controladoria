@@ -172,8 +172,27 @@ const guiaAbril = (valor: number) =>
     conferir("guia R$ 206 abaixo do apurado é achado", r.length, 1);
     conferir("a diferença é o valor", r[0]?.valorCents, 206_44);
     conferir("é EVENTO datado na competência", r[0]?.tipo, "EVENTO");
-    conferir("chave por competência", r[0]?.chave, "FI-ISS-RECOLHIDO-A-MENOR|2026-03");
+    // A chave leva a EMPRESA: cada uma recolhe o próprio ISS, e a apuração
+    // das duas somadas escondia a diferença de uma no excesso da outra.
+    conferir("chave por empresa e competência", r[0]?.chave, "FI-ISS-RECOLHIDO-A-MENOR|AZUL|2026-03");
     conferir("evidência traz apurado e recolhido", [r[0]?.evidencia?.issApurado, r[0]?.evidencia?.issRecolhido], [57_639_19, 57_432_75]);
+  }
+  {
+    // A MESMA GUIA NA OUTRA EMPRESA NÃO CONTA. Notas da Azul e guia da MCZ: a
+    // Azul fica sem guia — mas a MCZ não tem nota nem guia de ISS na janela,
+    // então a regra cala para ela, e a Azul só é apontada porque TEM guia de
+    // ISS na base (em outro mês): o silêncio por "categoria com outro nome"
+    // é por conexão.
+    const guiaDaMcz = { ...guiaAbril(57_432_75), conexaoId: "y", conexaoApelido: "MCZ" };
+    const ctx = contexto({
+      titulos: [...fundo(), guiaDaMcz],
+      notas: [
+        nota({ dataEmissao: d("2026-03-10"), valorIssCents: 30_000_00 }),
+        nota({ dataEmissao: d("2026-03-20"), valorIssCents: 27_639_19 }),
+      ],
+    });
+    const r = await rodar(ctx, "FI-ISS-RECOLHIDO-A-MENOR");
+    conferir("guia de outra empresa não recolhe o ISS desta: sem guia de ISS na Azul, a regra cala", r.length, 0);
   }
   {
     const ctx = contexto({

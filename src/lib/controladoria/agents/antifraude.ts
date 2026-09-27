@@ -458,9 +458,11 @@ function contaBancariaAlterada(ctx: ContextoAuditoria, materialidade: number): A
   );
 
   const achados: AchadoNovo[] = [];
-  const pagarPorParceiro = agrupar(ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo), (t) => t.parceiroCodigo as string);
+  // Código de parceiro é por conta Omie: o mesmo número é gente diferente na
+  // Azul e na MCZ (o arquivo já dizia isso mais abaixo; aqui faltava aplicar).
+  const pagarPorParceiro = agrupar(ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo), (t) => `${t.conexaoId}|${t.parceiroCodigo}`);
   for (const p of alterados) {
-    const pagamentosDepois = (pagarPorParceiro.get(p.codigoOmie) ?? []).filter(
+    const pagamentosDepois = (pagarPorParceiro.get(`${p.conexaoId}|${p.codigoOmie}`) ?? []).filter(
       (t) => t.dataUltimaBaixa !== null && t.dataUltimaBaixa >= p.contaBancariaAlteradaEm!
     );
     const valor = somar(pagamentosDepois, (t) => t.valorPagoCents);
@@ -493,7 +495,7 @@ function contaBancariaAlterada(ctx: ContextoAuditoria, materialidade: number): A
         pagamentosApos: pagamentosDepois.length,
         valorPago: valor,
       },
-      chave: chaveAchado("FR-CONTA-ALTERADA", p.codigoOmie, p.contaBancariaAlteradaEm?.toISOString().slice(0, 10)),
+      chave: chaveAchado("FR-CONTA-ALTERADA", p.conexaoApelido, p.codigoOmie, p.contaBancariaAlteradaEm?.toISOString().slice(0, 10)),
     });
   }
   return achados;
@@ -1005,9 +1007,9 @@ function fornecedorNovoComValorAlto(ctx: ContextoAuditoria, materialidade: numbe
     return desde !== null && diasEntre(desde, ctx.dataReferencia) <= DIAS_FORNECEDOR_NOVO;
   });
 
-  const pagarPorParceiro = agrupar(ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo), (t) => t.parceiroCodigo as string);
+  const pagarPorParceiro = agrupar(ctx.titulos.filter((t) => t.natureza === "PAGAR" && t.parceiroCodigo), (t) => `${t.conexaoId}|${t.parceiroCodigo}`);
   for (const p of novos) {
-    const titulos = pagarPorParceiro.get(p.codigoOmie) ?? [];
+    const titulos = pagarPorParceiro.get(`${p.conexaoId}|${p.codigoOmie}`) ?? [];
     if (titulos.length === 0) continue;
     const valor = somar(titulos, (t) => t.valorDocumentoCents);
     if (valor < materialidade * 3) continue;
@@ -1042,7 +1044,7 @@ function fornecedorNovoComValorAlto(ctx: ContextoAuditoria, materialidade: numbe
         // Omie precisa saber disso antes de cobrar alguem.
         origemDaData: p.dataCadastroOmie ? "cadastro na Omie" : "primeira vez no espelho",
       },
-      chave: chaveAchado("FR-FORNECEDOR-NOVO-ALTO", p.codigoOmie),
+      chave: chaveAchado("FR-FORNECEDOR-NOVO-ALTO", p.conexaoApelido, p.codigoOmie),
     });
   }
   return achados;
