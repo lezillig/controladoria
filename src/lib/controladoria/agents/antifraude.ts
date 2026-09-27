@@ -773,14 +773,23 @@ function fornecedorQueEFuncionario(ctx: ContextoAuditoria, materialidade: number
 
 // FR-DOCUMENTO-INVALIDO — CNPJ/CPF que nao passa no digito verificador, ou
 // fornecedor sem documento nenhum recebendo pagamento.
-function documentoInvalido(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+//
+// A CHAVE É CONEXÃO + CÓDIGO DO PARCEIRO, dos dois lados. A versão anterior
+// indexava os títulos por `chaveParceiro` (que prefere o documento) e buscava
+// pelo código puro do cadastro: as duas formas nunca coincidiam, e a regra
+// devolveu lista vazia desde que foi escrita — documentada como ativa, inerte
+// na prática. Foi a revisão de auditoria que encontrou, lendo o código; nenhum
+// teste a exercitava. O documento não serve de chave aqui por definição: o
+// caso que se procura é justamente o fornecedor SEM documento válido.
+export function documentoInvalido(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
   const pagamentosPorParceiro = agrupar(
-    titulosAtivos(ctx, "PAGAR").filter((t) => t.valorPagoCents > 0),
-    (t) => chaveParceiro(t)
+    titulosAtivos(ctx, "PAGAR").filter((t) => t.valorPagoCents > 0 && t.parceiroCodigo),
+    (t) => `${t.conexaoId}|${t.parceiroCodigo}`
   );
+  const chaveDe = (p: { conexaoId: string; codigoOmie: string }) => `${p.conexaoId}|${p.codigoOmie}`;
 
   const suspeitos = ctx.parceiros.filter((p) => {
-    const temPagamento = (pagamentosPorParceiro.get(p.codigoOmie)?.length ?? 0) > 0;
+    const temPagamento = (pagamentosPorParceiro.get(chaveDe(p))?.length ?? 0) > 0;
     if (!temPagamento) return false;
     return !documentoValido(p.documento);
   });
@@ -788,7 +797,7 @@ function documentoInvalido(ctx: ContextoAuditoria, materialidade: number): Achad
   if (suspeitos.length === 0) return [];
 
   const valorTotal = somar(suspeitos, (p) =>
-    somar(pagamentosPorParceiro.get(p.codigoOmie) ?? [], (t) => t.valorPagoCents)
+    somar(pagamentosPorParceiro.get(chaveDe(p)) ?? [], (t) => t.valorPagoCents)
   );
 
   return [
@@ -811,7 +820,7 @@ function documentoInvalido(ctx: ContextoAuditoria, materialidade: number): Achad
         fornecedores: suspeitos.slice(0, 50).map((p) => ({
           nome: p.nome,
           documento: fmtDocumento(p.documento),
-          pago: somar(pagamentosPorParceiro.get(p.codigoOmie) ?? [], (t) => t.valorPagoCents),
+          pago: somar(pagamentosPorParceiro.get(chaveDe(p)) ?? [], (t) => t.valorPagoCents),
         })),
         quantidade: suspeitos.length,
       },

@@ -419,6 +419,46 @@ console.log("\nFR-CLIENTE-FORNECEDOR — o mesmo CNPJ nos dois sentidos");
   conferir("documento inválido não vira parte relacionada", rodar(ctx, "FR-CLIENTE-FORNECEDOR").length, 0);
 }
 
+// ------------------------------------------------------ FR-DOCUMENTO-INVALIDO
+// A regra existia e nunca disparou: indexava os títulos por uma chave e
+// buscava por outra. Este é o teste que faltava — um caso que TEM de disparar
+// e três que têm de calar.
+console.log("\nFR-DOCUMENTO-INVALIDO — fornecedor pago com documento ausente ou inválido");
+type Parceiro = ContextoAuditoria["parceiros"][number];
+const parceiro = (p: Partial<Parceiro>): Parceiro =>
+  ({ id: `p${++seq}`, companyId: "c", conexaoId: "x", conexaoApelido: "AZUL", nome: "FORNECEDOR", documento: null, ...p }) as Parceiro;
+{
+  const ctx = contexto({
+    titulos: [
+      titulo({ parceiroCodigo: "F1", parceiroNome: "SEM DOCUMENTO", valorPagoCents: 300_000_00 }),
+      // Dígito verificador errado: 11.222.333/0001-82 (o válido termina em 81).
+      titulo({ parceiroCodigo: "F2", parceiroNome: "DV ERRADO", parceiroDocumento: "11222333000182", valorPagoCents: 200_000_00 }),
+      titulo({ parceiroCodigo: "F3", parceiroNome: "VALIDO", parceiroDocumento: "11222333000181", valorPagoCents: 900_000_00 }),
+    ],
+  });
+  ctx.parceiros = [
+    parceiro({ codigoOmie: "F1", nome: "SEM DOCUMENTO", documento: null }),
+    parceiro({ codigoOmie: "F2", nome: "DV ERRADO", documento: "11222333000182" }),
+    parceiro({ codigoOmie: "F3", nome: "VALIDO", documento: "11222333000181" }),
+  ];
+  const a = rodar(ctx, "FR-DOCUMENTO-INVALIDO");
+  conferir("dispara para os pagos sem documento válido", a.length, 1);
+  conferir("conta dois fornecedores, não o válido", (a[0]?.evidencia as { quantidade: number })?.quantidade, 2);
+  conferir("soma só o que foi pago a eles", a[0]?.valorCents, 500_000_00);
+}
+{
+  // O mesmo código em OUTRA conexão: cadastro da MCZ não herda pagamento da Azul.
+  const ctx = contexto({ titulos: [titulo({ parceiroCodigo: "F1", valorPagoCents: 300_000_00 })] });
+  ctx.parceiros = [parceiro({ codigoOmie: "F1", conexaoId: "y", conexaoApelido: "MCZ", documento: null })];
+  conferir("código igual em conexão diferente não casa", rodar(ctx, "FR-DOCUMENTO-INVALIDO").length, 0);
+}
+{
+  // Sem documento, mas sem pagamento: cadastro incompleto não é achado desta regra.
+  const ctx = contexto({ titulos: [titulo({ parceiroCodigo: "F1", valorPagoCents: 0 })] });
+  ctx.parceiros = [parceiro({ codigoOmie: "F1", documento: null })];
+  conferir("sem pagamento, silêncio", rodar(ctx, "FR-DOCUMENTO-INVALIDO").length, 0);
+}
+
 // ------------------------------------------------------------ base vazia
 console.log("\nBase vazia");
 {
