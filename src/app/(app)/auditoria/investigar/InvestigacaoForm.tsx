@@ -8,12 +8,14 @@ import { Secao } from "../../_componentes";
 import { avancar, iniciar } from "./actions";
 import { tratarAchado } from "../actions";
 
-const EXEMPLOS = [
-  "O que está acontecendo com os títulos vencidos da Cajamar? Quanto é, desde quando, e há tratativa registrada?",
-  "Quais fornecedores novos apareceram nos últimos três meses com valor acima do que costumamos pagar?",
-  "A OS 14516 teve custo lançado e foi faturada? Se não foi, desde quando o custo está parado?",
-  "Os achados de juros deste mês se concentram em algum fornecedor ou em alguma data de pagamento?",
-];
+// O que a tela precisa saber de cada especialista. O prompt fica no servidor.
+export type EspecialistaDaTela = {
+  id: string;
+  nome: string;
+  descricao: string;
+  objetivos: { rotulo: string; pergunta: string }[];
+  custo: string;
+};
 
 const ROTULO_STATUS: Record<string, string> = {
   RESOLVIDO: "Resolvido",
@@ -71,11 +73,15 @@ function PropostaForm({
 
 export default function InvestigacaoForm({
   conexoes,
+  especialistas,
+  especialistaInicial,
   inicial,
   perguntaInicial,
   podeTratar = false,
 }: {
   conexoes: { id: string; apelido: string; nome: string }[];
+  especialistas: EspecialistaDaTela[];
+  especialistaInicial: string;
   // Uma investigação já gravada, para reabrir pelo histórico. Se ainda estiver
   // em andamento (a aba foi fechada no meio), a tela retoma as rodadas.
   inicial: EstadoInvestigacao | null;
@@ -91,8 +97,12 @@ export default function InvestigacaoForm({
   // formulário depois da action, e a pessoa quer refinar a pergunta, não
   // digitá-la de novo.
   const [pergunta, setPergunta] = useState(inicial?.pergunta ?? perguntaInicial ?? "");
+  const [especialistaId, setEspecialistaId] = useState(especialistaInicial);
   const [processando, iniciarTransicao] = useTransition();
   const router = useRouter();
+
+  const especialista = especialistas.find((e) => e.id === especialistaId) ?? especialistas[0];
+  const ehInvestigador = especialista.id === "investigador";
 
   // Encadeia as rodadas até a investigação terminar. Cada rodada é uma
   // requisição curta; o servidor grava o progresso entre elas, então fechar a
@@ -127,7 +137,41 @@ export default function InvestigacaoForm({
 
   return (
     <div className="space-y-6">
-      <Secao titulo="Pergunta" descricao="Quanto mais específica (nome, número, OS, mês), mais direta a resposta e menos consultas ela gasta.">
+      <Secao
+        titulo="Quem responde"
+        descricao="Cada especialista tem o repertório de uma profissão e as consultas que ela faz. O investigador responde registro a registro; os outros leem somas, séries e o DRE."
+      >
+        {/* Cartões, e não um select: a escolha muda o que a pessoa vai
+            perguntar, e para escolher ela precisa ler o que cada um faz. */}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {especialistas.map((e) => {
+            const ativo = e.id === especialista.id;
+            return (
+              <button
+                key={e.id}
+                type="button"
+                onClick={() => setEspecialistaId(e.id)}
+                className={`rounded-xl border px-3 py-2 text-left transition ${
+                  ativo ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500" : "border-slate-200 bg-white hover:border-blue-300"
+                }`}
+              >
+                <div className={`text-sm font-semibold ${ativo ? "text-blue-900" : "text-slate-800"}`}>{e.nome}</div>
+                <div className="mt-1 text-xs leading-snug text-slate-600">{e.descricao}</div>
+                <div className="mt-1.5 text-[11px] text-slate-400">{e.custo}</div>
+              </button>
+            );
+          })}
+        </div>
+      </Secao>
+
+      <Secao
+        titulo={ehInvestigador ? "Pergunta" : "O que você quer do parecer"}
+        descricao={
+          ehInvestigador
+            ? "Quanto mais específica (nome, número, OS, mês), mais direta a resposta e menos consultas ela gasta."
+            : "Os botões trazem pedidos prontos, que você pode editar. Diga o mês ou a premissa quando não for o padrão (mês da referência)."
+        }
+      >
         <form
           className="space-y-4"
           action={(formData) => {
@@ -151,6 +195,7 @@ export default function InvestigacaoForm({
             });
           }}
         >
+          <input type="hidden" name="especialista" value={especialista.id} />
           <div>
             <label className={labelClass} htmlFor="pergunta">
               O que você quer saber? *
@@ -163,18 +208,19 @@ export default function InvestigacaoForm({
               onChange={(e) => setPergunta(e.target.value)}
               rows={4}
               maxLength={2000}
-              placeholder={EXEMPLOS[0]}
+              placeholder={especialista.objetivos[0]?.pergunta}
               className={inputClass}
             />
             <div className="mt-2 flex flex-wrap gap-1">
-              {EXEMPLOS.map((ex) => (
+              {especialista.objetivos.map((o) => (
                 <button
-                  key={ex}
+                  key={o.rotulo}
                   type="button"
-                  onClick={() => setPergunta(ex)}
+                  title={o.pergunta}
+                  onClick={() => setPergunta(o.pergunta)}
                   className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-left text-xs text-slate-600 hover:border-blue-300"
                 >
-                  {ex.length > 70 ? `${ex.slice(0, 70)}…` : ex}
+                  {o.rotulo}
                 </button>
               ))}
             </div>
@@ -198,9 +244,13 @@ export default function InvestigacaoForm({
 
           <div className="flex flex-wrap items-center gap-3">
             <button type="submit" disabled={processando || pergunta.trim().length < 8} className={primaryButtonClass}>
-              {processando ? "Investigando..." : "Investigar"}
+              {processando ? (ehInvestigador ? "Investigando..." : "Preparando o parecer...") : ehInvestigador ? "Investigar" : "Pedir o parecer"}
             </button>
-            <span className="text-xs text-slate-500">Cada pergunta é uma chamada paga à IA.</span>
+            <span className="text-xs text-slate-500">
+              {ehInvestigador
+                ? "Cada pergunta é uma chamada paga à IA."
+                : `Parecer no modelo mais capaz: ${especialista.custo}, e leva alguns minutos.`}
+            </span>
           </div>
         </form>
 
@@ -219,7 +269,9 @@ export default function InvestigacaoForm({
       {processando && estado && (
         <p className="rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-900">
           {estado.consultas.length === 0
-            ? "Lendo a pergunta e decidindo por onde começar..."
+            ? ehInvestigador
+              ? "Lendo a pergunta e decidindo por onde começar..."
+              : "Lendo o pedido e decidindo o que consultar. Um parecer leva alguns minutos; pode deixar a aba aberta."
             : `${estado.consultas.length} consulta(s) feitas — última: ${ultimaConsulta?.ferramenta} (${ultimaConsulta?.resumo}). Continuando...`}
         </p>
       )}
@@ -230,7 +282,7 @@ export default function InvestigacaoForm({
 
       {estado && estado.status === "CONCLUIDA" && estado.resposta && (
         <Secao
-          titulo="Resposta"
+          titulo={ehInvestigador ? "Resposta" : `Parecer — ${especialista.nome}`}
           descricao={`${estado.consultas.length} consulta(s) à base · ${estado.empresa} · modelo ${estado.modelo ?? "—"}`}
         >
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{estado.resposta}</div>

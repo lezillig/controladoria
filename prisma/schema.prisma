@@ -1429,6 +1429,10 @@ model Investigacao {
   userId       String?
   userNome     String?
   pergunta     String
+  // Quem responde: investigador, auditor, controller, custos ou orcamento
+  // (ver src/lib/controladoria/especialistas.ts). Decide modelo, prompt e
+  // ferramentas de cada rodada.
+  especialista String    @default("investigador")
   // EXECUTANDO | CONCLUIDA | ERRO
   status       String    @default("EXECUTANDO")
   // A conversa até aqui, no formato que a API recebe de volta — inclusive os

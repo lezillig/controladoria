@@ -278,6 +278,49 @@ seguinte até o status sair de EXECUTANDO. Fechar a aba não perde nada —
 reabrir pelo histórico retoma. Teto de doze consultas por pergunta; a tela tem `maxDuration` de 300 segundos (Fluid Compute). Cada
 pergunta é uma chamada paga.
 
+### Especialistas (IA, sob demanda)
+
+`src/lib/controladoria/especialistas.ts` e `ferramentasDeAnalise.ts`, na mesma
+tela do investigador. O investigador responde perguntas de **auditoria**,
+registro a registro. Com o tempo apareceram perguntas de outra natureza — "a
+margem caiu por quê?", "onde cortar sem parar a operação?", "e se o diesel
+subir 15%?", "as regras estão bem calibradas?" — que pedem outro repertório e
+outras consultas. Em vez de um assistente genérico, há quatro especialistas
+além do investigador, cada um com o repertório de uma profissão e pedidos
+prontos na tela:
+
+| Especialista | Responde | Objetivos prontos |
+|---|---|---|
+| Auditor interno | riscos, controles e a própria auditoria | calibração das regras; os críticos em aberto; parecer do mês |
+| Controller | DRE, margem, competência × caixa | fechamento do mês; por que a margem mudou; revisar o DRE do sistema |
+| Especialista em custos | variável × fixo, onde cortar, fornecedores | onde cortar; custo que cresceu; estrutura de custo; revisar o módulo |
+| Orçamento e cenários | projeção, sazonalidade, cenários com premissa | projeção até dezembro; diesel +15%; orçamento base; inadimplência |
+
+O que não muda entre eles é o contrato do investigador: só leitura, escopo pela
+sessão, toda consulta registrada e mostrada, resposta que cita o dado e diz o
+que a base não cobre. As consultas novas (`comparativo`, `dre`, `dre_anual`,
+`serie_de_resultado`, `ranking_parceiros`, `estrategia_de_custo`,
+`em_aberto_por_faixa`, `receita_por_tipo_de_documento`,
+`configuracao_e_regras`) devolvem **somas feitas no banco pelas mesmas funções
+das telas** — um número citado num parecer é o mesmo que está em Custos e DRE.
+`configuracao_e_regras` existe para o objetivo "revisar o sistema": parâmetros,
+agentes e, por regra, quantos achados estão em aberto, quantos são só
+informativos e quantos uma pessoa marcou como "não se aplica".
+
+Os especialistas rodam em `claude-fable-5-1` (o investigador continua no
+Sonnet): um parecer é uma peça de raciocínio longo sobre dezenas de números,
+feita poucas vezes por mês, e é o trabalho em que a diferença entre os modelos
+aparece. Custa de dois a seis dólares por parecer e a tela diz isso antes do
+clique. As rodadas são as mesmas do investigador, com dois ajustes: tempo
+limite de 200 segundos por chamada (uma chamada abortada não encerra o parecer;
+a rodada seguinte a refaz) e teto de 32 mil tokens, porque o raciocínio conta
+nele. A coluna `Investigacao.especialista` diz quem respondeu; o histórico da
+tela mostra.
+
+Uma primeira revisão do sistema feita por esses quatro papéis, sobre o código,
+está em `docs/revisao-especialistas/` — quatro pareceres com achados
+ranqueados, arquivo e linha, e ordem sugerida de implementação.
+
 ---
 
 ## 4. Conceitos que sustentam a qualidade dos achados

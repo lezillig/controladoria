@@ -26,11 +26,15 @@ export async function iniciar(formData: FormData): Promise<RespostaDaAction> {
 
   try {
     const escopo = await resolverEscopo(session.companyId, String(formData.get("empresa") ?? "") || undefined);
+    // Quem responde. Valor desconhecido cai no investigador, dentro de
+    // iniciarInvestigacao — o formulário não escolhe prompt que não existe.
+    const especialista = String(formData.get("especialista") ?? "investigador");
     const estado = await iniciarInvestigacao({
       companyId: session.companyId,
       conexaoId: escopo.conexaoId,
       empresa: escopo.apelido ?? "grupo (as duas empresas)",
       pergunta,
+      especialista,
       userId: session.userId,
       userNome: session.name,
     });
@@ -46,7 +50,7 @@ export async function iniciar(formData: FormData): Promise<RespostaDaAction> {
         acao: "INVESTIGACAO_IA",
         entidadeTipo: "Investigacao",
         entidadeId: estado.id,
-        descricao: `Pergunta ao investigador${escopo.apelido ? ` (${escopo.apelido})` : ""}: "${pergunta.slice(0, 200)}"`,
+        descricao: `Pergunta ao especialista ${estado.especialista}${escopo.apelido ? ` (${escopo.apelido})` : ""}: "${pergunta.slice(0, 200)}"`,
       });
     } catch {
       // A trilha não pode custar a pergunta.

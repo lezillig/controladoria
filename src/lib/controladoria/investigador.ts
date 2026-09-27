@@ -5,6 +5,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { fmtBRL, fmtData, fmtDiaDoInstante } from "./format";
 import { AGENTES } from "./registry";
+import { especialistaPorId, type Especialista } from "./especialistas";
+import { ferramentasDeAnalise } from "./ferramentasDeAnalise";
 
 // O investigador roda num modelo mais barato que o analista do relatório
 // diário, de propósito. O relatório é uma chamada por dia e é onde o
@@ -12,7 +14,7 @@ import { AGENTES } from "./registry";
 // ser feita dezenas de vezes por semana, e o que decide a qualidade dela é a
 // consulta certa — que o Sonnet 5 faz tão bem quanto os maiores, a um quinto
 // do preço por token (US$ 2/10 contra US$ 10/50 por milhão).
-export const MODELO_INVESTIGADOR = "claude-sonnet-5";
+export { MODELO_INVESTIGADOR } from "./especialistas";
 
 // INVESTIGADOR — a IA que CONSULTA a base para responder uma pergunta de
 // auditoria, com a trilha do que consultou.
@@ -52,6 +54,9 @@ export type StatusInvestigacao = "EXECUTANDO" | "CONCLUIDA" | "ERRO";
 export type EstadoInvestigacao = {
   id: string;
   status: StatusInvestigacao;
+  // Quem respondeu: investigador, auditor, controller, custos ou orcamento
+  // (ver especialistas.ts). Decide modelo, prompt e ferramentas da rodada.
+  especialista: string;
   pergunta: string;
   empresa: string;
   resposta: string | null;
@@ -67,10 +72,10 @@ export function isInvestigadorDisponivel(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
 }
 
-// Teto de idas e vindas entre o modelo e as consultas. Doze respondem qualquer
-// pergunta que caiba numa tela; acima disso é o modelo vagando, e cada volta
-// custa tempo da pessoa que espera e dinheiro.
-const MAXIMO_DE_CONSULTAS = 12;
+// O teto de idas e vindas entre o modelo e as consultas é por especialista
+// (ver especialistas.ts): doze respondem qualquer pergunta de auditoria que
+// caiba numa tela; acima disso é o modelo vagando, e cada volta custa tempo da
+// pessoa que espera e dinheiro.
 const LIMITE_DE_LINHAS = 50;
 
 const SEVERIDADES: AuditSeveridade[] = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
@@ -129,7 +134,7 @@ Resposta: comece pelo que encontrou, em uma ou duas frases. Depois a evidência,
 // Cada ferramenta recebe o escopo (empresa e, opcionalmente, conexão) POR
 // FECHAMENTO, e nunca por parâmetro do modelo: o modelo não escolhe de que
 // empresa lê. É a mesma regra das actions — o escopo vem da sessão.
-function ferramentas(escopo: { companyId: string; conexaoId: string | null }, consultas: ConsultaFeita[]) {
+export function ferramentasDeAuditoria(escopo: { companyId: string; conexaoId: string | null }, consultas: ConsultaFeita[]) {
   const base = { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) };
   const registrar = (ferramenta: string, entrada: Record<string, unknown>, resumo: string) => {
     consultas.push({ ferramenta, entrada, resumo });
@@ -527,7 +532,18 @@ function mascararDocumentos(valor: unknown, chave = ""): unknown {
 // de uma chamada perde a rodada inteira, e o modelo com ferramentas costuma
 // levar de dez a sessenta segundos por resposta. Com 90 segundos de orçamento
 // e uma chamada de até um minuto em curso, a rodada fecha em menos de três.
-const ORCAMENTO_DA_RODADA_MS = 90_000;
+//
+// NOS ESPECIALISTAS a conta é outra: uma chamada do modelo maior com esforço
+// alto costuma levar de trinta segundos a três minutos. O tempo limite por
+// chamada fica em 200 segundos, e uma chamada nova só começa nos primeiros 60
+// da rodada — o pior caso fecha em 260, abaixo dos 300 da hospedagem. O teto
+// de tokens sobe para 32 mil porque o raciocínio conta nele, e um parecer
+// cortado no meio do pensamento não é parecer.
+function configuracaoDaChamada(e: Especialista) {
+  return e.id === "investigador"
+    ? { maxTokens: 16000, tempoLimiteMs: 120_000, orcamentoDaRodadaMs: 90_000 }
+    : { maxTokens: 32000, tempoLimiteMs: 200_000, orcamentoDaRodadaMs: 60_000 };
+}
 
 function mensagemInicial(params: { empresa: string; pergunta: string }): Anthropic.Beta.BetaMessageParam {
   return {
@@ -540,12 +556,13 @@ ${params.pergunta.trim()}`,
 }
 
 function estadoDe(row: {
-  id: string; status: string; pergunta: string; empresa: string; resposta: string | null; erro: string | null;
+  id: string; status: string; especialista: string; pergunta: string; empresa: string; resposta: string | null; erro: string | null;
   consultas: unknown; iteracoes: number; modelo: string | null; criadoEm: Date; userNome: string | null;
 }): EstadoInvestigacao {
   return {
     id: row.id,
     status: row.status as StatusInvestigacao,
+    especialista: row.especialista,
     pergunta: row.pergunta,
     empresa: row.empresa,
     resposta: row.resposta,
@@ -563,6 +580,7 @@ export async function iniciarInvestigacao(params: {
   conexaoId: string | null;
   empresa: string;
   pergunta: string;
+  especialista?: string;
   userId: string | null;
   userNome: string | null;
 }): Promise<EstadoInvestigacao> {
@@ -571,6 +589,9 @@ export async function iniciarInvestigacao(params: {
       companyId: params.companyId,
       conexaoId: params.conexaoId,
       empresa: params.empresa,
+      // Id desconhecido cai no investigador: um valor inventado no formulário
+      // não pode escolher um prompt que não existe.
+      especialista: especialistaPorId(params.especialista).id,
       pergunta: params.pergunta.trim(),
       userId: params.userId,
       userNome: params.userNome,
@@ -606,22 +627,39 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return encerrar(row.id, { erro: "Investigação indisponível: ANTHROPIC_API_KEY não configurada." });
 
-  const client = new Anthropic({ apiKey });
+  // QUEM RESPONDE decide modelo, esforço, prompt e ferramentas da rodada. O
+  // investigador continua exatamente como era; os especialistas (ver
+  // especialistas.ts) rodam no modelo maior, com as somas do banco à mão.
+  const especialista = especialistaPorId(row.especialista);
+  const ehInvestigador = especialista.id === "investigador";
+  const configuracao = configuracaoDaChamada(especialista);
+
+  // O TEMPO LIMITE É EXPLÍCITO no cliente, e é por dois motivos. O primeiro é o
+  // teto da hospedagem: a rodada tem 300 segundos, e uma chamada que passasse
+  // disso perderia a rodada inteira sem gravar nada. O segundo é o SDK: com
+  // `max_tokens` grande e sem tempo limite declarado, ele se recusa a fazer a
+  // chamada sem streaming — foi o erro "Streaming is required" que a leitura de
+  // conformidade já encontrou. Uma chamada abortada NÃO encerra o parecer: a
+  // rodada grava o que tem e a próxima refaz a mesma chamada.
+  const client = new Anthropic({ apiKey, timeout: configuracao.tempoLimiteMs, maxRetries: 0 });
   const consultas: ConsultaFeita[] = Array.isArray(row.consultas) ? (row.consultas as ConsultaFeita[]) : [];
   let mensagens = row.mensagens as unknown as Anthropic.Beta.BetaMessageParam[];
   let iteracoes = row.iteracoes;
   const inicio = Date.now();
+  const escopo = { companyId: row.companyId, conexaoId: row.conexaoId };
 
   try {
     while (true) {
       const runner = client.beta.messages.toolRunner({
-        model: MODELO_INVESTIGADOR,
-        max_tokens: 16000,
-        // Esforço alto, e não médio como no modelo maior: o Sonnet respeita o
-        // nível à risca e em esforço baixo tende a responder menos do que a
+        model: especialista.modelo,
+        max_tokens: configuracao.maxTokens,
+        // No investigador (Sonnet), esforço alto e não médio: o Sonnet respeita
+        // o nível à risca e em esforço baixo tende a responder menos do que a
         // pergunta pede. Se uma resposta parecer rasa, o ajuste é subir para
-        // xhigh — não trocar de modelo.
-        output_config: { effort: "high" },
+        // xhigh — não trocar de modelo. Nos especialistas (Fable), alto é o
+        // ponto de partida recomendado; o raciocínio é sempre ligado e não há
+        // parâmetro de thinking a passar.
+        output_config: { effort: especialista.effort },
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
         // CACHE DE PROMPT. O prefixo estável (ferramentas + system) é o mesmo
@@ -631,9 +669,12 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
         // system juntos; o marcador de nível superior anda com a conversa e
         // guarda o histórico já enviado. As rodadas são seguidas (o navegador
         // chama de novo em segundos), dentro dos 5 minutos do cache.
-        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: ehInvestigador ? SYSTEM_PROMPT : especialista.systemPrompt, cache_control: { type: "ephemeral" } }],
         cache_control: { type: "ephemeral" },
-        tools: ferramentas({ companyId: row.companyId, conexaoId: row.conexaoId }, consultas),
+        tools: [
+          ...(especialista.ferramentas.includes("auditoria") ? ferramentasDeAuditoria(escopo, consultas) : []),
+          ...(especialista.ferramentas.includes("analise") ? ferramentasDeAnalise(escopo, consultas) : []),
+        ],
         messages: mensagens,
       });
 
@@ -642,13 +683,28 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
       // ferramentas que ela pediu são executadas explicitamente, para que a
       // conversa possa ser gravada entre uma chamada e outra.
       let message: Anthropic.Beta.BetaMessage | null = null;
-      for await (const m of runner) {
-        message = m;
-        break;
+      try {
+        for await (const m of runner) {
+          message = m;
+          break;
+        }
+      } catch (e) {
+        // Chamada abortada pelo tempo limite: conta como uma ida (para o teto
+        // de consultas continuar valendo), grava, e devolve a rodada ainda em
+        // andamento — a próxima refaz a mesma chamada com a mesma conversa.
+        if (e instanceof Anthropic.APIConnectionTimeoutError || e instanceof Anthropic.APIUserAbortError) {
+          iteracoes++;
+          const parcial = await prisma.investigacao.update({ where: { id: row.id }, data: { iteracoes } });
+          if (iteracoes >= especialista.maximoDeConsultas) {
+            return encerrar(row.id, { erro: "O modelo passou do tempo limite repetidas vezes. Faça uma pergunta mais específica.", mensagens, consultas, iteracoes });
+          }
+          return estadoDe(parcial);
+        }
+        throw e;
       }
       if (!message) throw new Error("o modelo não devolveu resposta");
       iteracoes++;
-      registrarUso("investigador", message);
+      registrarUso(especialista.id, message);
 
       // Resposta cortada pelo teto de tokens NÃO é resposta pronta: com
       // raciocínio adaptativo, o corte costuma cair no meio do pensamento e
@@ -676,9 +732,9 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
           ...(respostaDasFerramentas ? [respostaDasFerramentas] : []),
         ];
 
-        if (iteracoes >= MAXIMO_DE_CONSULTAS) {
+        if (iteracoes >= especialista.maximoDeConsultas) {
           return encerrar(row.id, {
-            erro: `A investigação atingiu o limite de ${MAXIMO_DE_CONSULTAS} consultas sem fechar uma resposta. Faça uma pergunta mais específica.`,
+            erro: `A investigação atingiu o limite de ${especialista.maximoDeConsultas} consultas sem fechar uma resposta. Faça uma pergunta mais específica.`,
             mensagens, consultas, iteracoes,
           });
         }
@@ -691,7 +747,7 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
             iteracoes,
           },
         });
-        if (Date.now() - inicio > ORCAMENTO_DA_RODADA_MS) return estadoDe(parcial);
+        if (Date.now() - inicio > configuracao.orcamentoDaRodadaMs) return estadoDe(parcial);
         continue;
       }
 

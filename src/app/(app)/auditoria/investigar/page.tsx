@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { isInvestigadorDisponivel, lerInvestigacao, listarInvestigacoes } from "@/lib/controladoria/investigador";
+import { ESPECIALISTAS, especialistaPorId, faixaDeCusto } from "@/lib/controladoria/especialistas";
 import { fmtDataHora } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
@@ -29,9 +30,23 @@ const STATUS_ROTULO: Record<string, string> = {
   ERRO: "Falhou",
 };
 
-export default async function InvestigarPage({ searchParams }: { searchParams: Promise<{ id?: string; pergunta?: string }> }) {
+export default async function InvestigarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ id?: string; pergunta?: string; especialista?: string }>;
+}) {
   const session = await exigirPermissao("investigar");
-  const { id, pergunta } = await searchParams;
+  const { id, pergunta, especialista } = await searchParams;
+
+  // O que o formulário precisa saber de cada especialista — sem o prompt, que
+  // é do servidor e não tem por que ir ao navegador.
+  const especialistas = ESPECIALISTAS.map((e) => ({
+    id: e.id,
+    nome: e.nome,
+    descricao: e.descricao,
+    objetivos: e.objetivos,
+    custo: faixaDeCusto(e),
+  }));
 
   const [conexoes, inicial, historico] = await Promise.all([
     prisma.omieConexao.findMany({
@@ -52,11 +67,12 @@ export default async function InvestigarPage({ searchParams }: { searchParams: P
           </Link>{" "}
           / Investigar
         </p>
-        <h1 className="mt-1 text-xl font-semibold text-slate-900">Investigar com a IA</h1>
+        <h1 className="mt-1 text-xl font-semibold text-slate-900">Investigar e pedir pareceres à IA</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Faça uma pergunta de auditoria. A IA consulta os achados, os títulos, as baixas, o cadastro e o histórico
-          mensal — só leitura, só desta empresa — e responde citando o dado. Cada consulta feita aparece abaixo da
-          resposta, para você ver o que ela olhou e o que não olhou.
+          Escolha quem responde — o investigador de auditoria, o auditor interno, o controller, o especialista em
+          custos ou o de orçamento e cenários — e faça a pergunta. Cada um consulta a base pelas mesmas somas e
+          registros que as telas usam, só leitura, só desta empresa, e responde citando o dado. Cada consulta feita
+          aparece abaixo da resposta, para você ver o que foi olhado e o que não foi.
         </p>
       </div>
 
@@ -64,6 +80,8 @@ export default async function InvestigarPage({ searchParams }: { searchParams: P
         <InvestigacaoForm
           key={inicial?.id ?? pergunta ?? "nova"}
           conexoes={conexoes}
+          especialistas={especialistas}
+          especialistaInicial={especialistaPorId(inicial?.especialista ?? especialista).id}
           inicial={inicial}
           perguntaInicial={pergunta?.slice(0, 2000) ?? ""}
           podeTratar={await podeAcao(session, "tratar-achado")}
@@ -79,18 +97,21 @@ export default async function InvestigarPage({ searchParams }: { searchParams: P
 
       {historico.length > 0 && (
         <Secao
-          titulo="Investigações anteriores"
+          titulo="Investigações e pareceres anteriores"
           descricao="Toda pergunta fica gravada com a resposta e as consultas feitas — é a trilha do que a IA olhou."
         >
           <Tabela
-            colunas={["Quando", "Quem", "Pergunta", "Recorte", "Consultas", "Situação"]}
-            alinharDireita={[4]}
+            colunas={["Quando", "Quem", "Respondeu", "Pergunta", "Recorte", "Consultas", "Situação"]}
+            alinharDireita={[5]}
             linhas={historico.map((h) => [
               <span key="q" className="whitespace-nowrap text-xs text-slate-600">
                 {fmtDataHora(h.criadoEm)}
               </span>,
               <span key="u" className="text-xs text-slate-600">
                 {h.userNome ?? "—"}
+              </span>,
+              <span key="r" className="whitespace-nowrap text-xs text-slate-600">
+                {especialistaPorId(h.especialista).nome}
               </span>,
               <Link key="p" href={`/auditoria/investigar?id=${h.id}`} className="text-blue-700 hover:underline">
                 {h.pergunta.length > 90 ? `${h.pergunta.slice(0, 90)}…` : h.pergunta}
