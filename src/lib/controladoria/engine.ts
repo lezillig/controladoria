@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela, tipoDoBanco } from "@/lib/esquemaDoBanco";
 import { achadosSemTratativa } from "./agents/administrativo";
@@ -212,6 +212,19 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
     data: { status: "ABERTO", resolvidoEm: null },
   });
 
+  // REABERTURA APÓS RESOLUÇÃO — o caso que "só OBSOLETO reabre" deixava
+  // passar. Um CP-VENCIDO marcado "resolvido" ("vamos pagar dia 10") que
+  // continua vencido era re-emitido, somava ocorrências e ganhava a nota do
+  // supervisor — e continuava RESOLVIDO. Todo filtro de tela, o alerta por
+  // exceção e o meta-achado de tratativa parada olham só ABERTO/EM_ANALISE:
+  // ninguém via. Para um auditor, "resolvido em X e reincidente 30 vezes
+  // depois" é o indicador de tratativa que não pegou — e ele estava invisível.
+  //
+  // Só ESTADO (a condição existe agora), só quando a resolução é anterior a
+  // esta rodada, e IGNORADO continua intocado: "não se aplica" é julgamento
+  // sobre a regra, não promessa de que a condição ia sumir.
+  const reabertosAposResolucao = await reabrirResolvidosQueVoltaram(ctx.companyId, chavesEmitidas, ctx.agora);
+
   // Meta-controle: achados criticos parados. Roda DEPOIS da persistencia,
   // sobre o estado final — auditar a si mesmo no meio da propria execucao
   // daria um retrato do qual o proprio ato de auditar ainda nao faz parte.
@@ -246,7 +259,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
     novos,
     reincidentes,
     fechadosAutomaticamente,
-    reabertos: reabertos.count,
+    reabertos: reabertos.count + reabertosAposResolucao,
     suprimidos: revisao.suprimidos.length,
     totalAbertos: abertos.length,
     criticos,
@@ -337,6 +350,50 @@ export function linhaDeAchado(
 
 // GRAVAÇÃO EM LOTE — um comando por até 500 achados, não um upsert por achado.
 //
+// Reabre os achados de ESTADO marcados como RESOLVIDOS antes de `desde` cuja
+// chave voltou a ser emitida. A nota diz quando foi resolvido e quando voltou
+// (datas em Brasília, porque quem lê está lá); a observação da tratativa fica
+// preservada, para a pessoa ver o que tinha dito da última vez. Cada
+// reabertura vai para a trilha como ato do motor, sem usuário.
+export async function reabrirResolvidosQueVoltaram(companyId: string, chaves: Set<string>, desde: Date): Promise<number> {
+  if (chaves.size === 0) return 0;
+  const reabertos = await prisma.$queryRaw<{ id: string; regra: string; titulo: string }[]>`
+    UPDATE ${tabela("AuditFinding")}
+       SET status = 'ABERTO'::${tipoDoBanco("AuditStatus")},
+           "notaSupervisor" =
+             'Marcado como resolvido em ' || to_char("resolvidoEm" AT TIME ZONE 'America/Sao_Paulo', 'DD/MM/YYYY') ||
+             ', mas a condição voltou a ser detectada em ' || to_char(now() AT TIME ZONE 'America/Sao_Paulo', 'DD/MM/YYYY') ||
+             '. Reaberto pelo motor; a observação da tratativa anterior está preservada.',
+           "resolvidoEm" = NULL,
+           "atualizadoEm" = now()
+     WHERE "companyId" = ${companyId}
+       AND chave IN (${Prisma.join([...chaves])})
+       AND status = 'RESOLVIDO'
+       AND tipo = 'ESTADO'
+       AND "resolvidoEm" IS NOT NULL
+       AND "resolvidoEm" < ${desde}
+    RETURNING id, regra, titulo
+  `;
+  // Direto na tabela, e não por `registrarEvento`: aquela lê IP e navegador
+  // do cabeçalho da requisição, e o motor roda no cron e em teste, onde não
+  // há requisição. Ato do motor não tem usuário nem origem — e é assim que
+  // deve ficar registrado.
+  if (reabertos.length > 0) {
+    await prisma.controladoriaEventLog
+      .createMany({
+        data: reabertos.map((a) => ({
+          companyId,
+          acao: "ACHADO_REABERTO",
+          entidadeTipo: "AuditFinding",
+          entidadeId: a.id,
+          descricao: `Reaberto pelo motor: a condição de ${a.regra} voltou depois de marcada como resolvida — ${a.titulo.slice(0, 160)}`,
+        })),
+      })
+      .catch(() => undefined); // A trilha não pode custar a reabertura.
+  }
+  return reabertos.length;
+}
+
 // O laço de upserts era um comando e uma ida ao banco POR ACHADO: com quatro
 // mil achados e ~13 ms de ida e volta até o Neon, só a gravação passava dos
 // 42 s do orçamento do cron — o ciclo estourava na fase de auditoria. Medido

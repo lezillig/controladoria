@@ -273,11 +273,39 @@ async function principal() {
   conferir("data de referência preservada", lote1[0].dataReferencia?.toISOString(), "2026-08-10T00:00:00.000Z");
   conferir("enums e nulos do segundo", [lote1[1].severidade, lote1[1].categoria, lote1[1].evidencia, lote1[1].valorCents], ["CRITICA", "FRAUDE", null, null]);
   await prisma.auditFinding.update({ where: { id: lote1[0].id }, data: { status: "RESOLVIDO", observacaoTratativa: "tratado" } });
-  await persistirAchados(EMPRESA, [linha("K1", { valorCents: 99_999 }), linha("K2"), linha("K3")]);
+  await persistirAchados(EMPRESA, [linha("K1", { valorCents: 99_999 }), linha("K2", { tipo: "EVENTO" }), linha("K3")]);
   const lote2 = await prisma.auditFinding.findMany({ where: { companyId: EMPRESA }, orderBy: { chave: "asc" } });
   conferir("reincidência soma ocorrências", lote2.map((a) => a.ocorrencias), [2, 2, 1]);
   conferir("status e tratativa humana ficam", [lote2[0].status, lote2[0].observacaoTratativa], ["RESOLVIDO", "tratado"]);
   conferir("campo calculado é atualizado", lote2[0].valorCents, 99_999);
+
+  // REABERTURA APÓS RESOLUÇÃO. K1 é ESTADO, foi resolvido antes desta rodada e
+  // voltou: reabre, com nota e com a observação da tratativa preservada. K2 é
+  // EVENTO resolvido: fica. K3 será IGNORADO: fica. E um resolvido NESTA
+  // rodada (resolvidoEm depois de `desde`) também fica — a pessoa acabou de
+  // tratar e o motor não pode desfazer no mesmo instante.
+  {
+    const { reabrirResolvidosQueVoltaram } = await import("../src/lib/controladoria/engine");
+    const ontem = new Date(Date.now() - 86_400_000);
+    await prisma.auditFinding.update({ where: { id: lote2[0].id }, data: { resolvidoEm: ontem } });
+    await prisma.auditFinding.update({ where: { id: lote2[1].id }, data: { status: "RESOLVIDO", resolvidoEm: ontem, observacaoTratativa: "evento tratado" } });
+    await prisma.auditFinding.update({ where: { id: lote2[2].id }, data: { status: "IGNORADO", resolvidoEm: ontem } });
+    await persistirAchados(EMPRESA, [linha("K4")]);
+    const k4 = await prisma.auditFinding.findFirstOrThrow({ where: { companyId: EMPRESA, chave: "K4" } });
+    await prisma.auditFinding.update({ where: { id: k4.id }, data: { status: "RESOLVIDO", resolvidoEm: new Date() } });
+
+    const reabertos = await reabrirResolvidosQueVoltaram(EMPRESA, new Set(["K1", "K2", "K3", "K4"]), new Date(Date.now() - 60_000));
+    const depois = await prisma.auditFinding.findMany({ where: { companyId: EMPRESA }, orderBy: { chave: "asc" } });
+    conferir("reabre só o ESTADO resolvido antes da rodada", reabertos, 1);
+    conferir("K1 voltou a ABERTO sem resolvidoEm", [depois[0].status, depois[0].resolvidoEm], ["ABERTO", null]);
+    conferir("com a observação da tratativa preservada", depois[0].observacaoTratativa, "tratado");
+    conferir("e a nota diz que foi reaberto", /voltou a ser detectada/.test(depois[0].notaSupervisor ?? ""), true);
+    conferir("EVENTO resolvido fica", depois[1].status, "RESOLVIDO");
+    conferir("IGNORADO fica", depois[2].status, "IGNORADO");
+    conferir("resolvido nesta rodada fica", depois[3].status, "RESOLVIDO");
+    conferir("a trilha registra o ato do motor", await prisma.controladoriaEventLog.count({ where: { companyId: EMPRESA, acao: "ACHADO_REABERTO" } }), 1);
+    await prisma.controladoriaEventLog.deleteMany({ where: { companyId: EMPRESA } });
+  }
   await prisma.auditFinding.deleteMany({ where: { companyId: EMPRESA } });
 
   // ------------------------------------------------------------------ detalhe
