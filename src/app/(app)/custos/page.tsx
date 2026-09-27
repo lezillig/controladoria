@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
 import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
 import { montarDreNoBanco, montarDreAnualNoBanco } from "@/lib/controladoria/dreNoBanco";
@@ -383,44 +384,72 @@ export default async function CustosPage({
           />
         )}
 
-        {!anual && dre.retencoes.totalCents > 0 && (
+        {/* O AVISO DIZ O QUE O DRE FEZ, e não uma frase fixa. A configuração
+            `retencoesNasDeducoes` (padrão ligado) já somava as retenções como
+            item próprio das deduções enquanto este quadro afirmava,
+            incondicionalmente, "não somado acima" — quem conferisse a carga
+            tributária contra a guia somaria retenção por cima de retenção. O
+            campo `retencoesSomadas` existe justamente para a tela dizer qual
+            leitura está no ar; agora ela lê. Na visão anual as retenções não
+            são detalhadas por tributo, mas a leitura em vigor é a mesma, e é
+            dita. */}
+        {dre.retencoes.totalCents > 0 && (
           <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Retido na fonte pelos clientes — não somado acima
+              {dre.retencoesSomadas
+                ? "Retido na fonte pelos clientes — somado às deduções, como item próprio"
+                : "Retido na fonte pelos clientes — não somado acima"}
             </p>
-            <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-700">
-              {[
-                ["ISS", dre.retencoes.issCents],
-                ["PIS", dre.retencoes.pisCents],
-                ["COFINS", dre.retencoes.cofinsCents],
-                ["CSLL", dre.retencoes.csllCents],
-                ["IR", dre.retencoes.irCents],
-                ["INSS", dre.retencoes.inssCents],
-              ]
-                .filter(([, v]) => (v as number) > 0)
-                .map(([nome, v]) => (
-                  <span key={nome as string}>
-                    {nome as string}{" "}
-                    <strong className="tabular-nums">{fmtBRL(v as number)}</strong>
-                  </span>
-                ))}
-              <span className="font-semibold">
-                Total <span className="tabular-nums">{fmtBRL(dre.retencoes.totalCents)}</span>
-              </span>
-            </div>
+            {!anual && (
+              <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm text-slate-700">
+                {[
+                  ["ISS", dre.retencoes.issCents],
+                  ["PIS", dre.retencoes.pisCents],
+                  ["COFINS", dre.retencoes.cofinsCents],
+                  ["CSLL", dre.retencoes.csllCents],
+                  ["IR", dre.retencoes.irCents],
+                  ["INSS", dre.retencoes.inssCents],
+                ]
+                  .filter(([, v]) => (v as number) > 0)
+                  .map(([nome, v]) => (
+                    <span key={nome as string}>
+                      {nome as string}{" "}
+                      <strong className="tabular-nums">{fmtBRL(v as number)}</strong>
+                    </span>
+                  ))}
+                <span className="font-semibold">
+                  Total <span className="tabular-nums">{fmtBRL(dre.retencoes.totalCents)}</span>
+                </span>
+              </div>
+            )}
             <p className="mt-3 text-xs leading-relaxed text-slate-600">
-              São tributos que o cliente reteve e recolheu no lugar da empresa, em{" "}
-              {fmtNumero(dre.retencoes.titulosComRetencao)} título(s) do mês.{" "}
-              <strong>Ficam de fora das deduções de propósito, porque somá-los pode contar o mesmo imposto duas vezes.</strong>{" "}
-              Depende de como a empresa lança: se o imposto retido não vira título a pagar, estes valores{" "}
-              <em>completam</em> a linha de deduções e deveriam ser somados; se a empresa lança o imposto cheio e abate a
-              retenção na hora de recolher, o título já contém este valor e somar duplicaria. A diferença está na prática
-              de lançamento, não no registro — por isso o sistema mostra os dois lados em vez de escolher.
+              {anual
+                ? "São tributos que os clientes retiveram e recolheram no lugar da empresa; a leitura abaixo vale para todos os meses da tabela. "
+                : `São tributos que o cliente reteve e recolheu no lugar da empresa, em ${fmtNumero(dre.retencoes.titulosComRetencao)} título(s) do mês. `}
+              {dre.retencoesSomadas ? (
+                <>
+                  <strong>
+                    Estão dentro da linha de deduções, como o item &quot;Tributos retidos na fonte pelos clientes&quot;.
+                  </strong>{" "}
+                  É a leitura certa quando o imposto retido <em>não</em> vira título a pagar: os títulos de imposto e as
+                  retenções se completam. Se a empresa lança o imposto cheio e abate a retenção na hora de recolher, o
+                  título já contém este valor e a soma conta o mesmo imposto duas vezes — nesse caso, desligue.
+                </>
+              ) : (
+                <>
+                  <strong>Ficam de fora das deduções.</strong> É a leitura certa quando a empresa lança o imposto cheio e
+                  abate a retenção na hora de recolher: o título já contém este valor. Se o imposto retido <em>não</em>{" "}
+                  vira título a pagar, as deduções estão incompletas neste valor — nesse caso, ligue.
+                </>
+              )}
             </p>
             <p className="mt-2 text-xs leading-relaxed text-slate-600">
               <strong>Como decidir em um minuto:</strong> pegue um título de imposto do mês e veja se o valor dele é o
-              imposto cheio sobre o faturamento ou só o saldo depois da retenção. Me diga qual dos dois e eu passo a
-              somar — ou deixo como está.
+              imposto cheio sobre o faturamento ou só o saldo depois da retenção. A escolha fica em{" "}
+              <Link href="/configuracao" className="font-medium text-blue-700 underline">
+                Modelo de gestão → Tributos retidos na fonte no DRE
+              </Link>
+              .
             </p>
           </div>
         )}
