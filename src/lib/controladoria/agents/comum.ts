@@ -9,6 +9,24 @@ export function titulosAtivos(ctx: ContextoAuditoria, natureza: "PAGAR" | "RECEB
   return ctx.titulos.filter((t) => t.natureza === natureza && !t.cancelado);
 }
 
+// COMBUSTÍVEL NA OMIE. A mesma leitura vale para o cruzamento com o cartão
+// (CU-COMBUSTIVEL) e para o rateio de custo, que precisa saber quais títulos
+// são a fatura do cartão de frota para não somá-los de novo por cima do
+// extrato transação a transação.
+export const PALAVRAS_COMBUSTIVEL = /combust|diesel|gasolina|arla|posto|abastec/i;
+
+export function categoriasDeCombustivel(ctx: ContextoAuditoria): Set<string> {
+  return new Set(ctx.categorias.filter((c) => PALAVRAS_COMBUSTIVEL.test(c.descricao)).map((c) => c.codigo));
+}
+
+export function ehTituloDeCombustivel(t: OmieTitulo, categorias: Set<string>): boolean {
+  return (
+    (t.categoriaCodigo !== null && categorias.has(t.categoriaCodigo)) ||
+    PALAVRAS_COMBUSTIVEL.test(t.parceiroNome ?? "") ||
+    PALAVRAS_COMBUSTIVEL.test(t.categoriaDescricao ?? "")
+  );
+}
+
 export function emAberto(t: OmieTitulo): boolean {
   if (t.cancelado) return false;
   if (t.liquidado) return false;

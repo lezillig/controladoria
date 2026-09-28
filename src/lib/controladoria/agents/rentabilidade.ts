@@ -61,6 +61,7 @@ function auditarRentabilidade(ctx: ContextoAuditoria): AchadoNovo[] {
         total: rentabilidade.totalCents,
         naoAlocado: rentabilidade.naoAlocadoCents,
         cobertura: rentabilidade.coberturaPercent,
+        combustivelDescontadoDaOmie: rentabilidade.combustivelDescontadoCents,
         contratosComDados: rentabilidade.linhas.length,
       },
       chave: chaveAchado("RE-COBERTURA-BAIXA", chaveMes(ctx.dataReferencia)),

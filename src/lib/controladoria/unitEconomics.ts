@@ -2,7 +2,7 @@ import type { OmieTitulo } from "@prisma/client";
 import type { ContextoAuditoria } from "./types";
 import type { Periodo } from "./periodos";
 import { dentro } from "./periodos";
-import { somar } from "./agents/comum";
+import { categoriasDeCombustivel, ehTituloDeCombustivel, somar } from "./agents/comum";
 import { dataDeCompetencia } from "./competencia";
 
 // UNIT ECONOMICS — custo por contrato, por veiculo e por funcionario.
@@ -43,6 +43,10 @@ export type ResultadoRateio<T> = {
   totalCents: number;
   // 0 a 100. Abaixo de ~70% qualquer ranking de rentabilidade e chute.
   coberturaPercent: number;
+  // Títulos de combustível da Omie que ficaram FORA do total porque o extrato
+  // do cartão de frota já representa esse dinheiro no período (ver
+  // custosDoPeriodo). Zero quando não há extrato no período.
+  combustivelDescontadoCents: number;
 };
 
 type Destino = { clienteId?: string; vehicleId?: string; driverId?: string; percentual: number; origem: string };
@@ -132,6 +136,44 @@ function titulosDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo, natureza: "P
   );
 }
 
+// O CUSTO DO PERÍODO, SEM CONTAR COMBUSTÍVEL DUAS VEZES.
+//
+// A fatura do cartão de frota chega na Omie como título a pagar (parceiro
+// "TICKET", categoria "Combustível") e o mesmo dinheiro já está neste sistema
+// transação a transação, com veículo e motorista. Somar os dois dobrava o
+// combustível no custo total — e, como a fatura não tem vínculo e o extrato
+// tem, ainda rebaixava a cobertura do rateio.
+//
+// A regra: quando há extrato do cartão no período, o extrato representa o
+// combustível (é a fonte com destino) e os títulos de combustível da Omie
+// saem da soma. Quanto saiu fica em `combustivelDescontadoCents`, para a tela
+// e o agente dizerem o que foi feito. Sem extrato no período, a Omie é a única
+// fonte e os títulos entram normalmente.
+//
+// É uma aproximação por período: a fatura de agosto pode ter competência em
+// setembro. Casar título com transações uma a uma é trabalho do
+// CU-COMBUSTIVEL, que já aponta a divergência quando os dois lados diferem.
+type CustosDoPeriodo = {
+  titulos: OmieTitulo[];
+  abastecimentos: ContextoAuditoria["abastecimentos"];
+  combustivelDescontadoCents: number;
+};
+
+export function custosDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo): CustosDoPeriodo {
+  const abastecimentos = ctx.abastecimentos.filter((a) => dentro(a.dataHora, periodo));
+  const pagar = titulosDoPeriodo(ctx, periodo, "PAGAR");
+  if (abastecimentos.length === 0) return { titulos: pagar, abastecimentos, combustivelDescontadoCents: 0 };
+
+  const categorias = categoriasDeCombustivel(ctx);
+  const titulos: OmieTitulo[] = [];
+  let descontado = 0;
+  for (const t of pagar) {
+    if (ehTituloDeCombustivel(t, categorias)) descontado += t.valorDocumentoCents;
+    else titulos.push(t);
+  }
+  return { titulos, abastecimentos, combustivelDescontadoCents: descontado };
+}
+
 // ---------- Custo e receita por contrato (Cliente) ----------
 
 export function rentabilidadePorContrato(
@@ -143,8 +185,9 @@ export function rentabilidadePorContrato(
   const receitas = new Map<string, number>();
   let naoAlocado = 0;
   let total = 0;
+  const custosPeriodo = custosDoPeriodo(ctx, periodo);
 
-  for (const titulo of titulosDoPeriodo(ctx, periodo, "PAGAR")) {
+  for (const titulo of custosPeriodo.titulos) {
     total += titulo.valorDocumentoCents;
     const destinos = resolverDestinos(ctx, titulo).filter((d) => d.clienteId);
     if (destinos.length === 0) {
@@ -177,8 +220,7 @@ export function rentabilidadePorContrato(
   // motorista (Driver.clienteId ja existe no cadastro e e mantido pela
   // importacao da planilha de centro de custo).
   const clientePorMotorista = new Map(ctx.motoristas.map((m) => [m.id, m.clienteId]));
-  for (const abastecimento of ctx.abastecimentos) {
-    if (!dentro(abastecimento.dataHora, periodo)) continue;
+  for (const abastecimento of custosPeriodo.abastecimentos) {
     total += abastecimento.valorCents;
     const clienteId = abastecimento.driverId ? clientePorMotorista.get(abastecimento.driverId) : null;
     if (!clienteId) {
@@ -214,6 +256,7 @@ export function rentabilidadePorContrato(
     naoAlocadoCents: naoAlocado,
     totalCents: total,
     coberturaPercent: total > 0 ? ((total - naoAlocado) / total) * 100 : 0,
+    combustivelDescontadoCents: custosPeriodo.combustivelDescontadoCents,
   };
 }
 
@@ -231,7 +274,8 @@ export function custoPorVeiculo(ctx: ContextoAuditoria, periodo: Periodo): Resul
     custos.set(vehicleId, atual);
   };
 
-  for (const titulo of titulosDoPeriodo(ctx, periodo, "PAGAR")) {
+  const custosPeriodo = custosDoPeriodo(ctx, periodo);
+  for (const titulo of custosPeriodo.titulos) {
     total += titulo.valorDocumentoCents;
     const destinos = resolverDestinos(ctx, titulo).filter((d) => d.vehicleId);
     if (destinos.length === 0) {
@@ -249,8 +293,7 @@ export function custoPorVeiculo(ctx: ContextoAuditoria, periodo: Periodo): Resul
 
   // O abastecimento ja nasce com veiculo: e a fonte mais confiavel de custo
   // por veiculo que a empresa tem hoje.
-  for (const abastecimento of ctx.abastecimentos) {
-    if (!dentro(abastecimento.dataHora, periodo)) continue;
+  for (const abastecimento of custosPeriodo.abastecimentos) {
     total += abastecimento.valorCents;
     if (!abastecimento.vehicleId) {
       naoAlocado += abastecimento.valorCents;
@@ -276,6 +319,7 @@ export function custoPorVeiculo(ctx: ContextoAuditoria, periodo: Periodo): Resul
     naoAlocadoCents: naoAlocado,
     totalCents: total,
     coberturaPercent: total > 0 ? ((total - naoAlocado) / total) * 100 : 0,
+    combustivelDescontadoCents: custosPeriodo.combustivelDescontadoCents,
   };
 }
 
@@ -297,7 +341,8 @@ export function custoPorFuncionario(ctx: ContextoAuditoria, periodo: Periodo): R
     custos.set(driverId, atual);
   };
 
-  for (const titulo of titulosDoPeriodo(ctx, periodo, "PAGAR")) {
+  const custosPeriodo = custosDoPeriodo(ctx, periodo);
+  for (const titulo of custosPeriodo.titulos) {
     total += titulo.valorDocumentoCents;
     const destinos = resolverDestinos(ctx, titulo).filter((d) => d.driverId);
     if (destinos.length === 0) {
@@ -309,8 +354,7 @@ export function custoPorFuncionario(ctx: ContextoAuditoria, periodo: Periodo): R
     }
   }
 
-  for (const abastecimento of ctx.abastecimentos) {
-    if (!dentro(abastecimento.dataHora, periodo)) continue;
+  for (const abastecimento of custosPeriodo.abastecimentos) {
     total += abastecimento.valorCents;
     if (!abastecimento.driverId) {
       naoAlocado += abastecimento.valorCents;
@@ -336,6 +380,7 @@ export function custoPorFuncionario(ctx: ContextoAuditoria, periodo: Periodo): R
     naoAlocadoCents: naoAlocado,
     totalCents: total,
     coberturaPercent: total > 0 ? ((total - naoAlocado) / total) * 100 : 0,
+    combustivelDescontadoCents: custosPeriodo.combustivelDescontadoCents,
   };
 }
 
@@ -386,11 +431,6 @@ export function sugerirVinculos(
 // Total de custo do periodo, usado pelo BSC e pelo agente de rentabilidade
 // para calcular cobertura sem repetir a montagem do rateio.
 export function custoTotalPeriodo(ctx: ContextoAuditoria, periodo: Periodo): number {
-  return (
-    somar(titulosDoPeriodo(ctx, periodo, "PAGAR"), (t) => t.valorDocumentoCents) +
-    somar(
-      ctx.abastecimentos.filter((a) => dentro(a.dataHora, periodo)),
-      (a) => a.valorCents
-    )
-  );
+  const custos = custosDoPeriodo(ctx, periodo);
+  return somar(custos.titulos, (t) => t.valorDocumentoCents) + somar(custos.abastecimentos, (a) => a.valorCents);
 }

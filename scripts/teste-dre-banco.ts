@@ -66,7 +66,7 @@ async function principal() {
   const { ranking } = await import("../src/lib/controladoria/analytics");
   const { rankingNoBanco } = await import("../src/lib/controladoria/resumoNoBanco");
   const { analisarEstrategiaDeCusto } = await import("../src/lib/controladoria/estrategiaCusto");
-  const { analisarEstrategiaNoBanco } = await import("../src/lib/controladoria/estrategiaCustoNoBanco");
+  const { analisarEstrategiaNoBanco, linhaPorCategoriaDoBanco } = await import("../src/lib/controladoria/estrategiaCustoNoBanco");
 
   await limpar();
 
@@ -164,6 +164,11 @@ async function principal() {
       retencaoIssCents: 16_000, liquidado: true },
     { ...comum(cx1, "AZ"), codigoLancamento: "A12", natureza: "PAGAR" as const, categoriaCodigo: "D2",
       dataEmissao: new Date(2026, 7, 6), dataVencimento: new Date(2026, 7, 26), valorDocumentoCents: 210_700,
+      liquidado: true },
+    // O ISS de agosto: a estratégia de custo só olha meses FECHADOS, então o
+    // D3 de setembro (A5) não entra nela — este é o que a lista "fora do corte".
+    { ...comum(cx1, "AZ"), codigoLancamento: "A16", natureza: "PAGAR" as const, categoriaCodigo: "D3",
+      dataEmissao: new Date(2026, 7, 8), dataVencimento: new Date(2026, 7, 28), valorDocumentoCents: 36_200,
       liquidado: true },
 
     // --- setembro/2025, o mesmo mês do ano anterior ---
@@ -274,11 +279,18 @@ async function principal() {
     }
 
     // A ESTRATÉGIA DE CUSTO: doze meses de série por categoria.
+    // A classificação do DRE entra nos dois lados: é ela que tira
+    // financiamento, tributo e receita da fila e define a receita de serviço.
+    const estrategiaNoBanco = await analisarEstrategiaNoBanco(escopo, REFERENCIA);
     conferir(
       `estratégia de custo idêntica — ${alvo}`,
-      await analisarEstrategiaNoBanco(escopo, REFERENCIA),
-      analisarEstrategiaDeCusto(ctx)
+      estrategiaNoBanco,
+      analisarEstrategiaDeCusto(ctx, await linhaPorCategoriaDoBanco(escopo))
     );
+    // D3 ("ISS sobre faturamento") é proposto como DEDUCOES pela regex, e a
+    // classificação manual manda D1 e D2 para CUSTO_SERVICO: o ISS sai da fila
+    // e é listado à parte.
+    conferir(`o tributo sai da fila de corte — ${alvo}`, estrategiaNoBanco.foraDoCorte.map((f) => f.codigo), ["D3"]);
   }
 
   // ------------------------------------------------------------------ anual

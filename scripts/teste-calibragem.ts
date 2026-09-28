@@ -8,7 +8,7 @@
 import { auditarContasPagar } from "../src/lib/controladoria/agents/contasPagar";
 import { auditarContasReceber } from "../src/lib/controladoria/agents/contasReceber";
 import { auditarFraude } from "../src/lib/controladoria/agents/antifraude";
-import { buscarOportunidades as auditarOportunidades } from "../src/lib/controladoria/agents/oportunidades";
+import { oportunidadesEmMemoria as auditarOportunidades } from "../src/lib/controladoria/agents/oportunidades";
 import { somenteFornecedores } from "../src/lib/controladoria/agents/padroes";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 

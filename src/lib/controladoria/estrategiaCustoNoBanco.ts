@@ -8,6 +8,7 @@ import {
   type AnaliseDeCusto,
   type SeriesDeCusto,
 } from "./estrategiaCusto";
+import { proporLinha } from "./dre";
 
 // AS SÉRIES DE CUSTO, SOMADAS NO BANCO.
 //
@@ -28,7 +29,7 @@ import {
 // Equivalência verificada em `scripts/teste-dre-banco.ts`.
 
 type LinhaSerie = { categoria: string; mes: string; cents: bigint };
-type LinhaReceita = { mes: string; cents: bigint };
+type LinhaReceita = { categoria: string; mes: string; cents: bigint };
 
 export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Date): Promise<SeriesDeCusto> {
   const { primeiroMes, meses, fim } = janelaDeAnalise(dataReferencia);
@@ -51,7 +52,8 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
        GROUP BY 1, 2
     `,
     prisma.$queryRaw<LinhaReceita[]>`
-      SELECT to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+      SELECT ${CATEGORIA} AS categoria,
+             to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
              COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${escopo.companyId}
@@ -61,7 +63,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
          AND ${competenciaSql("t")} <= ${fim}
          ${filtroConexaoTitulo(escopo.conexaoId)}
          ${naJanela(escopo.janela)}
-       GROUP BY 1
+       GROUP BY 1, 2
     `,
   ]);
 
@@ -72,18 +74,42 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
     porCategoria.set(l.categoria, serie);
   }
 
-  const receitaPorMes = new Map(receitas.map((l) => [l.mes, Number(l.cents)]));
+  const receitaPorCategoria = new Map<string, Map<string, number>>();
+  for (const l of receitas) {
+    const serie = receitaPorCategoria.get(l.categoria) ?? new Map<string, number>();
+    serie.set(l.mes, (serie.get(l.mes) ?? 0) + Number(l.cents));
+    receitaPorCategoria.set(l.categoria, serie);
+  }
 
-  return { meses, porCategoria, receitaPorMes };
+  return { meses, porCategoria, receitaPorCategoria };
+}
+
+// A LINHA DO DRE DE CADA CATEGORIA: a confirmada ou proposta por uma pessoa
+// (DreClassificacao) e, na falta, a proposta automática a partir do cadastro
+// — a mesma regra da tela de Custos. É o que tira financiamento, tributo e
+// receita da fila de corte.
+export async function linhaPorCategoriaDoBanco(escopo: Pick<EscopoSql, "companyId" | "conexaoId">): Promise<Map<string, string>> {
+  const [guardadas, categorias] = await Promise.all([
+    prisma.dreClassificacao.findMany({ where: { companyId: escopo.companyId }, select: { categoriaCodigo: true, linha: true } }),
+    prisma.omieCategoria.findMany({
+      where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
+      select: { codigo: true, descricao: true, natureza: true, contaReceita: true, contaDespesa: true },
+    }),
+  ]);
+  const mapa = new Map<string, string>();
+  for (const c of categorias) mapa.set(c.codigo, proporLinha(c));
+  for (const g of guardadas) mapa.set(g.categoriaCodigo, g.linha);
+  return mapa;
 }
 
 export async function analisarEstrategiaNoBanco(escopo: EscopoSql, dataReferencia: Date): Promise<AnaliseDeCusto> {
-  const [series, categorias] = await Promise.all([
+  const [series, categorias, linhas] = await Promise.all([
     seriesMensaisNoBanco(escopo, dataReferencia),
     prisma.omieCategoria.findMany({
       where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
       select: { codigo: true, descricao: true },
     }),
+    linhaPorCategoriaDoBanco(escopo),
   ]);
-  return analisarEstrategiaDeSeries(series, new Map(categorias.map((c) => [c.codigo, c.descricao])));
+  return analisarEstrategiaDeSeries(series, new Map(categorias.map((c) => [c.codigo, c.descricao])), linhas);
 }

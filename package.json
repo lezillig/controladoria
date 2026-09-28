@@ -30,6 +30,7 @@
     "teste:datas": "TZ=UTC tsx scripts/teste-datas.ts",
     "teste:especialistas": "tsx scripts/teste-especialistas.ts",
     "teste:conciliacao": "tsx scripts/teste-conciliacao.ts",
+    "teste:rateio": "tsx scripts/teste-rateio.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

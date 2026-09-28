@@ -3,9 +3,11 @@ import { inicioDoMes, rotuloMes } from "../periodos";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import {
   agrupar,
+  categoriasDeCombustivel,
   chaveAchado,
   chaveMes,
   chaveParceiro,
+  ehTituloDeCombustivel,
   materialidadeCents,
   mediana,
   nomeParceiro,
@@ -273,7 +275,6 @@ function valorForaDoPadrao(ctx: ContextoAuditoria, materialidade: number): Achad
 // Este e o tipo de checagem que NENHUM dos dois sistemas faz sozinho, e e
 // exatamente onde some dinheiro em transportadora: abastecimento que nao
 // virou despesa, ou despesa lancada sem abastecimento correspondente.
-const PALAVRAS_COMBUSTIVEL = /combust|diesel|gasolina|arla|posto|abastec/i;
 const TOLERANCIA_DIVERGENCIA_PERCENT = 5;
 
 function divergenciaCombustivel(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
@@ -281,17 +282,10 @@ function divergenciaCombustivel(ctx: ContextoAuditoria, materialidade: number): 
   const fim = new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth(), 0, 23, 59, 59, 999);
   if (fim < inicio) return [];
 
-  const categoriasCombustivel = new Set(
-    ctx.categorias.filter((c) => PALAVRAS_COMBUSTIVEL.test(c.descricao)).map((c) => c.codigo)
-  );
+  const categoriasCombustivel = categoriasDeCombustivel(ctx);
 
   const naOmie = titulosAtivos(ctx, "PAGAR").filter(
-    (t) =>
-      t.dataVencimento >= inicio &&
-      t.dataVencimento <= fim &&
-      ((t.categoriaCodigo && categoriasCombustivel.has(t.categoriaCodigo)) ||
-        PALAVRAS_COMBUSTIVEL.test(t.parceiroNome ?? "") ||
-        PALAVRAS_COMBUSTIVEL.test(t.categoriaDescricao ?? ""))
+    (t) => t.dataVencimento >= inicio && t.dataVencimento <= fim && ehTituloDeCombustivel(t, categoriasCombustivel)
   );
   const totalOmie = somar(naOmie, (t) => t.valorDocumentoCents);
 

@@ -1,6 +1,7 @@
 import { fmtBRL, fmtPercent } from "../format";
 import { inicioDoAno } from "../periodos";
-import { analisarEstrategiaDeCusto, ROTULO_CLASSIFICACAO } from "../estrategiaCusto";
+import { ROTULO_CLASSIFICACAO } from "../estrategiaCusto";
+import { analisarEstrategiaNoBanco } from "../estrategiaCustoNoBanco";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import { ehPessoaFisica } from "../documento";
 import { agrupar, chaveAchado, chaveParceiro, materialidadeCents, nomeParceiro, somar, titulosAtivos } from "./comum";
@@ -25,17 +26,21 @@ export const agenteOportunidades: Agente = {
 
 const DIAS_MINIMOS_PARA_ANUALIZAR = 30;
 
-export function buscarOportunidades(ctx: ContextoAuditoria): AchadoNovo[] {
-  const achados: AchadoNovo[] = [];
+export async function buscarOportunidades(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
+  return [...oportunidadesEmMemoria(ctx), ...(await ondeReduzirCusto(ctx))];
+}
+
+// A PARTE QUE SÓ PRECISA DO CONTEXTO — separada para os testes sem banco
+// exercitarem as regras de juros, tarifas, consolidação e alçadas sem passar
+// pela consulta de treze meses de OP-ONDE-REDUZIR.
+export function oportunidadesEmMemoria(ctx: ContextoAuditoria): AchadoNovo[] {
   const materialidade = materialidadeCents(ctx);
-
-  achados.push(...jurosEvitaveisNoAno(ctx, materialidade));
-  achados.push(...tarifasBancarias(ctx, materialidade));
-  achados.push(...consolidacaoDeFornecedores(ctx, materialidade));
-  achados.push(...politicaDeAlcadas(ctx));
-  achados.push(...ondeReduzirCusto(ctx));
-
-  return achados;
+  return [
+    ...jurosEvitaveisNoAno(ctx, materialidade),
+    ...tarifasBancarias(ctx, materialidade),
+    ...consolidacaoDeFornecedores(ctx, materialidade),
+    ...politicaDeAlcadas(ctx),
+  ];
 }
 
 // OP-ONDE-REDUZIR — a capacidade ESTRATEGICA do agente.
@@ -50,8 +55,25 @@ export function buscarOportunidades(ctx: ContextoAuditoria): AchadoNovo[] {
 // faturamento, ou segue seu proprio caminho?). O que cresce sem a receita
 // crescer e o alvo seguro; o que acompanha a entrega so deve ser atacado por
 // eficiencia, nunca por corte direto.
-function ondeReduzirCusto(ctx: ContextoAuditoria): AchadoNovo[] {
-  const analise = analisarEstrategiaDeCusto(ctx);
+//
+// A SÉRIE VEM DO BANCO, com treze meses de janela — e não do contexto. O
+// contexto do ciclo diário começa em 1º de janeiro (é o que os agentes
+// precisam), e a análise pede doze meses: em setembro, outubro a dezembro do
+// ano anterior só tinham os títulos ainda em aberto, a primeira metade saía
+// subestimada e todo custo parecia "descolado". A consulta é a mesma da tela
+// de Custos e DRE, então o achado e a tela dizem o mesmo número.
+async function ondeReduzirCusto(ctx: ContextoAuditoria): Promise<AchadoNovo[]> {
+  const analise = await analisarEstrategiaNoBanco(
+    {
+      companyId: ctx.companyId,
+      conexaoId: ctx.conexaoId,
+      janela: {
+        desde: new Date(ctx.dataReferencia.getFullYear() - 1, ctx.dataReferencia.getMonth(), 1),
+        ate: ctx.janelaAte ?? null,
+      },
+    },
+    ctx.dataReferencia
+  );
 
   // Sem historico suficiente, o agente diz isso em vez de recomendar corte a
   // partir de dois meses de dado — uma recomendacao errada de onde cortar
@@ -97,6 +119,7 @@ function ondeReduzirCusto(ctx: ContextoAuditoria): AchadoNovo[] {
       dataReferencia: ctx.dataReferencia,
       evidencia: {
         mesesAnalisados: analise.mesesAnalisados,
+        foraDaFilaPorNatureza: analise.foraDoCorte.slice(0, 10).map((f) => ({ categoria: f.descricao, linha: f.linha, custoMensal: f.custoMedioMensalCents })),
         alvos: alvos.map((l) => ({
           categoria: l.descricao,
           custoMensal: l.custoMedioMensalCents,

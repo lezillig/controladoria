@@ -101,8 +101,25 @@ type SerieMensal = { mes: string; custo: number; receita: number };
 export type SeriesDeCusto = {
   meses: string[];
   porCategoria: Map<string, Map<string, number>>;
-  receitaPorMes: Map<string, number>;
+  // A receita POR CATEGORIA e mês, e não só por mês: é o que permite medir o
+  // acoplamento contra a receita de SERVIÇO (linha RECEITA_BRUTA do DRE) em
+  // vez de contra tudo que entra — venda de veículo e resgate de consórcio
+  // inflavam a "receita" contra a qual o custo era medido.
+  receitaPorCategoria: Map<string, Map<string, number>>;
 };
+
+// AS LINHAS DO DRE QUE NÃO SE CORTAM POR NEGOCIAÇÃO. Parcela de consórcio,
+// financiamento e tributo entravam no Pareto como "custo" — e a parcela do
+// ônibus, uma das maiores categorias, saía rotulada "estrutura: renegociar,
+// cote com dois concorrentes". Ficam fora da fila e são listadas à parte.
+const LINHAS_FORA_DO_CORTE = new Set([
+  "FINANCIAMENTO_INVESTIMENTO",
+  "TRIBUTO_SOBRE_LUCRO",
+  "DEDUCOES",
+  "RECEITA_BRUTA",
+  "RECEITA_FINANCEIRA",
+  "OUTRAS_RECEITAS",
+]);
 
 export const chaveMes = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
@@ -146,15 +163,18 @@ function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
     porCategoria.set(categoria, serie);
   }
 
-  const receitaPorMes = new Map<string, number>();
+  const receitaPorCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "RECEBER")) {
     const competencia = dataDeCompetencia(t);
     if (competencia < primeiroMes || competencia > fim) continue;
+    const categoria = t.categoriaCodigo ?? "SEM_CATEGORIA";
     const mes = chaveMes(competencia);
-    receitaPorMes.set(mes, (receitaPorMes.get(mes) ?? 0) + t.valorDocumentoCents);
+    const serie = receitaPorCategoria.get(categoria) ?? new Map<string, number>();
+    serie.set(mes, (serie.get(mes) ?? 0) + t.valorDocumentoCents);
+    receitaPorCategoria.set(categoria, serie);
   }
 
-  return { meses, porCategoria, receitaPorMes };
+  return { meses, porCategoria, receitaPorCategoria };
 }
 
 // Compara a primeira metade do período com a segunda. Escolhido em vez de
@@ -204,22 +224,57 @@ export type AnaliseDeCusto = {
   economiaAnualTotalCents: number;
   mesesAnalisados: number;
   baseSuficiente: boolean;
+  // O que saiu da fila por ser financiamento, tributo ou receita — dito, e
+  // não escondido: quem lê "onde cortar" precisa saber que a parcela do
+  // ônibus não está na lista porque não se negocia por cotação.
+  foraDoCorte: { codigo: string; descricao: string; linha: string; custoMedioMensalCents: number }[];
 };
 
-export function analisarEstrategiaDeCusto(ctx: ContextoAuditoria): AnaliseDeCusto {
+// `linhaPorCategoria` é a classificação do DRE (confirmada ou proposta) de
+// cada categoria. Sem ela, tudo entra — é o comportamento dos testes de
+// função pura; com ela, financiamento, tributo e receita saem da fila e a
+// receita de referência passa a ser só a de serviço.
+export function analisarEstrategiaDeCusto(ctx: ContextoAuditoria, linhaPorCategoria?: Map<string, string>): AnaliseDeCusto {
   return analisarEstrategiaDeSeries(
     seriesMensais(ctx),
-    new Map(ctx.categorias.map((c) => [c.codigo, c.descricao]))
+    new Map(ctx.categorias.map((c) => [c.codigo, c.descricao])),
+    linhaPorCategoria
   );
 }
 
 export function analisarEstrategiaDeSeries(
   series: SeriesDeCusto,
-  descricaoPorCodigo: Map<string, string>
+  descricaoPorCodigo: Map<string, string>,
+  linhaPorCategoria?: Map<string, string>
 ): AnaliseDeCusto {
-  const { meses, porCategoria, receitaPorMes } = series;
+  const { meses, porCategoria, receitaPorCategoria } = series;
+  const descricaoDe = (codigo: string) =>
+    codigo === "SEM_CATEGORIA" ? "Sem categoria" : descricaoPorCodigo.get(codigo) ?? `Categoria ${codigo}`;
 
-  const linhasBrutas = [...porCategoria.entries()].map(([codigo, serieCusto]) => {
+  // A RECEITA DE REFERÊNCIA: só a de serviço quando a classificação é
+  // conhecida; tudo que entra quando não é.
+  const receitaPorMes = new Map<string, number>();
+  for (const [codigo, serie] of receitaPorCategoria) {
+    const linha = linhaPorCategoria?.get(codigo);
+    if (linhaPorCategoria && linha && linha !== "RECEITA_BRUTA") continue;
+    for (const [mes, valor] of serie) receitaPorMes.set(mes, (receitaPorMes.get(mes) ?? 0) + valor);
+  }
+
+  const foraDoCorte: AnaliseDeCusto["foraDoCorte"] = [];
+  const linhasBrutas = [...porCategoria.entries()]
+    .filter(([codigo, serieCusto]) => {
+      const custoTotal = somar(meses, (mes) => serieCusto.get(mes) ?? 0);
+      // Categoria só com meses fora da janela (o corrente, parcial) não é
+      // custo da série: fica de fora em vez de aparecer zerada.
+      if (custoTotal === 0) return false;
+      const linha = linhaPorCategoria?.get(codigo);
+      if (linha && LINHAS_FORA_DO_CORTE.has(linha)) {
+        foraDoCorte.push({ codigo, descricao: descricaoDe(codigo), linha, custoMedioMensalCents: Math.round(custoTotal / Math.max(1, meses.length)) });
+        return false;
+      }
+      return true;
+    })
+    .map(([codigo, serieCusto]) => {
     const serie: SerieMensal[] = meses.map((mes) => ({
       mes,
       custo: serieCusto.get(mes) ?? 0,
@@ -235,7 +290,7 @@ export function analisarEstrategiaDeSeries(
 
     return {
       codigo,
-      descricao: codigo === "SEM_CATEGORIA" ? "Sem categoria" : descricaoPorCodigo.get(codigo) ?? `Categoria ${codigo}`,
+      descricao: descricaoDe(codigo),
       custoMedioMensalCents: custoMedioMensal,
       custoTotal,
       classificacao,
@@ -295,6 +350,7 @@ export function analisarEstrategiaDeSeries(
     ),
     mesesAnalisados: meses.length,
     baseSuficiente: meses.length >= MINIMO_MESES_ANALISE,
+    foraDoCorte: foraDoCorte.sort((a, b) => b.custoMedioMensalCents - a.custoMedioMensalCents),
   };
 }
 

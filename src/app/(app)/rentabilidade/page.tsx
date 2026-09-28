@@ -108,7 +108,15 @@ export default async function RentabilidadePage({
           apoio={`${fmtBRL(contratos.naoAlocadoCents)} não alocados`}
           tom={contratos.coberturaPercent >= 70 ? "bom" : contratos.coberturaPercent >= 40 ? "atencao" : "ruim"}
         />
-        <Kpi rotulo="Custo total do mês" valor={fmtBRL(contratos.totalCents)} apoio="Títulos a pagar + cartão de frota" />
+        <Kpi
+          rotulo="Custo total do mês"
+          valor={fmtBRL(contratos.totalCents)}
+          apoio={
+            contratos.combustivelDescontadoCents > 0
+              ? `Títulos a pagar + cartão de frota; ${fmtBRL(contratos.combustivelDescontadoCents)} de combustível na Omie fora da soma, já contados pelo extrato do cartão`
+              : "Títulos a pagar + cartão de frota"
+          }
+        />
         <Kpi rotulo="Contratos com custo alocado" valor={fmtNumero(contratos.linhas.length)} apoio={`${fmtNumero(confirmados.length)} vínculo(s) confirmado(s)`} />
       </div>
 
