@@ -478,6 +478,26 @@ de frota, que tem veículo e motorista). O resto vai para "não alocado".
 o agente **não publicam** o ranking de rentabilidade — publicam o alerta de que a
 base ainda não sustenta a conclusão, e o caminho para melhorá-la.
 
+**Combustível não conta duas vezes.** A fatura do cartão de frota chega na Omie
+como título a pagar e o mesmo dinheiro já está aqui transação a transação.
+Quando há extrato do cartão no período, os títulos de combustível da Omie saem
+da soma (`custosDoPeriodo`) e o valor descontado aparece na tela; sem extrato, a
+Omie é a única fonte e entra normalmente.
+
+### O que a Omie já sabe sozinha
+
+`src/lib/controladoria/margemOmie.ts`. Antes de qualquer de-para, o título já
+traz duas ligações da origem, e a tela de Rentabilidade as publica:
+
+| Leitura | De onde vem |
+|---|---|
+| **Margem por OS (projeto)** | Receita menos custo lançados no mesmo `projetoCodigo`, por conexão. Janela inteira carregada, porque a OS custa num mês e fatura no seguinte. Do movimento mais recente ao mais antigo. |
+| **Margem por cliente Omie** | As OS somadas pelo parceiro cobrado nelas. OS sem cobrança ficam num grupo próprio — é custo real sem receita. |
+| **Faturado × contratado** | Títulos a receber ligados a `OmieContrato` (por `nCodCtr` ou número) no mês, contra o valor mensal contratado. Só contrato mensal tem diferença comparável. |
+
+O que não veio classificado da origem (título sem projeto) fica contado à parte
+como "fora das OS", para a leitura nunca parecer completa quando não é.
+
 ---
 
 ## 7. Conformidade: o que vem de fora

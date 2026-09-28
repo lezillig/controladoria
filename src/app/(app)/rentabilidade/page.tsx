@@ -2,6 +2,7 @@ import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/form
 import { montarComparativo } from "@/lib/controladoria/analytics";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import { custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
+import { faturadoVersusContratado, margemPorClienteOmie, margemPorOs } from "@/lib/controladoria/margemOmie";
 import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
@@ -40,6 +41,16 @@ export default async function RentabilidadePage({
   const contratos = rentabilidadePorContrato(ctx, periodo, nomesCliente);
   const veiculos = custoPorVeiculo(ctx, periodo);
   const funcionarios = custoPorFuncionario(ctx, periodo);
+
+  // O QUE A OMIE JÁ SABE SOZINHA, sem de-para: a margem de cada OS (projeto),
+  // as OS somadas pelo cliente cobrado e o faturado contra o contratado. A
+  // leitura por OS cobre a janela inteira carregada, porque uma OS custa num
+  // mês e fatura no seguinte; contrato é mensal e olha o mês do rateio.
+  const porOs = margemPorOs(ctx);
+  const porClienteOmie = margemPorClienteOmie(porOs);
+  const contratosOmie = faturadoVersusContratado(ctx, periodo);
+  const OS_NA_TELA = 25;
+  const margemClasse = (cents: number) => (cents < 0 ? "font-semibold text-red-700" : "font-semibold text-emerald-700");
 
   const vinculos = ctx.vinculos;
   const confirmados = vinculos.filter((v) => !v.sugerido);
@@ -158,6 +169,136 @@ export default async function RentabilidadePage({
           />
         )}
       </Secao>
+
+      <Secao
+        titulo="Por OS (projeto)"
+        descricao={`Receita e custo lançados no mesmo projeto da Omie desde ${fmtData(ctx.janelaDesde)}, sem de-para — a viagem custa num mês e fatura no seguinte, por isso a janela inteira. Do movimento mais recente ao mais antigo.`}
+      >
+        {porOs.os.length === 0 ? (
+          <AvisoVazio
+            titulo="Nenhum título com projeto informado"
+            descricao="A margem por OS depende do código de projeto no lançamento da Omie. Sem ele, o custo e a receita não têm como se encontrar."
+          />
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
+              <div>
+                <span className="block text-slate-500">Receita nas OS</span>
+                <span className="tabular-nums font-semibold text-slate-800">{fmtBRL(porOs.receitaCents)}</span>
+              </div>
+              <div>
+                <span className="block text-slate-500">Custo nas OS</span>
+                <span className="tabular-nums font-semibold text-slate-800">{fmtBRL(porOs.custoCents)}</span>
+              </div>
+              <div>
+                <span className="block text-slate-500">Margem das OS</span>
+                <span className={`tabular-nums ${margemClasse(porOs.receitaCents - porOs.custoCents)}`}>{fmtBRL(porOs.receitaCents - porOs.custoCents)}</span>
+              </div>
+              <div>
+                <span className="block text-slate-500">Fora das OS (sem projeto)</span>
+                <span className="tabular-nums font-semibold text-slate-800">
+                  {fmtBRL(porOs.custoForaDeOsCents)} <span className="font-normal text-slate-500">de custo</span>
+                </span>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              {fmtNumero(porOs.os.length)} OS com movimento, {fmtNumero(porOs.semFaturamento)} sem nenhuma cobrança e {fmtNumero(porOs.semCusto)} sem
+              custo lançado. O custo sem projeto ({fmtBRL(porOs.custoForaDeOsCents)}) e a receita sem projeto ({fmtBRL(porOs.receitaForaDeOsCents)}) não
+              entram em OS nenhuma — esta leitura explica só o que veio classificado da origem.
+            </p>
+            <Tabela
+              colunas={["OS", "Cliente cobrado", "Último movimento", "Receita", "Custo", "Margem", "% margem"]}
+              alinharDireita={[3, 4, 5, 6]}
+              linhas={porOs.os.slice(0, OS_NA_TELA).map((o) => [
+                <span key="n">
+                  <span className="font-medium text-slate-800">{o.nome}</span>
+                  <span className="block text-xs text-slate-400">
+                    {o.projeto !== o.nome ? `${o.projeto} · ` : ""}
+                    {o.conexaoApelido} · {fmtNumero(o.titulosDeCusto)} custo(s), {fmtNumero(o.titulosDeReceita)} cobrança(s)
+                  </span>
+                </span>,
+                o.clienteNome ? (
+                  <span key="c" className="text-slate-700">
+                    {o.clienteNome}
+                    {o.clientesDistintos > 1 ? <span className="text-xs text-slate-400"> (+{o.clientesDistintos - 1})</span> : null}
+                  </span>
+                ) : (
+                  <span key="c" className="text-xs font-medium text-amber-700">
+                    sem cobrança
+                  </span>
+                ),
+                fmtData(o.ultimoMovimento),
+                fmtBRL(o.receitaCents),
+                fmtBRL(o.custoCents),
+                <span key="m" className={margemClasse(o.margemCents)}>
+                  {fmtBRL(o.margemCents)}
+                </span>,
+                fmtPercent(o.margemPercent),
+              ])}
+            />
+            {porOs.os.length > OS_NA_TELA && (
+              <p className="text-xs text-slate-500">
+                Mostrando as {OS_NA_TELA} OS mais recentes de {fmtNumero(porOs.os.length)}. A margem por cliente abaixo soma todas.
+              </p>
+            )}
+          </div>
+        )}
+      </Secao>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Secao titulo="Por cliente Omie" descricao="As OS somadas pelo cliente que foi cobrado nelas. Não passa pelo cadastro de contratos deste sistema.">
+          <Tabela
+            colunas={["Cliente", "OS", "Receita", "Custo", "Margem", "%"]}
+            alinharDireita={[1, 2, 3, 4, 5]}
+            vazio="Sem OS com movimento na janela."
+            linhas={porClienteOmie.map((c) => [
+              <span key="n" className={c.clienteCodigo ? "font-medium text-slate-800" : "font-medium text-amber-700"}>
+                {c.clienteNome}
+              </span>,
+              fmtNumero(c.ordens),
+              fmtBRL(c.receitaCents),
+              fmtBRL(c.custoCents),
+              <span key="m" className={margemClasse(c.margemCents)}>
+                {fmtBRL(c.margemCents)}
+              </span>,
+              fmtPercent(c.margemPercent),
+            ])}
+          />
+        </Secao>
+        <Secao
+          titulo="Faturado × contratado"
+          descricao={`Contratos de serviço da Omie em ${periodo.rotulo}: o valor mensal contratado contra os títulos a receber ligados ao contrato no mês.`}
+        >
+          <Tabela
+            colunas={["Contrato", "Contratado/mês", "Faturado", "Diferença", "%"]}
+            alinharDireita={[1, 2, 3, 4]}
+            vazio="Nenhum contrato de serviço sincronizado da Omie, ou nenhum ativo. A sincronização de contratos traz a lista."
+            linhas={contratosOmie.map((l) => [
+              <span key="n">
+                <span className="font-medium text-slate-800">
+                  {l.rotulo} · {l.clienteNome ?? "cliente não identificado"}
+                </span>
+                <span className="block text-xs text-slate-400">
+                  {l.conexaoApelido} · {l.situacao} · {l.periodicidade}
+                  {l.titulos > 0 ? ` · ${fmtNumero(l.titulos)} título(s)` : ""}
+                </span>
+              </span>,
+              fmtBRL(l.contratadoCents),
+              fmtBRL(l.faturadoCents),
+              l.diferencaCents === null ? (
+                <span key="d" className="text-xs text-slate-400">
+                  —
+                </span>
+              ) : (
+                <span key="d" className={l.diferencaCents < 0 ? "font-semibold text-red-700" : l.diferencaCents > 0 && !l.ativo ? "font-semibold text-amber-700" : "text-slate-700"}>
+                  {fmtBRL(l.diferencaCents)}
+                </span>
+              ),
+              fmtPercent(l.faturadoPercent, 0),
+            ])}
+          />
+        </Secao>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Secao titulo="Custo por veículo" descricao={`Cobertura: ${fmtPercent(veiculos.coberturaPercent)}`}>

@@ -31,6 +31,7 @@
     "teste:especialistas": "tsx scripts/teste-especialistas.ts",
     "teste:conciliacao": "tsx scripts/teste-conciliacao.ts",
     "teste:rateio": "tsx scripts/teste-rateio.ts",
+    "teste:margem-omie": "tsx scripts/teste-margem-omie.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
