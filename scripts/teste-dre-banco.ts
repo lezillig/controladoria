@@ -313,6 +313,33 @@ async function principal() {
     }
   }
 
+  // ------------------------------------------------------------ projeção
+  // A base da projeção sai do MESMO DRE anual, ano a ano, e para no último
+  // mês fechado: agosto, na referência de 22 de setembro. O número de que a
+  // projeção parte é o número que a tela mostra como realizado.
+  const { baseHistoricaNoBanco, classificacoesDoDre } = await import("../src/lib/controladoria/projecaoNoBanco");
+  for (const conexaoId of [null, cx1.id]) {
+    const alvo = conexaoId ? "uma empresa" : "consolidado";
+    const baseProjecao = await baseHistoricaNoBanco({ companyId: EMPRESA, conexaoId }, REFERENCIA);
+    const anualDaTela = await montarDreAnualNoBanco(
+      { companyId: EMPRESA, conexaoId, janela: { desde: desdeAnual, ate: null } },
+      2026,
+      REFERENCIA,
+      await classificacoesDoDre(EMPRESA),
+      { regime: "competencia", somarRetencoes: false }
+    );
+    conferir(`base da projeção termina em ago/26 — ${alvo}`, baseProjecao.ultimaCompetenciaFechada, "2026-08");
+    conferir(`setembro, parcial, fica fora da base — ${alvo}`, baseProjecao.competencias.includes("2026-09"), false);
+    conferir(`setembro de 2025 está na base — ${alvo}`, baseProjecao.competencias.includes("2025-09"), true);
+    for (const chave of ["RECEITA_BRUTA", "DEDUCOES", "CUSTO_SERVICO", "EBIT", "RESULTADO_LIQUIDO"] as const) {
+      conferir(
+        `${chave} de ago/26 na base = DRE anual da tela — ${alvo}`,
+        baseProjecao.porLinha.get(chave)?.get("2026-08") ?? 0,
+        anualDaTela.linhas.find((l) => l.chave === chave)!.porMes[7]
+      );
+    }
+  }
+
   await limpar();
 }
 

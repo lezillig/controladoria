@@ -6,6 +6,7 @@ import {
   Banknote,
   Building2,
   CalendarRange,
+  Compass,
   FileCheck,
   Landmark,
   LayoutDashboard,
@@ -59,6 +60,9 @@ const NAV: NavItem[] = [
   { href: "/custos", label: "Custos e DRE", icon: TrendingUp, permissao: "custos" },
   { href: "/rentabilidade", label: "Rentabilidade por contrato", icon: PiggyBank, permissao: "rentabilidade" },
   { href: "/bsc", label: "Balanced Scorecard", icon: Target, permissao: "bsc" },
+  // Depois do BSC: as metas medem o presente, os cenários dizem para onde a
+  // empresa vai com as premissas que a pessoa declarar.
+  { href: "/cenarios", label: "Cenários e orçamento", icon: Compass, permissao: "cenarios" },
   { href: "/relatorios", label: "Relatórios diários", icon: Mail, permissao: "relatorios" },
   { href: "/sincronizacao", label: "Sincronização", icon: RefreshCw, permissao: "sincronizacao" },
   { href: "/conexoes", label: "Conexões Omie", icon: Building2, permissao: "conexoes" },

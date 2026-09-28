@@ -56,7 +56,8 @@ const auditoria = ferramentasDeAuditoria(escopo, []);
 const analise = ferramentasDeAnalise(escopo, [], new Date(2026, 8, 22));
 const nomes = [...auditoria, ...analise].map((f) => f.name);
 conferir("nenhum nome de ferramenta repetido entre os dois conjuntos", new Set(nomes).size, nomes.length);
-conferir("as ferramentas de análise existem", analise.length >= 8, true);
+conferir("as ferramentas de análise existem", analise.length >= 11, true);
+conferir("o especialista de orçamento é instruído a começar pela projeção", /projecao_dre/.test(especialistaPorId("orcamento").systemPrompt), true);
 conferir(
   "toda ferramenta tem descrição que diga quando usá-la",
   [...auditoria, ...analise].every((f) => {
@@ -67,7 +68,7 @@ conferir(
 );
 conferir(
   "as somas do DRE e o comparativo estão entre elas",
-  ["dre", "dre_anual", "comparativo", "serie_de_resultado", "estrategia_de_custo", "configuracao_e_regras"].every((n) => nomes.includes(n)),
+  ["dre", "dre_anual", "comparativo", "serie_de_resultado", "estrategia_de_custo", "configuracao_e_regras", "projecao_dre"].every((n) => nomes.includes(n)),
   true
 );
 

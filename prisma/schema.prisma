@@ -1610,3 +1610,55 @@ model ParceiroReceita {
 
   @@index([consultadoEm])
 }
+
+// CENÁRIOS E ORÇAMENTO — a camada de premissas sobre as séries realizadas.
+//
+// O sistema projetava caixa (títulos lançados, 90 dias) e nunca resultado;
+// não havia onde registrar o que se esperava para medir desvio. Um cenário é
+// um conjunto de premissas declaradas (linha do DRE, percentual, mês de início
+// e fim) sobre a projeção base — sazonal, tendência, receita contratada. O
+// orçamento é um cenário GRAVADO por mês e linha, para o orçado × realizado.
+// `escopo` é a conexão ou "GRUPO" (consolidado): texto, e não nulo, porque
+// nulo em chave única não é único no Postgres.
+model Cenario {
+  id            String   @id @default(cuid())
+  companyId     String
+  escopo        String   @default("GRUPO")
+  nome          String
+  // SIMULACAO (o padrão) ou ORCAMENTO (o que virou orçamento de um ano).
+  tipo          String   @default("SIMULACAO")
+  // HISTORICA (série sazonal) ou CONTRATADA (contratos ativos da Omie).
+  baseReceita   String   @default("HISTORICA")
+  // [{ linha, percentual, desde, ate?, descricao? }] — ver projecao.ts.
+  premissas     Json     @default("[]")
+  observacao    String?
+  criadoPorNome String?
+  criadoEm      DateTime @default(now())
+  atualizadoEm  DateTime @updatedAt
+
+  orcamentos OrcamentoLinha[]
+
+  @@index([companyId, escopo])
+}
+
+model OrcamentoLinha {
+  id            String   @id @default(cuid())
+  companyId     String
+  escopo        String   @default("GRUPO")
+  ano           Int
+  // A versão mais alta é a vigente; gravar de novo não apaga a anterior.
+  versao        Int      @default(1)
+  // Chave de LINHAS_DRE (só grupos).
+  linha         String
+  // "AAAA-MM", como HistoricoMensal.
+  competencia   String
+  valorCents    Int
+  origem        String   @default("CENARIO")
+  cenarioId     String?
+  cenario       Cenario? @relation(fields: [cenarioId], references: [id], onDelete: SetNull)
+  criadoPorNome String?
+  criadoEm      DateTime @default(now())
+
+  @@unique([companyId, escopo, ano, versao, linha, competencia])
+  @@index([companyId, escopo, ano])
+}

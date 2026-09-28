@@ -931,3 +931,40 @@ existirem — e dizem isso, em vez de inventar um número:
 
 Regra de controle interno que sustenta o resto: **quem cadastra o título nunca
 pode ser quem aprova o pagamento.**
+
+---
+
+## 12. Cenários, projeção e orçamento
+
+`src/lib/controladoria/projecao.ts` (puro), `projecaoNoBanco.ts` (colheita),
+tela **Cenários e orçamento** (`/cenarios`), ferramenta `projecao_dre` dos
+especialistas de IA. Testes em `scripts/teste-projecao.ts`.
+
+O sistema projetava caixa (títulos lançados, 90 dias) e nunca resultado. A
+projeção agora responde "como fecha o ano" na mesma estrutura de `LINHAS_DRE`
+das telas, doze meses à frente, com três regras:
+
+| Regra | O que significa |
+|---|---|
+| **Só mês fechado é base** | A base termina no último mês fechado (`ultimaCompetenciaFechada`); o mês em curso é o primeiro **projetado**. Somado como se fosse inteiro, ele puxava toda média para baixo. |
+| **Sazonalidade antes de tendência** | Cada mês parte do **mesmo mês do ano anterior**, aparado pela faixa mediana ± 3 MAD dos últimos doze fechados (um pico não vira previsão), vezes a tendência (soma dos últimos 12 ÷ soma dos 12 anteriores). Com menos de 24 meses, sem tendência; com menos de 12, mediana; com menos de 3, sem base. Linha sem movimento é `SEM_BASE`, não "zero sazonal". |
+| **Premissa é declarada** | Um cenário é uma lista de premissas: linha do DRE, percentual, mês de início e fim opcional. Entram por cima da projeção base, e a tabela mostra base e cenário lado a lado. Sem premissa é a projeção base. |
+
+A **receita bruta** pode vir da série ou dos **contratos de serviço ativos da
+Omie** (`receitaContratadaPorMes`: valor mensal × vigência cobrindo o mês; a
+periodicidade de faturamento não muda a competência). Onde não há contrato, cai
+na série, e a linha diz de onde veio cada mês.
+
+**Sensibilidade**: o efeito de ±10% em uma linha sobre o EBIT e o resultado do
+horizonte, mantido o resto do cenário.
+
+**Orçamento**: um cenário pode ser **gravado como orçamento de um ano**
+(`OrcamentoLinha`, uma versão por gravação; a anterior fica). O **orçado ×
+realizado** compara só os meses fechados que têm orçamento, com o desvio no
+sentido do resultado (gastar menos que o orçado é favorável). Cenário e
+gravação passam pela trilha de auditoria.
+
+O que ainda não existe, e a revisão de FP&A lista: direcionadores operacionais
+(km, litros, headcount) como série ligada ao financeiro, fluxo de caixa mensal
+de doze meses com saídas recorrentes, curva de recebimento por cliente, metas
+do BSC derivadas do orçamento.

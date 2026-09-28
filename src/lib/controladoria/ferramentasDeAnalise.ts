@@ -9,6 +9,8 @@ import { montarDreAnualNoBanco, montarDreNoBanco } from "./dreNoBanco";
 import { analisarEstrategiaNoBanco } from "./estrategiaCustoNoBanco";
 import { rankingNoBanco, resumoDoPeriodoNoBanco } from "./resumoNoBanco";
 import { filtroConexaoTitulo } from "./escopoSql";
+import { LINHAS_DE_GRUPO, mesesDoHorizonte, projetar, sensibilidade, type Premissa } from "./projecao";
+import { baseHistoricaNoBanco, contratosDoEscopo } from "./projecaoNoBanco";
 import { dataReferenciaPadrao } from "./ciclo";
 import { fmtBRL, fmtData, fmtPercent } from "./format";
 import { fimDoMes, inicioDoMes, rotuloMes } from "./periodos";
@@ -375,6 +377,68 @@ export function ferramentasDeAnalise(
     },
   });
 
-  return [comparativo, resultadoDoPeriodo, serieDeResultado, dre, dreAnual, rankingParceiros, estrategiaDeCusto, emAberto, emissaoPorTipo, configuracao];
+  // A PROJEÇÃO — a mesma de Cenários e orçamento. O especialista de orçamento
+  // não precisa mais montar tendência e sazonalidade à mão a partir do DRE
+  // anual: recebe os doze meses projetados na estrutura do DRE, com o método
+  // de cada linha, e pode passar as premissas do cenário que a pessoa pediu.
+  // Não grava nada: cenário salvo é ato de gente, na tela.
+  const projecaoDre = betaZodTool({
+    name: "projecao_dre",
+    description:
+      "A projeção dos próximos doze meses na estrutura do DRE (receita bruta até resultado líquido), a partir dos meses FECHADOS: cada mês parte do mesmo mês do ano anterior, aparado pelo desvio mediano e corrigido pela tendência dos últimos doze meses; a receita bruta pode vir da série ou dos contratos ativos da Omie. Aceita premissas (linha do DRE, variação %, mês de início e fim) e devolve base, cenário e diferença mês a mês, mais a sensibilidade de ±10% nas linhas pedidas. Use para 'como fecha o ano', cenários e orçamento — em vez de projetar à mão a partir do dre_anual.",
+    inputSchema: z.object({
+      baseReceita: z.enum(["HISTORICA", "CONTRATADA"]).optional().describe("De onde sai a receita bruta: da série (padrão) ou dos contratos de serviço ativos."),
+      premissas: z
+        .array(
+          z.object({
+            linha: z.enum(LINHAS_DE_GRUPO as [string, ...string[]]).describe("Chave da linha do DRE, por exemplo DESPESA_VEICULOS."),
+            percentual: z.number().min(-500).max(500).describe("+15 = a linha sobe 15%; -10 = cai 10%."),
+            desde: z.string().regex(/^\d{4}-\d{2}$/).describe("Primeiro mês da premissa, AAAA-MM."),
+            ate: z.string().regex(/^\d{4}-\d{2}$/).optional().describe("Último mês da premissa (opcional; sem fim = até o fim do horizonte)."),
+            descricao: z.string().max(160).optional(),
+          })
+        )
+        .max(20)
+        .optional(),
+      sensibilidadeEm: z.array(z.enum(LINHAS_DE_GRUPO as [string, ...string[]])).max(6).optional().describe("Linhas para medir o efeito de ±10% (padrão: receita bruta, veículos, pessoas)."),
+    }),
+    run: async (input) => {
+      const [base, contratos] = await Promise.all([baseHistoricaNoBanco(escopo, dataReferencia), contratosDoEscopo(escopo)]);
+      const meses = mesesDoHorizonte(dataReferencia, 12);
+      const cenario = { baseReceita: input.baseReceita ?? "HISTORICA", premissas: (input.premissas ?? []) as Premissa[] };
+      const p = projetar(base, contratos, meses, cenario);
+      const referencia = cenario.premissas.length > 0 ? projetar(base, contratos, meses, { ...cenario, premissas: [] }) : p;
+      const linhasSens = (input.sensibilidadeEm ?? ["RECEITA_BRUTA", "DESPESA_VEICULOS", "DESPESA_SALARIOS"]) as Premissa["linha"][];
+      const sens = sensibilidade(base, contratos, meses, cenario, linhasSens);
+      registrar("projecao_dre", input, `${p.meses[0].rotulo} a ${p.meses[11].rotulo}: EBIT ${fmtBRL(p.ebitCents)}, ${cenario.premissas.length} premissa(s)`);
+      return JSON.stringify({
+        base: {
+          ultimoMesFechado: p.base.ultimaCompetenciaFechada,
+          mesesFechadosNaBase: p.base.mesesDeBase,
+          primeiroMesDaBase: p.base.primeiraCompetencia,
+          metodo: "mesmo mês do ano anterior, aparado por mediana ± 3 MAD dos últimos 12 fechados, × (soma dos últimos 12 ÷ soma dos 12 anteriores); com menos de 12 meses, mediana; com menos de 3, sem base",
+        },
+        horizonte: p.meses.map((m) => m.rotulo),
+        receitaBrutaDe: p.baseReceita,
+        receitaContratadaPorMes: p.receitaContratada.map((r) => ({ valor: fmtBRL(r.cents), contratos: r.contratos })),
+        totais12Meses: { receitaLiquida: fmtBRL(p.receitaLiquidaCents), ebit: fmtBRL(p.ebitCents), resultadoLiquido: fmtBRL(p.resultadoLiquidoCents) },
+        diferencaContraBase: cenario.premissas.length > 0 ? { ebit: fmtBRL(p.ebitCents - referencia.ebitCents), resultadoLiquido: fmtBRL(p.resultadoLiquidoCents - referencia.resultadoLiquidoCents) } : undefined,
+        premissasAplicadas: p.premissasAplicadas,
+        linhas: p.linhas
+          .filter((l) => l.tipo === "SUBTOTAL" || l.totalCents !== 0 || l.basePorMes.some((v) => v !== 0))
+          .map((l) => ({
+            linha: l.rotulo,
+            tipo: l.tipo,
+            porMes: l.porMes.map(fmtBRL),
+            basePorMes: l.porMes.some((v, i) => v !== l.basePorMes[i]) ? l.basePorMes.map(fmtBRL) : undefined,
+            total: fmtBRL(l.totalCents),
+            metodoPorMes: l.tipo === "GRUPO" ? l.metodos : undefined,
+          })),
+        sensibilidade: sens.map((s) => ({ linha: s.rotulo, variacao: `${s.percentual > 0 ? "+" : ""}${s.percentual}%`, efeitoEbit: fmtBRL(s.efeitoEbitCents), efeitoResultado: fmtBRL(s.efeitoResultadoCents) })),
+      });
+    },
+  });
+
+  return [comparativo, resultadoDoPeriodo, serieDeResultado, dre, dreAnual, rankingParceiros, estrategiaDeCusto, emAberto, emissaoPorTipo, configuracao, projecaoDre];
 }
 
