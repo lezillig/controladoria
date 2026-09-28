@@ -36,7 +36,10 @@ import { dataDeCompetencia } from "./competencia";
 // Mínimo de meses com dado para julgar acoplamento. Abaixo disso, qualquer
 // leitura de tendência é ruído — e o módulo diz isso, em vez de recomendar
 // corte com base em dois pontos.
-const MINIMO_MESES_ANALISE = 4;
+// Seis, e não quatro: a medida de acoplamento compara duas metades, e com
+// quatro meses são duas contra duas — qualquer fatura bimestral (IPVA, seguro)
+// vira "descolado". Três contra três é o mínimo para a comparação dizer algo.
+const MINIMO_MESES_ANALISE = 6;
 const MESES_ANALISE = 12;
 
 export type ClassificacaoCusto =
@@ -106,26 +109,36 @@ export const chaveMes = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() +
 // A JANELA DA ANÁLISE: doze meses terminando no mês da data de referência, e o
 // último mês vai só até o dia da referência. Uma função só, usada pelas duas
 // colheitas — duas contagens de mês divergiriam na virada do ano.
-export function janelaDeAnalise(dataReferencia: Date): { primeiroMes: Date; meses: string[] } {
-  const primeiroMes = inicioDoMes(
-    new Date(dataReferencia.getFullYear(), dataReferencia.getMonth() - (MESES_ANALISE - 1), 1)
-  );
+//
+// O MÊS EM CURSO FICA DE FORA. Ele entrava pela metade, encurtava a segunda
+// metade da comparação e fazia todo custo parecer em queda — ou, no dia 3,
+// desaparecido. A janela termina no último mês fechado; quando a referência é
+// o último dia do mês, o próprio mês conta.
+export function janelaDeAnalise(dataReferencia: Date): { primeiroMes: Date; meses: string[]; fim: Date } {
+  const ultimoDia = new Date(dataReferencia.getFullYear(), dataReferencia.getMonth() + 1, 0).getDate();
+  const mesFechado =
+    dataReferencia.getDate() >= ultimoDia
+      ? inicioDoMes(dataReferencia)
+      : inicioDoMes(new Date(dataReferencia.getFullYear(), dataReferencia.getMonth() - 1, 1));
+  const primeiroMes = inicioDoMes(new Date(mesFechado.getFullYear(), mesFechado.getMonth() - (MESES_ANALISE - 1), 1));
   const meses: string[] = [];
   for (let i = 0; i < MESES_ANALISE; i++) {
     const d = new Date(primeiroMes.getFullYear(), primeiroMes.getMonth() + i, 1);
-    if (d > dataReferencia) break;
+    if (d > mesFechado) break;
     meses.push(chaveMes(d));
   }
-  return { primeiroMes, meses };
+  // Fim da janela: o último instante do último mês fechado.
+  const fim = new Date(mesFechado.getFullYear(), mesFechado.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { primeiroMes, meses, fim };
 }
 
 function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
-  const { primeiroMes, meses } = janelaDeAnalise(ctx.dataReferencia);
+  const { primeiroMes, meses, fim } = janelaDeAnalise(ctx.dataReferencia);
 
   const porCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "PAGAR")) {
     const competencia = dataDeCompetencia(t);
-    if (competencia < primeiroMes || competencia > ctx.dataReferencia) continue;
+    if (competencia < primeiroMes || competencia > fim) continue;
     const categoria = t.categoriaCodigo ?? "SEM_CATEGORIA";
     const mes = chaveMes(competencia);
     const serie = porCategoria.get(categoria) ?? new Map<string, number>();
@@ -136,7 +149,7 @@ function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
   const receitaPorMes = new Map<string, number>();
   for (const t of titulosAtivos(ctx, "RECEBER")) {
     const competencia = dataDeCompetencia(t);
-    if (competencia < primeiroMes || competencia > ctx.dataReferencia) continue;
+    if (competencia < primeiroMes || competencia > fim) continue;
     const mes = chaveMes(competencia);
     receitaPorMes.set(mes, (receitaPorMes.get(mes) ?? 0) + t.valorDocumentoCents);
   }
@@ -154,14 +167,16 @@ function medirDescolamento(serie: SerieMensal[]): { descolamentoPontos: number |
     return { descolamentoPontos: null, variacaoCusto: null, variacaoReceita: null };
   }
 
+  // MÉDIA MENSAL de cada metade, e não a soma: com nove meses são quatro
+  // contra cinco, e a soma dizia que um custo perfeitamente fixo subiu 25%.
   const meio = Math.floor(serie.length / 2);
-  const somaCusto = (parte: SerieMensal[]) => somar(parte, (p) => p.custo);
-  const somaReceita = (parte: SerieMensal[]) => somar(parte, (p) => p.receita);
+  const mediaCusto = (parte: SerieMensal[]) => (parte.length > 0 ? somar(parte, (p) => p.custo) / parte.length : 0);
+  const mediaReceita = (parte: SerieMensal[]) => (parte.length > 0 ? somar(parte, (p) => p.receita) / parte.length : 0);
 
-  const custoAntes = somaCusto(serie.slice(0, meio));
-  const custoDepois = somaCusto(serie.slice(meio));
-  const receitaAntes = somaReceita(serie.slice(0, meio));
-  const receitaDepois = somaReceita(serie.slice(meio));
+  const custoAntes = mediaCusto(serie.slice(0, meio));
+  const custoDepois = mediaCusto(serie.slice(meio));
+  const receitaAntes = mediaReceita(serie.slice(0, meio));
+  const receitaDepois = mediaReceita(serie.slice(meio));
 
   if (custoAntes <= 0) return { descolamentoPontos: null, variacaoCusto: null, variacaoReceita: null };
 

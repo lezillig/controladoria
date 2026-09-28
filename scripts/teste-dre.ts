@@ -436,9 +436,10 @@ console.log("\n15. Visão anual — mês a mês e total do ano");
   const linha = (c: string) => r.linhas.find((l) => l.chave === c)!;
 
   // A data de referência do contexto é 01/08/2026 — a tabela vai até agosto e
-  // não projeta os meses que ainda não aconteceram.
-  conferir("vai só até o mês da data de referência", r.meses.map((m) => m.rotulo),
-    ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago"]);
+  // não projeta os meses que ainda não aconteceram. E agosto, que só tem um
+  // dia, é dito PARCIAL no rótulo: a coluna só com "ago" era lida como queda.
+  conferir("vai só até o mês da data de referência, e marca o parcial", r.meses.map((m) => m.rotulo),
+    ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago (até 1)"]);
   conferir("cada mês no seu lugar",
     linha("RECEITA_BRUTA").porMes, [0, 0, 0, 0, 10_000_000, 12_000_000, 9_000_000, 0]);
   conferir("total do ano soma os meses", linha("RECEITA_BRUTA").totalCents, 31_000_000);

@@ -124,7 +124,7 @@ function montarBriefing(entrada: EntradaAnalista): string {
   linhas.push("## Resultado por competência");
   linhas.push(`- Dia: receita ${fmtBRL(c.dia.receitaCents)}, despesa ${fmtBRL(c.dia.despesaCents)}, resultado ${fmtBRL(c.dia.resultadoCents)}`);
   linhas.push(
-    `- Mês atual: receita ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior), ` +
+    `- Mês atual: receita ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}), ` +
       `despesa ${fmtBRL(c.mesAtual.despesaCents)} (${fmtVariacao(c.variacoes.despesaMesVsAnterior)}), ` +
       `resultado ${fmtBRL(c.mesAtual.resultadoCents)}, margem ${fmtPercent(c.mesAtual.margemPercent)}`
   );

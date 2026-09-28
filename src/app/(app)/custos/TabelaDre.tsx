@@ -25,6 +25,7 @@ export default function TabelaDre({
   subgruposConhecidos,
   marcasPorCategoria,
   anoAnterior,
+  rotuloMesAnterior = "Mês anterior",
   podeClassificar,
 }: {
   linhas: LinhaDreCalculada[];
@@ -33,6 +34,10 @@ export default function TabelaDre({
   // Só o ano, para o cabeçalho da coluna. "Mesmo mês 2025" diz o que "ano
   // anterior" não diz: qual ano exatamente está do outro lado da comparação.
   anoAnterior?: number;
+  // O rótulo da coluna do mês anterior: "Mês anterior" quando é o mês inteiro,
+  // "Mês anterior (até o dia X)" quando a leitura corrente recorta os dois
+  // lados no mesmo dia.
+  rotuloMesAnterior?: string;
   podeClassificar: boolean;
 }) {
   const [abertas, setAbertas] = useState<Set<string>>(new Set());
@@ -67,7 +72,7 @@ export default function TabelaDre({
               <th className="px-3 py-2">Conta</th>
               <th className="px-3 py-2 text-right">Mês atual</th>
               <th className="px-3 py-2 text-right">% RL</th>
-              <th className="px-3 py-2 text-right">Mês anterior</th>
+              <th className="px-3 py-2 text-right">{rotuloMesAnterior}</th>
               <th className="px-3 py-2 text-right">Variação</th>
               <th className="px-3 py-2 text-right">Mesmo mês {anoAnterior ?? ""}</th>
               <th className="px-3 py-2 text-right">Var. a/a</th>

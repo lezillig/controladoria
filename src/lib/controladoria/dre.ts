@@ -922,6 +922,19 @@ export type ResultadoDreAnual = {
 
 const ROTULO_MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
+// OS RÓTULOS DOS MESES DA VISÃO ANUAL. O mês da referência, quando ela não é
+// o último dia dele, é parcial — e a coluna dizia só "set", lida como queda de
+// receita por quem não sabia que faltava um terço do mês. Compartilhado com a
+// colheita em SQL (dreNoBanco.ts), que precisa produzir exatamente o mesmo.
+export function rotulosDosMeses(ano: number, ultimoMes: number, dataReferencia: Date): { indice: number; rotulo: string }[] {
+  const ultimoDiaDoMes = new Date(dataReferencia.getFullYear(), dataReferencia.getMonth() + 1, 0).getDate();
+  const parcial = dataReferencia.getFullYear() === ano && dataReferencia.getDate() < ultimoDiaDoMes;
+  return Array.from({ length: ultimoMes + 1 }, (_, i) => ({
+    indice: i,
+    rotulo: parcial && i === ultimoMes ? `${ROTULO_MES[i]} (até ${dataReferencia.getDate()})` : ROTULO_MES[i],
+  }));
+}
+
 export function montarDreAnual(
   ctx: ContextoAuditoria,
   ano: number,
@@ -934,10 +947,7 @@ export function montarDreAnual(
   const ultimoMes =
     ctx.dataReferencia.getFullYear() === ano ? ctx.dataReferencia.getMonth() : 11;
 
-  const meses = Array.from({ length: ultimoMes + 1 }, (_, i) => ({
-    indice: i,
-    rotulo: ROTULO_MES[i],
-  }));
+  const meses = rotulosDosMeses(ano, ultimoMes, ctx.dataReferencia);
 
   const porMes = meses.map((m) => {
     const inicio = new Date(ano, m.indice, 1, 0, 0, 0, 0);

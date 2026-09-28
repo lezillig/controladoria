@@ -31,10 +31,10 @@ type LinhaSerie = { categoria: string; mes: string; cents: bigint };
 type LinhaReceita = { mes: string; cents: bigint };
 
 export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Date): Promise<SeriesDeCusto> {
-  const { primeiroMes, meses } = janelaDeAnalise(dataReferencia);
+  const { primeiroMes, meses, fim } = janelaDeAnalise(dataReferencia);
 
-  // O ÚLTIMO MÊS VAI SÓ ATÉ O DIA DA REFERÊNCIA, como no original: a série
-  // termina onde a leitura termina, e não no fim do mês corrente.
+  // A JANELA TERMINA NO ÚLTIMO MÊS FECHADO, como na colheita em memória: o mês
+  // em curso, pela metade, distorcia a comparação de metades.
   const [custos, receitas] = await Promise.all([
     prisma.$queryRaw<LinhaSerie[]>`
       SELECT ${CATEGORIA} AS categoria,
@@ -45,7 +45,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
          AND t.cancelado = false
          AND t.natureza = 'PAGAR'
          AND ${competenciaSql("t")} >= ${primeiroMes}
-         AND ${competenciaSql("t")} <= ${dataReferencia}
+         AND ${competenciaSql("t")} <= ${fim}
          ${filtroConexaoTitulo(escopo.conexaoId)}
          ${naJanela(escopo.janela)}
        GROUP BY 1, 2
@@ -58,7 +58,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
          AND t.cancelado = false
          AND t.natureza = 'RECEBER'
          AND ${competenciaSql("t")} >= ${primeiroMes}
-         AND ${competenciaSql("t")} <= ${dataReferencia}
+         AND ${competenciaSql("t")} <= ${fim}
          ${filtroConexaoTitulo(escopo.conexaoId)}
          ${naJanela(escopo.janela)}
        GROUP BY 1

@@ -1,5 +1,5 @@
 import { fmtBRL, fmtPercent } from "../format";
-import { inicioDoMes, rotuloMes, type Periodo } from "../periodos";
+import { ultimoMesFechado, type Periodo } from "../periodos";
 import { custoPorVeiculo, rentabilidadePorContrato } from "../unitEconomics";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import { chaveAchado, chaveMes, materialidadeCents, mediana, severidadePorValor } from "./comum";
@@ -24,12 +24,13 @@ export const agenteRentabilidade: Agente = {
   executar: auditarRentabilidade,
 };
 
+// O ÚLTIMO MÊS FECHADO, e não o mês corrente até D-1. Contrato de fretamento
+// fatura uma vez por mês e incorre custo todos os dias: até o dia do
+// faturamento, TODO contrato tinha margem negativa, e a regra de margem
+// dispararia para a carteira inteira assim que a cobertura passasse do
+// mínimo. No último dia do mês, o próprio mês já é o fechado.
 function periodoMesCorrente(ctx: ContextoAuditoria): Periodo {
-  return {
-    inicio: inicioDoMes(ctx.dataReferencia),
-    fim: ctx.dataReferencia,
-    rotulo: rotuloMes(ctx.dataReferencia),
-  };
+  return ultimoMesFechado(ctx.dataReferencia);
 }
 
 function auditarRentabilidade(ctx: ContextoAuditoria): AchadoNovo[] {

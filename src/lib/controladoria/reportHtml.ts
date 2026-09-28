@@ -310,8 +310,8 @@ export function montarHtml(dados: DadosRelatorio): string {
       "Resultado do mês",
       `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
         <tr>
-          ${cartaoKpi("Títulos a receber do mês", fmtBRL(c.mesAtual.receitaCents), `${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior`)}
-          ${cartaoKpi("Títulos a pagar do mês", fmtBRL(c.mesAtual.despesaCents), `${fmtVariacao(c.variacoes.despesaMesVsAnterior)} vs. mês anterior`)}
+          ${cartaoKpi("Títulos a receber do mês", fmtBRL(c.mesAtual.receitaCents), `${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`)}
+          ${cartaoKpi("Títulos a pagar do mês", fmtBRL(c.mesAtual.despesaCents), `${fmtVariacao(c.variacoes.despesaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`)}
         </tr>
         <tr>
           ${cartaoKpi(
@@ -628,7 +628,7 @@ export function montarTexto(dados: DadosRelatorio): string {
   }
 
   linhas.push("RESULTADO DO MÊS");
-  linhas.push(`Receita: ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior)`);
+  linhas.push(`Receita: ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal})`);
   linhas.push(`Despesa: ${fmtBRL(c.mesAtual.despesaCents)} (${fmtVariacao(c.variacoes.despesaMesVsAnterior)})`);
   linhas.push(`Resultado: ${fmtBRL(c.mesAtual.resultadoCents)} · margem ${fmtPercent(c.mesAtual.margemPercent)}`);
   linhas.push(`Saldo em caixa: ${fmtBRL(dados.panorama.saldoAtualCents)}`);

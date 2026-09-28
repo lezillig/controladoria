@@ -214,7 +214,7 @@ export default async function ControladoriaPage({
         <KpiExpansivel
           rotulo="Títulos a receber do mês"
           valor={fmtBRL(c.mesAtual.receitaCents)}
-          apoio={`${c.mesAtual.titulosReceber} título(s) · ${fmtVariacao(c.variacoes.receitaMesVsAnterior)} vs. mês anterior · clique para abrir`}
+          apoio={`${c.mesAtual.titulosReceber} título(s) · ${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal} · clique para abrir`}
           icone={<TrendingUp className="h-4 w-4" />}
         >
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por tipo de documento</p>
@@ -228,7 +228,7 @@ export default async function ControladoriaPage({
         <KpiExpansivel
           rotulo="Títulos a pagar do mês"
           valor={fmtBRL(c.mesAtual.despesaCents)}
-          apoio={`${c.mesAtual.titulosPagar} título(s) · ${fmtVariacao(c.variacoes.despesaMesVsAnterior)} vs. mês anterior · clique para abrir`}
+          apoio={`${c.mesAtual.titulosPagar} título(s) · ${fmtVariacao(c.variacoes.despesaMesVsAnterior)} ${c.rotuloDaVariacaoMensal} · clique para abrir`}
           icone={<TrendingDown className="h-4 w-4" />}
         >
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por categoria</p>

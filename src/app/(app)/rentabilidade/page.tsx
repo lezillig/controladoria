@@ -1,5 +1,6 @@
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { montarComparativo } from "@/lib/controladoria/analytics";
+import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import { custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
 import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
@@ -29,7 +30,11 @@ export default async function RentabilidadePage({
   const podeEditar = await podeAcao(session, "gerir-rentabilidade");
 
   const comparativo = await montarComparativo(ctx);
-  const periodo = comparativo.janelas.mesAtual;
+  // O ÚLTIMO MÊS FECHADO. Contrato fatura uma vez por mês e incorre custo todo
+  // dia: no mês em curso, até o dia do faturamento toda margem é negativa, e a
+  // tela mostrava isso como se fosse resultado. Com uma competência fechada
+  // escolhida no seletor, o mês é ela mesma.
+  const periodo = comparativo.janelas.mesParcial ? ultimoMesFechado(ctx.dataReferencia) : comparativo.janelas.mesAtual;
 
   const nomesCliente = new Map(ctx.clientes.map((c) => [c.id, c.nome]));
   const contratos = rentabilidadePorContrato(ctx, periodo, nomesCliente);
@@ -79,7 +84,10 @@ export default async function RentabilidadePage({
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Rentabilidade por contrato</h1>
         <p className="mt-1 text-sm text-slate-500">
-          {periodo.rotulo} até {fmtData(ctx.dataReferencia)}. Custo é atribuído apenas quando existe ligação verificável —
+          {comparativo.janelas.mesParcial
+            ? `${periodo.rotulo}, o último mês fechado (o mês em curso só entra quando terminar, porque contrato fatura uma vez por mês e incorre custo todo dia). `
+            : `${periodo.rotulo} até ${fmtData(ctx.dataReferencia)}. `}
+          Custo é atribuído apenas quando existe ligação verificável —
           um de-para confirmado, uma placa citada no documento ou um abastecimento já vinculado. O resto aparece como não
           alocado.
         </p>

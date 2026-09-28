@@ -14,6 +14,7 @@ import {
   RETENCOES_ZERADAS,
   TITULOS_POR_CATEGORIA_NA_TELA,
   montarDreDeInsumos,
+  rotulosDosMeses,
   type CategoriaParaDre,
   type InsumosDre,
   type LinhaDreAnual,
@@ -481,7 +482,7 @@ export async function montarDreAnualNoBanco(
   // Só até o mês da data de referência: projetar dezembro em agosto encheria a
   // tabela de zeros que parecem queda de receita.
   const ultimoMes = dataReferencia.getFullYear() === ano ? dataReferencia.getMonth() : 11;
-  const meses = Array.from({ length: ultimoMes + 1 }, (_, i) => ({ indice: i, rotulo: ROTULO_MES[i] }));
+  const meses = rotulosDosMeses(ano, ultimoMes, dataReferencia);
 
   const janelaDoMes = (i: number): Periodo => ({
     inicio: new Date(ano, i, 1, 0, 0, 0, 0),

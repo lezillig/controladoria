@@ -86,27 +86,78 @@ export type JanelasRelatorio = {
   dia: Periodo;
   mesAtual: Periodo;
   mesAnterior: Periodo;
+  // O MÊS ANTERIOR ATÉ O MESMO DIA. "Mês atual" vai do dia 1 até a referência;
+  // compará-lo com o mês anterior INTEIRO produzia, no dia 10, uma queda de
+  // dois terços que era só calendário — e era essa a variação do painel e do
+  // e-mail. É o mesmo cuidado que o acumulado do ano já tinha (year-to-date
+  // contra year-to-date), aplicado ao mês. Quando a referência é o último dia
+  // do mês, coincide com `mesAnterior`.
+  mesAnteriorMesmoDia: Periodo;
   ano: Periodo;
   anoAnterior: Periodo;
   mesmoMesAnoAnterior: Periodo;
+  // Se o mês atual está incompleto — e, então, quantos dias ele tem e em qual
+  // está. É o que a tela usa para escrever "dia 22 de 30" em vez de deixar o
+  // leitor comparar um mês pela metade com um inteiro.
+  mesParcial: boolean;
+  diaDoMes: number;
+  diasNoMes: number;
 };
+
+// O último dia do mês de `d`, como número.
+export function diasNoMesDe(d: Date): number {
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
+
+// O ÚLTIMO MÊS FECHADO na data de referência: o próprio mês, se ela é o seu
+// último dia; senão, o anterior. Para o que só faz sentido em mês inteiro —
+// margem por contrato, que fatura uma vez por mês e incorre custo todo dia.
+export function ultimoMesFechado(dataReferencia: Date): Periodo {
+  const d = inicioDoDia(dataReferencia);
+  const inicio = d.getDate() === diasNoMesDe(d) ? inicioDoMes(d) : inicioDoMes(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  return { inicio, fim: fimDoMes(inicio), rotulo: rotuloMes(inicio) };
+}
 
 export function montarJanelas(dataReferencia: Date): JanelasRelatorio {
   const d = inicioDoDia(dataReferencia);
   const mesAtualInicio = inicioDoMes(d);
   const mesAnteriorInicio = inicioDoMes(new Date(d.getFullYear(), d.getMonth() - 1, 1));
+  const diaDoMes = d.getDate();
+  const diasNoMes = diasNoMesDe(d);
+  const mesParcial = diaDoMes < diasNoMes;
+  // O mesmo dia no mês anterior, sem passar do fim dele (31 de março → 28 ou
+  // 29 de fevereiro).
+  const mesmoDiaMesAnterior = new Date(
+    mesAnteriorInicio.getFullYear(),
+    mesAnteriorInicio.getMonth(),
+    Math.min(diaDoMes, diasNoMesDe(mesAnteriorInicio))
+  );
 
   const anoAnteriorMesmoDia = mesmoDiaAnoAnterior(d);
   const mesmoMesAnoAnteriorInicio = inicioDoMes(anoAnteriorMesmoDia);
 
   return {
     dia: { inicio: d, fim: fimDoDia(d), rotulo: "Dia (D-1)" },
-    mesAtual: { inicio: mesAtualInicio, fim: fimDoDia(d), rotulo: `Mês atual (${rotuloMes(d)})` },
+    mesAtual: {
+      inicio: mesAtualInicio,
+      fim: fimDoDia(d),
+      rotulo: mesParcial ? `Mês atual (${rotuloMes(d)}, dia ${diaDoMes} de ${diasNoMes})` : `Mês atual (${rotuloMes(d)})`,
+    },
     mesAnterior: {
       inicio: mesAnteriorInicio,
       fim: fimDoMes(mesAnteriorInicio),
       rotulo: `Mês anterior (${rotuloMes(mesAnteriorInicio)})`,
     },
+    mesAnteriorMesmoDia: {
+      inicio: mesAnteriorInicio,
+      fim: mesParcial ? fimDoDia(mesmoDiaMesAnterior) : fimDoMes(mesAnteriorInicio),
+      rotulo: mesParcial
+        ? `${rotuloMes(mesAnteriorInicio)} (até o dia ${mesmoDiaMesAnterior.getDate()})`
+        : `Mês anterior (${rotuloMes(mesAnteriorInicio)})`,
+    },
+    mesParcial,
+    diaDoMes,
+    diasNoMes,
     ano: { inicio: inicioDoAno(d), fim: fimDoDia(d), rotulo: `Acumulado ${d.getFullYear()}` },
     anoAnterior: {
       inicio: inicioDoAno(anoAnteriorMesmoDia),
