@@ -3,6 +3,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { fmtBRL, fmtPercent, fmtVariacao } from "./format";
 import type { PanoramaFinanceiro } from "./analytics";
+import type { DreDoRelatorio } from "./dreNoBanco";
 import type { IndicadorMedido } from "./bsc";
 import type { PanoramaConformidade } from "@/lib/conformidade/panorama";
 import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
@@ -103,6 +104,9 @@ type EntradaAnalista = {
   bsc: IndicadorMedido[];
   limitacoesDaBase: string[];
   conformidade: PanoramaConformidade;
+  // O DRE estruturado. O prompt chama o modelo de controller e antes lhe
+  // entregava receber menos pagar; agora entrega as linhas da demonstração.
+  dre: DreDoRelatorio;
 };
 
 // Os achados vão ordenados por severidade e impacto (é assim que o relatório os
@@ -121,7 +125,18 @@ function montarBriefing(entrada: EntradaAnalista): string {
   const linhas: string[] = [];
   linhas.push(`RELATÓRIO DE ${entrada.dataReferencia.toLocaleDateString("pt-BR")} (dados de D-1)`);
   linhas.push("");
-  linhas.push("## Resultado por competência");
+  linhas.push("## DRE gerencial (estrutura do art. 187, competência por emissão)");
+  const dreLinha = (r: DreDoRelatorio["mesFechado"], nome: string) =>
+    `- ${nome}: receita líquida ${fmtBRL(r.receitaLiquidaCents)}, EBIT ${fmtBRL(r.ebitCents)}, ` +
+    `resultado antes dos investimentos ${fmtBRL(r.resultadoAntesInvestimentosCents)}, resultado líquido ${fmtBRL(r.resultadoLiquidoCents)}, ` +
+    `margem líquida ${fmtPercent(r.margemLiquidaPercent)}; em categoria não confirmada ${fmtBRL(r.naoConfirmadoCents)}, sem categoria ${fmtBRL(r.semCategoriaCents)}`;
+  linhas.push(dreLinha(entrada.dre.mesFechado, `${entrada.dre.mesFechado.rotulo} (último mês fechado)`));
+  if (entrada.dre.mesCorrente) {
+    linhas.push(dreLinha(entrada.dre.mesCorrente, `${entrada.dre.mesCorrente.rotulo} (parcial; só comparável ao mês anterior até o mesmo dia)`));
+  }
+  linhas.push("- Os números abaixo, de títulos, são volume de títulos a receber e a pagar — não são o resultado.");
+  linhas.push("");
+  linhas.push("## Títulos por competência");
   linhas.push(`- Dia: receita ${fmtBRL(c.dia.receitaCents)}, despesa ${fmtBRL(c.dia.despesaCents)}, resultado ${fmtBRL(c.dia.resultadoCents)}`);
   linhas.push(
     `- Mês atual: receita ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}), ` +

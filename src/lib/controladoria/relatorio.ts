@@ -6,6 +6,7 @@ import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { enviarEmail, isEnvioDisponivel } from "@/lib/email/send";
 import { gerarNarrativa } from "./aiAnalyst";
 import { montarPanorama } from "./analytics";
+import { dreParaRelatorio } from "./dreNoBanco";
 import { gravarSnapshotBsc, medirBsc } from "./bsc";
 import { destinatarios } from "./contexto";
 import { avaliarQualidadeDaBase } from "./supervisor";
@@ -42,6 +43,9 @@ export async function gerarEEnviarRelatorio(
   const empresa = conexao ? { name: conexao.nome } : await buscarEmpresa(ctx.companyId);
 
   const panorama = await montarPanorama(ctx);
+  // O DRE estruturado — o número que a diretoria vai ler no assunto e no
+  // primeiro cartão. Somado no banco pela mesma função da tela de Custos.
+  const dre = await dreParaRelatorio({ companyId: ctx.companyId, conexaoId: conexao?.id ?? null, dataReferencia: ctx.dataReferencia });
 
   // Somente achados EM ABERTO entram no relatorio: o que ja foi tratado,
   // ignorado ou fechado automaticamente cumpriu o seu papel e reaparecer todo
@@ -87,12 +91,14 @@ export async function gerarEEnviarRelatorio(
     bsc,
     limitacoesDaBase: qualidadeDaBase.limitacoes,
     conformidade,
+    dre,
   });
 
   const dados: DadosRelatorio = {
     empresa: empresa?.name ?? "Empresa",
     dataReferencia: ctx.dataReferencia,
     panorama,
+    dre,
     achados,
     bsc,
     narrativa,
@@ -112,6 +118,9 @@ export async function gerarEEnviarRelatorio(
     receitaMes: panorama.comparativo.mesAtual.receitaCents,
     despesaMes: panorama.comparativo.mesAtual.despesaCents,
     resultadoMes: panorama.comparativo.mesAtual.resultadoCents,
+    // O resultado líquido do DRE do último mês fechado — o número do assunto.
+    resultadoDreMesFechado: dre.mesFechado.resultadoLiquidoCents,
+    mesFechado: dre.mesFechado.rotulo,
     receitaAno: panorama.comparativo.ano.receitaCents,
     resultadoAno: panorama.comparativo.ano.resultadoCents,
     saldoCaixa: panorama.saldoAtualCents,

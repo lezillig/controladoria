@@ -4,6 +4,7 @@ import type { PanoramaFinanceiro } from "./analytics";
 import type { IndicadorMedido } from "./bsc";
 import { PERSPECTIVAS } from "./bsc";
 import type { Narrativa } from "./aiAnalyst";
+import type { DreDoRelatorio } from "./dreNoBanco";
 import type { QualidadeDaBase } from "./supervisor";
 import type { PanoramaConformidade } from "@/lib/conformidade/panorama";
 import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
@@ -63,6 +64,9 @@ export type DadosRelatorio = {
   empresa: string;
   dataReferencia: Date;
   panorama: PanoramaFinanceiro;
+  // O DRE estruturado do último mês fechado e do mês corrente (ver
+  // dreParaRelatorio). É o número do assunto e do primeiro cartão.
+  dre: DreDoRelatorio;
   achados: AchadoDoRelatorio[];
   bsc: IndicadorMedido[];
   narrativa: Narrativa | null;
@@ -238,11 +242,19 @@ function secaoConformidade(c: PanoramaConformidade): string {
   );
 }
 
+// O ASSUNTO leva o caixa e o resultado do ÚLTIMO MÊS FECHADO pelo DRE. A
+// versão anterior levava "resultado do mês" = títulos a receber menos títulos
+// a pagar do mês em curso: com financiamento, IRPJ, aportes e "sem categoria"
+// dentro, e pela metade — o diretor lia um número no assunto e outro ao abrir
+// Custos e DRE.
 export function montarAssunto(dados: DadosRelatorio): string {
   const criticos = dados.achados.filter((a) => a.severidade === "CRITICA").length;
-  const resultado = dados.panorama.comparativo.mesAtual.resultadoCents;
   const prefixo = criticos > 0 ? `[${criticos} crítico${criticos > 1 ? "s" : ""}] ` : "";
-  return `${prefixo}Controladoria ${fmtData(dados.dataReferencia)} · Resultado do mês ${fmtBRLCompacto(resultado)}`;
+  const fechado = dados.dre.mesFechado;
+  return (
+    `${prefixo}Controladoria ${fmtData(dados.dataReferencia)} · Caixa ${fmtBRLCompacto(dados.panorama.saldoAtualCents)} · ` +
+    `${fechado.rotulo}: resultado ${fmtBRLCompacto(fechado.resultadoLiquidoCents)}`
+  );
 }
 
 export function montarHtml(dados: DadosRelatorio): string {
@@ -304,31 +316,52 @@ export function montarHtml(dados: DadosRelatorio): string {
     );
   }
 
-  // ---- KPIs do mês ----
+  // ---- Caixa e resultado ----
+  // CAIXA PRIMEIRO, depois o DRE do mês fechado, depois o mês em curso dito
+  // como parcial. "Títulos do mês" continuam como o que são — volume de
+  // títulos —, sem se chamarem de resultado.
+  const fechado = dados.dre.mesFechado;
+  const corrente = dados.dre.mesCorrente;
+  const porClassificar = (r: typeof fechado) =>
+    r.naoConfirmadoCents + r.semCategoriaCents > 0
+      ? `${fmtBRLCompacto(r.naoConfirmadoCents + r.semCategoriaCents)} por classificar`
+      : "tudo classificado";
   partes.push(
     secao(
-      "Resultado do mês",
+      "Caixa e resultado",
       `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+          ${cartaoKpi(
+            "Saldo em caixa",
+            fmtBRL(panorama.saldoAtualCents),
+            `A pagar em aberto ${fmtBRLCompacto(panorama.aPagarEmAbertoCents)} · a receber ${fmtBRLCompacto(panorama.aReceberEmAbertoCents)}`,
+            panorama.saldoAtualCents >= 0 ? CINZA_TEXTO : "#b91c1c"
+          )}
+          ${cartaoKpi(
+            `Resultado de ${fechado.rotulo} (DRE)`,
+            fmtBRL(fechado.resultadoLiquidoCents),
+            `EBIT ${fmtBRLCompacto(fechado.ebitCents)} · margem líquida ${fmtPercent(fechado.margemLiquidaPercent)} · ${porClassificar(fechado)}`,
+            fechado.resultadoLiquidoCents >= 0 ? "#15803d" : "#b91c1c"
+          )}
+        </tr>
         <tr>
           ${cartaoKpi("Títulos a receber do mês", fmtBRL(c.mesAtual.receitaCents), `${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`)}
           ${cartaoKpi("Títulos a pagar do mês", fmtBRL(c.mesAtual.despesaCents), `${fmtVariacao(c.variacoes.despesaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`)}
         </tr>
-        <tr>
+        ${
+          corrente
+            ? `<tr>
           ${cartaoKpi(
-            "Resultado do mês",
-            fmtBRL(c.mesAtual.resultadoCents),
-            `Margem ${fmtPercent(c.mesAtual.margemPercent)}`,
-            c.mesAtual.resultadoCents >= 0 ? "#15803d" : "#b91c1c"
+            `${c.janelas.mesAtual.rotulo} — parcial (DRE)`,
+            fmtBRL(corrente.resultadoLiquidoCents),
+            `EBIT ${fmtBRLCompacto(corrente.ebitCents)} · ${porClassificar(corrente)} · comparável só com o mês anterior até o mesmo dia`,
+            corrente.resultadoLiquidoCents >= 0 ? "#15803d" : "#b91c1c"
           )}
-          ${cartaoKpi(
-            "Saldo em caixa",
-            fmtBRL(panorama.saldoAtualCents),
-            `A pagar em aberto ${fmtBRLCompacto(panorama.aPagarEmAbertoCents)}`,
-            panorama.saldoAtualCents >= 0 ? CINZA_TEXTO : "#b91c1c"
-          )}
-        </tr>
+        </tr>`
+            : ""
+        }
       </table>`,
-      `Movimento de ${fmtData(dados.dataReferencia)}: receita ${fmtBRL(c.dia.receitaCents)} · despesa ${fmtBRL(c.dia.despesaCents)}`
+      `Movimento de ${fmtData(dados.dataReferencia)}: títulos a receber ${fmtBRL(c.dia.receitaCents)} · a pagar ${fmtBRL(c.dia.despesaCents)}. O resultado é o do DRE gerencial de Custos e DRE, pelo mesmo cálculo.`
     )
   );
 
@@ -627,11 +660,18 @@ export function montarTexto(dados: DadosRelatorio): string {
     linhas.push("");
   }
 
-  linhas.push("RESULTADO DO MÊS");
-  linhas.push(`Receita: ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal})`);
-  linhas.push(`Despesa: ${fmtBRL(c.mesAtual.despesaCents)} (${fmtVariacao(c.variacoes.despesaMesVsAnterior)})`);
-  linhas.push(`Resultado: ${fmtBRL(c.mesAtual.resultadoCents)} · margem ${fmtPercent(c.mesAtual.margemPercent)}`);
+  const fechado = dados.dre.mesFechado;
+  linhas.push("CAIXA E RESULTADO");
   linhas.push(`Saldo em caixa: ${fmtBRL(dados.panorama.saldoAtualCents)}`);
+  linhas.push(
+    `Resultado de ${fechado.rotulo} (DRE): ${fmtBRL(fechado.resultadoLiquidoCents)} · EBIT ${fmtBRL(fechado.ebitCents)} · ` +
+      `margem líquida ${fmtPercent(fechado.margemLiquidaPercent)} · por classificar ${fmtBRL(fechado.naoConfirmadoCents + fechado.semCategoriaCents)}`
+  );
+  if (dados.dre.mesCorrente) {
+    linhas.push(`${c.janelas.mesAtual.rotulo} — parcial (DRE): ${fmtBRL(dados.dre.mesCorrente.resultadoLiquidoCents)} · EBIT ${fmtBRL(dados.dre.mesCorrente.ebitCents)}`);
+  }
+  linhas.push(`Títulos a receber do mês: ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal})`);
+  linhas.push(`Títulos a pagar do mês: ${fmtBRL(c.mesAtual.despesaCents)} (${fmtVariacao(c.variacoes.despesaMesVsAnterior)})`);
   linhas.push("");
 
   linhas.push("ACUMULADO DO ANO");

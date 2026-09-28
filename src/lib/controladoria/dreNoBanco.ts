@@ -8,13 +8,15 @@ import {
   naJanela,
   type EscopoSql,
 } from "./escopoSql";
-import type { Periodo } from "./periodos";
+import { montarJanelas, ultimoMesFechado, type Periodo } from "./periodos";
 import {
   LINHAS_DRE,
   RETENCOES_ZERADAS,
   TITULOS_POR_CATEGORIA_NA_TELA,
   montarDreDeInsumos,
+  resumirDre,
   rotulosDosMeses,
+  type ResumoDre,
   type CategoriaParaDre,
   type InsumosDre,
   type LinhaDreAnual,
@@ -554,5 +556,62 @@ export async function montarDreAnualNoBanco(
     naoConfirmadoCents: porMes.reduce((a, r) => a + r.naoConfirmadoCents, 0),
     semCategoriaCents: porMes.reduce((a, r) => a + r.semCategoriaCents, 0),
     regime,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// O DRE QUE VAI NO RELATÓRIO DIÁRIO
+//
+// Dois recortes: o ÚLTIMO MÊS FECHADO, que é o número que se defende numa
+// reunião, e o MÊS CORRENTE até a referência, comparado ao anterior até o
+// mesmo dia — parcial, e dito assim. Quando a referência é o último dia do
+// mês, os dois coincidem e o corrente fica nulo.
+//
+// Somado no banco, com a mesma função e a mesma janela da tela de Custos e
+// DRE: o número do e-mail é o número da tela.
+// ---------------------------------------------------------------------------
+export type DreDoRelatorio = { mesFechado: ResumoDre; mesCorrente: ResumoDre | null };
+
+export async function dreParaRelatorio(params: {
+  companyId: string;
+  conexaoId: string | null;
+  dataReferencia: Date;
+}): Promise<DreDoRelatorio> {
+  const { companyId, conexaoId, dataReferencia } = params;
+  const [guardadas, config] = await Promise.all([
+    prisma.dreClassificacao.findMany({
+      where: { companyId },
+      select: { categoriaCodigo: true, linha: true, subgrupo: true, origem: true },
+    }),
+    prisma.controladoriaConfig.findUnique({ where: { companyId }, select: { retencoesNasDeducoes: true } }),
+  ]);
+  const classificacoes = new Map(
+    guardadas.map((c) => [c.categoriaCodigo, { linha: c.linha, subgrupo: c.subgrupo, confirmada: c.origem === "CONFIRMADA" }])
+  );
+  const opcoes = { somarRetencoes: config?.retencoesNasDeducoes ?? false, incluirTitulos: false } as const;
+  const janelas = montarJanelas(dataReferencia);
+  const escopo = {
+    companyId,
+    conexaoId,
+    janela: { desde: new Date(dataReferencia.getFullYear() - 1, dataReferencia.getMonth(), 1), ate: null },
+  };
+
+  const fechado = ultimoMesFechado(dataReferencia);
+  const anteriorAoFechado = {
+    inicio: new Date(fechado.inicio.getFullYear(), fechado.inicio.getMonth() - 1, 1),
+    fim: new Date(fechado.inicio.getFullYear(), fechado.inicio.getMonth(), 0, 23, 59, 59, 999),
+    rotulo: "",
+  };
+
+  const [dreFechado, dreCorrente] = await Promise.all([
+    montarDreNoBanco(escopo, fechado, anteriorAoFechado, classificacoes, opcoes),
+    janelas.mesParcial
+      ? montarDreNoBanco(escopo, janelas.mesAtual, janelas.mesAnteriorMesmoDia, classificacoes, opcoes)
+      : Promise.resolve(null),
+  ]);
+
+  return {
+    mesFechado: resumirDre(dreFechado, fechado.rotulo),
+    mesCorrente: dreCorrente ? resumirDre(dreCorrente, janelas.mesAtual.rotulo) : null,
   };
 }

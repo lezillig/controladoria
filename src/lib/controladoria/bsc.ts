@@ -53,11 +53,17 @@ export const INDICADORES_BSC: IndicadorBsc[] = [
   // ---------------- Perspectiva FINANCEIRA ----------------
   {
     codigo: "FIN-MARGEM",
-    nome: "Margem do mês",
+    // O nome diz o que o número é: títulos a receber menos títulos a pagar do
+    // mês, sobre os títulos a receber. Não é a margem do DRE — inclui
+    // financiamento, IRPJ, aportes e o que está sem categoria —, e chamá-lo de
+    // "margem do mês" fazia o BSC discordar de Custos e DRE. A margem líquida
+    // do DRE está no relatório diário e na tela; este indicador continua aqui
+    // porque a série histórica dele já existe.
+    nome: "Saldo de títulos do mês (receber − pagar)",
     perspectiva: "FINANCEIRA",
     unidade: "PERCENTUAL",
     direcao: "MAIOR_MELHOR",
-    descricao: "Resultado (receita − despesa, por competência) sobre a receita do mês corrente.",
+    descricao: "Títulos a receber menos títulos a pagar do mês corrente, por competência, sobre os títulos a receber. Não é a margem do DRE: inclui financiamento, tributos e o que está sem categoria.",
     metaSugerida: 15,
     calcular: (ctx) => {
       const janelas = montarJanelas(ctx.dataReferencia);

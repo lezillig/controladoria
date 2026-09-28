@@ -877,6 +877,40 @@ export function montarDreDeInsumos(
   };
 }
 
+// O RESUMO DE UMA DEMONSTRAÇÃO, para o relatório diário e o briefing da IA.
+//
+// O "resultado do mês" que ia no assunto do e-mail era títulos a receber
+// menos títulos a pagar — com financiamento, IRPJ, aportes e "sem categoria"
+// dentro. A diretoria lia um número no e-mail e outro em Custos e DRE. Este
+// resumo leva as quatro linhas que importam, mais os dois números que dizem
+// se o DRE pode ser levado a uma reunião.
+export type ResumoDre = {
+  rotulo: string;
+  receitaLiquidaCents: number;
+  ebitCents: number;
+  resultadoAntesInvestimentosCents: number;
+  resultadoLiquidoCents: number;
+  margemLiquidaPercent: number | null;
+  naoConfirmadoCents: number;
+  semCategoriaCents: number;
+  regime: "competencia" | "caixa";
+};
+
+export function resumirDre(r: ResultadoDre, rotulo: string): ResumoDre {
+  const linha = (chave: string) => r.linhas.find((l) => l.chave === chave)?.valorCents ?? 0;
+  return {
+    rotulo,
+    receitaLiquidaCents: r.receitaLiquidaCents,
+    ebitCents: linha("EBIT"),
+    resultadoAntesInvestimentosCents: linha("LAIR"),
+    resultadoLiquidoCents: r.resultadoLiquidoCents,
+    margemLiquidaPercent: r.margemLiquidaPercent,
+    naoConfirmadoCents: r.naoConfirmadoCents,
+    semCategoriaCents: r.semCategoriaCents,
+    regime: r.regime,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // A DEMONSTRAÇÃO DO ANO INTEIRO, MÊS A MÊS
 //
