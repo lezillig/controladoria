@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ajustarParametroBase, encerrarRegistroBase, salvarRegistroBase, voltarParametroAoPadrao, type Resultado } from "../actions";
-import { CampoNumero, botao, botaoPrimario } from "../[id]/comum";
+import { CampoNumero, botao } from "../[id]/comum";
 
 // A BASE DE CUSTOS, EDITÁVEL.
 //
@@ -98,9 +98,21 @@ function DoDre({ d }: { d: NonNullable<ParametroTela["doDre"]> }) {
 
 function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boolean }) {
   const valorAtual = p.atual ? (p.tipo === "texto" ? p.atual.texto : p.atual.valor) : null;
-  const [rascunho, setRascunho] = useState<number | string | null>(valorAtual);
-  const mudou = rascunho !== valorAtual && rascunho !== null && rascunho !== "";
+  const [rascunho, setRascunhoEstado] = useState<number | string | null>(valorAtual);
+  // Grava ao sair do campo (ver LinhaRegistro): o ref tem o valor já
+  // confirmado pelo campo numérico no próprio blur.
+  const rascunhoRef = useRef<number | string | null>(valorAtual);
+  const setRascunho = (v: number | string | null) => {
+    rascunhoRef.current = v;
+    setRascunhoEstado(v);
+  };
   const { pendente, rodar, msg } = useAcao();
+  const salvarSeMudou = () => {
+    const r = rascunhoRef.current;
+    const texto = typeof r === "string" ? r.trim() : r;
+    if (!podeEditar || pendente || texto === valorAtual || texto === null || texto === "") return;
+    rodar(() => ajustarParametroBase(p.chave, typeof texto === "number" ? texto : null, typeof texto === "string" ? texto : null));
+  };
   return (
     <tr className="border-b border-slate-100 align-top">
       <td className="px-2 py-2">
@@ -108,7 +120,12 @@ function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boole
         {p.essencial && <span className="ml-1 text-amber-600" title="Item essencial do Gabarito">★</span>}
         {p.uso ? <span className="block text-xs text-slate-500">Entra na conta: {p.uso}</span> : <span className="block text-xs text-slate-500">Informativo (não entra na conta)</span>}
       </td>
-      <td className="w-56 px-2 py-2">
+      <td
+        className="w-56 px-2 py-2"
+        onBlur={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) salvarSeMudou();
+        }}
+      >
         {p.tipo === "texto" ? (
           <input
             className="w-full rounded-md border border-slate-300 px-2 py-1 text-[13px]"
@@ -139,21 +156,7 @@ function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boole
             <span className="w-14 shrink-0 text-[11px] text-slate-500">{p.tipo === "pct" ? "%" : (p.unidade ?? "")}</span>
           </div>
         )}
-        {mudou && podeEditar && (
-          <div className="mt-1 flex gap-1">
-            <button
-              type="button"
-              className={`${botaoPrimario} px-2 py-1 text-xs`}
-              disabled={pendente}
-              onClick={() => rodar(() => ajustarParametroBase(p.chave, typeof rascunho === "number" ? rascunho : null, typeof rascunho === "string" ? rascunho : null))}
-            >
-              {pendente ? "Salvando…" : "Salvar"}
-            </button>
-            <button type="button" className={`${botao} px-2 py-1 text-xs`} onClick={() => setRascunho(valorAtual)}>
-              Desfazer
-            </button>
-          </div>
-        )}
+        {pendente && <p className="mt-1 text-xs text-slate-500">salvando…</p>}
         {msg && <p className={`mt-1 text-xs ${msg.erro ? "text-red-700" : "text-emerald-700"}`}>{msg.erro ?? msg.ok}</p>}
       </td>
       <td className="px-2 py-2 text-xs text-slate-600">
@@ -250,11 +253,32 @@ function LinhaRegistro({
   aoDescartar?: () => void;
 }) {
   const [valores, setValores] = useState(registro.campos);
-  const mudou = JSON.stringify(valores) !== JSON.stringify(registro.campos) || registro.id === null;
+  // GRAVA SOZINHO AO SAIR DA LINHA, não a cada tecla: cada gravação abre uma
+  // vigência nova no histórico. O ref acompanha o que foi digitado de forma
+  // síncrona — o campo numérico confirma o valor no próprio blur, antes do
+  // blur da linha, e o estado ainda não teria sido atualizado.
+  const valoresRef = useRef(registro.campos);
   const { pendente, rodar, msg } = useAcao();
-  const mudar = (campo: string, v: string | number | boolean | null) => setValores((a) => ({ ...a, [campo]: v }));
+  const mudar = (campo: string, v: string | number | boolean | null) => {
+    valoresRef.current = { ...valoresRef.current, [campo]: v };
+    setValores(valoresRef.current);
+  };
+  const salvarSeMudou = () => {
+    if (!podeEditar || pendente) return;
+    const atuais = valoresRef.current;
+    if (JSON.stringify(atuais) === JSON.stringify(registro.campos) && registro.id !== null) return;
+    // Linha nova só grava com o campo que a identifica (modelo, função, praça).
+    const identificacao = atuais[campos[0]?.campo ?? ""];
+    if (registro.id === null && (identificacao === null || identificacao === undefined || String(identificacao).trim() === "")) return;
+    rodar(() => salvarRegistroBase(tipo, atuais, registro.id), registro.id === null ? aoDescartar : undefined);
+  };
   return (
-    <tr className={`border-b border-slate-100 align-top ${registro.id === null ? "bg-blue-50/40" : ""}`}>
+    <tr
+      className={`border-b border-slate-100 align-top ${registro.id === null ? "bg-blue-50/40" : ""}`}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) salvarSeMudou();
+      }}
+    >
       {campos.map((c, i) => (
         <td key={c.campo} className={`px-1.5 py-1.5 ${i === 0 ? "sticky left-0 z-10 bg-white" : ""}`}>
           {c.tipo === "texto" ? (
@@ -282,19 +306,12 @@ function LinhaRegistro({
           )}
         </td>
       ))}
-      <td className="whitespace-nowrap px-1.5 py-1.5 text-xs">
+      {/* Presa à direita: a situação da linha e o "Retirar" ficam à vista mesmo
+          com a tabela rolada. */}
+      <td className="sticky right-0 z-10 whitespace-nowrap bg-white px-1.5 py-1.5 text-xs shadow-[-6px_0_6px_-6px_rgba(15,23,42,0.15)]">
         {podeEditar && (
-          <div className="flex gap-1">
-            {mudou && (
-              <button
-                type="button"
-                className={`${botaoPrimario} px-2 py-1 text-xs`}
-                disabled={pendente}
-                onClick={() => rodar(() => salvarRegistroBase(tipo, valores, registro.id), registro.id === null ? aoDescartar : undefined)}
-              >
-                {pendente ? "…" : "Salvar"}
-              </button>
-            )}
+          <div className="flex items-center gap-1">
+            {pendente && <span className="text-slate-500">salvando…</span>}
             {registro.id === null ? (
               <button type="button" className={`${botao} px-2 py-1 text-xs`} onClick={aoDescartar}>
                 Descartar
