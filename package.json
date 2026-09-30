@@ -34,6 +34,7 @@
     "teste:margem-omie": "tsx scripts/teste-margem-omie.ts",
     "teste:projecao": "tsx scripts/teste-projecao.ts",
     "teste:simulador": "tsx scripts/teste-simulador.ts",
+    "teste:gabarito": "tsx scripts/teste-gabarito.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -41,6 +42,7 @@
     "@prisma/client": "^6.19.3",
     "@vercel/functions": "^3.9.3",
     "bcryptjs": "^3.0.3",
+    "exceljs": "^4.4.0",
     "jose": "^6.2.3",
     "lucide-react": "^1.25.0",
     "next": "16.2.10",

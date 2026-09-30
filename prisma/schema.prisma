@@ -430,11 +430,11 @@ model OmieTitulo {
   // porque toda regra de perda financeira ("pagou juros", "pagou acima do
   // documento") filtra por esses valores sobre milhares de títulos — agregar
   // por join a cada regra era o gargalo do relatório diário.
-  valorPagoCents      Int       @default(0)
-  jurosCents          Int       @default(0)
-  multaCents          Int       @default(0)
-  descontoCents       Int       @default(0)
-  tarifaCents         Int       @default(0)
+  valorPagoCents      Int  @default(0)
+  jurosCents          Int  @default(0)
+  multaCents          Int  @default(0)
+  descontoCents       Int  @default(0)
+  tarifaCents         Int  @default(0)
 
   // RETENÇÕES NA FONTE, como a Omie as lança no título.
   //
@@ -455,32 +455,32 @@ model OmieTitulo {
   //
   // `@default(0)` e não opcional: a Omie omite o campo quando não há valor, e
   // ausência aqui significa retenção zero — não retenção desconhecida.
-  retencaoIrCents     Int       @default(0)
-  retencaoIssCents    Int       @default(0)
-  retencaoPisCents    Int       @default(0)
-  retencaoCofinsCents Int       @default(0)
-  retencaoCsllCents   Int       @default(0)
-  retencaoInssCents   Int       @default(0)
+  retencaoIrCents     Int @default(0)
+  retencaoIssCents    Int @default(0)
+  retencaoPisCents    Int @default(0)
+  retencaoCofinsCents Int @default(0)
+  retencaoCsllCents   Int @default(0)
+  retencaoInssCents   Int @default(0)
 
-  dataUltimaBaixa     DateTime?
+  dataUltimaBaixa DateTime?
 
   // Texto cru da Omie ("ATRASADO", "A VENCER", "PAGO", "LIQUIDADO",
   // "CANCELADO"...). Não normalizado para enum de propósito: um status novo do
   // ERP não pode quebrar o sync.
-  status         String
-  liquidado      Boolean   @default(false)
-  cancelado      Boolean   @default(false)
-  observacao     String?
-  origem         String?
-  alteradoEmOmie DateTime?
+  status             String
+  liquidado          Boolean   @default(false)
+  cancelado          Boolean   @default(false)
+  observacao         String?
+  origem             String?
+  alteradoEmOmie     DateTime?
   // QUEM E QUANDO, na Omie. Vem do bloco `info` de pesquisartitulos quando o
   // pedido leva `lDadosCad: true`: usuário que incluiu e que alterou o título,
   // e a data real de inclusão. É o dado que sustenta a segregação de funções
   // (quem lança não paga) e o "alterado depois de pago" — antes disso, a
   // regra do doc ("quem cadastra nunca aprova") era uma frase sem teste.
-  usuarioInclusao  String?
-  usuarioAlteracao String?
-  dataInclusaoOmie DateTime?
+  usuarioInclusao    String?
+  usuarioAlteracao   String?
+  dataInclusaoOmie   DateTime?
   // Chave da NF-e/CT-e de origem (`cChaveNFe`), origem do lançamento
   // (`cOrigem`: MANP/MANR manual, NFEP/NFER por nota, OFXP por extrato...),
   // contrato de serviço e ordem de serviço a que o título pertence. A chave
@@ -490,7 +490,7 @@ model OmieTitulo {
   origemLancamento   String?
   contratoCodigo     String?
   ordemServicoCodigo String?
-  sincronizadoEm DateTime  @default(now())
+  sincronizadoEm     DateTime  @default(now())
 
   baixas  OmieBaixa[]
   versoes OmieTituloVersao[]
@@ -834,20 +834,20 @@ model RelatorioDiario {
 // por exemplo, o agente antifraude não tem como saber que três pagamentos de
 // R$ 9.900 no mesmo dia são fracionamento de um de R$ 29.700.
 model ControladoriaConfig {
-  id                                  String   @id @default(cuid())
-  companyId                           String   @unique
-  emailsRelatorio                     String   @default("")
+  id                                  String    @id @default(cuid())
+  companyId                           String    @unique
+  emailsRelatorio                     String    @default("")
   dataInicioBase                      DateTime
   limiteAlcadaCents                   Int?
   metaMargemPercent                   Float?
-  toleranciaVariacaoPercent           Float    @default(20)
-  diasAtrasoCritico                   Int      @default(30)
+  toleranciaVariacaoPercent           Float     @default(20)
+  diasAtrasoCritico                   Int       @default(30)
   saldoMinimoCaixaCents               Int?
-  limiteConcentracaoFornecedorPercent Float    @default(25)
+  limiteConcentracaoFornecedorPercent Float     @default(25)
   // Um e-mail consolidado do grupo, ou um por empresa. Grupo cujos CNPJs
   // operam junto costuma querer o consolidado; quando cada empresa tem gestor
   // próprio, o separado funciona melhor.
-  relatorioPorConexao                 Boolean  @default(false)
+  relatorioPorConexao                 Boolean   @default(false)
   // Se o ciclo diário gera relatório depois de auditar. Nasce DESLIGADO de
   // propósito: durante a integração com a Omie o que se quer é espelhar e
   // conferir os dados, e um relatório gerado todo dia sobre uma base ainda
@@ -858,21 +858,21 @@ model ControladoriaConfig {
   // que revela o que ficou faltando no espelho. Também não impede a geração
   // manual em Relatórios, que é como se confere o resultado antes de ligar o
   // automático.
-  relatorioAutomatico                 Boolean  @default(false)
+  relatorioAutomatico                 Boolean   @default(false)
   // Somar ao DRE os tributos que os clientes retiveram na fonte. Ligado
   // quando o retido NÃO vira título a pagar (os dois se completam); desligado
   // quando a empresa lança o imposto cheio e abate a retenção ao recolher (o
   // título já contém o valor, e somar duplicaria).
-  retencoesNasDeducoes                Boolean  @default(true)
+  retencoesNasDeducoes                Boolean   @default(true)
   // ALERTA POR EXCEÇÃO: e-mail só quando surge achado crítico novo ou o caixa
   // projetado fica negativo. É o oposto do relatório diário — que existe
   // para ser lido todo dia — e os dois podem coexistir ou não.
-  alertaPorExcecao                    Boolean  @default(false)
+  alertaPorExcecao                    Boolean   @default(false)
   // Última vez que o alerta de caixa foi enviado. O caixa negativo é um
   // estado, não um evento: sem esta marca ele mandaria e-mail todo dia até
   // alguém resolver — e e-mail diário é o que o alerta existe para evitar.
   ultimoAlertaCaixaEm                 DateTime?
-  atualizadoEm                        DateTime @updatedAt
+  atualizadoEm                        DateTime  @updatedAt
 }
 
 // ============================================================================
@@ -1246,25 +1246,25 @@ model TentativaLogin {
 // aquele exige companyId, e uma falha ao montar a página pode acontecer antes
 // de haver sessão — que é justamente o caso mais difícil de diagnosticar.
 model FalhaDeServidor {
-  id       String   @id @default(cuid())
+  id            String   @id @default(cuid())
   // O mesmo identificador que a tela de erro mostra. É a chave que liga o
   // relato ("deu erro 2799718439") ao que de fato aconteceu.
-  digest   String?
+  digest        String?
   // "render" (montagem de página), "route" (rota de API) ou "action".
-  origem   String?
-  rota     String?
+  origem        String?
+  rota          String?
   // Método e caminho da requisição, quando o Next os informa.
-  metodo   String?
-  mensagem String
+  metodo        String?
+  mensagem      String
   // Primeiras linhas da pilha, já redigidas. O suficiente para localizar o
   // arquivo; não o suficiente para virar despejo de código na tela.
-  pilha    String?
+  pilha         String?
   // Commit do build que estava no ar quando a falha aconteceu. É o que separa
   // "já corrigido" de "acontecendo agora" sem obrigar ninguém a comparar
   // horários com a última publicação. Nulo nas linhas gravadas antes desta
   // coluna existir.
   commitDoBuild String?
-  criadoEm DateTime @default(now())
+  criadoEm      DateTime @default(now())
 
   @@index([criadoEm])
   @@index([digest])
@@ -1338,15 +1338,15 @@ model PerfilAcesso {
 // um usuário lá deixa a linha órfã aqui — inofensiva, porque sem usuário não há
 // sessão a autorizar.
 model UsuarioPerfil {
-  id            String       @id @default(cuid())
-  companyId     String
-  userId        String
-  perfilId      String
-  perfil        PerfilAcesso @relation(fields: [perfilId], references: [id], onDelete: Cascade)
-  userNome      String?
-  atribuidoPor  String?
-  criadoEm      DateTime     @default(now())
-  atualizadoEm  DateTime     @updatedAt
+  id           String       @id @default(cuid())
+  companyId    String
+  userId       String
+  perfilId     String
+  perfil       PerfilAcesso @relation(fields: [perfilId], references: [id], onDelete: Cascade)
+  userNome     String?
+  atribuidoPor String?
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
 
   @@unique([companyId, userId])
   @@index([perfilId])
@@ -1371,7 +1371,7 @@ model UsuarioPerfil {
 // importa — nada aqui é fonte de verdade, e um recálculo errado se conserta
 // rodando de novo.
 model HistoricoMensal {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   companyId   String
   conexaoId   String
   // "AAAA-MM". Texto, e não data: a chave é o MÊS, e guardar uma data traria
@@ -1386,18 +1386,18 @@ model HistoricoMensal {
   // histórico nem reescreve o passado — o rótulo antigo fica com o mês antigo.
   rotulo      String?
 
-  titulos     Int      @default(0)
+  titulos          Int @default(0)
   // Centavos em Int, como no resto do espelho. O teto é ~R$ 21 milhões, e cada
   // linha é UM parceiro (ou categoria) em UM mês — a maior receita mensal do
   // grupo inteiro é uma fração disso. O total do ano nunca é gravado aqui;
   // quem quer o ano soma as doze linhas.
-  valorCents  Int      @default(0)
+  valorCents       Int @default(0)
   // O maior título do mês. Sem ele, um mês com um pagamento fora da curva e
   // vários pequenos tem a mesma média de um mês regular — e é justamente o
   // fora da curva que se está procurando.
   valorMaximoCents Int @default(0)
 
-  baixas           Int @default(0)
+  baixas            Int @default(0)
   valorBaixadoCents Int @default(0)
   // Soma de (dia da baixa − dia do vencimento), em dias, sobre as baixas do
   // mês. Guardar a SOMA e a contagem, e não a média, é o que permite juntar
@@ -1468,19 +1468,19 @@ model Investigacao {
 // por último —, então a única forma de saber que o valor caiu é ter visto o
 // valor anterior. Lista APPEND-ONLY, limitada às últimas versões.
 model OmieContrato {
-  id               String      @id @default(cuid())
-  companyId        String
-  conexaoId        String
-  conexao          OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
-  conexaoApelido   String
+  id                String      @id @default(cuid())
+  companyId         String
+  conexaoId         String
+  conexao           OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido    String
   // nCodCtr — código interno da Omie. É o que `OmieTitulo.contratoCodigo`
   // carrega (cabecTitulo.nCodCtr).
-  codigoOmie       String
-  codigoIntegracao String?
+  codigoOmie        String
+  codigoIntegracao  String?
   // cNumCtr — o número que a pessoa vê na tela.
-  numero           String?
-  parceiroCodigo   String?
-  parceiroNome     String?
+  numero            String?
+  parceiroCodigo    String?
+  parceiroNome      String?
   // cCodSit cru ("00" elaboração, "10" ativo, "90" suspenso, "99" cancelado)
   // e a leitura legível ao lado, para a tela não precisar da tabela.
   situacao          String?
@@ -1661,4 +1661,361 @@ model OrcamentoLinha {
 
   @@unique([companyId, escopo, ano, versao, linha, competencia])
   @@index([companyId, escopo, ano])
+}
+
+// =====================================================================
+// SIMULADOR DE CUSTOS — base de custos da Azul e estudos de custo de qualquer
+// operação (licitação, contrato privado, renovação, orçamento interno).
+// Especificação: docs/simulador_custos_handoff/docs/ESPECIFICACAO_MODULO_SIMULADOR_CUSTOS.md
+// Decisões de mapeamento: docs/simulador_custos/DECISOES.md
+//
+// Duas regras valem para todas as tabelas abaixo:
+// 1. NUNCA SOBRESCREVER premissa: mudar um valor fecha a vigência do registro
+//    anterior (`vigenciaFim`) e cria outro. A base de uma data passada continua
+//    consultável, e é o que torna uma simulação antiga explicável.
+// 2. DINHEIRO EM DECIMAL. O resto do espelho usa centavos em Int, mas aqui há
+//    premissa de R$ 0,07/km e consumo de 8,5 km/l — Decimal(18,6) cobre os dois.
+// =====================================================================
+
+// Parâmetro escalar da base (abas 3 Jornada, 4 Indiretos, 5 Tributos e
+// financeiro, 6 Insumos e 8 Regras da Azul do Gabarito). Um registro por
+// parâmetro e vigência.
+model SimParametro {
+  id                String    @id @default(cuid())
+  companyId         String
+  // JORNADA | INDIRETO | TRIBUTO | FINANCEIRO | INSUMO | REGRA_AZUL
+  entidade          String
+  // Chave estável do catálogo (catalogo.ts), ex.: "diesel_rs_l".
+  chave             String
+  rotulo            String
+  unidade           String?
+  valor             Decimal?  @db.Decimal(18, 6)
+  texto             String?
+  vigenciaInicio    DateTime
+  vigenciaFim       DateTime?
+  fonte             String
+  atualizadoPorNome String?
+  criadoEm          DateTime  @default(now())
+
+  @@index([companyId, chave, vigenciaInicio])
+}
+
+// Aba 1 — um registro por MODELO/configuração de veículo (não por placa).
+model SimVeiculoModelo {
+  id                     String    @id @default(cuid())
+  companyId              String
+  // tipo|modelo|ano normalizados — identifica o "mesmo" modelo entre vigências.
+  chave                  String
+  tipo                   String
+  modelo                 String
+  ano                    Int?
+  quantidade             Int?
+  lotacao                Int?
+  acessivel              Boolean?
+  kmAtualMedio           Int?
+  valorCompra            Decimal?  @db.Decimal(18, 6)
+  valorFipe              Decimal?  @db.Decimal(18, 6)
+  formaAquisicao         String?
+  parcelaMensal          Decimal?  @db.Decimal(18, 6)
+  taxaAa                 Decimal?  @db.Decimal(18, 6)
+  parcelasRestantes      Int?
+  consumoKmL             Decimal?  @db.Decimal(18, 6)
+  combustivel            String?
+  manutencaoKm           Decimal?  @db.Decimal(18, 6)
+  pneusDescricao         String?
+  pneusQtde              Int?
+  pneuPreco              Decimal?  @db.Decimal(18, 6)
+  pneuVidaKm             Int?
+  seguroAnual            Decimal?  @db.Decimal(18, 6)
+  ipvaLicenciamentoAnual Decimal?  @db.Decimal(18, 6)
+  licencasAnual          Decimal?  @db.Decimal(18, 6)
+  rastreadorMensal       Decimal?  @db.Decimal(18, 6)
+  idadeVenda             Int?
+  revendaPctFipe         Decimal?  @db.Decimal(18, 6)
+  reservaTecnicaPct      Decimal?  @db.Decimal(18, 6)
+  observacoes            String?
+  vigenciaInicio         DateTime
+  vigenciaFim            DateTime?
+  fonte                  String
+  atualizadoPorNome      String?
+  criadoEm               DateTime  @default(now())
+
+  @@index([companyId, chave, vigenciaInicio])
+}
+
+// Aba 2 — uma linha por FUNÇÃO × convenção/região. Nunca por pessoa.
+model SimFuncao {
+  id                String    @id @default(cuid())
+  companyId         String
+  chave             String
+  funcao            String
+  cct               String?
+  regiao            String?
+  salarioBase       Decimal?  @db.Decimal(18, 6)
+  adicionaisFixos   Decimal?  @db.Decimal(18, 6)
+  hePct             Decimal?  @db.Decimal(18, 6)
+  noturnoPct        Decimal?  @db.Decimal(18, 6)
+  encargosPct       Decimal?  @db.Decimal(18, 6)
+  vrVa              Decimal?  @db.Decimal(18, 6)
+  cesta             Decimal?  @db.Decimal(18, 6)
+  valeTransporte    Decimal?  @db.Decimal(18, 6)
+  planoSaude        Decimal?  @db.Decimal(18, 6)
+  seguroVida        Decimal?  @db.Decimal(18, 6)
+  uniformeEpi       Decimal?  @db.Decimal(18, 6)
+  examesCursos      Decimal?  @db.Decimal(18, 6)
+  absenteismoPct    Decimal?  @db.Decimal(18, 6)
+  rotatividadePct   Decimal?  @db.Decimal(18, 6)
+  custoTotalPosto   Decimal?  @db.Decimal(18, 6)
+  observacoes       String?
+  vigenciaInicio    DateTime
+  vigenciaFim       DateTime?
+  fonte             String
+  atualizadoPorNome String?
+  criadoEm          DateTime  @default(now())
+
+  @@index([companyId, chave, vigenciaInicio])
+}
+
+// Aba 7 — praças de pedágio com tarifa por categoria.
+model SimPedagioPraca {
+  id                String    @id @default(cuid())
+  companyId         String
+  chave             String
+  praca             String
+  concessionaria    String?
+  tarifaVan         Decimal?  @db.Decimal(18, 6)
+  tarifaMicro       Decimal?  @db.Decimal(18, 6)
+  tarifaOnibus2     Decimal?  @db.Decimal(18, 6)
+  tarifaOnibus3     Decimal?  @db.Decimal(18, 6)
+  descontoTagPct    Decimal?  @db.Decimal(18, 6)
+  operacoes         String?
+  dataTarifa        String?
+  observacoes       String?
+  vigenciaInicio    DateTime
+  vigenciaFim       DateTime?
+  fonte             String
+  atualizadoPorNome String?
+  criadoEm          DateTime  @default(now())
+
+  @@index([companyId, chave, vigenciaInicio])
+}
+
+// Abas 9 (histórico de contratos, previsto × realizado) e 10 (mercado) do
+// Gabarito: referência para calibrar e para a inteligência de lance. Um
+// registro por linha; `aba` separa as duas, `dados` guarda as colunas como
+// vieram (texto livre em boa parte: "R$ 5.100.000/ano", "3 ônibus 44 lug").
+model SimReferencia {
+  id             String    @id @default(cuid())
+  companyId      String
+  // HISTORICO_CONTRATO | MERCADO
+  aba            String
+  chave          String
+  dados          Json
+  vigenciaInicio DateTime
+  vigenciaFim    DateTime?
+  fonte          String
+  criadoEm       DateTime  @default(now())
+
+  @@index([companyId, aba, chave])
+}
+
+// O ESTUDO DE CUSTO — a operação que se quer custear. Pode ser uma licitação,
+// um contrato privado, a renovação de um contrato em curso, um orçamento
+// interno ("quanto custa pôr mais 3 vans nesta rota?") ou qualquer outra
+// operação. O motor não distingue: recebe rotas, itens e premissas. Os campos
+// de licitação (órgão, número, sessão, preço máximo) só existem quando o tipo
+// é LICITACAO, e por isso são todos opcionais.
+model SimEstudo {
+  id                  String    @id @default(cuid())
+  companyId           String
+  // LICITACAO | CONTRATO_PRIVADO | RENOVACAO | ORCAMENTO_INTERNO | OUTRO
+  tipo                String    @default("LICITACAO")
+  nome                String
+  cliente             String?
+  // ESCOLAR | FRETAMENTO | SAUDE | LOCACAO_CM | LOCACAO_SM | OUTRO
+  tipoServico         String
+  uf                  String?
+  municipio           String?
+  descricao           String?
+  // ITEM | LOTE (global = LOTE com todos os itens)
+  criterioJulgamento  String    @default("ITEM")
+  // KM | VEICULO_MES | DIA | ALUNO | POSTO — a v1 simula KM.
+  unidadePreco        String    @default("KM")
+  vigenciaMeses       Int?
+  prazoPagamentoDias  Int?
+  dataOrcamento       DateTime?
+  indiceReajuste      String?
+  // Só licitação.
+  orgao               String?
+  numeroEdital        String?
+  modalidade          String?
+  plataforma          String?
+  dataSessao          DateTime?
+  srp                 Boolean   @default(false)
+  valorTotalMaximo    Decimal?  @db.Decimal(18, 6)
+  prorrogavelAte      String?
+  garantiaPct         Decimal?  @db.Decimal(18, 6)
+  // EM_ESTUDO | PROPOSTA_ENVIADA | GANHO | PERDIDO | DESISTENCIA | EM_EXECUCAO | ENCERRADO
+  status              String    @default("EM_ESTUDO")
+  // Resultado (licitação ou negociação).
+  resultadoPosicao    Int?
+  resultadoVencedor   String?
+  resultadoPrecoKm    Decimal?  @db.Decimal(18, 6)
+  resultadoValorTotal Decimal?  @db.Decimal(18, 6)
+  resultadoData       DateTime?
+  resultadoObservacao String?
+  // Quando vira contrato: o contrato de serviço da Omie que o executa, para o
+  // realizado × previsto (OmieContrato.id).
+  omieContratoId      String?
+  fonte               String?
+  observacoes         String?
+  criadoPorNome       String?
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
+
+  itens      SimItem[]
+  rotas      SimRota[]
+  regras     SimRegra[]
+  simulacoes SimSimulacao[]
+  lances     SimLance[]
+  realizados SimContratoRealizado[]
+
+  @@index([companyId, tipo, status])
+  @@index([companyId, criadoEm])
+}
+
+// Regra ou exigência (do edital, do contrato, do cliente) com impacto no custo.
+model SimRegra {
+  id           String    @id @default(cuid())
+  estudoId     String
+  estudo       SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  ordem        Int       @default(0)
+  tema         String
+  texto        String
+  fonte        String?
+  impacto      String?
+  campoAfetado String?
+
+  @@index([estudoId, ordem])
+}
+
+model SimItem {
+  id                  String    @id @default(cuid())
+  estudoId            String
+  estudo              SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  ordem               Int       @default(0)
+  codigo              String
+  descricao           String
+  shareIntermunicipal Decimal   @default(0) @db.Decimal(18, 6)
+  precoMaximoKm       Decimal?  @db.Decimal(18, 6)
+  precoReferenciaKm   Decimal?  @db.Decimal(18, 6)
+
+  @@unique([estudoId, codigo])
+}
+
+model SimRota {
+  id                  String    @id @default(cuid())
+  estudoId            String
+  estudo              SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  ordem               Int       @default(0)
+  itemCodigo          String
+  nome                String
+  kmReferencia        Decimal   @db.Decimal(18, 6)
+  kmDia               Decimal   @default(0) @db.Decimal(18, 6)
+  kmTerraDia          Decimal   @default(0) @db.Decimal(18, 6)
+  diasMes             Int?
+  veiculos            Decimal   @db.Decimal(18, 6)
+  motoristas          Decimal   @db.Decimal(18, 6)
+  monitoras           Decimal   @default(0) @db.Decimal(18, 6)
+  noturno             Boolean   @default(false)
+  passagensPedagioMes Decimal   @default(0) @db.Decimal(18, 6)
+  tarifaPedagio       Decimal   @default(0) @db.Decimal(18, 6)
+  viagensDia          Decimal?  @db.Decimal(18, 6)
+  periodos            String?
+  horarioInicio       String?
+  horarioFim          String?
+  tipoVeiculoExigido  String?
+  lotacaoMinima       Int?
+  idadeMaxima         Int?
+  kmMaximo            Int?
+  acessivel           Boolean?
+
+  @@index([estudoId, ordem])
+}
+
+// UMA VERSÃO DE SIMULAÇÃO DE UM ESTUDO. `entrada` é o snapshot completo que o motor recebe
+// (premissas, itens, rotas, critério, preço de teste) — reexecutar é chamar
+// simular(entrada). `origem` diz de onde veio cada premissa (base vigente,
+// estimativa, ajuste do edital) para a tela distinguir dado real de estimado.
+model SimSimulacao {
+  id          String    @id @default(cuid())
+  estudoId    String
+  estudo      SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  versao      Int
+  // RASCUNHO | APROVADA | LANCADA
+  status      String    @default("RASCUNHO")
+  entrada     Json
+  origem      Json?
+  resultado   Json
+  // Resumo para listar sem abrir o JSON.
+  utilizacao  Decimal   @db.Decimal(18, 6)
+  precoKm     Decimal?  @db.Decimal(18, 6)
+  custoTotal  Decimal   @db.Decimal(18, 6)
+  faturamento Decimal   @db.Decimal(18, 6)
+  lucro       Decimal   @db.Decimal(18, 6)
+  margem      Decimal?  @db.Decimal(18, 6)
+  // Data da base de custos usada (vigência consultada), quando veio dela.
+  baseEm      DateTime?
+  motorVersao String
+  autorNome   String?
+  observacoes String?
+  criadoEm    DateTime  @default(now())
+
+  lances SimLance[]
+
+  @@unique([estudoId, versao])
+}
+
+model SimLance {
+  id                String        @id @default(cuid())
+  estudoId          String
+  estudo            SimEstudo     @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  simulacaoId       String?
+  simulacao         SimSimulacao? @relation(fields: [simulacaoId], references: [id], onDelete: SetNull)
+  // PROPOSTA_INICIAL | LANCE | NEGOCIACAO
+  fase              String
+  dataHora          DateTime
+  // [{ item, precoKm }] — o preço unitário lançado em cada item.
+  precos            Json
+  valorTotal        Decimal?      @db.Decimal(18, 6)
+  observacao        String?
+  registradoPorNome String?
+  criadoEm          DateTime      @default(now())
+
+  @@index([estudoId, dataHora])
+}
+
+// REALIZADO DO ESTUDO QUE VIROU CONTRATO, mês a mês — a calibração. Chega da
+// telemetria (km) e da controladoria (custo por natureza).
+model SimContratoRealizado {
+  id                String    @id @default(cuid())
+  estudoId          String
+  estudo            SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  competencia       String
+  kmPrevisto        Decimal?  @db.Decimal(18, 6)
+  kmRealizado       Decimal?  @db.Decimal(18, 6)
+  faturamento       Decimal?  @db.Decimal(18, 6)
+  custoFolha        Decimal?  @db.Decimal(18, 6)
+  custoCombustivel  Decimal?  @db.Decimal(18, 6)
+  custoManutencao   Decimal?  @db.Decimal(18, 6)
+  custoVeiculo      Decimal?  @db.Decimal(18, 6)
+  custoPedagio      Decimal?  @db.Decimal(18, 6)
+  custoIndiretos    Decimal?  @db.Decimal(18, 6)
+  custoOutros       Decimal?  @db.Decimal(18, 6)
+  fonte             String
+  registradoPorNome String?
+  atualizadoEm      DateTime  @updatedAt
+  criadoEm          DateTime  @default(now())
+
+  @@unique([estudoId, competencia])
 }

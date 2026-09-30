@@ -53,6 +53,27 @@ export function leitorDeSemente(semente: Semente): LeitorDeSemente {
   };
 }
 
+// O que as planilhas de referência não tinham — ver os modelos de concorrentes
+// em docs/simulador_custos/DECISOES.md — entra zerado, e a conta fica a delas.
+const SEM_HORAS_EXTRAS = { divisorHorasMes: 220, horasExtras50Mes: 0, horasExtras100Mes: 0, horasNoturnasMes: 0 };
+const SEM_ADAPTACAO = {
+  adaptacaoValor: 0,
+  adaptacaoMesesDepreciacao: 0,
+  manutencaoFixaPctMes: 0,
+  // Depreciação por percentual sobre o valor, capital a taxa única: o método
+  // das duas planilhas.
+  metodoDepreciacao: "PERCENTUAL" as const,
+  vidaUtilAnos: 0,
+  valorResidualPct: 0,
+  idadeInicialAnos: 0,
+  capitalComposto: false,
+  fracaoFinanciada: 0,
+  taxaFinanciamentoAa: 0,
+  custoCapitalProprioAa: 0,
+  remuneracaoSobreValorMedio: false,
+};
+const PRESUMIDO = { irpjCsllSobreLucroPct: 0, creditoPisCofinsPct: 0 };
+
 export type SimulacaoHistorica = {
   edital: {
     numero: string;
@@ -106,6 +127,7 @@ export function historicoHolambra(): SimulacaoHistorica {
       utilizacao: 1,
       kmMortoPct: s.numero("Km morto"),
       reservaTecnicaPct: s.numero("Reserva técnica"),
+      implantacaoTotal: 0,
     },
     pessoal: {
       salarioMotorista: s.numero("Salário base — motorista"),
@@ -116,6 +138,7 @@ export function historicoHolambra(): SimulacaoHistorica {
       beneficiosPorFuncionario: s.numero("Benefícios"),
       uniformeEpiPorFuncionario: s.numero("Uniforme / EPI"),
       supervisaoMes: 0,
+      ...SEM_HORAS_EXTRAS,
     },
     veiculo: {
       valor: s.numero("Valor do ônibus"),
@@ -131,6 +154,7 @@ export function historicoHolambra(): SimulacaoHistorica {
       acessibilidadeMes: 0,
       garagemMes: s.numero("Garagem"),
       garagemComReserva: false,
+      ...SEM_ADAPTACAO,
     },
     variaveis: {
       dieselLitro: s.numero("Diesel S10"),
@@ -154,6 +178,8 @@ export function historicoHolambra(): SimulacaoHistorica {
       icms: 0,
       custoCapitalGiroAm: 0,
       prazoRecebimentoDias: 30,
+      despesasSobrePrecoPct: 0,
+      ...PRESUMIDO,
     },
   };
   // Derivado, não premissa: a planilha soma os cinco tributos numa fórmula.
@@ -243,6 +269,7 @@ export function historicoSaoJoseDosPinhais(): SimulacaoHistorica {
       utilizacao: s.numero("Utilização esperada"),
       kmMortoPct: s.numero("Km improdutivo"),
       reservaTecnicaPct: s.numero("Reserva técnica"),
+      implantacaoTotal: 0,
     },
     pessoal: {
       salarioMotorista: s.numero("Salário base — motorista"),
@@ -253,6 +280,7 @@ export function historicoSaoJoseDosPinhais(): SimulacaoHistorica {
       beneficiosPorFuncionario: s.numero("Benefícios"),
       uniformeEpiPorFuncionario: s.numero("Uniforme, crachá"),
       supervisaoMes: s.numero("Preposto"),
+      ...SEM_HORAS_EXTRAS,
     },
     veiculo: {
       valor: s.numero("Valor da van"),
@@ -268,6 +296,7 @@ export function historicoSaoJoseDosPinhais(): SimulacaoHistorica {
       acessibilidadeMes: s.numero("Acessibilidade"),
       garagemMes: s.numero("Garagem"),
       garagemComReserva: true,
+      ...SEM_ADAPTACAO,
     },
     variaveis: {
       dieselLitro: s.numero("Diesel S10"),
@@ -292,6 +321,8 @@ export function historicoSaoJoseDosPinhais(): SimulacaoHistorica {
       icms: s.numero("ICMS"),
       custoCapitalGiroAm: s.numero("Custo do capital de giro"),
       prazoRecebimentoDias: s.numero("Prazo de pagamento"),
+      despesasSobrePrecoPct: 0,
+      ...PRESUMIDO,
     },
   };
   const diasHd = s.numero("Dias de operação/mês — Item 01");
