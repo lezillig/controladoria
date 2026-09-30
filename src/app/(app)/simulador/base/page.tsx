@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { paraNumero } from "@/lib/simulador/baseDeCustos";
 import { CATALOGO_PARAMETROS } from "@/lib/simulador/catalogo";
-import { camposEditaveis, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from "@/lib/simulador/edicaoBase";
+import { camposEditaveis, CONCEITO_DA_REGRA, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
 import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
 import { energiaDoPerfil } from "@/lib/simulador/energia";
@@ -86,6 +86,7 @@ export default async function BaseDeCustosPage() {
       doDre: doDre.get(d.chave) ?? null,
       unidadePadrao: USO_DA_BASE[d.chave]?.unidadePadrao ?? null,
       uso: USO_DA_BASE[d.chave]?.como ?? null,
+      conceito: CONCEITO_DA_REGRA[d.chave] ?? null,
     };
   });
 

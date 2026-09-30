@@ -22,7 +22,7 @@ import {
   type UsoReal,
   type VeiculoReal,
 } from "../src/lib/simulador/custosReais";
-import { PERFIS_PADRAO, PREMISSAS_PADRAO, premissasDaBase } from "../src/lib/simulador/premissas";
+import { metodoDoTexto, PERFIS_PADRAO, PREMISSAS_PADRAO, premissasDaBase, regrasDeCapitalNosPerfis } from "../src/lib/simulador/premissas";
 
 let falhas = 0;
 function ok(nome: string, passou: boolean, detalhe = "") {
@@ -398,6 +398,40 @@ console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");
   ok("a fonte da folha diz que tirou a oficina", /sem a oficina$/.test(comOficina.get("folha_adm")?.fonte ?? ""), comOficina.get("folha_adm")?.fonte);
   perto("com a oficina, o total dos indiretos é o mesmo", soma(comOficina), soma(ind));
   conferir("DRE sem receita não traz nada", indiretosDoDre({ ...d, linhasDre: { ...d.linhasDre, RECEITA_BRUTA: doze(0) } }).size, 0);
+}
+
+console.log("\nREGRAS DE CAPITAL E DEPRECIAÇÃO da Azul Mob");
+{
+  const valor = (v: number | null, texto: string | null = null) => ({ valor: v, texto, fonte: "ajuste na tela", vigenciaInicio: new Date() });
+  const base = {
+    em: new Date(),
+    parametros: new Map([
+      ["capital_proprio_aa", valor(0.105)],
+      ["fracao_financiada", valor(0.6)],
+      ["depreciacao_metodo", valor(null, "Soma dos dígitos (Cole)")],
+      ["vida_util_anos", valor(7)],
+      ["valor_residual_pct", valor(0.25)],
+    ]),
+    veiculos: [],
+    funcoes: [],
+    pedagios: [],
+  };
+  const { premissas, origem } = premissasDaBase(base, { clientePublico: false, escolar: false, baseLocal: false });
+  conferir(
+    "capital: próprio, financiado e composto ligado; taxa do financiamento fica a padrão",
+    [premissas.veiculo.custoCapitalProprioAa, premissas.veiculo.fracaoFinanciada, premissas.veiculo.capitalComposto, premissas.veiculo.taxaFinanciamentoAa],
+    [0.105, 0.6, true, PREMISSAS_PADRAO.veiculo.taxaFinanciamentoAa]
+  );
+  conferir("depreciação: soma dos dígitos, 7 anos, 25% residual", [premissas.veiculo.metodoDepreciacao, premissas.veiculo.vidaUtilAnos, premissas.veiculo.valorResidualPct], ["SOMA_DIGITOS", 7, 0.25]);
+  conferir("a origem é a base", [origem["veiculo.custoCapitalProprioAa"].origem, origem["veiculo.metodoDepreciacao"].origem], ["BASE", "BASE"]);
+  premissas.perfis = PERFIS_PADRAO.map((x) => structuredClone(x));
+  regrasDeCapitalNosPerfis(premissas, origem);
+  ok(
+    "todos os tipos de veículo recebem as regras",
+    premissas.perfis.every((x) => x.veiculo.custoCapitalProprioAa === 0.105 && x.veiculo.metodoDepreciacao === "SOMA_DIGITOS" && x.veiculo.capitalComposto === true && x.veiculo.vidaUtilAnos === 7)
+  );
+  ok("o que não veio da base fica como o tipo tinha", premissas.perfis.every((x, i) => x.veiculo.taxaFinanciamentoAa === PERFIS_PADRAO[i].veiculo.taxaFinanciamentoAa));
+  conferir("método pelo texto", [metodoDoTexto("linear"), metodoDoTexto("GEIPOT"), metodoDoTexto("percentual a.a."), metodoDoTexto("?")], ["LINEAR", "SOMA_DIGITOS", "PERCENTUAL", null]);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram." : `\n${falhas} falha(s).`);

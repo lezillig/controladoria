@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { simular, VERSAO_MOTOR } from "./motor";
 import { precoDoConjunto } from "./decisao";
 import { baseVigente, paraNumero, type BaseVigente } from "./baseDeCustos";
-import { PERFIS_PADRAO, perfisDaBase, premissasDaBase, problemasNasPremissas, type MapaOrigem } from "./premissas";
+import { PERFIS_PADRAO, perfisDaBase, premissasDaBase, problemasNasPremissas, regrasDeCapitalNosPerfis, type MapaOrigem } from "./premissas";
 import { simulacoesHistoricas, FONTE_HISTORICO } from "./historico";
 import type { CriterioJulgamento, EntradaSimulacao, Item, PerfilVeiculo, Premissas, ResultadoSimulacao, Rota, TipoVeiculo, UnidadePreco } from "./tipos";
 import type { RealizadoMes } from "./calibracao";
@@ -331,6 +331,7 @@ export async function entradaInicial(
   if (estudo.vigenciaMeses) premissas.contrato.vigenciaMeses = estudo.vigenciaMeses;
   if (estudo.prazoPagamentoDias) premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
   premissas.perfis = perfisDoEstudo(perfisDaBase(vazia ? null : baseCarregada), estudo.tiposVeiculo as TipoVeiculo[]);
+  regrasDeCapitalNosPerfis(premissas, origem);
   return {
     entrada: {
       premissas,

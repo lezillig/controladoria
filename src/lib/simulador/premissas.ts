@@ -363,7 +363,60 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     definir("pessoal.salarioMonitora", monitora.salarioBase + (typeof monitora.adicionaisFixos === "number" ? monitora.adicionaisFixos : 0), `${monitora.fonte} — ${monitora.funcao}`);
   }
 
+  // Capital e depreciação da frota (regras da Azul Mob). DEPOIS do veículo da
+  // aba 1: a regra da empresa vale sobre a taxa de um modelo. Qualquer uma
+  // das três de capital liga o capital composto — o motor pondera a parte
+  // financiada (taxa do financiamento) e a própria (custo de oportunidade).
+  let capital = false;
+  for (const [chave, caminho] of [
+    ["capital_proprio_aa", "veiculo.custoCapitalProprioAa"],
+    ["fracao_financiada", "veiculo.fracaoFinanciada"],
+    ["taxa_financiamento_aa", "veiculo.taxaFinanciamentoAa"],
+  ] as const) {
+    const v = numeroDe(chave);
+    if (v === null) continue;
+    definir(caminho, normalizarPct(v), fonteDe(chave), chave);
+    capital = true;
+  }
+  if (capital) definir("veiculo.capitalComposto", true, fonteDe(numeroDe("capital_proprio_aa") !== null ? "capital_proprio_aa" : "fracao_financiada"), "regras de capital da Azul Mob");
+  const metodo = metodoDoTexto(param("depreciacao_metodo")?.texto);
+  if (metodo) {
+    premissas.veiculo.metodoDepreciacao = metodo;
+    origem["veiculo.metodoDepreciacao"] = { origem: "BASE", fonte: fonteDe("depreciacao_metodo"), detalhe: "depreciacao_metodo" };
+  }
+  deParam("veiculo.vidaUtilAnos", "vida_util_anos");
+  deParam("veiculo.valorResidualPct", "valor_residual_pct", normalizarPct);
+
   return { premissas, origem };
+}
+
+// "linear", "soma dos dígitos" (Cole, GEIPOT) ou "percentual".
+export function metodoDoTexto(texto: string | null | undefined): Premissas["veiculo"]["metodoDepreciacao"] | null {
+  const t = (texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/soma|digito|cole|geipot/.test(t)) return "SOMA_DIGITOS";
+  if (/linear/.test(t)) return "LINEAR";
+  if (/percent|% ?a\.?a/.test(t)) return "PERCENTUAL";
+  return null;
+}
+
+// AS REGRAS DE CAPITAL E DEPRECIAÇÃO valem para TODOS os tipos de veículo: o
+// perfil de cada tipo tem a sua cópia do veículo, e o que veio da base nas
+// premissas gerais é levado a cada um.
+export const CAMPOS_DE_CAPITAL = [
+  "custoCapitalProprioAa",
+  "fracaoFinanciada",
+  "taxaFinanciamentoAa",
+  "capitalComposto",
+  "metodoDepreciacao",
+  "vidaUtilAnos",
+  "valorResidualPct",
+] as const;
+
+export function regrasDeCapitalNosPerfis(premissas: Premissas, origem: MapaOrigem): void {
+  for (const campo of CAMPOS_DE_CAPITAL) {
+    if (origem[`veiculo.${campo}`]?.origem !== "BASE") continue;
+    for (const perfil of premissas.perfis ?? []) (perfil.veiculo as Record<string, unknown>)[campo] = premissas.veiculo[campo];
+  }
 }
 
 // Validação mínima antes de rodar: o que o motor não consegue dividir.

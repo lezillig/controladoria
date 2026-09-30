@@ -121,6 +121,14 @@ export const CATALOGO_PARAMETROS: DefinicaoParametro[] = [
   p("REGRA_AZUL", "dist_max_sem_base", "Distância máxima da sede", "numero"),
   p("REGRA_AZUL", "utilizacao_srp", "Utilização esperada em SRP", "pct"),
   p("REGRA_AZUL", "meses_custo_fixo_escolar", "Meses de custo fixo em contrato escolar", "numero"),
+  // Capital e depreciação da frota: não vêm do Gabarito; valem para todos os
+  // tipos de veículo dos estudos novos (ver regrasDeCapital em premissas.ts).
+  p("REGRA_AZUL", "capital_proprio_aa", "Remuneração do capital próprio", "pct", false),
+  p("REGRA_AZUL", "fracao_financiada", "Parte da frota financiada", "pct", false),
+  p("REGRA_AZUL", "taxa_financiamento_aa", "Taxa do financiamento da frota", "pct", false),
+  p("REGRA_AZUL", "depreciacao_metodo", "Método de depreciação", "texto", false),
+  p("REGRA_AZUL", "vida_util_anos", "Vida útil do veículo", "numero", false),
+  p("REGRA_AZUL", "valor_residual_pct", "Valor residual ao fim da vida útil", "pct", false),
   p("REGRA_AZUL", "saida", "Como quer ver o resultado", "texto", false),
   p("REGRA_AZUL", "arredondamento", "Moeda e arredondamento", "texto", false),
   p("REGRA_AZUL", "aprovador", "Quem aprova o preço final", "texto", false),

@@ -26,6 +26,8 @@ export type ParametroTela = {
   // "R$ 4,20; 4,5%", o padrão já é R$/km).
   unidadePadrao: string | null;
   uso: string | null;
+  // O que a regra significa (Regras da Azul Mob), aberto em "o que é?".
+  conceito?: string | null;
   // Indireto medido no DRE consolidado: vale enquanto a base não tem valor.
   doDre?: { valor: number; fonte: string; composicao: { descricao: string; valorMes: number }[]; linhas: string[] } | null;
 };
@@ -119,6 +121,12 @@ function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boole
         <span className="font-medium text-slate-800">{p.rotulo}</span>
         {p.essencial && <span className="ml-1 text-amber-600" title="Item essencial do Gabarito">★</span>}
         {p.uso ? <span className="block text-xs text-slate-500">Entra na conta: {p.uso}</span> : <span className="block text-xs text-slate-500">Informativo (não entra na conta)</span>}
+        {p.conceito && (
+          <details className="mt-0.5 max-w-xl">
+            <summary className="cursor-pointer text-xs text-blue-700 hover:text-blue-900">o que é?</summary>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">{p.conceito}</p>
+          </details>
+        )}
       </td>
       <td
         className="w-56 px-2 py-2"

@@ -37,6 +37,12 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   adm_pct: { caminho: "indiretos.administracaoPct", como: "Administração central, quando não há rateio pelos indiretos" },
   contingencia_pct: { caminho: "indiretos.contingenciaPct", como: "Contingência sobre o custo direto" },
   margem_alvo: { caminho: "preco.lucroAlvoPct", como: "Lucro líquido alvo do preço" },
+  capital_proprio_aa: { caminho: "veiculo.custoCapitalProprioAa", como: "Remuneração do capital da frota (parte própria), em todos os tipos de veículo", unidade: "% a.a." },
+  fracao_financiada: { caminho: "veiculo.fracaoFinanciada", como: "Peso do financiamento no custo do capital da frota" },
+  taxa_financiamento_aa: { caminho: "veiculo.taxaFinanciamentoAa", como: "Custo do capital da frota (parte financiada)", unidade: "% a.a." },
+  depreciacao_metodo: { como: "Como o veículo perde valor no preço: percentual, linear ou soma dos dígitos" },
+  vida_util_anos: { caminho: "veiculo.vidaUtilAnos", como: "Depreciação linear e soma dos dígitos", unidade: "anos" },
+  valor_residual_pct: { caminho: "veiculo.valorResidualPct", como: "Depreciação linear e soma dos dígitos" },
   margem_minima: { como: "Margem mínima do painel de decisão (padrão: metade do alvo)" },
   reserva_tecnica: { caminho: "contrato.reservaTecnicaPct", como: "Reserva técnica de frota (van / micro / ônibus)", unidadePadrao: "da frota, para todos os tipos" },
   pis: { caminho: "preco.pis", como: "Tributo sobre o preço" },
@@ -55,6 +61,35 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   energia_rs_kwh: { como: "Tarifa da recarga — tipos de veículo elétricos (consumo em km/kWh)", unidade: "R$/kWh", padrao: PRECO_ENERGIA_PADRAO.ELETRICO },
   oleo_rs_km: { caminho: "variaveis.oleoLavagemKm", como: "Óleo e filtros por km", unidade: "R$/km" },
   arla: { caminho: "variaveis.arlaKm", como: "ARLA por km (preço × % do diesel ÷ consumo)", unidadePadrao: "R$/km (já calculado)" },
+};
+
+// O CONCEITO de cada regra da Azul Mob, para quem ajusta saber o que está
+// mudando no preço — aparece em "o que é?" na tela Custos base.
+export const CONCEITO_DA_REGRA: Record<string, string> = {
+  margem_minima:
+    "O menor lucro líquido aceitável, em % do preço. Abaixo dele o painel de decisão marca o preço em vermelho: é o piso para um lance ou desconto. Não muda o preço calculado.",
+  margem_alvo:
+    "O lucro líquido que o preço busca, em % do preço, depois de todos os custos e tributos. É o que o motor põe no preço: preço = custo ÷ (1 − tributos − lucro − outros percentuais sobre o preço).",
+  contingencia_pct:
+    "Uma folga sobre o custo direto para o que não dá para prever: quebra, multa, falta, variação de combustível. Entra no custo antes do lucro.",
+  adm_pct:
+    "O rateio da estrutura (escritório, diretoria, contabilidade, sistemas) sobre o custo direto, quando não há os indiretos da empresa. Com eles (ou com o DRE), o rateio real substitui este número.",
+  reserva_tecnica:
+    "Veículos de reserva além da frota operacional (quebra, manutenção, revisão), em % da frota, por tipo. Custam o fixo do veículo (capital, seguro, IPVA) sem rodar.",
+  idade_max: "Idade máxima aceita para o veículo no contrato. Informativo: aparece para o especialista de IA e na conferência do edital.",
+  dist_max_sem_base: "A partir desta distância da sede, o contrato pede base local (garagem, supervisor). Informativo.",
+  utilizacao_srp:
+    "Quanto do km previsto se espera rodar de fato. Em registro de preços (SRP) o órgão paga só o que demanda: o custo fixo precisa ser pago por menos km.",
+  meses_custo_fixo_escolar: "Meses por ano em que o custo fixo existe no contrato escolar (em geral 12, mesmo com 10 meses de aula).",
+  capital_proprio_aa:
+    "REMUNERAÇÃO DO CAPITAL PRÓPRIO: o que o dinheiro posto na frota renderia se não estivesse nela (CDI, Selic ou a taxa mínima de atratividade da empresa). É custo econômico: o preço precisa devolvê-lo, senão o contrato só empata com deixar o dinheiro aplicado. No Lucro Real não reduz o IR (não é despesa); os juros do financiamento reduzem.",
+  fracao_financiada:
+    "Quanto do valor dos veículos é financiado. O custo do capital da frota é a média: parte financiada × taxa do financiamento + parte própria × remuneração do capital próprio.",
+  taxa_financiamento_aa: "Juros do financiamento dos veículos (CDC, leasing, FINAME), ao ano. É despesa financeira de verdade.",
+  depreciacao_metodo:
+    "DEPRECIAÇÃO é a perda de valor do veículo com o tempo, que o preço precisa recuperar para renovar a frota. Percentual: uma % do valor por ano (a da tabela da frota). Linear: (valor − residual) ÷ vida útil, igual todo ano. Soma dos dígitos (Cole, GEIPOT): mais nos primeiros anos, como o mercado de usados. Escreva \"percentual\", \"linear\" ou \"soma dos dígitos\".",
+  vida_util_anos: "Anos de uso até a venda do veículo, para a depreciação linear e a soma dos dígitos.",
+  valor_residual_pct: "O que o veículo vale ao fim da vida útil, em % do valor novo — o que volta na revenda e não precisa ser recuperado no preço.",
 };
 
 export function padraoDoSimulador(chave: string): number | null {

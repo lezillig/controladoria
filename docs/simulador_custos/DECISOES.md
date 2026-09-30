@@ -277,6 +277,17 @@ Omie que o compõem; o estudo novo calcula a administração com eles, e a
 origem da premissa diz "DRE consolidado". Digitar um valor na base continua
 valendo acima do DRE.
 
+## 7.1.1 Capital e depreciação nas regras da Azul Mob
+
+As regras da Azul Mob na base ganham a remuneração do capital próprio, a
+parte da frota financiada, a taxa do financiamento, o método de depreciação
+(percentual, linear ou soma dos dígitos), a vida útil e o valor residual.
+Qualquer regra de capital liga o capital composto (parte financiada à taxa
+do financiamento + parte própria ao custo de oportunidade). As regras valem
+para todos os tipos de veículo dos estudos novos, por cima da taxa de cada
+modelo da tabela da frota. Cada regra tem na tela um "o que é?" com o
+conceito.
+
 ## 7.2 Pedágio pela categoria, margem de indiferença e reforma
 
 Aprendido com o roteiro de outro kit de custeio (detalhe em
