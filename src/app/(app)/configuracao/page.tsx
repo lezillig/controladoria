@@ -11,6 +11,25 @@ import { larguraPainel } from "@/lib/ui";
 // MODELO DE GESTÃO — os parâmetros que tornam as regras genéricas em política
 // desta empresa, mais a trilha de quem mexeu no módulo.
 
+function linhaDoEvento(e: { criadoEm: Date; userNome: string | null; ip: string | null; acao: string; descricao: string }) {
+  return [
+    <span key="q" className="text-xs">
+      {fmtDiaDoInstante(e.criadoEm)}
+      <span className="block text-slate-400">{e.criadoEm.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+    </span>,
+    <span key="w" className="text-xs">
+      {e.userNome ?? "sistema"}
+      {e.ip && <span className="block text-slate-400">{e.ip}</span>}
+    </span>,
+    <span key="a" className="text-xs font-medium text-slate-700">
+      {e.acao.replace(/_/g, " ").toLowerCase()}
+    </span>,
+    <span key="d" className="text-xs text-slate-600">
+      {e.descricao}
+    </span>,
+  ];
+}
+
 export default async function ConfiguracaoPage() {
   // Só quem opera a controladoria configura: GESTOR lê o módulo inteiro, mas
   // mudar o parâmetro que define o que é "crítico" é mexer no próprio critério
@@ -73,28 +92,21 @@ export default async function ConfiguracaoPage() {
         titulo="Trilha de auditoria do módulo"
         descricao="Toda ação humana aqui dentro fica registrada: tratativa de achado, mudança de parâmetro, meta de BSC, sincronização e envio manual. Nunca é alterada nem apagada."
       >
-        <Tabela
-          colunas={["Quando", "Quem", "Ação", "Descrição"]}
-          vazio="Nenhuma ação registrada ainda."
-          linhas={eventos.map((e) => [
-            <span key="q" className="text-xs">
-              {fmtDiaDoInstante(e.criadoEm)}
-              <span className="block text-slate-400">
-                {e.criadoEm.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            </span>,
-            <span key="w" className="text-xs">
-              {e.userNome ?? "sistema"}
-              {e.ip && <span className="block text-slate-400">{e.ip}</span>}
-            </span>,
-            <span key="a" className="text-xs font-medium text-slate-700">
-              {e.acao.replace(/_/g, " ").toLowerCase()}
-            </span>,
-            <span key="d" className="text-xs text-slate-600">
-              {e.descricao}
-            </span>,
-          ])}
-        />
+        {/* RESUMIDA: as cinco ações mais recentes à vista; o resto abre ao
+            clicar. A trilha é para conferir quando alguém pergunta, não para
+            ler inteira toda vez que a tela abre. */}
+        <Tabela colunas={["Quando", "Quem", "Ação", "Descrição"]} vazio="Nenhuma ação registrada ainda." linhas={eventos.slice(0, 5).map(linhaDoEvento)} />
+        {eventos.length > 5 && (
+          <details className="group mt-3">
+            <summary className="cursor-pointer list-none text-sm font-medium text-blue-700 hover:text-blue-900">
+              <span className="group-open:hidden">Ver as outras {eventos.length - 5} ações</span>
+              <span className="hidden group-open:inline">Recolher</span>
+            </summary>
+            <div className="mt-2">
+              <Tabela colunas={["Quando", "Quem", "Ação", "Descrição"]} linhas={eventos.slice(5).map(linhaDoEvento)} />
+            </div>
+          </details>
+        )}
       </Secao>
     </div>
   );
