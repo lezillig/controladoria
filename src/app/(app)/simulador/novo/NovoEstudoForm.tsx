@@ -51,6 +51,96 @@ function ajudaDoTipo(t: TipoVeiculo) {
   return `${lugares} · CNH ${p.categoriaCnh ?? "—"}`;
 }
 
+// OS ITENS JÁ CONHECIDOS AO CRIAR — lotes do edital, linhas da proposta.
+// Cada linha nova copia a anterior (tipo, veículos, km, preço máximo): em
+// orçamentos com itens parecidos só se muda o que difere. Com km informado,
+// o item nasce com uma rota; sem km, só o item (as rotas vêm na Operação).
+type LinhaItem = { descricao: string; tipoVeiculo: string; veiculos: string; km: string; precoMaximoKm: string };
+const LINHA_VAZIA: LinhaItem = { descricao: "", tipoVeiculo: "", veiculos: "1", km: "", precoMaximoKm: "" };
+
+function ItensDoEstudo({
+  itens,
+  setItens,
+  tipos,
+  publico,
+  escolar,
+}: {
+  itens: LinhaItem[];
+  setItens: (f: (atual: LinhaItem[]) => LinhaItem[]) => void;
+  tipos: string[];
+  publico: boolean;
+  escolar: boolean;
+}) {
+  // Só os tipos marcados (ou todos, sem nenhum marcado); tipo desmarcado
+  // depois volta a "principal".
+  const opcoes = (tipos.length > 0 ? tipos : [...TIPOS_VEICULO]) as TipoVeiculo[];
+  const mudar = (k: number, campo: keyof LinhaItem, valor: string) => setItens((atual) => atual.map((x, j) => (j === k ? { ...x, [campo]: valor } : x)));
+  const pequeno = "w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm";
+  const colunas = publico ? "sm:grid-cols-[1fr_150px_80px_110px_110px_32px]" : "sm:grid-cols-[1fr_150px_80px_110px_32px]";
+  return (
+    <fieldset>
+      <legend className={labelClass}>Itens do estudo</legend>
+      <p className="mb-2 text-xs text-slate-500">
+        Os itens ou lotes do edital, as linhas da proposta — cada um com o seu preço. Cada item novo copia o anterior; mude só o que difere. Com o
+        km informado, o item já nasce com uma rota; o resto (dias, pedágio, horários) se ajusta na aba Operação, onde também dá para duplicar
+        itens com as rotas.
+      </p>
+      <div className="space-y-2">
+        <div className={`hidden gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:grid ${colunas}`}>
+          <span>Descrição</span>
+          <span>Tipo de veículo</span>
+          <span>Veículos</span>
+          <span>{escolar ? "Km no período" : "Km por mês"}</span>
+          {publico && <span>Preço máx. R$/km</span>}
+          <span />
+        </div>
+        {itens.map((x, k) => (
+          <div key={k} className={`grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-2 sm:border-0 sm:p-0 ${colunas}`}>
+            <input
+              aria-label={`Descrição do item ${k + 1}`}
+              className={`${pequeno} col-span-2 sm:col-span-1`}
+              placeholder={`Item ${k + 1} — ex.: Lote ${k + 1}, van executiva`}
+              maxLength={200}
+              value={x.descricao}
+              onChange={(e) => mudar(k, "descricao", e.target.value)}
+            />
+            <select aria-label={`Tipo de veículo do item ${k + 1}`} className={pequeno} value={opcoes.includes(x.tipoVeiculo as TipoVeiculo) ? x.tipoVeiculo : ""} onChange={(e) => mudar(k, "tipoVeiculo", e.target.value)}>
+              <option value="">{tipos.length > 0 ? `Principal (${ROTULO_TIPO_VEICULO[tipos[0] as TipoVeiculo]})` : "Veículo padrão"}</option>
+              {opcoes.map((t) => (
+                <option key={t} value={t}>
+                  {ROTULO_TIPO_VEICULO[t]}
+                </option>
+              ))}
+            </select>
+            <input aria-label={`Veículos do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right`} value={x.veiculos} onChange={(e) => mudar(k, "veiculos", e.target.value)} />
+            <input aria-label={`Km do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right`} placeholder="opcional" value={x.km} onChange={(e) => mudar(k, "km", e.target.value)} />
+            {publico && (
+              <input aria-label={`Preço máximo do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right`} placeholder="sem teto" value={x.precoMaximoKm} onChange={(e) => mudar(k, "precoMaximoKm", e.target.value)} />
+            )}
+            <button
+              type="button"
+              aria-label={`Remover item ${k + 1}`}
+              title="Remover item"
+              disabled={itens.length === 1}
+              className="rounded-md border border-slate-300 px-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              onClick={() => setItens((atual) => atual.filter((_, j) => j !== k))}
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          onClick={() => setItens((atual) => [...atual, { ...(atual.at(-1) ?? LINHA_VAZIA), descricao: "" }])}
+        >
+          + Adicionar item
+        </button>
+      </div>
+    </fieldset>
+  );
+}
+
 const INDICES = ["IPCA", "INPC", "IGP-M", "Convenção coletiva + diesel (fórmula paramétrica)", "Negociado a cada ano"];
 
 export default function NovoEstudoForm() {
@@ -60,6 +150,7 @@ export default function NovoEstudoForm() {
   const [unidade, setUnidade] = useState("KM");
   // Na ordem em que foram marcados: o primeiro é o tipo das rotas novas.
   const [tipos, setTipos] = useState<string[]>([]);
+  const [itens, setItens] = useState<LinhaItem[]>([LINHA_VAZIA]);
   const [erro, setErro] = useState<string | null>(null);
   const [processando, iniciar] = useTransition();
   const router = useRouter();
@@ -79,6 +170,7 @@ export default function NovoEstudoForm() {
         formData.set("esfera", esfera);
         formData.delete("tiposVeiculo");
         for (const t of tipos) formData.append("tiposVeiculo", t);
+        formData.set("itens", JSON.stringify(itens));
         iniciar(async () => {
           const r = await criarEstudo(formData);
           if (r.erro) setErro(r.erro);
@@ -316,11 +408,9 @@ export default function NovoEstudoForm() {
               <option value="ITEM">Um preço por item</option>
               <option value="LOTE">Preço único do lote (média ponderada dos itens)</option>
             </select>
-            <p className="mt-1.5 text-xs text-slate-500">
-              O estudo pode ter vários itens — os itens ou lotes do edital, as linhas da proposta. Depois de criar, inclua-os na aba Operação
-              (“Adicionar item”); cada item tem as suas rotas, os seus veículos e o seu preço.
-            </p>
           </div>
+
+          <ItensDoEstudo itens={itens} setItens={setItens} tipos={tipos} publico={publico} escolar={tipoServico === "ESCOLAR"} />
         </div>
       </div>
 

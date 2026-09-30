@@ -129,6 +129,32 @@ async function principal() {
   const entradaComTipos = (await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, comTipos))!)).entrada;
   conferir("tipos escolhidos ao criar, na ordem: carro (padrão, sem modelo na base) e a van da base", entradaComTipos.premissas.perfis?.map((p) => p.tipo), ["CARRO", "VAN"]);
   conferir("fretamento eventual: km da viagem é o cobrado (utilização 100%) e preço por diária", [eventual.entrada.premissas.contrato.utilizacao, eventual.entrada.unidadePreco], [1, "DIARIA"]);
+  const comItens = await estudos.criarEstudo(
+    EMPRESA,
+    {
+      tipo: "LICITACAO",
+      nome: "Quatro lotes",
+      tipoServico: "FRETAMENTO",
+      criterioJulgamento: "ITEM",
+      unidadePreco: "KM",
+      tiposVeiculo: ["CARRO", "VAN"],
+      itens: [
+        { descricao: "Lote 1 — vans", tipoVeiculo: "VAN", veiculos: 4, km: 8800, precoMaximoKm: 9.5 },
+        { descricao: "Lote 2 — carros", tipoVeiculo: "CARRO", veiculos: 2, km: 5000 },
+        { descricao: "Lote 3", veiculos: 1 },
+      ],
+    },
+    "teste"
+  );
+  const abertoComItens = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, comItens))!);
+  const perfilDe = (codigo: string | null | undefined) => abertoComItens.entrada.premissas.perfis?.find((p) => p.codigo === codigo)?.tipo ?? null;
+  conferir(
+    "itens do formulário: descrições, teto e rotas com o perfil do tipo",
+    [abertoComItens.entrada.itens.map((i) => i.descricao), abertoComItens.entrada.itens[0].precoMaximoKm, abertoComItens.entrada.rotas.map((r) => [r.item, perfilDe(r.perfilVeiculo)])],
+    [["Lote 1 — vans", "Lote 2 — carros", "Lote 3"], 9.5, [["1", "VAN"], ["2", "CARRO"]]]
+  );
+  const salvoComItens = await estudos.salvarVersao(EMPRESA, comItens, { entrada: abertoComItens.entrada, origem: abertoComItens.origem, status: "RASCUNHO", observacoes: null, baseEm: null }, "teste");
+  ok("estudo criado com itens salva a primeira versão", salvoComItens.versao === 1, JSON.stringify(salvoComItens.erro));
 
   console.log("\nAJUSTES DA BASE PELA TELA — vigência nova, nada sobrescrito");
   {

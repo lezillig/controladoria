@@ -1,5 +1,6 @@
 "use client";
 
+import { codigoLivre, duplicarItem } from "@/lib/simulador/itens";
 import { PERFIS_PADRAO } from "@/lib/simulador/premissas";
 import { tarifaParaPerfil, type PracaPedagio } from "@/lib/simulador/pedagio";
 import type { EntradaSimulacao, Item, Rota, UnidadePreco } from "@/lib/simulador/tipos";
@@ -198,9 +199,20 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
               className={botao}
               onClick={() =>
                 alterar((e) => {
-                  let n = e.itens.length + 1;
-                  while (e.itens.some((i) => i.codigo === String(n))) n++;
-                  e.itens.push({ codigo: String(n), descricao: `Item ${n}`, shareIntermunicipal: 0, precoMaximoKm: null, precoReferenciaKm: null, comMotorista: true, combustivelPorContaDoCliente: false });
+                  // O item novo herda do último o que costuma se repetir
+                  // (% intermunicipal, com motorista, combustível); preço
+                  // máximo e de referência são de cada item e vêm vazios.
+                  const ultimo = e.itens.at(-1);
+                  const codigo = codigoLivre(e.itens);
+                  e.itens.push({
+                    codigo,
+                    descricao: `Item ${codigo}`,
+                    shareIntermunicipal: ultimo?.shareIntermunicipal ?? 0,
+                    precoMaximoKm: null,
+                    precoReferenciaKm: null,
+                    comMotorista: ultimo?.comMotorista ?? true,
+                    combustivelPorContaDoCliente: ultimo?.combustivelPorContaDoCliente ?? false,
+                  });
                 })
               }
             >
@@ -252,9 +264,14 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
                     <td className={tdN}>{n}</td>
                     <td className={td}>
                       {podeEditar && (
-                        <button type="button" aria-label="Excluir item" title={bloqueio || "Excluir item"} disabled={Boolean(bloqueio)} className={botao} onClick={() => alterar((e) => void e.itens.splice(k, 1))}>
-                          ✕
-                        </button>
+                        <span className="flex gap-1">
+                          <button type="button" aria-label="Duplicar item" title="Duplicar item com as rotas dele" className={`${botao} px-2`} onClick={() => alterar((e) => duplicarItem(e, k))}>
+                            ⧉
+                          </button>
+                          <button type="button" aria-label="Excluir item" title={bloqueio || "Excluir item"} disabled={Boolean(bloqueio)} className={`${botao} px-2`} onClick={() => alterar((e) => void e.itens.splice(k, 1))}>
+                            ✕
+                          </button>
+                        </span>
                       )}
                     </td>
                   </tr>

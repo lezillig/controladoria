@@ -15,6 +15,7 @@ import {
   STATUS_VERSAO,
   TIPOS_ESTUDO,
   TIPOS_SERVICO,
+  type ItemNovo,
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerDataHoraDeBrasilia, lerInteiro, lerNumero } from "@/lib/simulador/numeros";
@@ -40,6 +41,36 @@ const inteiro = (f: FormData, k: string) => {
   const v = texto(f, k);
   return v === null ? null : lerInteiro(v);
 };
+// Os itens do formulário de novo estudo, em JSON: números como a pessoa
+// digitou (pt-BR), lidos por lerNumero; texto inválido volta como erro.
+function lerItensNovos(bruto: string | null): ItemNovo[] | string {
+  if (!bruto) return [];
+  let lista: unknown;
+  try {
+    lista = JSON.parse(bruto);
+  } catch {
+    return "Itens do estudo ilegíveis.";
+  }
+  if (!Array.isArray(lista) || lista.length > 100) return "Itens do estudo: máximo de 100.";
+  const itens: ItemNovo[] = [];
+  for (const [k, x] of lista.entries()) {
+    const o = (x ?? {}) as Record<string, unknown>;
+    const num = (v: unknown) => (v === undefined || v === null || String(v).trim() === "" ? null : (lerNumero(String(v)) ?? NaN));
+    const [veiculos, km, precoMaximoKm] = [num(o.veiculos), num(o.km), num(o.precoMaximoKm)];
+    for (const [v, rotulo] of [[veiculos, "veículos"], [km, "km"], [precoMaximoKm, "preço máximo"]] as const)
+      if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1e9)) return `Item ${k + 1}: ${rotulo} inválido.`;
+    const tipo = String(o.tipoVeiculo ?? "");
+    itens.push({
+      descricao: String(o.descricao ?? "").slice(0, 200),
+      tipoVeiculo: (TIPOS_VEICULO as string[]).includes(tipo) ? (tipo as TipoVeiculo) : null,
+      veiculos,
+      km,
+      precoMaximoKm,
+    });
+  }
+  return itens;
+}
+
 const UNIDADES: UnidadePreco[] = ["KM", "VEICULO_MES", "DIARIA", "HORA", "BINOMIA"];
 
 export async function criarEstudo(formData: FormData): Promise<Resultado> {
@@ -66,9 +97,12 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
     const n = soInteiro ? inteiro(formData, campo) : numero(formData, campo);
     if (bruto !== null && (n === null || n < 0 || n > max)) return { erro: `${rotulo}: informe um número ${soInteiro ? "inteiro " : ""}válido.` };
   }
+  const itens = lerItensNovos(texto(formData, "itens", 100_000));
+  if (typeof itens === "string") return { erro: itens };
   const id = await criarEstudoNoBanco(
     session.companyId,
     {
+      itens,
       tipo,
       nome,
       cliente: texto(formData, "cliente", 160),

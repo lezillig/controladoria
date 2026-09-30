@@ -78,9 +78,76 @@ export type DadosEstudo = {
   indiceReajuste?: string | null;
   formaFaturamento?: string | null;
   avisoRescisaoDias?: number | null;
+  // Os itens já conhecidos ao criar (lotes do edital, linhas da proposta).
+  // Com km informado, o item nasce com uma rota do tipo de veículo dele.
+  itens?: ItemNovo[];
 };
 
+export type ItemNovo = {
+  descricao: string;
+  tipoVeiculo?: TipoVeiculo | null;
+  veiculos?: number | null;
+  km?: number | null;
+  precoMaximoKm?: number | null;
+};
+
+// Dias de referência para o km por dia da rota inicial: 22 no mês, 200 no
+// ano letivo (escolar, contrato por período). A pessoa ajusta na Operação.
+const DIAS_ROTA_INICIAL = { MENSAL: 22, PERIODO: 200 } as const;
+
+// Itens e rotas com que o estudo nasce. Sem itens informados, um item com o
+// nome do estudo. A rota guarda o TIPO em perfilVeiculo; ao abrir, vira o
+// código do perfil daquele tipo (ver perfilDasRotasNovas).
+export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | "itens" | "tiposVeiculo">) {
+  const comMotorista = dados.tipoServico !== "LOCACAO_SM";
+  const periodo = dados.tipoServico === "ESCOLAR";
+  const lista = (dados.itens ?? []).filter((i) => i.descricao.trim() !== "" || (i.km ?? 0) > 0).slice(0, 100);
+  if (lista.length === 0) return { itens: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista }], rotas: [] };
+  const itens = lista.map((i, k) => ({
+    codigo: String(k + 1),
+    descricao: i.descricao.trim().slice(0, 200) || (lista.length === 1 ? dados.nome : `Item ${k + 1}`),
+    ordem: k,
+    comMotorista,
+    precoMaximoKm: i.precoMaximoKm && i.precoMaximoKm > 0 ? i.precoMaximoKm : null,
+  }));
+  const rotas = lista.flatMap((i, k) => {
+    if (!i.km || i.km <= 0) return [];
+    const tipo = i.tipoVeiculo ?? dados.tiposVeiculo?.[0] ?? null;
+    const veiculos = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;
+    const fu = PERFIS_PADRAO.find((p) => p.tipo === tipo)?.motorista.motoristasPorVeiculo ?? 1.2;
+    const dias = periodo ? DIAS_ROTA_INICIAL.PERIODO : DIAS_ROTA_INICIAL.MENSAL;
+    return [
+      {
+        itemCodigo: String(k + 1),
+        ordem: k,
+        nome: itens[k].descricao,
+        kmReferencia: i.km,
+        kmDia: Math.round((i.km / dias) * 10) / 10,
+        diasMes: 22,
+        veiculos,
+        motoristas: comMotorista ? Math.round(veiculos * fu * 100) / 100 : 0,
+        perfilVeiculo: tipo,
+      },
+    ];
+  });
+  return { itens, rotas };
+}
+
+// Rotas criadas com o formulário guardam o TIPO de veículo; o estudo abre
+// com os perfis da base (código BASE-n) ou os padrões (código = tipo). A rota
+// passa a apontar o primeiro perfil daquele tipo, com os motoristas dele.
+export function perfilDasRotasNovas(rotas: Rota[], perfis: PerfilVeiculo[]): Rota[] {
+  return rotas.map((r) => {
+    if (!r.perfilVeiculo || perfis.some((p) => p.codigo === r.perfilVeiculo)) return r;
+    const doTipo = perfis.find((p) => p.tipo === r.perfilVeiculo) ?? perfis[0];
+    if (!doTipo) return { ...r, perfilVeiculo: null };
+    const motoristas = r.motoristas > 0 ? Math.round(r.veiculos * doTipo.motorista.motoristasPorVeiculo * 100) / 100 : 0;
+    return { ...r, perfilVeiculo: doTipo.codigo, motoristas };
+  });
+}
+
 export async function criarEstudo(companyId: string, dados: DadosEstudo, autor: string | null): Promise<string> {
+  const iniciais = itensIniciais(dados);
   const estudo = await prisma.simEstudo.create({
     data: {
       companyId,
@@ -112,8 +179,9 @@ export async function criarEstudo(companyId: string, dados: DadosEstudo, autor: 
       srp: dados.srp ?? false,
       valorTotalMaximo: dados.valorTotalMaximo ?? null,
       criadoPorNome: autor,
-      // Um item para começar: o estudo nasce pronto para receber rotas.
-      itens: { create: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista: dados.tipoServico !== "LOCACAO_SM" }] },
+      // Ao menos um item: o estudo nasce pronto para receber rotas.
+      itens: { create: iniciais.itens },
+      rotas: { create: iniciais.rotas },
     },
     select: { id: true },
   });
@@ -267,7 +335,7 @@ export async function entradaInicial(
     entrada: {
       premissas,
       itens,
-      rotas,
+      rotas: perfilDasRotasNovas(rotas, premissas.perfis),
       criterio: estudo.criterioJulgamento === "LOTE" ? "LOTE" : "ITEM",
       unidadePreco: (estudo.unidadePreco as UnidadePreco) ?? "KM",
     },
