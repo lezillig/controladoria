@@ -277,7 +277,8 @@ export async function carregarContexto(
     // raiz que identifica operação entre as empresas do grupo (ver
     // intercompany.ts). `conexoes` acima traz só as ativas, e título antigo de
     // conexão desativada continua sendo operação interna.
-    prisma.omieConexao.findMany({ where: { companyId }, select: { cnpj: true } }),
+    // O papel vem junto: decide a linha de pessoas do DRE (ver dre.ts).
+    prisma.omieConexao.findMany({ where: { companyId }, select: { id: true, cnpj: true, papelNoGrupo: true } }),
   ]);
 
   // Só os CNPJs que este contexto conhece — os agentes não têm o que fazer
@@ -298,6 +299,7 @@ export async function carregarContexto(
       movimentoAntesDoCorte.map((g) => [`${g.conexaoId}:${g.contaCorrenteCodigo}`, g._sum.valorCents ?? 0])
     ),
     raizesCnpjDoGrupo: raizesDoGrupo(conexoesDoGrupo),
+    conexoesCorporativas: conexoesDoGrupo.filter((c) => c.papelNoGrupo === "CORPORATIVO").map((c) => c.id),
     notas,
     parceiros,
     categorias,

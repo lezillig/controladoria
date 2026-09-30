@@ -400,7 +400,7 @@ export function ferramentasDeAnalise(
         )
         .max(20)
         .optional(),
-      sensibilidadeEm: z.array(z.enum(LINHAS_DE_GRUPO as [string, ...string[]])).max(6).optional().describe("Linhas para medir o efeito de ±10% (padrão: receita bruta, veículos, pessoas)."),
+      sensibilidadeEm: z.array(z.enum(LINHAS_DE_GRUPO as [string, ...string[]])).max(6).optional().describe("Linhas para medir o efeito de ±10% (padrão: receita bruta, veículos, pessoas — operação e corporativo / administrativo)."),
     }),
     run: async (input) => {
       const [base, contratos] = await Promise.all([baseHistoricaNoBanco(escopo, dataReferencia), contratosDoEscopo(escopo)]);
@@ -408,7 +408,7 @@ export function ferramentasDeAnalise(
       const cenario = { baseReceita: input.baseReceita ?? "HISTORICA", premissas: (input.premissas ?? []) as Premissa[] };
       const p = projetar(base, contratos, meses, cenario);
       const referencia = cenario.premissas.length > 0 ? projetar(base, contratos, meses, { ...cenario, premissas: [] }) : p;
-      const linhasSens = (input.sensibilidadeEm ?? ["RECEITA_BRUTA", "DESPESA_VEICULOS", "DESPESA_SALARIOS"]) as Premissa["linha"][];
+      const linhasSens = (input.sensibilidadeEm ?? ["RECEITA_BRUTA", "DESPESA_VEICULOS", "DESPESA_SALARIOS", "DESPESA_SALARIOS_CORPORATIVO"]) as Premissa["linha"][];
       const sens = sensibilidade(base, contratos, meses, cenario, linhasSens);
       registrar("projecao_dre", input, `${p.meses[0].rotulo} a ${p.meses[11].rotulo}: EBIT ${fmtBRL(p.ebitCents)}, ${cenario.premissas.length} premissa(s)`);
       return JSON.stringify({

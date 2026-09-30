@@ -108,8 +108,11 @@ export default async function ConexoesPage() {
                   <span className="font-medium text-slate-800">{c.nome}</span>
                   {!c.ativa && <span className="block text-xs text-slate-400">inativa</span>}
                 </span>,
-                <span key="a" className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                  {c.apelido}
+                <span key="a">
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{c.apelido}</span>
+                  <span className="mt-1 block text-xs text-slate-400">
+                    {c.papelNoGrupo === "CORPORATIVO" ? "corporativo / administrativo" : "operação"}
+                  </span>
                 </span>,
                 fmtDocumento(c.cnpj),
                 <span key="c" className="text-xs">
@@ -132,6 +135,7 @@ export default async function ConexoesPage() {
                             apelido: c.apelido,
                             cnpj: c.cnpj ?? "",
                             credencialRef: c.credencialRef,
+                            papelNoGrupo: c.papelNoGrupo,
                           }}
                         />
                         <form action={alternarConexao}>

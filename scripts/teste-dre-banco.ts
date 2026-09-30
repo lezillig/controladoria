@@ -60,7 +60,8 @@ async function limpar() {
 
 async function principal() {
   const { carregarContexto } = await import("../src/lib/controladoria/contexto");
-  const { montarDre, montarDreAnual } = await import("../src/lib/controladoria/dre");
+  const { montarDre, montarDreAnual, LINHAS_DRE } = await import("../src/lib/controladoria/dre");
+  const LINHAS_DRE_ROTULOS: string[] = LINHAS_DRE.map((l) => l.rotulo);
   const { montarDreNoBanco, montarDreAnualNoBanco } = await import("../src/lib/controladoria/dreNoBanco");
   const { montarJanelas } = await import("../src/lib/controladoria/periodos");
   const { ranking } = await import("../src/lib/controladoria/analytics");
@@ -76,7 +77,9 @@ async function principal() {
     data: { companyId: EMPRESA, nome: "Azul DRE", apelido: "AZ", credencialRef: "AZ", cnpj: "11111111000191" },
   });
   const cx2 = await prisma.omieConexao.create({
-    data: { companyId: EMPRESA, nome: "MCZ DRE", apelido: "MC", credencialRef: "MC", cnpj: "22.222.222/0001-91" },
+    // A MCZ é a empresa CORPORATIVA: a folha dela vai para "Despesas com
+    // pessoas — corporativo / administrativo".
+    data: { companyId: EMPRESA, nome: "MCZ DRE", apelido: "MC", credencialRef: "MC", cnpj: "22.222.222/0001-91", papelNoGrupo: "CORPORATIVO" },
   });
   await prisma.controladoriaConfig.create({
     data: { companyId: EMPRESA, dataInicioBase: new Date(2025, 0, 1), retencoesNasDeducoes: false },
@@ -93,6 +96,10 @@ async function principal() {
       { companyId: EMPRESA, conexaoId: cx1.id, conexaoApelido: "AZ", codigo: "D2", descricao: "Salários e folha", contaDespesa: true },
       { companyId: EMPRESA, conexaoId: cx1.id, conexaoApelido: "AZ", codigo: "D3", descricao: "ISS sobre faturamento", contaDespesa: true },
       { companyId: EMPRESA, conexaoId: cx2.id, conexaoApelido: "MC", codigo: "D4", descricao: "Aluguel da garagem", contaDespesa: true },
+      // Folha, sem classificação manual: a proposta automática a põe em
+      // pessoas, e a EMPRESA do título decide qual das duas linhas.
+      { companyId: EMPRESA, conexaoId: cx1.id, conexaoApelido: "AZ", codigo: "D5", descricao: "Folha de pagamento", contaDespesa: true },
+      { companyId: EMPRESA, conexaoId: cx2.id, conexaoApelido: "MC", codigo: "D5", descricao: "Folha de pagamento", contaDespesa: true },
     ],
   });
 
@@ -199,6 +206,14 @@ async function principal() {
       parceiroCodigo: "PCPF", parceiroNome: "Pessoa Física", parceiroDocumento: "11111111099",
       dataEmissao: new Date(2026, 8, 14), dataVencimento: new Date(2026, 8, 15), valorDocumentoCents: 12_300 },
 
+    // --- PESSOAS: a mesma categoria nas duas empresas ---
+    { ...comum(cx1, "AZ"), codigoLancamento: "P1", natureza: "PAGAR" as const, categoriaCodigo: "D5",
+      dataEmissao: new Date(2026, 8, 5), dataVencimento: new Date(2026, 8, 5), valorDocumentoCents: 150_100 },
+    { ...comum(cx2, "MC"), codigoLancamento: "P2", natureza: "PAGAR" as const, categoriaCodigo: "D5",
+      dataEmissao: new Date(2026, 8, 6), dataVencimento: new Date(2026, 8, 6), valorDocumentoCents: 60_700, liquidado: true },
+    { ...comum(cx2, "MC"), codigoLancamento: "P3", natureza: "PAGAR" as const, categoriaCodigo: "D5",
+      dataEmissao: new Date(2026, 7, 7), dataVencimento: new Date(2026, 7, 7), valorDocumentoCents: 55_500, liquidado: true },
+
     // --- fora de qualquer mês da tela, dentro da janela: só movimento ---
     { ...comum(cx1, "AZ"), codigoLancamento: "A15", natureza: "RECEBER" as const, categoriaCodigo: "R9",
       dataEmissao: new Date(2026, 5, 10), dataVencimento: new Date(2026, 5, 20), valorDocumentoCents: 555_400,
@@ -244,6 +259,9 @@ async function principal() {
         dataBaixa: new Date(2025, 8, 24), valorCents: 700_500 },
       { companyId: EMPRESA, conexaoId: conexaoDe("A14"), tituloId: idDe("A14"), chave: "K10",
         dataBaixa: new Date(2025, 8, 25), valorCents: 190_600 },
+      // A folha corporativa paga: no caixa ela também vai para a linha dela.
+      { companyId: EMPRESA, conexaoId: conexaoDe("P2"), tituloId: idDe("P2"), chave: "K12",
+        dataBaixa: new Date(2026, 8, 6), valorCents: 60_700 },
       // O pagamento da Azul à MCZ: no caixa do grupo também some.
       { companyId: EMPRESA, conexaoId: conexaoDe("IC2"), tituloId: idDe("IC2"), chave: "K11",
         dataBaixa: new Date(2026, 8, 14), valorCents: 200_000, jurosCents: 1_500 },
@@ -409,6 +427,60 @@ async function principal() {
         r1?.valorCents ?? 0
       );
     }
+  }
+
+  // ------------------------------------------ pessoas: operação × corporativo
+  // A LINHA GENÉRICA NÃO EXISTE MAIS. No grupo, as duas linhas; numa empresa
+  // só, a dela — e a outra, sem item, fica vazia (a tela esconde). A mesma
+  // categoria D5 aparece nas duas, cada parte com os seus títulos.
+  {
+    const linha = (r: { linhas: { chave: string; valorCents: number; valorAnteriorCents: number; itens: { categoriaCodigo: string; titulos: { id: string }[]; totalDeTitulos: number }[] }[] }, chave: string) =>
+      r.linhas.find((l) => l.chave === chave)!;
+    conferir("não há mais linha genérica de pessoas", LINHAS_DRE_ROTULOS.includes("(-) Despesas com pessoas"), false);
+    for (const conexaoId of [null, cx1.id, cx2.id]) {
+      const alvo = conexaoId === null ? "grupo" : conexaoId === cx1.id ? "Azul" : "MCZ";
+      const escopo = { companyId: EMPRESA, conexaoId, janela: { desde: desdeMensal, ate: null } };
+      const ctx = await carregarContexto(EMPRESA, REFERENCIA, conexaoId ?? undefined, { desde: desdeMensal });
+      for (const regime of ["competencia", "caixa"] as const) {
+        const banco = await montarDreNoBanco(escopo, janelas.mesAtual, janelas.mesAnterior, classificacoes, { regime });
+        conferir(`pessoas: gêmeos iguais — ${alvo}, ${regime}`, banco, montarDre(ctx, janelas.mesAtual, janelas.mesAnterior, classificacoes, { regime }));
+        if (regime === "caixa") continue;
+        const operacao = linha(banco, "DESPESA_SALARIOS");
+        const corporativo = linha(banco, "DESPESA_SALARIOS_CORPORATIVO");
+        const esperado = {
+          grupo: { op: 150_100, corp: 60_700, corpAnterior: 55_500 },
+          Azul: { op: 150_100, corp: 0, corpAnterior: 0 },
+          MCZ: { op: 0, corp: 60_700, corpAnterior: 55_500 },
+        }[alvo]!;
+        conferir(`pessoas — operação — ${alvo}`, operacao.valorCents, esperado.op);
+        conferir(`pessoas — corporativo — ${alvo}`, corporativo.valorCents, esperado.corp);
+        conferir(`pessoas — corporativo, mês anterior — ${alvo}`, corporativo.valorAnteriorCents, esperado.corpAnterior);
+        conferir(
+          `a linha da outra empresa fica sem item — ${alvo}`,
+          [operacao.itens.length > 0, corporativo.itens.length > 0],
+          [esperado.op !== 0, esperado.corp !== 0 || esperado.corpAnterior !== 0]
+        );
+        const d5corp = corporativo.itens.find((i) => i.categoriaCodigo === "D5");
+        if (d5corp) {
+          conferir(`drill-down corporativo só com títulos da MCZ — ${alvo}`, d5corp.titulos.map((t) => t.id), [idDe("P2")]);
+          conferir(`contagem do drill-down corporativo — ${alvo}`, d5corp.totalDeTitulos, 1);
+        }
+      }
+    }
+    // O resultado não muda com a separação: as duas linhas somam o que a
+    // antiga somava, e o EBIT desconta as duas.
+    const grupo = await montarDreNoBanco(
+      { companyId: EMPRESA, conexaoId: null, janela: { desde: desdeMensal, ate: null } },
+      janelas.mesAtual, janelas.mesAnterior, classificacoes, { regime: "competencia" }
+    );
+    const v = (c: string) => grupo.linhas.find((l) => l.chave === c)!.valorCents;
+    conferir(
+      "EBIT desconta as duas linhas de pessoas",
+      v("EBIT"),
+      v("LUCRO_BRUTO") - ["DESPESA_VEICULOS", "DESPESA_SALARIOS", "DESPESA_SALARIOS_CORPORATIVO", "DESPESA_SOCIOS",
+        "DESPESA_ESTRUTURA", "DESPESA_INFORMATICA", "DESPESA_COMERCIAL", "DESPESA_ADMINISTRATIVA", "DESPESA_GERAL"]
+        .reduce((a, c) => a + v(c), 0) + v("OUTRAS_RECEITAS")
+    );
   }
 
   // ------------------------------------------------------------------ anual

@@ -3,6 +3,7 @@ import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "./competencia";
 import {
   CATEGORIA_SQL as CATEGORIA,
+  ehCorporativoSql,
   ehIntercompanySql,
   filtroConexaoBaixa,
   filtroConexaoTitulo,
@@ -64,7 +65,9 @@ import {
 // O escopo é o compartilhado (ver escopoSql.ts): empresa, conexão e janela.
 export type EscopoDre = EscopoSql;
 
-type LinhaSoma = { categoria: string; cents: bigint };
+// `corp`: a parcela da soma que vem de empresa de papel CORPORATIVO — separa as
+// duas linhas de pessoas (ver LINHAS_DRE em dre.ts).
+type LinhaSoma = { categoria: string; cents: bigint; corp: bigint };
 type LinhaMovimento = { categoria: string; natureza: string; cents: bigint };
 type LinhaRetencao = {
   iss: bigint | null;
@@ -84,13 +87,18 @@ type LinhaDrill = {
   data: Date;
   cents: number;
   empresa: string;
+  corporativo: boolean;
   total: bigint;
 };
-type LinhaSomaMes = { categoria: string; mes: number; cents: bigint };
+type LinhaSomaMes = { categoria: string; mes: number; cents: bigint; corp: bigint };
 
+type Somas = { mapa: Map<string, number>; corp: Map<string, number> };
 
-function mapaDeSomas(linhas: LinhaSoma[]): Map<string, number> {
-  return new Map(linhas.map((l) => [l.categoria, Number(l.cents)]));
+function mapaDeSomas(linhas: LinhaSoma[]): Somas {
+  return {
+    mapa: new Map(linhas.map((l) => [l.categoria, Number(l.cents)])),
+    corp: new Map(linhas.filter((l) => Number(l.corp) !== 0).map((l) => [l.categoria, Number(l.corp)])),
+  };
 }
 
 function retencaoDaLinha(linha: LinhaRetencao | undefined): Retencoes {
@@ -120,10 +128,11 @@ function retencaoDaLinha(linha: LinhaRetencao | undefined): Retencoes {
 // SOMA POR CATEGORIA no regime de COMPETÊNCIA. Receita e despesa entram no
 // mesmo mapa, somadas sem módulo — como no original: é o total da categoria, e
 // o sinal dela na demonstração sai do lado em que ela vive.
-async function somaPorCategoriaCompetencia(escopo: EscopoDre, periodo: Periodo): Promise<Map<string, number>> {
+async function somaPorCategoriaCompetencia(escopo: EscopoDre, periodo: Periodo): Promise<Somas> {
   const linhas = await prisma.$queryRaw<LinhaSoma[]>`
     SELECT ${CATEGORIA} AS categoria,
-           COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
+           COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
+           COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
       FROM ${tabela("OmieTitulo")} t
      WHERE t."companyId" = ${escopo.companyId}
        AND t.cancelado = false
@@ -139,10 +148,11 @@ async function somaPorCategoriaCompetencia(escopo: EscopoDre, periodo: Periodo):
 // NO CAIXA O FATO É A BAIXA — data e valor do movimento do dinheiro —, e a
 // categoria continua vindo do TÍTULO, que é quem sabe do que aquele dinheiro
 // se trata. Título cancelado fica fora, como ficaria na competência.
-async function somaPorCategoriaCaixa(escopo: EscopoDre, periodo: Periodo): Promise<Map<string, number>> {
+async function somaPorCategoriaCaixa(escopo: EscopoDre, periodo: Periodo): Promise<Somas> {
   const linhas = await prisma.$queryRaw<LinhaSoma[]>`
     SELECT ${CATEGORIA} AS categoria,
-           COALESCE(SUM(b."valorCents"), 0)::bigint AS cents
+           COALESCE(SUM(b."valorCents"), 0)::bigint AS cents,
+           COALESCE(SUM(b."valorCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
       FROM ${tabela("OmieBaixa")} b
       JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
      WHERE b."companyId" = ${escopo.companyId}
@@ -329,11 +339,16 @@ async function drillCompetencia(escopo: EscopoDre, periodo: Periodo) {
              ${competenciaSql("t")} AS data,
              t."valorDocumentoCents" AS cents,
              t."conexaoApelido" AS empresa,
+             ${ehCorporativoSql(escopo.companyId)} AS corporativo,
+             -- Por categoria E papel da empresa: cada linha de pessoas mostra
+             -- os seus maiores e conta os seus (ver LINHAS_DRE em dre.ts). Nas
+             -- demais linhas os dois pedaços se juntam de novo, e os vinte
+             -- maiores da categoria estão sempre entre os vinte de cada lado.
              ROW_NUMBER() OVER (
-               PARTITION BY ${CATEGORIA}
+               PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)}
                ORDER BY ABS(t."valorDocumentoCents") DESC, t.natureza::text DESC, t."dataVencimento" ASC, t.id ASC
              ) AS pos,
-             COUNT(*) OVER (PARTITION BY ${CATEGORIA})::bigint AS total
+             COUNT(*) OVER (PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)})::bigint AS total
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${escopo.companyId}
          AND t.cancelado = false
@@ -360,11 +375,12 @@ async function drillCaixa(escopo: EscopoDre, periodo: Periodo) {
              b."dataBaixa" AS data,
              b."valorCents" AS cents,
              t."conexaoApelido" AS empresa,
+             ${ehCorporativoSql(escopo.companyId)} AS corporativo,
              ROW_NUMBER() OVER (
-               PARTITION BY ${CATEGORIA}
+               PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)}
                ORDER BY ABS(b."valorCents") DESC, b."dataBaixa" ASC, b.id ASC
              ) AS pos,
-             COUNT(*) OVER (PARTITION BY ${CATEGORIA})::bigint AS total
+             COUNT(*) OVER (PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)})::bigint AS total
         FROM ${tabela("OmieBaixa")} b
         JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
        WHERE b."companyId" = ${escopo.companyId}
@@ -381,7 +397,11 @@ async function drillCaixa(escopo: EscopoDre, periodo: Periodo) {
 
 function agruparDrill(linhas: LinhaDrill[]) {
   const titulos = new Map<string, TituloDoDre[]>();
+  // A contagem vem por (categoria, papel): soma-se por categoria, e a parte
+  // corporativa fica também à parte.
+  const porParte = new Map<string, number>();
   const totais = new Map<string, number>();
+  const totaisCorporativos = new Map<string, number>();
   for (const l of linhas) {
     const lista = titulos.get(l.categoria) ?? [];
     lista.push({
@@ -392,11 +412,17 @@ function agruparDrill(linhas: LinhaDrill[]) {
       data: l.data,
       valorCents: Number(l.cents),
       empresa: l.empresa,
+      corporativo: l.corporativo,
     });
     titulos.set(l.categoria, lista);
-    totais.set(l.categoria, Number(l.total));
+    porParte.set(`${l.corporativo ? "C" : "O"}:${l.categoria}`, Number(l.total));
   }
-  return { titulos, totais };
+  for (const [chave, total] of porParte) {
+    const categoria = chave.slice(2);
+    totais.set(categoria, (totais.get(categoria) ?? 0) + total);
+    if (chave.startsWith("C:")) totaisCorporativos.set(categoria, total);
+  }
+  return { titulos, totais, totaisCorporativos };
 }
 
 export async function categoriasDoEscopo(escopo: EscopoDre): Promise<Map<string, CategoriaParaDre>> {
@@ -474,7 +500,11 @@ export async function insumosDoBanco(
         ? regime === "caixa"
           ? drillCaixa(escopo, periodo)
           : drillCompetencia(escopo, periodo)
-        : Promise.resolve({ titulos: new Map<string, TituloDoDre[]>(), totais: new Map<string, number>() }),
+        : Promise.resolve({
+            titulos: new Map<string, TituloDoDre[]>(),
+            totais: new Map<string, number>(),
+            totaisCorporativos: new Map<string, number>(),
+          }),
       retencoes(escopo, periodo, regime),
       retencoes(escopo, periodoAnterior, regime),
       periodoAnoAnterior ? retencoes(escopo, periodoAnoAnterior, regime) : Promise.resolve(null),
@@ -482,12 +512,15 @@ export async function insumosDoBanco(
     ]);
 
   return {
-    atual,
-    anterior,
-    anoAnterior,
+    atual: atual.mapa,
+    anterior: anterior.mapa,
+    anoAnterior: anoAnterior ? anoAnterior.mapa : null,
+    corporativo: { atual: atual.corp, anterior: anterior.corp, anoAnterior: anoAnterior ? anoAnterior.corp : null },
     movimento,
     titulos: drill.titulos,
     totalDeTitulosPorCategoria: drill.totais,
+    // Só quando o drill-down foi montado: sem ele, as contagens nem existem.
+    totalDeTitulosCorporativosPorCategoria: incluirTitulos ? drill.totaisCorporativos : undefined,
     retencoes: ret,
     retencoesAnteriores: retAnterior,
     retencoesAnoAnterior: retAnoAnterior,
@@ -525,7 +558,7 @@ async function somaPorCategoriaPorMes(
   escopo: EscopoDre,
   ano: number,
   regime: "competencia" | "caixa"
-): Promise<Map<number, Map<string, number>>> {
+): Promise<Map<number, Somas>> {
   const inicio = new Date(ano, 0, 1, 0, 0, 0, 0);
   const fim = new Date(ano, 11, 31, 23, 59, 59, 999);
 
@@ -534,7 +567,8 @@ async function somaPorCategoriaPorMes(
       ? await prisma.$queryRaw<LinhaSomaMes[]>`
           SELECT ${CATEGORIA} AS categoria,
                  (EXTRACT(MONTH FROM b."dataBaixa") - 1)::int AS mes,
-                 COALESCE(SUM(b."valorCents"), 0)::bigint AS cents
+                 COALESCE(SUM(b."valorCents"), 0)::bigint AS cents,
+                 COALESCE(SUM(b."valorCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
             FROM ${tabela("OmieBaixa")} b
             JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
            WHERE b."companyId" = ${escopo.companyId}
@@ -548,7 +582,8 @@ async function somaPorCategoriaPorMes(
       : await prisma.$queryRaw<LinhaSomaMes[]>`
           SELECT ${CATEGORIA} AS categoria,
                  (EXTRACT(MONTH FROM ${competenciaSql("t")}) - 1)::int AS mes,
-                 COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
+                 COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
+                 COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
             FROM ${tabela("OmieTitulo")} t
            WHERE t."companyId" = ${escopo.companyId}
              AND t.cancelado = false
@@ -559,11 +594,12 @@ async function somaPorCategoriaPorMes(
            GROUP BY 1, 2
         `;
 
-  const porMes = new Map<number, Map<string, number>>();
+  const porMes = new Map<number, Somas>();
   for (const l of linhas) {
-    const mapa = porMes.get(l.mes) ?? new Map<string, number>();
-    mapa.set(l.categoria, (mapa.get(l.categoria) ?? 0) + Number(l.cents));
-    porMes.set(l.mes, mapa);
+    const somas = porMes.get(l.mes) ?? { mapa: new Map<string, number>(), corp: new Map<string, number>() };
+    somas.mapa.set(l.categoria, (somas.mapa.get(l.categoria) ?? 0) + Number(l.cents));
+    if (Number(l.corp) !== 0) somas.corp.set(l.categoria, (somas.corp.get(l.categoria) ?? 0) + Number(l.corp));
+    porMes.set(l.mes, somas);
   }
   return porMes;
 }
@@ -603,13 +639,18 @@ export async function montarDreAnualNoBanco(
   const porMes = meses.map((m) =>
     montarDreDeInsumos(
       {
-        atual: porMesAgregado.get(m.indice) ?? vazio,
+        atual: porMesAgregado.get(m.indice)?.mapa ?? vazio,
         // O MÊS ANTERIOR SÓ DENTRO DO ANO — em janeiro ele fica vazio, que é
         // exatamente o que a versão em memória vê: o contexto da visão anual
         // começa em 1º de janeiro. A visão anual não exibe a coluna do mês
         // anterior; ela existe aqui porque a conta é a mesma dos dois lados.
-        anterior: porMesAgregado.get(m.indice - 1) ?? vazio,
+        anterior: porMesAgregado.get(m.indice - 1)?.mapa ?? vazio,
         anoAnterior: null,
+        corporativo: {
+          atual: porMesAgregado.get(m.indice)?.corp ?? vazio,
+          anterior: porMesAgregado.get(m.indice - 1)?.corp ?? vazio,
+          anoAnterior: null,
+        },
         movimento,
         titulos: new Map(),
         retencoes: retencoesPorMes[m.indice],

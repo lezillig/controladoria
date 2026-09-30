@@ -52,7 +52,20 @@ export const LINHAS_DRE = [
   // classificações manuais já feitas, e trocá-la devolveria todas aquelas
   // categorias ao palpite automático sem ninguém notar. Rótulo é o que se lê;
   // chave é o que se guarda.
-  { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com pessoas", tipo: "GRUPO", sinal: -1 },
+  //
+  // DUAS LINHAS DE PESSOAS, pela EMPRESA do título e não pela categoria: a
+  // folha de quem roda a frota (a Azul, papel OPERACAO) e a de quem administra
+  // o grupo (a MCZ, papel CORPORATIVO — OmieConexao.papelNoGrupo). A mesma
+  // categoria "Salários" existe nas duas contas Omie; o que separa operação de
+  // estrutura é quem paga. A linha genérica "Despesas com pessoas" deixou de
+  // existir em qualquer visão — no grupo aparecem as duas, numa empresa só
+  // aparece a dela (a outra, vazia, a tela esconde).
+  //
+  // A classificação continua gravada como DESPESA_SALARIOS (é a chave das
+  // classificações manuais já feitas); a separação acontece na conta, título a
+  // título. Por isso a linha corporativa NÃO é oferecida na classificação.
+  { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com pessoas — operação", tipo: "GRUPO", sinal: -1 },
+  { chave: "DESPESA_SALARIOS_CORPORATIVO", rotulo: "(-) Despesas com pessoas — corporativo / administrativo", tipo: "GRUPO", sinal: -1 },
   // SÓCIOS em linha própria porque a pergunta que ela responde é de governança,
   // não de operação: quanto a sociedade retira. Misturada na administrativa,
   // some — e é justamente o número que um sócio quer achar em dez segundos.
@@ -124,7 +137,27 @@ export type ChaveDre = (typeof LINHAS_DRE)[number]["chave"];
 // As linhas em que uma CATEGORIA pode ser classificada. Os subtotais saem de
 // conta, nunca de classificação — oferecê-los na tela de classificação seria
 // convidar alguém a jogar uma categoria dentro de "Lucro bruto".
-export const LINHAS_CLASSIFICAVEIS = LINHAS_DRE.filter((l) => l.tipo === "GRUPO").map((l) => l.chave);
+//
+// A linha de pessoas CORPORATIVA também fica de fora: ela sai da empresa do
+// título, não da categoria (ver LINHAS_DRE).
+export const LINHA_PESSOAS_CORPORATIVO = "DESPESA_SALARIOS_CORPORATIVO";
+export const LINHAS_CLASSIFICAVEIS = LINHAS_DRE.filter(
+  (l) => l.tipo === "GRUPO" && l.chave !== LINHA_PESSOAS_CORPORATIVO
+).map((l) => l.chave);
+
+// A linha em que a categoria está CLASSIFICADA, a partir da linha em que ela
+// aparece: um item na linha corporativa de pessoas é uma categoria gravada como
+// DESPESA_SALARIOS. Sem isto, o seletor de classificação abriria sem a opção
+// atual marcada e salvar mandaria a categoria para a primeira linha da lista.
+export function linhaDeClassificacao(chave: string): string {
+  return chave === LINHA_PESSOAS_CORPORATIVO ? "DESPESA_SALARIOS" : chave;
+}
+
+// Rótulo na CLASSIFICAÇÃO — a de pessoas diz que a empresa decide o resto.
+export function rotuloDeClassificacao(chave: string): string {
+  if (chave === "DESPESA_SALARIOS") return "(-) Despesas com pessoas (operação ou corporativo / administrativo, pela empresa)";
+  return LINHAS_DRE.find((l) => l.chave === chave)?.rotulo ?? chave;
+}
 
 export const ROTULO_LINHA: Record<string, string> = Object.fromEntries(
   LINHAS_DRE.map((l) => [l.chave, l.rotulo])
@@ -289,6 +322,9 @@ export type TituloDoDre = {
   data: Date;
   valorCents: number;
   empresa: string;
+  // Título de empresa de papel CORPORATIVO no grupo — é o que separa as duas
+  // linhas de pessoas, e o drill-down de cada uma mostra só os seus.
+  corporativo: boolean;
 };
 
 // Teto de títulos por categoria levados à tela. Vinte cobre a pergunta que o
@@ -537,6 +573,12 @@ export type InsumosDre = {
   // colheita em SQL traz só os vinte maiores, e sem este mapa a tela diria
   // "20 de 20" onde são 20 de 4.312.
   totalDeTitulosPorCategoria?: Map<string, number>;
+  // A PARCELA DE CADA CATEGORIA QUE VEM DE EMPRESA CORPORATIVA, nas mesmas
+  // janelas de `atual`/`anterior`/`anoAnterior` (e a contagem dela). Só é
+  // usada para separar as duas linhas de pessoas; ausente, toda a folha é de
+  // operação.
+  corporativo?: { atual: Map<string, number>; anterior: Map<string, number>; anoAnterior: Map<string, number> | null };
+  totalDeTitulosCorporativosPorCategoria?: Map<string, number>;
   retencoes: Retencoes;
   retencoesAnteriores: Retencoes;
   retencoesAnoAnterior: Retencoes | null;
@@ -555,12 +597,17 @@ export function insumosDoContexto(
   // Operação entre as empresas do grupo fica fora na visão do grupo — nas
   // somas, no lado da categoria e no drill-down, como na colheita em SQL.
   const fica = entraNoResultado(ctx);
+  // A empresa do título decide a linha de pessoas (ver LINHAS_DRE).
+  const corporativas = new Set(ctx.conexoesCorporativas ?? []);
+  const ehCorporativo = (t: { conexaoId: string }) => corporativas.has(t.conexaoId);
 
   // Movimento por categoria, nas duas janelas. Título cancelado fica fora: ele
   // não é resultado, e mantê-lo faria a receita do mês incluir documento que
   // não existe mais — que foi exatamente o erro das notas canceladas.
+  // Devolve a soma por categoria e, à parte, a parcela de empresa corporativa.
   const porCategoria = (p: Periodo) => {
     const mapa = new Map<string, number>();
+    const corp = new Map<string, number>();
 
     if (regime === "caixa") {
       // NO CAIXA O FATO É A BAIXA, não o título: o que conta é a data em que o
@@ -577,8 +624,9 @@ export function insumosDoContexto(
         if (!t || t.cancelado || !fica(t)) continue;
         const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
         mapa.set(chave, (mapa.get(chave) ?? 0) + b.valorCents);
+        if (ehCorporativo(t)) corp.set(chave, (corp.get(chave) ?? 0) + b.valorCents);
       }
-      return mapa;
+      return { mapa, corp };
     }
 
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
@@ -586,9 +634,10 @@ export function insumosDoContexto(
         if (!dentro(dataDeCompetencia(t), p) || !fica(t)) continue;
         const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
         mapa.set(chave, (mapa.get(chave) ?? 0) + t.valorDocumentoCents);
+        if (ehCorporativo(t)) corp.set(chave, (corp.get(chave) ?? 0) + t.valorDocumentoCents);
       }
     }
-    return mapa;
+    return { mapa, corp };
   };
 
   // De que lado cada categoria aparece, e os títulos por trás dela. O primeiro
@@ -637,6 +686,7 @@ export function insumosDoContexto(
         data: b.dataBaixa,
         valorCents: b.valorCents,
         empresa: t.conexaoApelido,
+        corporativo: ehCorporativo(t),
       });
       titulosPorCategoria.set(chave, lista);
     }
@@ -654,16 +704,21 @@ export function insumosDoContexto(
         data: dataDeCompetencia(t),
         valorCents: t.valorDocumentoCents,
         empresa: t.conexaoApelido,
+        corporativo: ehCorporativo(t),
       });
       titulosPorCategoria.set(chave, lista);
     }
     }
   }
 
+  const atual = porCategoria(periodo);
+  const anterior = porCategoria(periodoAnterior);
+  const anoAnterior = periodoAnoAnterior ? porCategoria(periodoAnoAnterior) : null;
   return {
-    atual: porCategoria(periodo),
-    anterior: porCategoria(periodoAnterior),
-    anoAnterior: periodoAnoAnterior ? porCategoria(periodoAnoAnterior) : null,
+    atual: atual.mapa,
+    anterior: anterior.mapa,
+    anoAnterior: anoAnterior ? anoAnterior.mapa : null,
+    corporativo: { atual: atual.corp, anterior: anterior.corp, anoAnterior: anoAnterior ? anoAnterior.corp : null },
     movimento: movimentoPorCategoria,
     titulos: titulosPorCategoria,
     retencoes: retencoesDoPeriodo(ctx, periodo, regime),
@@ -733,22 +788,71 @@ export function montarDreDeInsumos(
     const confirmada = guardada?.confirmada ?? false;
     if (!confirmada) naoConfirmado += Math.abs(valor);
 
-    const lista = itensPorLinha.get(linha) ?? [];
     const doMes = (titulosPorCategoria.get(codigo) ?? []).sort(
       (a, b) => Math.abs(b.valorCents) - Math.abs(a.valorCents)
     );
     const mov = movimentoPorCategoria.get(codigo);
-    lista.push({
+    const totalDeTitulos = insumos.totalDeTitulosPorCategoria?.get(codigo) ?? doMes.length;
+    const base = {
       categoriaCodigo: codigo,
       descricao: cat?.descricao ?? `Categoria ${codigo}`,
       subgrupo: guardada?.subgrupo ?? null,
       confirmada,
       ehReceita: (mov?.receberCents ?? 0) > (mov?.pagarCents ?? 0),
+    };
+
+    // PESSOAS: a mesma categoria vira até dois itens, um em cada linha, pela
+    // empresa do título (ver LINHAS_DRE). Cada parte leva só os seus títulos e
+    // a sua contagem; parte zerada nas três colunas não vira item — é o que
+    // faz a linha da outra empresa sumir quando uma empresa só está filtrada.
+    if (linha === "DESPESA_SALARIOS" || linha === LINHA_PESSOAS_CORPORATIVO) {
+      const corpAtual = insumos.corporativo?.atual.get(codigo) ?? 0;
+      const corpAnterior = insumos.corporativo?.anterior.get(codigo) ?? 0;
+      const corpAno = valorAnoAnterior === null ? null : (insumos.corporativo?.anoAnterior?.get(codigo) ?? 0);
+      const titulosCorp = doMes.filter((t) => t.corporativo);
+      const totalCorp = insumos.totalDeTitulosCorporativosPorCategoria?.get(codigo) ?? titulosCorp.length;
+      const partes = [
+        {
+          linha: "DESPESA_SALARIOS",
+          valorCents: valor - corpAtual,
+          valorAnteriorCents: valorAnterior - corpAnterior,
+          valorAnoAnteriorCents: valorAnoAnterior === null ? null : valorAnoAnterior - (corpAno ?? 0),
+          titulos: doMes.filter((t) => !t.corporativo),
+          totalDeTitulos: totalDeTitulos - totalCorp,
+        },
+        {
+          linha: LINHA_PESSOAS_CORPORATIVO,
+          valorCents: corpAtual,
+          valorAnteriorCents: corpAnterior,
+          valorAnoAnteriorCents: corpAno,
+          titulos: titulosCorp,
+          totalDeTitulos: totalCorp,
+        },
+      ];
+      for (const parte of partes) {
+        if (parte.valorCents === 0 && parte.valorAnteriorCents === 0 && (parte.valorAnoAnteriorCents ?? 0) === 0) continue;
+        const lista = itensPorLinha.get(parte.linha) ?? [];
+        lista.push({
+          ...base,
+          valorCents: parte.valorCents,
+          valorAnteriorCents: parte.valorAnteriorCents,
+          valorAnoAnteriorCents: parte.valorAnoAnteriorCents,
+          titulos: parte.titulos.slice(0, TITULOS_POR_CATEGORIA_NA_TELA),
+          totalDeTitulos: parte.totalDeTitulos,
+        });
+        itensPorLinha.set(parte.linha, lista);
+      }
+      continue;
+    }
+
+    const lista = itensPorLinha.get(linha) ?? [];
+    lista.push({
+      ...base,
       valorCents: valor,
       valorAnteriorCents: valorAnterior,
       valorAnoAnteriorCents: valorAnoAnterior,
       titulos: doMes.slice(0, TITULOS_POR_CATEGORIA_NA_TELA),
-      totalDeTitulos: insumos.totalDeTitulosPorCategoria?.get(codigo) ?? doMes.length,
+      totalDeTitulos,
     });
     itensPorLinha.set(linha, lista);
   }
@@ -787,6 +891,7 @@ export function montarDreDeInsumos(
       lucroBruto -
       g("DESPESA_VEICULOS") -
       g("DESPESA_SALARIOS") -
+      g(LINHA_PESSOAS_CORPORATIVO) -
       g("DESPESA_SOCIOS") -
       g("DESPESA_ESTRUTURA") -
       g("DESPESA_INFORMATICA") -

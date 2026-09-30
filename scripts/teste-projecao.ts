@@ -198,5 +198,29 @@ console.log("\nORÇADO × REALIZADO — só meses fechados com orçamento");
   conferir("orçamento de outro ano: nada a comparar", orcadoVersusRealizado(orcamento, b, 2025), []);
 }
 
+console.log("\nPESSOAS EM DUAS LINHAS — orçamento gravado antes da separação");
+{
+  // Até a linha de pessoas virar duas, toda a folha era orçada em
+  // DESPESA_SALARIOS. O realizado agora vem em duas linhas; comparar o orçado
+  // antigo só com a operação inventaria uma economia do tamanho da folha
+  // corporativa.
+  const b = base({
+    RECEITA_BRUTA: serie("2026-08", 8, () => 1_000_00),
+    DESPESA_SALARIOS: serie("2026-08", 8, () => 300_00),
+    DESPESA_SALARIOS_CORPORATIVO: serie("2026-08", 8, () => 100_00),
+  });
+  const antigo = ["2026-07", "2026-08"].flatMap((c) => [{ linha: "DESPESA_SALARIOS", competencia: c, valorCents: 400_00 }]);
+  const pessoas = orcadoVersusRealizado(antigo, b, 2026).find((l) => l.chave === "DESPESA_SALARIOS")!;
+  conferir("orçado antigo x realizado das duas linhas: sem desvio falso", [pessoas.orcadoCents, pessoas.realizadoCents, pessoas.desvioCents], [800_00, 800_00, 0]);
+  const novo = [...antigo.map((o) => ({ ...o, valorCents: 300_00 })),
+    ...["2026-07", "2026-08"].map((c) => ({ linha: "DESPESA_SALARIOS_CORPORATIVO", competencia: c, valorCents: 100_00 }))];
+  const r = orcadoVersusRealizado(novo, b, 2026);
+  conferir("orçamento novo compara linha a linha", [r.find((l) => l.chave === "DESPESA_SALARIOS")!.realizadoCents, r.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO")!.realizadoCents], [600_00, 200_00]);
+  conferir("o EBIT é o mesmo pelos dois caminhos",
+    orcadoVersusRealizado(antigo, b, 2026).find((l) => l.chave === "EBIT")!.realizadoCents,
+    r.find((l) => l.chave === "EBIT")!.realizadoCents);
+  conferir("subtotais descontam as duas linhas", subtotaisDe(new Map<ChaveDre, number>([["RECEITA_BRUTA", 1000], ["DESPESA_SALARIOS", 300], ["DESPESA_SALARIOS_CORPORATIVO", 100]])).get("EBIT"), 600);
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

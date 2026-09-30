@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LINHAS_DRE } from "@/lib/controladoria/dre";
+import { LINHAS_CLASSIFICAVEIS, linhaDeClassificacao, rotuloDeClassificacao } from "@/lib/controladoria/dre";
 import { classificarCategoria } from "./actions";
 
 // Classificação inline, na própria linha do DRE.
@@ -12,7 +12,9 @@ import { classificarCategoria } from "./actions";
 // o efeito no lucro bruto. Mandá-lo para outra tela é onde a classificação
 // para pela metade — e um DRE meio classificado é um DRE errado.
 
-const GRUPOS = LINHAS_DRE.filter((l) => l.tipo === "GRUPO");
+// Só as linhas classificáveis: a de pessoas corporativa sai da empresa do
+// título, não da categoria, e por isso não se escolhe aqui (ver dre.ts).
+const GRUPOS = LINHAS_CLASSIFICAVEIS.map((chave) => ({ chave, rotulo: rotuloDeClassificacao(chave) }));
 
 export default function ClassificarCategoria({
   categoriaCodigo,
@@ -60,7 +62,9 @@ export default function ClassificarCategoria({
     >
       <select
         name="linha"
-        defaultValue={linhaAtual}
+        // Item na linha corporativa de pessoas é categoria gravada como
+        // DESPESA_SALARIOS — é essa a opção que tem de vir marcada.
+        defaultValue={linhaDeClassificacao(linhaAtual)}
         className="rounded-md border border-slate-300 px-2 py-1 text-xs"
         aria-label="Linha do DRE"
       >

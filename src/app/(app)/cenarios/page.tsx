@@ -37,7 +37,9 @@ import { larguraPainel } from "@/lib/ui";
 // A base termina no último mês fechado e a tela diz qual é. O mês em curso é
 // o primeiro projetado — nunca base.
 
-const LINHAS_DE_SENSIBILIDADE = ["RECEITA_BRUTA", "DESPESA_VEICULOS", "DESPESA_SALARIOS"] as const;
+// As duas linhas de pessoas (operação e corporativo / administrativo) no lugar
+// da antiga linha única — ver LINHAS_DRE em dre.ts.
+const LINHAS_DE_SENSIBILIDADE = ["RECEITA_BRUTA", "DESPESA_VEICULOS", "DESPESA_SALARIOS", "DESPESA_SALARIOS_CORPORATIVO"] as const;
 
 export default async function CenariosPage({
   searchParams,

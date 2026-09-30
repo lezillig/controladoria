@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { garantirConfig } from "@/lib/controladoria/contexto";
-import { LINHAS_DRE, ROTULO_LINHA } from "@/lib/controladoria/dre";
+import { LINHA_PESSOAS_CORPORATIVO, LINHAS_DRE, ROTULO_LINHA } from "@/lib/controladoria/dre";
 import { montarDreNoBanco, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { fmtData } from "@/lib/controladoria/format";
@@ -129,6 +129,17 @@ export async function GET(req: NextRequest) {
   for (const def of LINHAS_DRE) {
     const calculada = dre.linhas.find((l) => l.chave === def.chave);
     if (!calculada) continue;
+    // A LINHA DE PESSOAS DA OUTRA EMPRESA, vazia, não entra — como na tela.
+    // Numa empresa só, a folha dela está numa das duas linhas (operação ou
+    // corporativo / administrativo); a outra seria uma linha de zeros.
+    if (
+      (def.chave === "DESPESA_SALARIOS" || def.chave === LINHA_PESSOAS_CORPORATIVO) &&
+      calculada.valorCents === 0 &&
+      calculada.valorAnteriorCents === 0 &&
+      calculada.itens.length === 0
+    ) {
+      continue;
+    }
 
     // O SUBTOTAL APARECE NA PLANILHA, e não só os itens. É ele que permite
     // conferir se a soma das categorias bate com a linha — que é metade do

@@ -96,6 +96,11 @@ export type ContextoAuditoria = {
   // intercompany.ts). Opcional: contexto montado à mão nos testes sem ela não
   // elimina nada, que é o comportamento de antes.
   raizesCnpjDoGrupo?: string[];
+  // As conexões de papel CORPORATIVO no grupo (OmieConexao.papelNoGrupo): a
+  // folha delas vai para "Despesas com pessoas — corporativo /
+  // administrativo" no DRE; a das demais, para "— operação". Opcional pelo
+  // mesmo motivo acima: sem ela, toda folha é de operação.
+  conexoesCorporativas?: string[];
   notas: OmieNota[];
   parceiros: OmieParceiro[];
   categorias: OmieCategoria[];

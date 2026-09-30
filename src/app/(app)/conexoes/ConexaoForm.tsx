@@ -11,6 +11,7 @@ export type ConexaoEmEdicao = {
   apelido: string;
   cnpj: string;
   credencialRef: string;
+  papelNoGrupo: string;
 };
 
 export default function ConexaoForm({ conexao }: { conexao?: ConexaoEmEdicao }) {
@@ -73,6 +74,21 @@ export default function ConexaoForm({ conexao }: { conexao?: ConexaoEmEdicao }) 
           />
           <p className="mt-1 text-xs text-slate-500">
             Rótulo curto que identifica a empresa nas listas, nos filtros e nos alertas.
+          </p>
+        </div>
+        {/* O PAPEL NO GRUPO decide em qual das duas linhas de pessoas do DRE
+            cai a folha desta empresa: "— operação" ou "— corporativo /
+            administrativo". É da empresa, não da categoria: a mesma
+            categoria "Salários" existe nas duas contas Omie. */}
+        <div>
+          <label className={labelClass}>Papel no grupo</label>
+          <select name="papelNoGrupo" defaultValue={conexao?.papelNoGrupo ?? "OPERACAO"} className={inputClass}>
+            <option value="OPERACAO">Operação</option>
+            <option value="CORPORATIVO">Corporativo / administrativo</option>
+          </select>
+          <p className="mt-1 text-xs text-slate-500">
+            No DRE, a folha desta empresa vai para &quot;Despesas com pessoas — operação&quot; ou &quot;— corporativo /
+            administrativo&quot;.
           </p>
         </div>
         <div>

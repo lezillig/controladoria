@@ -27,6 +27,9 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
   const apelido = String(formData.get("apelido") ?? "").trim().toUpperCase();
   const cnpjBruto = String(formData.get("cnpj") ?? "").replace(/\D/g, "");
   const credencialRef = normalizarCredencialRef(String(formData.get("credencialRef") ?? ""));
+  // Dois valores e nada mais: qualquer outra coisa vinda do formulário vira
+  // OPERACAO, que é o padrão da coluna (ver schema, OmieConexao.papelNoGrupo).
+  const papelNoGrupo = String(formData.get("papelNoGrupo") ?? "") === "CORPORATIVO" ? "CORPORATIVO" : "OPERACAO";
 
   if (!nome) return { erro: "Informe o nome da empresa." };
   if (!apelido) return { erro: "Informe um apelido curto (ex.: AZUL, MCZ)." };
@@ -69,7 +72,7 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
     if (!propria) return { erro: "Conexão não encontrada." };
   }
 
-  const dados = { nome, apelido, cnpj: cnpjBruto || null, credencialRef };
+  const dados = { nome, apelido, cnpj: cnpjBruto || null, credencialRef, papelNoGrupo };
 
   const conexao = id
     ? await prisma.omieConexao.update({ where: { id }, data: dados })
@@ -85,7 +88,7 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
     acao: id ? "CONEXAO_ALTERADA" : "CONEXAO_CADASTRADA",
     entidadeTipo: "OmieConexao",
     entidadeId: conexao.id,
-    descricao: `Conexão ${apelido} (${nome}) ${id ? "alterada" : "cadastrada"}, credencial ${credencialRef}.`,
+    descricao: `Conexão ${apelido} (${nome}) ${id ? "alterada" : "cadastrada"}, credencial ${credencialRef}, papel no grupo ${papelNoGrupo === "CORPORATIVO" ? "corporativo / administrativo" : "operação"}.`,
     depois: dados,
   });
 

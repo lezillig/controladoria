@@ -489,6 +489,19 @@ export function orcadoVersusRealizado(orcamento: LinhaOrcada[], base: BaseHistor
     gruposOrcado.set(linha, somaNosMeses(orcadoPorLinha.get(linha)));
     gruposRealizado.set(linha, somaNosMeses(base.porLinha.get(linha)));
   }
+  // ORÇAMENTO GRAVADO ANTES DA SEPARAÇÃO DAS PESSOAS. Até a linha de pessoas
+  // virar duas (operação e corporativo / administrativo), toda a folha era
+  // orçada em DESPESA_SALARIOS. Comparar esse orçado com o realizado só da
+  // operação mostraria uma economia que não existe — do tamanho da folha
+  // corporativa. Versão sem nenhuma linha corporativa orçada: o realizado das
+  // duas é comparado com o orçado da linha antiga, que é o que ele cobria.
+  if (!orcadoPorLinha.has("DESPESA_SALARIOS_CORPORATIVO")) {
+    gruposRealizado.set(
+      "DESPESA_SALARIOS",
+      (gruposRealizado.get("DESPESA_SALARIOS") ?? 0) + (gruposRealizado.get("DESPESA_SALARIOS_CORPORATIVO") ?? 0)
+    );
+    gruposRealizado.set("DESPESA_SALARIOS_CORPORATIVO", 0);
+  }
   const orcado = subtotaisDe(gruposOrcado);
   const realizado = subtotaisDe(gruposRealizado);
 

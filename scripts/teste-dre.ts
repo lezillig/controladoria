@@ -471,5 +471,31 @@ console.log("\n17. Operação entre as empresas do grupo — eliminada só na vi
   conferir("sem raiz cadastrada, nada é eliminado", receita(ctx(titulos, cats)), (45_000 + 20_000 + 7_000 + 100_000 + 3_000) * 100);
 }
 
+console.log("\n18. Pessoas em duas linhas — pela empresa do título");
+{
+  // A mesma categoria de folha nas duas empresas: a da conexão corporativa
+  // ("y") vai para "— corporativo / administrativo", a da outra para
+  // "— operação". O resultado é o mesmo; a linha genérica não existe mais.
+  const folha = (conexaoId: string, reais: number) =>
+    ({ ...tit("PAGAR", "9", reais), conexaoId }) as unknown as ContextoAuditoria["titulos"][number];
+  const base = { ...ctx([tit("RECEBER", "1", 10_000), folha("x", 3_000), folha("y", 1_000)],
+    [cat("1", "Serviços", true), cat("9", "Salários e ordenados")]), conexoesCorporativas: ["y"] } as ContextoAuditoria;
+  const r = montarDre(base, MES, ANT, cls({}));
+  const linha = (c: string) => r.linhas.find((l) => l.chave === c)!;
+  conferir("operação", linha("DESPESA_SALARIOS").valorCents, 300_000);
+  conferir("corporativo / administrativo", linha("DESPESA_SALARIOS_CORPORATIVO").valorCents, 100_000);
+  conferir("cada parte com os seus títulos", [linha("DESPESA_SALARIOS").itens[0].totalDeTitulos, linha("DESPESA_SALARIOS_CORPORATIVO").itens[0].totalDeTitulos], [1, 1]);
+  conferir("rótulos novos", [linha("DESPESA_SALARIOS").rotulo, linha("DESPESA_SALARIOS_CORPORATIVO").rotulo],
+    ["(-) Despesas com pessoas — operação", "(-) Despesas com pessoas — corporativo / administrativo"]);
+  conferir("o resultado é o mesmo de antes da separação", r.resultadoLiquidoCents, 600_000);
+  const soOperacao = montarDre({ ...base, conexoesCorporativas: [] }, MES, ANT, cls({}));
+  conferir("sem empresa corporativa, a linha corporativa fica sem item",
+    soOperacao.linhas.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO")!.itens.length, 0);
+  // Classificação manual continua gravada como DESPESA_SALARIOS e se separa igual.
+  const manual = montarDre(base, MES, ANT, cls({ "9": ["DESPESA_SALARIOS", null, true] }));
+  conferir("classificação manual se separa pela empresa",
+    manual.linhas.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO")!.valorCents, 100_000);
+}
+
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);
 process.exit(falhas === 0 ? 0 : 1);

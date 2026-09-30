@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { LINHAS_CLASSIFICAVEIS, ROTULO_LINHA } from "@/lib/controladoria/dre";
+import { LINHAS_CLASSIFICAVEIS, rotuloDeClassificacao } from "@/lib/controladoria/dre";
 import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
@@ -69,7 +69,7 @@ export async function classificarCategoria(formData: FormData): Promise<Resultad
     entidadeTipo: "OmieCategoria",
     entidadeId: categoriaCodigo,
     descricao:
-      `Categoria "${categoria?.descricao ?? categoriaCodigo}" classificada em ${ROTULO_LINHA[linha]}` +
+      `Categoria "${categoria?.descricao ?? categoriaCodigo}" classificada em ${rotuloDeClassificacao(linha)}` +
       `${subgrupo ? `, subgrupo "${subgrupo}"` : ""}.`,
     antes: anterior ?? undefined,
     depois: { linha, subgrupo, origem: "CONFIRMADA" },
