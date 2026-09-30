@@ -276,7 +276,14 @@ custo líquido: uma leitura do preço calculado (quanto paga a equipe, quanto
 paga o carro, por veículo-mês e por km), não um segundo preço. Serve para
 quem pede os dois valores separados e para comparar com a locação pura.
 Conta em `src/lib/simulador/separacao.ts`; a tabela de composição ganhou os
-subtotais de cada parte.
+subtotais de cada parte. Cada cartão traz a memória de cálculo: salário de
+cada tipo × motoristas, horas extras, jornada noturna e monitoras; encargos
+pelos grupos A a D (quando o % é o do cálculo padrão); benefícios por pessoa;
+e administração central e contingência em linhas separadas.
+
+Correção junto: a função de motorista da base sem nenhum benefício preenchido
+zerava VR/VA, cesta e plano no estudo. Agora só substitui o padrão da
+convenção quando informa ao menos um benefício.
 
 ## 7.1 Custos base editáveis
 

@@ -359,8 +359,12 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     if (typeof motorista.salarioBase === "number") definir("pessoal.salarioMotorista", n("salarioBase") + n("adicionaisFixos"), f);
     if (typeof motorista.hePct === "number") definir("pessoal.horaExtraPct", n("hePct"), f);
     if (typeof motorista.encargosPct === "number") definir("pessoal.encargosPct", n("encargosPct"), f);
-    definir("pessoal.beneficiosPorFuncionario", n("vrVa") + n("cesta") + n("valeTransporte") + n("planoSaude") + n("seguroVida") + n("plrMes"), f, "VR/VA + cesta + VT + plano + seguro de vida + PLR");
-    definir("pessoal.uniformeEpiPorFuncionario", n("uniformeEpi") + n("examesCursos"), f, "uniforme/EPI + exames e cursos");
+    // Só quando a função da base informa ao menos um benefício: a linha sem
+    // eles zerava VR, cesta e plano, e o motorista saía sem benefício nenhum.
+    const informado = (campos: string[]) => campos.some((k) => typeof motorista[k] === "number");
+    const beneficios = ["vrVa", "cesta", "valeTransporte", "planoSaude", "seguroVida", "plrMes"];
+    if (informado(beneficios)) definir("pessoal.beneficiosPorFuncionario", beneficios.reduce((a, k) => a + n(k), 0), f, "VR/VA + cesta + VT + plano + seguro de vida + PLR");
+    if (informado(["uniformeEpi", "examesCursos"])) definir("pessoal.uniformeEpiPorFuncionario", n("uniformeEpi") + n("examesCursos"), f, "uniforme/EPI + exames e cursos");
   }
   const monitora = funcao(escolhas.monitoraId);
   if (monitora && typeof monitora.salarioBase === "number") {

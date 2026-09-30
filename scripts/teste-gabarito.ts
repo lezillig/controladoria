@@ -101,6 +101,14 @@ async function principal() {
   ok("pneus = 6 × 1.150 ÷ 60.000", Math.abs(premissas.variaveis.pneusAsfaltoKm - 0.115) < 1e-9);
   conferir("benefícios = VR + cesta + VT + plano + seguro", premissas.pessoal.beneficiosPorFuncionario, 660 + 210 + 190 + 0 + 12);
   conferir("uniforme + exames", premissas.pessoal.uniformeEpiPorFuncionario, 100);
+  {
+    // Função da base sem nenhum benefício: fica o padrão da convenção, não zero.
+    const semBeneficios = { ...base, funcoes: [{ ...base.funcoes[0], vrVa: null, cesta: null, valeTransporte: null, planoSaude: null, seguroVida: null, plrMes: null, uniformeEpi: null, examesCursos: null }] };
+    const { premissas: p2, origem: o2 } = premissasDaBase(semBeneficios, { motoristaId: base.funcoes[0].id, clientePublico: true, escolar: false, baseLocal: false });
+    conferir("função sem benefícios: mantém o padrão da convenção", p2.pessoal.beneficiosPorFuncionario, PREMISSAS_PADRAO.pessoal.beneficiosPorFuncionario);
+    conferir("… e o uniforme padrão", p2.pessoal.uniformeEpiPorFuncionario, PREMISSAS_PADRAO.pessoal.uniformeEpiPorFuncionario);
+    ok("… sem origem na base", o2["pessoal.beneficiosPorFuncionario"]?.origem !== "BASE");
+  }
   conferir("prazo de órgão público", premissas.preco.prazoRecebimentoDias, 55);
   conferir("preposto local", premissas.pessoal.supervisaoMes, 9500);
   // (95.000 + 9.000 + 7.500 + 32.000 + 0 + 6.000) ÷ 3.200.000

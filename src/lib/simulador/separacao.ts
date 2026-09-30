@@ -1,4 +1,6 @@
-import type { ComposicaoItem, Premissas } from "./tipos";
+import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
+import { fatorHoraNoturna } from "./motor";
+import type { ComposicaoItem, EntradaSimulacao, Premissas } from "./tipos";
 
 // MÃO DE OBRA × VEÍCULO — a mesma composição do motor, lida em duas contas.
 //
@@ -43,7 +45,9 @@ export type Parte = {
 };
 
 // Um componente de uma parte, no custo direto da apuração (sem indiretos).
-export type Componente = { rotulo: string; valor: number };
+// `memo` diz de onde vem o número; `sub` abre o componente nas suas parcelas
+// (que somam o componente).
+export type Componente = { rotulo: string; valor: number; memo?: string; sub?: Componente[] };
 
 export type Separacao = {
   partes: Parte[];
@@ -51,6 +55,8 @@ export type Separacao = {
   // administração e contingência, fecha o `comIndiretos` da parte.
   componentes: Record<ChaveParte, Componente[]>;
   indiretosPct: number;
+  administracaoPct: number;
+  contingenciaPct: number;
   maoDeObra: Parte;
   // Fixo + variável.
   veiculo: Parte;
@@ -71,8 +77,70 @@ const ROTULOS: Record<ChaveParte, string> = {
 
 const dividir = (a: number, b: number) => (b === 0 ? 0 : a / b);
 
-// Separa um ou mais itens (somados). Sem itens, tudo zero.
-export function separarMaoDeObraEVeiculo(itens: ComposicaoItem[], p: Premissas): Separacao {
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
+const qtd = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+
+// DE ONDE VÊM OS SALÁRIOS — a mesma conta de calcularRota() no motor, aberta
+// por parcela: salário de cada tipo × motoristas, horas extras médias, fator
+// de jornada noturna, horas extras e noturnas em horas e monitoras. Valores
+// mensais.
+function parcelasDosSalarios(entrada: Pick<EntradaSimulacao, "itens" | "rotas" | "premissas">, codigos: Set<string>): Componente[] {
+  const p = entrada.premissas;
+  const pe = p.pessoal;
+  const porSalario = new Map<string, { salario: number; motoristas: number; tipo: string }>();
+  let horaExtraMedia = 0, noturnoFator = 0, emHoras = 0, monitoras = 0;
+  for (const r of entrada.rotas) {
+    const item = entrada.itens.find((i) => i.codigo === r.item);
+    if (!item || !codigos.has(item.codigo) || item.comMotorista === false) continue;
+    const perfil = r.perfilVeiculo ? p.perfis?.find((x) => x.codigo === r.perfilVeiculo) : undefined;
+    const salario = perfil?.motorista.salario ?? pe.salarioMotorista;
+    const tipo = perfil?.descricao ?? "padrão do estudo";
+    const chave = `${salario}|${tipo}`;
+    const atual = porSalario.get(chave) ?? { salario, motoristas: 0, tipo };
+    atual.motoristas += r.motoristas;
+    porSalario.set(chave, atual);
+    const fn = r.noturno ? pe.fatorJornadaNoturna : 1;
+    horaExtraMedia += r.motoristas * salario * pe.horaExtraPct;
+    noturnoFator += r.motoristas * salario * (1 + pe.horaExtraPct) * (fn - 1);
+    const valorHora = pe.divisorHorasMes > 0 ? salario / pe.divisorHorasMes : 0;
+    emHoras += r.motoristas * valorHora * (pe.horasExtras50Mes * 1.5 + pe.horasExtras100Mes * 2 + pe.horasNoturnasMes * fatorHoraNoturna(p));
+    monitoras += r.monitoras;
+  }
+  const parcelas: Componente[] = [...porSalario.values()].map((x) => ({
+    rotulo: `Salário do motorista — ${x.tipo}`,
+    valor: x.motoristas * x.salario,
+    memo: `${qtd(x.motoristas)} motorista${x.motoristas === 1 ? "" : "s"} × ${brl(x.salario)}`,
+  }));
+  if (horaExtraMedia) parcelas.push({ rotulo: "Horas extras médias", valor: horaExtraMedia, memo: `${pct(pe.horaExtraPct)} do salário` });
+  if (noturnoFator) parcelas.push({ rotulo: "Jornada noturna (fator)", valor: noturnoFator, memo: `× ${qtd(pe.fatorJornadaNoturna)} nas rotas noturnas` });
+  if (emHoras) parcelas.push({ rotulo: "Horas extras e noturnas em horas", valor: emHoras, memo: `salário ÷ ${qtd(pe.divisorHorasMes)} h × horas informadas` });
+  if (monitoras) parcelas.push({ rotulo: "Salário das monitoras", valor: monitoras * pe.salarioMonitora, memo: `${qtd(monitoras)} × ${brl(pe.salarioMonitora)}` });
+  return parcelas;
+}
+
+// DE ONDE VÊM OS ENCARGOS — quando o % do estudo é o do cálculo padrão
+// (GEIPOT, grupos A a D), abre por grupo; senão, só o %.
+function parcelasDosEncargos(p: Premissas, salarios: number): Componente[] | undefined {
+  const padrao = calcularEncargos(ENCARGOS_PADRAO);
+  if (Math.abs(p.pessoal.encargosPct - padrao.total) > 0.00005) return undefined;
+  // O estudo guarda o % arredondado em 4 casas: os grupos se ajustam a ele
+  // para somarem exatamente a linha de encargos.
+  const ajuste = p.pessoal.encargosPct / padrao.total;
+  return padrao.grupos.map((g) => ({
+    rotulo: `${g.grupo} — ${g.rotulo}`,
+    valor: salarios * g.total * ajuste,
+    memo: `${pct(g.total)}: ${g.itens.map((i) => `${i.rotulo} ${pct(i.pct)}`).join(" · ")}`,
+  }));
+}
+
+// Separa um ou mais itens (somados). Sem itens, tudo zero. Com a entrada, os
+// salários e os encargos saem abertos em parcelas.
+export function separarMaoDeObraEVeiculo(
+  itens: ComposicaoItem[],
+  p: Premissas,
+  entrada?: Pick<EntradaSimulacao, "itens" | "rotas" | "premissas">
+): Separacao {
   const meses = p.contrato.mesesCustoFixo;
   const indiretosPct = p.indiretos.administracaoPct + p.indiretos.contingenciaPct;
   const soma = (f: (i: ComposicaoItem) => number) => itens.reduce((a, i) => a + f(i), 0);
@@ -127,10 +195,20 @@ export function separarMaoDeObraEVeiculo(itens: ComposicaoItem[], p: Premissas):
   const variavel = (rotulo: string, f: (i: ComposicaoItem) => number): Componente => ({ rotulo, valor: soma(f) });
   const componentes: Record<ChaveParte, Componente[]> = {
     maoDeObra: [
-      mensal("Salários (com horas extras e adicional noturno)", (i) => i.salarios),
-      mensal("Encargos sociais", (i) => i.encargos),
-      mensal("Benefícios, uniforme e exames", (i) => i.beneficios),
-      mensal("Supervisão local", (i) => i.supervisao),
+      {
+        ...mensal("Salários (com horas extras e adicional noturno)", (i) => i.salarios),
+        sub: entrada ? parcelasDosSalarios(entrada, new Set(itens.map((i) => i.item))).map((c) => ({ ...c, valor: c.valor * meses })) : undefined,
+      },
+      {
+        ...mensal("Encargos sociais", (i) => i.encargos),
+        memo: `${pct(p.pessoal.encargosPct)} dos salários`,
+        sub: parcelasDosEncargos(p, soma((i) => i.salarios) * meses),
+      },
+      {
+        ...mensal("Benefícios, uniforme e exames", (i) => i.beneficios),
+        memo: `${qtd(pessoas)} pessoa${pessoas === 1 ? "" : "s"} × (${brl(p.pessoal.beneficiosPorFuncionario)} de benefícios + ${brl(p.pessoal.uniformeEpiPorFuncionario)} de uniforme, EPI e exames)`,
+      },
+      { ...mensal("Supervisão local", (i) => i.supervisao), memo: `${brl(p.pessoal.supervisaoMes)} por mês no contrato, rateado pelo km` },
     ],
     veiculoFixo: [
       mensal("Depreciação", (i) => i.depreciacao),
@@ -158,6 +236,8 @@ export function separarMaoDeObraEVeiculo(itens: ComposicaoItem[], p: Premissas):
     partes,
     componentes,
     indiretosPct,
+    administracaoPct: p.indiretos.administracaoPct,
+    contingenciaPct: p.indiretos.contingenciaPct,
     maoDeObra: partes[0],
     veiculo,
     pessoas,

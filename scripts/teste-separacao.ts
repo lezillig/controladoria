@@ -4,6 +4,7 @@
 import { historicoHolambra, historicoSaoJoseDosPinhais } from "../src/lib/simulador/historico";
 import { simular } from "../src/lib/simulador/motor";
 import { separarMaoDeObraEVeiculo } from "../src/lib/simulador/separacao";
+import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "../src/lib/simulador/premissas";
 import type { EntradaSimulacao } from "../src/lib/simulador/tipos";
 
 let falhas = 0;
@@ -52,6 +53,40 @@ for (const h of [historicoHolambra(), historicoSaoJoseDosPinhais()]) {
   perto("com crédito: mão de obra líquida = com indiretos", sr.maoDeObra.liquido, sr.maoDeObra.comIndiretos);
   perto("com crédito: o veículo leva todo o crédito", sr.veiculo.comIndiretos - sr.veiculo.liquido, rr.itens.reduce((a, i) => a + i.creditoPisCofins, 0));
   perto("com crédito: preços ainda fecham o faturamento", sr.partes.reduce((a, x) => a + x.preco, 0), sr.faturamento);
+}
+
+// As parcelas abertas somam a linha delas.
+function parcelasFecham(nome: string, s: ReturnType<typeof separarMaoDeObraEVeiculo>) {
+  for (const c of s.componentes.maoDeObra) {
+    if (!c.sub?.length) continue;
+    perto(`${nome}: parcelas de "${c.rotulo}" somam a linha`, c.sub.reduce((a, x) => a + x.valor, 0), c.valor);
+  }
+}
+for (const h of [historicoHolambra(), historicoSaoJoseDosPinhais()]) {
+  const r = simular(h.entrada);
+  parcelasFecham(h.edital.municipio, separarMaoDeObraEVeiculo(r.itens, h.entrada.premissas, h.entrada));
+}
+
+console.log("\nUM MOTORISTA DE VAN (o estudo do print)");
+{
+  // Van (TRANSFRETUR nível B), 1 motorista, horas extras de 14%, encargos padrão.
+  const premissas = clone(PREMISSAS_PADRAO);
+  premissas.perfis = clone(PERFIS_PADRAO.filter((x) => x.codigo === "VAN"));
+  premissas.pessoal.supervisaoMes = 0;
+  const e: EntradaSimulacao = {
+    premissas,
+    itens: [{ codigo: "1", descricao: "Van", shareIntermunicipal: 0 }],
+    rotas: [{ item: "1", nome: "R1", kmReferencia: 4400, kmDia: 200, kmTerraDia: 0, veiculos: 1, motoristas: 1, monitoras: 0, noturno: false, passagensPedagioMes: 0, tarifaPedagio: 0, perfilVeiculo: "VAN" }],
+    criterio: "ITEM",
+  } as unknown as EntradaSimulacao;
+  const r = simular(e);
+  const s = separarMaoDeObraEVeiculo(r.itens, premissas, e);
+  const [sal, enc, ben] = s.componentes.maoDeObra;
+  perto("salários = 2.986,75 × 1,14", sal.valor, 3404.90);
+  perto("encargos = 62,45% dos salários", enc.valor, 2126.36);
+  ok("encargos abertos nos grupos A a D", enc.sub?.map((x) => x.rotulo[0]).join("") === "ABCD");
+  perto("benefícios da convenção: 1 × (1.753,26 + 100)", ben.valor, 1853.26);
+  parcelasFecham("van", s);
 }
 
 console.log("\nSEM ITENS");

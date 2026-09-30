@@ -189,7 +189,7 @@ const COR_PARTE: Record<ChaveParte, string> = {
 function MaoDeObraEVeiculo({ resultado, entrada }: { resultado: ResultadoSimulacao; entrada: EntradaSimulacao }) {
   const [item, setItem] = useState<string | null>(null);
   const itens = item === null ? resultado.itens : resultado.itens.filter((i) => i.item === item);
-  const s = separarMaoDeObraEVeiculo(itens, entrada.premissas);
+  const s = separarMaoDeObraEVeiculo(itens, entrada.premissas, entrada);
   const apuracao = entrada.premissas.contrato.modo === "MENSAL" ? "mês" : "período";
   const meses = entrada.premissas.contrato.mesesCustoFixo;
   const visiveis = s.partes.filter((p) => p.comIndiretos > 0);
@@ -227,7 +227,8 @@ function MaoDeObraEVeiculo({ resultado, entrada }: { resultado: ResultadoSimulac
           cor={COR_PARTE.maoDeObra}
           parte={s.maoDeObra}
           grupos={[{ titulo: null, itens: s.componentes.maoDeObra }]}
-          indiretosPct={s.indiretosPct}
+          administracaoPct={s.administracaoPct}
+          contingenciaPct={s.contingenciaPct}
           divisor={{ quantidade: s.pessoas * meses, rotulo: "por pessoa-mês" }}
           extra={s.pessoas > 0 ? `${num(s.pessoas, 1)} pessoas na equipe (motoristas e monitoras)` : undefined}
         />
@@ -239,7 +240,8 @@ function MaoDeObraEVeiculo({ resultado, entrada }: { resultado: ResultadoSimulac
             { titulo: "Custo fixo", itens: s.componentes.veiculoFixo },
             { titulo: `Custo variável (${num(s.kmUtil)} km úteis)`, itens: s.componentes.veiculoVariavel },
           ]}
-          indiretosPct={s.indiretosPct}
+          administracaoPct={s.administracaoPct}
+          contingenciaPct={s.contingenciaPct}
           divisor={{ quantidade: s.veiculoMes, rotulo: "por veículo-mês" }}
           extra={s.veiculoMes > 0 ? `${num(s.veiculoMes / meses)} veículos em operação; fixo com a reserva técnica` : undefined}
         />
@@ -302,7 +304,8 @@ function Resumo({
   cor,
   parte,
   grupos,
-  indiretosPct,
+  administracaoPct,
+  contingenciaPct,
   divisor,
   extra,
 }: {
@@ -310,7 +313,8 @@ function Resumo({
   cor: string;
   parte: Parte;
   grupos: { titulo: string | null; itens: Componente[] }[];
-  indiretosPct: number;
+  administracaoPct: number;
+  contingenciaPct: number;
   divisor: { quantidade: number; rotulo: string };
   extra?: string;
 }) {
@@ -352,24 +356,49 @@ function Resumo({
                   <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{porUnidade(total)}</td>
                 </tr>
               ),
-              ...visiveis.map((c) => (
+              ...visiveis.flatMap((c) => [
                 <tr key={`${g.titulo}-${c.rotulo}`} className="text-slate-700">
-                  <td className={`border-t border-slate-100 py-1 ${g.titulo ? "pl-3" : ""}`}>{c.rotulo}</td>
-                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl(c.valor)}</td>
-                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{participacao(c.valor)}</td>
-                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{porUnidade(c.valor)}</td>
-                </tr>
-              )),
+                  <td className={`border-t border-slate-100 py-1 ${g.titulo ? "pl-3" : ""}`}>
+                    {c.rotulo}
+                    {c.memo && <span className="block text-[11px] leading-tight text-slate-500">{c.memo}</span>}
+                  </td>
+                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums">{brl(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{participacao(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{porUnidade(c.valor)}</td>
+                </tr>,
+                ...(c.sub ?? []).map((x) => (
+                  <tr key={`${g.titulo}-${c.rotulo}-${x.rotulo}`} className="text-[11.5px] text-slate-500">
+                    <td className={`py-0.5 ${g.titulo ? "pl-7" : "pl-4"}`}>
+                      ↳ {x.rotulo}
+                      {x.memo && <span className="block text-[10.5px] leading-tight text-slate-400">{x.memo}</span>}
+                    </td>
+                    <td className="py-0.5 text-right align-top font-mono tabular-nums">{brl(x.valor)}</td>
+                    <td className="py-0.5 text-right align-top font-mono tabular-nums">{participacao(x.valor)}</td>
+                    <td className="py-0.5 text-right align-top font-mono tabular-nums">{porUnidade(x.valor)}</td>
+                  </tr>
+                )),
+              ]),
             ];
           })}
-          {indiretos > 0.005 && (
-            <tr className="text-slate-700">
-              <td className="border-t border-slate-100 py-1">Administração e contingência ({pct(indiretosPct)})</td>
-              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl(indiretos)}</td>
-              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{participacao(indiretos)}</td>
-              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{porUnidade(indiretos)}</td>
-            </tr>
-          )}
+          {indiretos > 0.005 &&
+            ([
+              ["Administração central", administracaoPct, "rateio da estrutura da empresa — ver a premissa na aba Premissas"],
+              ["Contingência / risco", contingenciaPct, "reserva para imprevistos"],
+            ] as const).map(([t, taxa, memo]) =>
+              taxa ? (
+                <tr key={t} className="text-slate-700">
+                  <td className="border-t border-slate-100 py-1">
+                    {t} ({pct(taxa, 2)} do custo direto)
+                    <span className="block text-[11px] leading-tight text-slate-500">
+                      {brl(parte.direto)} × {pct(taxa, 2)} · {memo}
+                    </span>
+                  </td>
+                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums">{brl(parte.direto * taxa)}</td>
+                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{participacao(parte.direto * taxa)}</td>
+                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{porUnidade(parte.direto * taxa)}</td>
+                </tr>
+              ) : null
+            )}
           <tr className="font-semibold text-slate-900">
             <td className="border-t border-slate-300 py-1">Total</td>
             <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{brl(parte.comIndiretos)}</td>
