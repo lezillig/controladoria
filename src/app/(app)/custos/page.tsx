@@ -312,7 +312,7 @@ export default async function CustosPage({
         rota="/custos"
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         {/* RECEITA BRUTA ao lado da líquida: o faturamento como a empresa o
             conhece, e quanto as deduções levam dele. */}
         <Kpi
@@ -341,6 +341,14 @@ export default async function CustosPage({
           valor={fmtBRL(valorDaLinha("LAIR"))}
           apoio={`${fmtPercent(linhaDaTela("LAIR")?.percentReceitaLiquida ?? null)} da receita líquida`}
           tom={valorDaLinha("LAIR") >= 0 ? "bom" : "ruim"}
+        />
+        {/* INVESTIMENTOS entre os dois resultados: a linha que os separa no
+            DRE (financiamentos e consórcios da frota), para a diferença entre
+            eles não precisar ser procurada na tabela. */}
+        <Kpi
+          rotulo="Investimentos"
+          valor={fmtBRL(valorDaLinha("FINANCIAMENTO_INVESTIMENTO"))}
+          apoio={`Financiamentos e consórcios · ${fmtPercent(linhaDaTela("FINANCIAMENTO_INVESTIMENTO")?.percentReceitaLiquida ?? null)} da receita líquida`}
         />
         <Kpi
           rotulo="Resultado líquido do período"
