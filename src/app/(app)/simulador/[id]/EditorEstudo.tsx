@@ -59,6 +59,7 @@ export default function EditorEstudo({
   podeConsultarEspecialista,
   precosEnergia,
   pracas,
+  pendente = false,
 }: {
   estudo: EstudoTela;
   entradaInicial: EntradaSimulacao;
@@ -76,11 +77,13 @@ export default function EditorEstudo({
   podeConsultarEspecialista: boolean;
   precosEnergia: Record<FonteEnergia, number>;
   pracas: PracaPedagio[];
+  // Os dados do estudo mudaram depois da versão salva (ver entradaInicial).
+  pendente?: boolean;
 }) {
   const router = useRouter();
   const [entrada, setEntrada] = useState(entradaInicial);
   const [origem, setOrigem] = useState(origemInicial);
-  const [sujo, setSujo] = useState(false);
+  const [sujo, setSujo] = useState(pendente);
   const [aba, setAba] = useState<Aba>("operacao");
   const [statusVersao, setStatusVersao] = useState("RASCUNHO");
   const [observacoes, setObservacoes] = useState("");
@@ -283,6 +286,14 @@ export default function EditorEstudo({
             <p className="hidden truncate text-xs text-slate-500 sm:block">
               {estudo.subtitulo} · {estudo.statusRotulo}
               {versaoBase ? ` · a partir da v${versaoBase}` : " · nova simulação"}
+              {podeEditar && (
+                <>
+                  {" · "}
+                  <a href={`/simulador/${estudo.id}/editar`} className="font-medium text-blue-700 hover:underline">
+                    Editar dados do estudo
+                  </a>
+                </>
+              )}
             </p>
             {sujo && <span className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">alterações não salvas</span>}
           </div>

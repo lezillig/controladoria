@@ -194,6 +194,36 @@ async function principal() {
   );
   ok("horário inválido é recusado ao salvar", Boolean(horarioRuim.erro), JSON.stringify(horarioRuim));
 
+  console.log("\nEDITAR OS DADOS DO ESTUDO depois de salvo");
+  {
+    const dadosNovos = {
+      tipo: "CONTRATO_PRIVADO",
+      nome: "Fábrica em turnos — corrigido",
+      tipoServico: "FRETAMENTO",
+      esfera: "PRIVADO" as const,
+      cliente: "Enforce",
+      municipio: "São Paulo",
+      uf: "SP",
+      vigenciaMeses: 24,
+      prazoPagamentoDias: 45,
+    };
+    const r = await estudos.atualizarEstudo(EMPRESA, privado, dadosNovos, 1);
+    const salvo = await prisma.simEstudo.findUnique({ where: { id: privado }, include: { itens: true } });
+    conferir("dados atualizados", [r.erro ?? null, salvo?.nome, salvo?.cliente, salvo?.vigenciaMeses], [null, "Fábrica em turnos — corrigido", "Enforce", 24]);
+    ok("intermunicipal: todos os itens com 100% de ICMS", (salvo?.itens ?? []).every((i) => Number(i.shareIntermunicipal) === 1));
+    const reaberto = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, privado))!);
+    conferir(
+      "vigência e prazo editados entram na reabertura como ajuste",
+      [reaberto.entrada.premissas.contrato.vigenciaMeses, reaberto.entrada.premissas.preco.prazoRecebimentoDias, reaberto.origem["contrato.vigenciaMeses"]?.origem, reaberto.entrada.itens[0].shareIntermunicipal],
+      [24, 45, "AJUSTE", 1]
+    );
+    ok("e o editor abre com alterações a salvar", reaberto.pendente === true);
+    const v1 = (await estudos.carregarEstudo(EMPRESA, privado))!.versoes.find((x) => x.versao === 1)!;
+    const aberta = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, privado))!, v1.id);
+    ok("a versão 1 aberta continua como foi salva", aberta.entrada.premissas.contrato.vigenciaMeses !== 24 && aberta.origem["contrato.vigenciaMeses"]?.origem !== "AJUSTE");
+    conferir("outra empresa não edita", (await estudos.atualizarEstudo("outra-empresa", privado, dadosNovos, null)).erro, "Estudo não encontrado.");
+  }
+
   console.log("\nAJUSTES DA BASE PELA TELA — vigência nova, nada sobrescrito");
   {
     const ed = await import("../src/lib/simulador/edicaoBase");

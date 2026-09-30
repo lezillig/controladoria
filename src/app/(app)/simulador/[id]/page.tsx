@@ -142,6 +142,7 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
         }}
         entradaInicial={inicial.entrada}
         origemInicial={inicial.origem}
+        pendente={inicial.pendente === true}
         versaoBase={inicial.versaoBase}
         versaoAntiga={Boolean(versaoPedida) && versaoPedida !== estudo.simulacoes[0]?.id}
         baseEm={inicial.baseEm ? inicial.baseEm.toISOString() : null}

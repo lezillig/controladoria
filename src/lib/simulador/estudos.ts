@@ -80,6 +80,9 @@ export type DadosEstudo = {
   indiceReajuste?: string | null;
   formaFaturamento?: string | null;
   avisoRescisaoDias?: number | null;
+  // Parcela intermunicipal (ICMS) dos itens criados: 0 municipal, 1
+  // intermunicipal.
+  shareIntermunicipal?: number;
   // Os itens já conhecidos ao criar (lotes do edital, linhas da proposta).
   // Com km informado, o item nasce com uma rota do tipo de veículo dele.
   itens?: ItemNovo[];
@@ -106,16 +109,18 @@ const DIAS_ROTA_INICIAL = { MENSAL: 22, PERIODO: 200 } as const;
 // Itens e rotas com que o estudo nasce. Sem itens informados, um item com o
 // nome do estudo. A rota guarda o TIPO em perfilVeiculo; ao abrir, vira o
 // código do perfil daquele tipo (ver perfilDasRotasNovas).
-export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | "itens" | "tiposVeiculo">) {
+export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | "itens" | "tiposVeiculo" | "shareIntermunicipal">) {
   const comMotorista = dados.tipoServico !== "LOCACAO_SM";
+  const shareIntermunicipal = dados.shareIntermunicipal ?? 0;
   const periodo = dados.tipoServico === "ESCOLAR";
   const lista = (dados.itens ?? []).filter((i) => i.descricao.trim() !== "" || (i.km ?? 0) > 0 || i.administrativo === true).slice(0, 100);
-  if (lista.length === 0) return { itens: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista }], rotas: [] };
+  if (lista.length === 0) return { itens: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista, shareIntermunicipal }], rotas: [] };
   const itens = lista.map((i, k) => ({
     codigo: String(k + 1),
     descricao: i.descricao.trim().slice(0, 200) || (lista.length === 1 ? dados.nome : `Item ${k + 1}`),
     ordem: k,
     comMotorista,
+    shareIntermunicipal,
     precoMaximoKm: i.precoMaximoKm && i.precoMaximoKm > 0 ? i.precoMaximoKm : null,
   }));
   // A rota nasce com o km, ou com o veículo à disposição (ADM), ou com o
@@ -207,6 +212,52 @@ export async function criarEstudo(companyId: string, dados: DadosEstudo, autor: 
     select: { id: true },
   });
   return estudo.id;
+}
+
+// Os dados do estudo, editados depois de criado. Itens, rotas, tipos de
+// veículo, unidade e julgamento não mudam aqui (são da versão); a abrangência
+// municipal/intermunicipal, quando escolhida, vale para todos os itens.
+export async function atualizarEstudo(
+  companyId: string,
+  id: string,
+  dados: Omit<DadosEstudo, "itens" | "tiposVeiculo" | "unidadePreco" | "criterioJulgamento"> & Partial<Pick<DadosEstudo, "tiposVeiculo" | "unidadePreco" | "criterioJulgamento">>,
+  shareIntermunicipal: number | null
+): Promise<{ erro?: string }> {
+  const existe = await prisma.simEstudo.findFirst({ where: { id, companyId }, select: { id: true } });
+  if (!existe) return { erro: "Estudo não encontrado." };
+  await prisma.$transaction([
+    prisma.simEstudo.update({
+      where: { id },
+      data: {
+        tipo: dados.tipo,
+        nome: dados.nome,
+        cliente: dados.cliente ?? null,
+        tipoServico: dados.tipoServico,
+        esfera: dados.esfera ?? undefined,
+        clienteDocumento: dados.clienteDocumento ?? null,
+        contatoCliente: dados.contatoCliente ?? null,
+        validadeProposta: dados.validadeProposta ?? null,
+        inicioPrevisto: dados.inicioPrevisto ?? null,
+        indiceReajuste: dados.indiceReajuste ?? null,
+        formaFaturamento: dados.formaFaturamento ?? null,
+        avisoRescisaoDias: dados.avisoRescisaoDias ?? null,
+        uf: dados.uf ?? null,
+        municipio: dados.municipio ?? null,
+        descricao: dados.descricao ?? null,
+        vigenciaMeses: dados.vigenciaMeses ?? null,
+        prazoPagamentoDias: dados.prazoPagamentoDias ?? null,
+        orgao: dados.orgao ?? null,
+        numeroEdital: dados.numeroEdital ?? null,
+        modalidade: dados.modalidade ?? null,
+        plataforma: dados.plataforma ?? null,
+        dataSessao: dados.dataSessao ?? null,
+        srp: dados.srp ?? false,
+        valorTotalMaximo: dados.valorTotalMaximo ?? null,
+      },
+    }),
+    ...(shareIntermunicipal === null ? [] : [prisma.simItem.updateMany({ where: { estudoId: id }, data: { shareIntermunicipal } })]),
+  ]);
+  return {};
 }
 
 export function itemDoBanco(i: {
@@ -308,6 +359,10 @@ export type EntradaInicial = {
   origem: MapaOrigem;
   versaoBase: number | null;
   baseEm: Date | null;
+  // A reabertura trouxe mudanças dos dados do estudo que a versão salva ainda
+  // não tem (vigência, prazo, abrangência): o editor abre marcado como
+  // "alterações não salvas".
+  pendente?: boolean;
 };
 
 // A ENTRADA COM QUE O EDITOR ABRE: a da versão pedida (ou da última), com a
@@ -326,9 +381,28 @@ export async function entradaInicial(
     // Abrir uma versão antiga mostra a conta como ela foi: snapshot inteiro.
     // Abrir a última continua a partir da definição corrente.
     const usarSnapshot = Boolean(versaoId);
+    const origemSalva = (versao.origem as MapaOrigem | null) ?? {};
+    if (usarSnapshot) return { entrada: snapshot, origem: origemSalva, versaoBase: versao.versao, baseEm: versao.baseEm };
+    // Vigência e prazo editados nos dados do estudo depois da versão valem ao
+    // reabrir: entram como ajuste, e salvar grava a versão nova com eles.
+    const entrada: EntradaSimulacao = { ...snapshot, itens: itens.length > 0 ? itens : snapshot.itens, rotas: rotas.length > 0 ? rotas : snapshot.rotas };
+    const origem = { ...origemSalva };
+    const premissas = structuredClone(snapshot.premissas);
+    const ajuste = (caminho: string, detalhe: string) => (origem[caminho] = { origem: "AJUSTE", fonte: "dados do estudo", detalhe });
+    if (estudo.vigenciaMeses && estudo.vigenciaMeses !== premissas.contrato.vigenciaMeses) {
+      ajuste("contrato.vigenciaMeses", `antes ${premissas.contrato.vigenciaMeses} meses`);
+      premissas.contrato.vigenciaMeses = estudo.vigenciaMeses;
+    }
+    if (estudo.prazoPagamentoDias && estudo.prazoPagamentoDias !== premissas.preco.prazoRecebimentoDias) {
+      ajuste("preco.prazoRecebimentoDias", `antes ${premissas.preco.prazoRecebimentoDias} dias`);
+      premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
+    }
+    entrada.premissas = premissas;
+    const abrangenciaMudou = itens.length > 0 && JSON.stringify(itens.map((i) => i.shareIntermunicipal)) !== JSON.stringify(snapshot.itens.map((i) => i.shareIntermunicipal));
     return {
-      entrada: usarSnapshot ? snapshot : { ...snapshot, itens: itens.length > 0 ? itens : snapshot.itens, rotas: rotas.length > 0 ? rotas : snapshot.rotas },
-      origem: (versao.origem as MapaOrigem | null) ?? {},
+      pendente: Object.values(origem).some((o) => o.fonte === "dados do estudo") || abrangenciaMudou,
+      entrada,
+      origem,
       versaoBase: versao.versao,
       baseEm: versao.baseEm,
     };

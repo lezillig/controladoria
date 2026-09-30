@@ -249,6 +249,20 @@ recarga em R$/kWh), zera a ARLA fora do diesel e, no elétrico, põe o
 consumo típico da categoria em km/kWh. Preço e consumo medidos no cartão de
 combustível não se aplicam aos tipos elétricos.
 
+## 7.0.1 Editar os dados do estudo e abrangência
+
+Os dados do estudo (nome, cliente, tipo, serviço, município, vigência,
+prazo, esfera, edital ou proposta, objeto) se editam depois de criado, em
+"Editar dados do estudo" — o mesmo formulário da criação, preenchido. Itens,
+rotas, tipos de veículo, unidade de preço e julgamento continuam nas abas,
+que é onde a versão os guarda. Versões salvas não mudam; vigência e prazo
+editados entram na reabertura como ajuste ("dados do estudo") e o editor
+abre com "alterações não salvas".
+
+**Abrangência**: municipal (ISS), intermunicipal (ICMS) ou misto. Municipal e
+intermunicipal põem o % intermunicipal de todos os itens em 0 ou 100%; misto
+deixa o % por item na aba Operação.
+
 ## 7.1 Custos base editáveis
 
 A tela **Custos base** (submenu do simulador) mostra cada parâmetro do

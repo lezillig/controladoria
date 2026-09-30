@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { cardClass, inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
 import { PERFIS_PADRAO } from "@/lib/simulador/premissas";
 import { ROTULO_TIPO_VEICULO, TIPOS_VEICULO, VARIANTE_DO_TIPO, type TipoVeiculo, type VarianteVeiculo } from "@/lib/simulador/tipos";
-import { criarEstudo } from "../actions";
+import { atualizarEstudo, criarEstudo } from "../actions";
 
 // O PRIMEIRO PASSO de um estudo. Primeiro a esfera — público ou privado —,
 // porque ela muda o que se pergunta: no público, edital, modalidade, sessão e
@@ -213,10 +213,22 @@ function ItensDoEstudo({
 
 const INDICES = ["IPCA", "INPC", "IGP-M", "Convenção coletiva + diesel (fórmula paramétrica)", "Negociado a cada ano"];
 
-export default function NovoEstudoForm() {
-  const [esfera, setEsfera] = useState<"PUBLICO" | "PRIVADO">("PUBLICO");
-  const [tipo, setTipo] = useState<string>("LICITACAO");
-  const [tipoServico, setTipoServico] = useState("FRETAMENTO");
+// Os dados de um estudo já criado, para o formulário abrir em modo de edição.
+export type EstudoParaEditar = {
+  id: string;
+  esfera: "PUBLICO" | "PRIVADO";
+  abrangencia: "MUNICIPAL" | "INTERMUNICIPAL" | "MISTO";
+  campos: Record<string, string>;
+  srp: boolean;
+};
+
+export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar } = {}) {
+  const editando = Boolean(estudo);
+  const v = (campo: string) => estudo?.campos[campo] ?? "";
+  const [esfera, setEsfera] = useState<"PUBLICO" | "PRIVADO">(estudo?.esfera ?? "PUBLICO");
+  const [tipo, setTipo] = useState<string>(estudo?.campos.tipo ?? "LICITACAO");
+  const [tipoServico, setTipoServico] = useState(estudo?.campos.tipoServico ?? "FRETAMENTO");
+  const [abrangencia, setAbrangencia] = useState<string>(estudo?.abrangencia ?? "MUNICIPAL");
   const [unidade, setUnidade] = useState("KM");
   // Na ordem em que foram marcados: o primeiro é o tipo das rotas novas.
   const [tipos, setTipos] = useState<string[]>([]);
@@ -240,11 +252,15 @@ export default function NovoEstudoForm() {
         formData.set("esfera", esfera);
         formData.delete("tiposVeiculo");
         for (const t of tipos) formData.append("tiposVeiculo", t);
-        formData.set("itens", JSON.stringify(itensParaEnviar(itens, publico)));
+        formData.set("abrangencia", abrangencia);
+        if (!estudo) formData.set("itens", JSON.stringify(itensParaEnviar(itens, publico)));
         iniciar(async () => {
-          const r = await criarEstudo(formData);
+          const r = estudo ? await atualizarEstudo(estudo.id, formData) : await criarEstudo(formData);
           if (r.erro) setErro(r.erro);
-          else if (r.id) router.push(`/simulador/${r.id}`);
+          else if (r.id) {
+            router.push(`/simulador/${r.id}`);
+            router.refresh();
+          }
         });
       }}
     >
@@ -278,7 +294,7 @@ export default function NovoEstudoForm() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label htmlFor="novo-nome" className={labelClass}>Nome do estudo</label>
-              <input id="novo-nome" name="nome" required maxLength={120} className={inputClass} placeholder={publico ? "Ex.: Transporte de pacientes — PE 036/2026" : "Ex.: Fretamento fábrica Jundiaí — 12 vans"} />
+              <input id="novo-nome" name="nome" required maxLength={120} defaultValue={v("nome")} className={inputClass} placeholder={publico ? "Ex.: Transporte de pacientes — PE 036/2026" : "Ex.: Fretamento fábrica Jundiaí — 12 vans"} />
             </div>
             <div>
               <label htmlFor="novo-tipo" className={labelClass}>Tipo</label>
@@ -315,23 +331,36 @@ export default function NovoEstudoForm() {
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="novo-cliente" className={labelClass}>{publico ? "Órgão contratante" : "Empresa cliente"}</label>
-              <input id="novo-cliente" name="cliente" maxLength={160} className={inputClass} placeholder={publico ? "Ex.: Prefeitura Municipal de Holambra" : "Ex.: Indústria X Ltda."} />
+              <input id="novo-cliente" name="cliente" maxLength={160} defaultValue={v("cliente")} className={inputClass} placeholder={publico ? "Ex.: Prefeitura Municipal de Holambra" : "Ex.: Indústria X Ltda."} />
             </div>
             <div>
               <label htmlFor="novo-municipio" className={labelClass}>Município</label>
-              <input id="novo-municipio" name="municipio" maxLength={120} className={inputClass} />
+              <input id="novo-municipio" name="municipio" maxLength={120} defaultValue={v("municipio")} className={inputClass} />
             </div>
             <div>
               <label htmlFor="novo-uf" className={labelClass}>UF</label>
-              <input id="novo-uf" name="uf" maxLength={2} className={inputClass} placeholder="SP" />
+              <input id="novo-uf" name="uf" maxLength={2} defaultValue={v("uf")} className={inputClass} placeholder="SP" />
             </div>
             <div>
               <label htmlFor="novo-vigenciaMeses" className={labelClass}>Vigência (meses)</label>
-              <input id="novo-vigenciaMeses" name="vigenciaMeses" inputMode="numeric" className={inputClass} defaultValue={12} />
+              <input id="novo-vigenciaMeses" name="vigenciaMeses" inputMode="numeric" className={inputClass} defaultValue={estudo ? v("vigenciaMeses") : 12} />
             </div>
             <div>
               <label htmlFor="novo-prazoPagamentoDias" className={labelClass}>Prazo de pagamento (dias)</label>
-              <input id="novo-prazoPagamentoDias" name="prazoPagamentoDias" inputMode="numeric" className={inputClass} placeholder="30" />
+              <input id="novo-prazoPagamentoDias" name="prazoPagamentoDias" inputMode="numeric" defaultValue={v("prazoPagamentoDias")} className={inputClass} placeholder="30" />
+            </div>
+            {/* ABRANGÊNCIA: municipal paga ISS; intermunicipal, ICMS (e registro
+                na ARTESP em SP). Misto: o % intermunicipal fica por item. */}
+            <div className="sm:col-span-2">
+              <label htmlFor="novo-abrangencia" className={labelClass}>Abrangência do transporte</label>
+              <select id="novo-abrangencia" className={inputClass} value={abrangencia} onChange={(e) => setAbrangencia(e.target.value)}>
+                <option value="MUNICIPAL">Municipal — dentro do município (ISS)</option>
+                <option value="INTERMUNICIPAL">Intermunicipal — entre municípios (ICMS)</option>
+                <option value="MISTO">Misto — parte municipal, parte intermunicipal (% por item na aba Operação)</option>
+              </select>
+              {abrangencia === "INTERMUNICIPAL" && (
+                <p className="mt-1 text-xs text-slate-500">Tributo sobre o preço pelo ICMS; em São Paulo, fretamento intermunicipal pede registro na ARTESP.</p>
+              )}
             </div>
           </div>
 
@@ -340,11 +369,11 @@ export default function NovoEstudoForm() {
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">Dados da licitação / contratação</p>
               <div>
                 <label htmlFor="novo-numeroEdital" className={labelClass}>Número do edital / processo</label>
-                <input id="novo-numeroEdital" name="numeroEdital" maxLength={80} className={inputClass} placeholder="PE 036/2026" />
+                <input id="novo-numeroEdital" name="numeroEdital" maxLength={80} defaultValue={v("numeroEdital")} className={inputClass} placeholder="PE 036/2026" />
               </div>
               <div>
                 <label htmlFor="novo-modalidade" className={labelClass}>Modalidade</label>
-                <input id="novo-modalidade" name="modalidade" maxLength={80} className={inputClass} placeholder="Pregão eletrônico" list="modalidades" />
+                <input id="novo-modalidade" name="modalidade" maxLength={80} defaultValue={v("modalidade")} className={inputClass} placeholder="Pregão eletrônico" list="modalidades" />
                 <datalist id="modalidades">
                   <option value="Pregão eletrônico" />
                   <option value="Concorrência" />
@@ -355,22 +384,22 @@ export default function NovoEstudoForm() {
               </div>
               <div>
                 <label htmlFor="novo-plataforma" className={labelClass}>Plataforma</label>
-                <input id="novo-plataforma" name="plataforma" maxLength={120} className={inputClass} placeholder="Comprasgov, BLL, Licitações-e…" />
+                <input id="novo-plataforma" name="plataforma" maxLength={120} defaultValue={v("plataforma")} className={inputClass} placeholder="Comprasgov, BLL, Licitações-e…" />
               </div>
               <div>
                 <label htmlFor="novo-dataSessao" className={labelClass}>Data da sessão</label>
-                <input type="date" id="novo-dataSessao" name="dataSessao" className={inputClass} />
+                <input type="date" id="novo-dataSessao" name="dataSessao" defaultValue={v("dataSessao")} className={inputClass} />
               </div>
               <div>
                 <label htmlFor="novo-valorTotalMaximo" className={labelClass}>Valor total máximo (R$)</label>
-                <input id="novo-valorTotalMaximo" name="valorTotalMaximo" inputMode="decimal" className={inputClass} />
+                <input id="novo-valorTotalMaximo" name="valorTotalMaximo" inputMode="decimal" defaultValue={v("valorTotalMaximo")} className={inputClass} />
               </div>
               <div>
                 <label htmlFor="novo-indiceReajuste-pub" className={labelClass}>Reajuste do edital</label>
-                <input id="novo-indiceReajuste-pub" name="indiceReajuste" maxLength={80} className={inputClass} list="indices" placeholder="IPCA, após 12 meses" />
+                <input id="novo-indiceReajuste-pub" name="indiceReajuste" maxLength={80} defaultValue={v("indiceReajuste")} className={inputClass} list="indices" placeholder="IPCA, após 12 meses" />
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
-                <input type="checkbox" name="srp" /> Registro de preços (SRP) — paga só o que for demandado
+                <input type="checkbox" name="srp" defaultChecked={estudo?.srp ?? false} /> Registro de preços (SRP) — paga só o que for demandado
               </label>
             </div>
           ) : (
@@ -378,27 +407,27 @@ export default function NovoEstudoForm() {
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">Dados da proposta comercial</p>
               <div>
                 <label htmlFor="novo-clienteDocumento" className={labelClass}>CNPJ do cliente</label>
-                <input id="novo-clienteDocumento" name="clienteDocumento" maxLength={20} inputMode="numeric" className={inputClass} placeholder="00.000.000/0000-00" />
+                <input id="novo-clienteDocumento" name="clienteDocumento" maxLength={20} inputMode="numeric" defaultValue={v("clienteDocumento")} className={inputClass} placeholder="00.000.000/0000-00" />
               </div>
               <div>
                 <label htmlFor="novo-contatoCliente" className={labelClass}>Responsável no cliente</label>
-                <input id="novo-contatoCliente" name="contatoCliente" maxLength={160} className={inputClass} placeholder="Nome e área (ex.: Compras, RH)" />
+                <input id="novo-contatoCliente" name="contatoCliente" maxLength={160} defaultValue={v("contatoCliente")} className={inputClass} placeholder="Nome e área (ex.: Compras, RH)" />
               </div>
               <div>
                 <label htmlFor="novo-validadeProposta" className={labelClass}>Proposta válida até</label>
-                <input type="date" id="novo-validadeProposta" name="validadeProposta" className={inputClass} />
+                <input type="date" id="novo-validadeProposta" name="validadeProposta" defaultValue={v("validadeProposta")} className={inputClass} />
               </div>
               <div>
                 <label htmlFor="novo-inicioPrevisto" className={labelClass}>Início previsto da operação</label>
-                <input type="date" id="novo-inicioPrevisto" name="inicioPrevisto" className={inputClass} />
+                <input type="date" id="novo-inicioPrevisto" name="inicioPrevisto" defaultValue={v("inicioPrevisto")} className={inputClass} />
               </div>
               <div>
                 <label htmlFor="novo-indiceReajuste" className={labelClass}>Reajuste</label>
-                <input id="novo-indiceReajuste" name="indiceReajuste" maxLength={80} className={inputClass} list="indices" placeholder="IPCA anual" />
+                <input id="novo-indiceReajuste" name="indiceReajuste" maxLength={80} defaultValue={v("indiceReajuste")} className={inputClass} list="indices" placeholder="IPCA anual" />
               </div>
               <div>
                 <label htmlFor="novo-formaFaturamento" className={labelClass}>Faturamento</label>
-                <select id="novo-formaFaturamento" name="formaFaturamento" className={inputClass} defaultValue="Mensal">
+                <select id="novo-formaFaturamento" name="formaFaturamento" className={inputClass} defaultValue={v("formaFaturamento") || "Mensal"}>
                   <option>Mensal</option>
                   <option>Quinzenal</option>
                   <option>Por viagem / evento</option>
@@ -407,7 +436,7 @@ export default function NovoEstudoForm() {
               </div>
               <div>
                 <label htmlFor="novo-avisoRescisaoDias" className={labelClass}>Aviso para rescisão (dias)</label>
-                <input id="novo-avisoRescisaoDias" name="avisoRescisaoDias" inputMode="numeric" className={inputClass} placeholder="30" />
+                <input id="novo-avisoRescisaoDias" name="avisoRescisaoDias" inputMode="numeric" defaultValue={v("avisoRescisaoDias")} className={inputClass} placeholder="30" />
               </div>
             </div>
           )}
@@ -419,11 +448,19 @@ export default function NovoEstudoForm() {
 
           <div>
             <label htmlFor="novo-descricao" className={labelClass}>{publico ? "Objeto" : "Descrição do serviço"}</label>
-            <textarea id="novo-descricao" name="descricao" maxLength={2000} className={`${inputClass} min-h-[80px]`} />
+            <textarea id="novo-descricao" name="descricao" maxLength={2000} defaultValue={v("descricao")} className={`${inputClass} min-h-[80px]`} />
           </div>
         </div>
 
-        {/* DIREITA: a operação — veículos e como o contrato paga. */}
+        {/* DIREITA: a operação — veículos e como o contrato paga. Na edição,
+            fica nas abas do estudo, que é onde a versão guarda. */}
+        {editando ? (
+          <div className="space-y-2 self-start rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+            <p className="font-medium text-slate-800">Operação, veículos e preço</p>
+            <p>Itens, rotas e horários: aba Operação. Tipos de veículo e custos deles: aba Veículos. Unidade de preço e julgamento: aba Operação.</p>
+            <p>Vigência e prazo de pagamento alterados aqui entram no estudo como ajuste; salve uma nova versão para gravá-los.</p>
+          </div>
+        ) : (
         <div className="space-y-5">
           <fieldset>
             <legend className={labelClass}>Tipos de veículo</legend>
@@ -482,11 +519,12 @@ export default function NovoEstudoForm() {
 
           <ItensDoEstudo itens={itens} setItens={setItens} tipos={tipos} publico={publico} escolar={tipoServico === "ESCOLAR"} />
         </div>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-4 border-t border-slate-100 pt-4">
         <button type="submit" disabled={processando} className={primaryButtonClass}>
-          {processando ? "Criando…" : "Criar e montar a operação"}
+          {processando ? (editando ? "Salvando…" : "Criando…") : editando ? "Salvar os dados do estudo" : "Criar e montar a operação"}
         </button>
         {erro && <p className="text-sm text-red-700">{erro}</p>}
       </div>

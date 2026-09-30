@@ -6,6 +6,7 @@ import { registrarEvento } from "@/lib/controladoria/trilha";
 import { lerGabarito } from "@/lib/simulador/gabarito";
 import { gravarLeitura } from "@/lib/simulador/baseDeCustos";
 import {
+  atualizarEstudo as atualizarEstudoNoBanco,
   criarEstudo as criarEstudoNoBanco,
   gravarRealizado,
   registrarLance as registrarLanceNoBanco,
@@ -15,6 +16,7 @@ import {
   STATUS_VERSAO,
   TIPOS_ESTUDO,
   TIPOS_SERVICO,
+  type DadosEstudo,
   type ItemNovo,
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
@@ -85,8 +87,15 @@ function lerItensNovos(bruto: string | null): ItemNovo[] | string {
 
 const UNIDADES: UnidadePreco[] = ["KM", "VEICULO_MES", "DIARIA", "HORA", "BINOMIA"];
 
-export async function criarEstudo(formData: FormData): Promise<Resultado> {
-  const session = await exigirPermissao("gerir-simulador");
+// Abrangência do transporte: municipal (ISS), intermunicipal (ICMS) ou misto
+// (o % intermunicipal fica por item, na aba Operação).
+const ABRANGENCIAS = { MUNICIPAL: 0, INTERMUNICIPAL: 1, MISTO: null } as const;
+
+// OS DADOS DO ESTUDO, lidos do formulário — o mesmo para criar e para editar.
+// Número digitado por extenso ("doze") ou fora de faixa não vira padrão
+// calado: volta como erro para a pessoa corrigir. Vigência, prazo e aviso são
+// colunas Int: fracionário é recusado, e não truncado calado pelo Prisma.
+function lerDadosDoEstudo(formData: FormData): { dados: Omit<DadosEstudo, "itens">; shareIntermunicipal: number | null } | { erro: string } {
   const nome = texto(formData, "nome", 120);
   if (!nome) return { erro: "Dê um nome ao estudo." };
   const tipo = texto(formData, "tipo") ?? "LICITACAO";
@@ -95,26 +104,21 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   if (!(TIPOS_SERVICO as readonly string[]).includes(tipoServico)) return { erro: "Tipo de serviço inválido." };
   const unidade = (texto(formData, "unidadePreco") ?? "KM") as UnidadePreco;
   if (!UNIDADES.includes(unidade)) return { erro: "Unidade de preço inválida." };
+  const abrangencia = texto(formData, "abrangencia") ?? "MUNICIPAL";
+  if (!(abrangencia in ABRANGENCIAS)) return { erro: "Abrangência inválida." };
   const dataSessao = texto(formData, "dataSessao");
   const publico = texto(formData, "esfera") === "PUBLICO";
   const validade = texto(formData, "validadeProposta");
   const inicio = texto(formData, "inicioPrevisto");
   const tiposVeiculo = [...new Set(formData.getAll("tiposVeiculo").map(String))].filter((t): t is TipoVeiculo => (TIPOS_VEICULO as string[]).includes(t));
-  // Número digitado por extenso ("doze") ou fora de faixa não vira padrão
-  // calado: volta como erro para a pessoa corrigir.
-  // Vigência, prazo e aviso são colunas Int: fracionário é recusado, e não
-  // truncado calado pelo Prisma (ver lerInteiro).
   for (const [campo, rotulo, max, soInteiro] of [["vigenciaMeses", "Vigência", 240, true], ["prazoPagamentoDias", "Prazo de pagamento", 365, true], ["valorTotalMaximo", "Valor total máximo", 1e12, false], ["avisoRescisaoDias", "Aviso para rescisão", 365, true]] as const) {
     const bruto = texto(formData, campo);
     const n = soInteiro ? inteiro(formData, campo) : numero(formData, campo);
     if (bruto !== null && (n === null || n < 0 || n > max)) return { erro: `${rotulo}: informe um número ${soInteiro ? "inteiro " : ""}válido.` };
   }
-  const itens = lerItensNovos(texto(formData, "itens", 100_000));
-  if (typeof itens === "string") return { erro: itens };
-  const id = await criarEstudoNoBanco(
-    session.companyId,
-    {
-      itens,
+  return {
+    shareIntermunicipal: ABRANGENCIAS[abrangencia as keyof typeof ABRANGENCIAS],
+    dados: {
       tipo,
       nome,
       cliente: texto(formData, "cliente", 160),
@@ -143,8 +147,16 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
       formaFaturamento: publico ? null : texto(formData, "formaFaturamento", 40),
       avisoRescisaoDias: publico ? null : numero(formData, "avisoRescisaoDias"),
     },
-    session.name
-  );
+  };
+}
+
+export async function criarEstudo(formData: FormData): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const lido = lerDadosDoEstudo(formData);
+  if ("erro" in lido) return { erro: lido.erro };
+  const itens = lerItensNovos(texto(formData, "itens", 100_000));
+  if (typeof itens === "string") return { erro: itens };
+  const id = await criarEstudoNoBanco(session.companyId, { ...lido.dados, itens, shareIntermunicipal: lido.shareIntermunicipal ?? 0 }, session.name);
   await registrarEvento({
     companyId: session.companyId,
     userId: session.userId,
@@ -153,10 +165,34 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
     acao: "SIMULADOR_ESTUDO_CRIADO",
     entidadeTipo: "SimEstudo",
     entidadeId: id,
-    descricao: `Estudo de custo "${nome}" criado.`,
+    descricao: `Estudo de custo "${lido.dados.nome}" criado.`,
   });
   revalidatePath("/simulador");
   return { ok: true, id };
+}
+
+// EDITAR OS DADOS DO ESTUDO depois de criado: identificação, cliente, dados do
+// edital ou da proposta, abrangência. Unidade de preço, julgamento, tipos de
+// veículo e itens ficam nas abas do estudo, que é onde a versão os guarda.
+export async function atualizarEstudo(estudoId: string, formData: FormData): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const lido = lerDadosDoEstudo(formData);
+  if ("erro" in lido) return { erro: lido.erro };
+  const r = await atualizarEstudoNoBanco(session.companyId, estudoId, lido.dados, lido.shareIntermunicipal);
+  if (r.erro) return r;
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SIMULADOR_ESTUDO_ALTERADO",
+    entidadeTipo: "SimEstudo",
+    entidadeId: estudoId,
+    descricao: `Dados do estudo "${lido.dados.nome}" alterados.`,
+  });
+  revalidatePath("/simulador");
+  revalidatePath(`/simulador/${estudoId}`);
+  return { ok: true, id: estudoId };
 }
 
 export async function salvarVersao(estudoId: string, entrada: EntradaSimulacao, origem: MapaOrigem, status: string, observacoes: string | null, baseEm: string | null): Promise<Resultado> {
