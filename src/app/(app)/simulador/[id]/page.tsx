@@ -139,6 +139,16 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
         lacunas={lacunas}
         acompanhamento={acompanhamento}
         podeConsultarEspecialista={podeConsultarEspecialista}
+        pracas={base.pedagios.map((p) => ({
+          chave: p.chave,
+          praca: String(p.praca ?? p.chave),
+          concessionaria: (p.concessionaria as string | null) ?? null,
+          tarifaVan: paraNumero(p.tarifaVan),
+          tarifaMicro: paraNumero(p.tarifaMicro),
+          tarifaOnibus2: paraNumero(p.tarifaOnibus2),
+          tarifaOnibus3: paraNumero(p.tarifaOnibus3),
+          descontoTagPct: paraNumero(p.descontoTagPct),
+        }))}
         precosEnergia={Object.fromEntries(FONTES_ENERGIA.map((f) => [f, base.parametros.get(CHAVE_PRECO_ENERGIA[f])?.valor ?? PRECO_ENERGIA_PADRAO[f]])) as Record<FonteEnergia, number>}
         avisoInicial={salva && /^\d{1,5}$/.test(salva) ? `Versão ${salva} salva.` : null}
       />

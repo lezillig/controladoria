@@ -260,6 +260,28 @@ usa a mesma gravação da importação: valor diferente fecha a vigência do
 anterior e abre uma nova com a fonte "ajuste na tela"; "voltar ao padrão"
 encerra o valor da base. Estudos já salvos não mudam.
 
+## 7.2 Pedágio pela categoria, margem de indiferença e reforma
+
+Aprendido com o roteiro de outro kit de custeio (detalhe em
+`APRENDIZADOS_VERIFICAR.md`):
+
+- **Pedágio pela categoria do veículo**, que segue os eixos e a rodagem do
+  eixo traseiro, não a lotação: rodagem simples (carro, van Master) ×1,
+  2 eixos de rodagem dupla (van Sprinter 516, micro, ônibus) ×2, 3 eixos ×3.
+  Cada tipo de veículo tem a sua categoria (aba Veículos); a rota escolhe a
+  praça da tabela de pedágios da base e a tarifa por passagem sai da coluna
+  da categoria, ou da tarifa de carro × multiplicador, com o desconto da tag.
+  Digitar a tarifa à mão solta a praça. A praça fica gravada na rota
+  (`SimRota.pracaPedagio`).
+- **Margem de indiferença Presumido × Real** na aba Premissas: a margem antes
+  do IRPJ em que os dois regimes pagam o mesmo (14,94% com as alíquotas
+  padrão), calculada com as alíquotas do próprio estudo.
+- **Reforma**: fretamento não tem a redução de 40% do IBS/CBS (ela é do
+  transporte coletivo regular); em 2026 a CBS de 0,9% e o IBS de 0,1% são
+  compensáveis, sem carga adicional.
+- **Registro intermunicipal em SP**: ARTESP; a EMTU deixou de ser citada como
+  órgão vigente.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

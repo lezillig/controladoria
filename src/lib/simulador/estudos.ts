@@ -158,6 +158,7 @@ export function rotaDoBanco(r: Prisma.SimRotaGetPayload<object>): Rota {
     periodos: r.periodos,
     horasDia: paraNumero(r.horasDia),
     perfilVeiculo: r.perfilVeiculo,
+    pracaPedagio: r.pracaPedagio,
   };
 }
 
@@ -426,6 +427,7 @@ export async function salvarVersao(
           periodos: r.periodos ?? null,
           horasDia: r.horasDia ?? null,
           perfilVeiculo: r.perfilVeiculo ?? null,
+          pracaPedagio: r.pracaPedagio ?? null,
         })),
       });
     await tx.simEstudo.update({

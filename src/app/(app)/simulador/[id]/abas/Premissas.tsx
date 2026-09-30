@@ -220,6 +220,26 @@ export default function Premissas({
           )
         }
       >
+        {(() => {
+          // MARGEM DE INDIFERENÇA: a margem (antes do IR) em que o Presumido
+          // e o Real pagam o mesmo. Carga do Presumido = PIS + COFINS + IRPJ
+          // + CSLL sobre a receita; Real = PIS/COFINS cumulativos + 34% do
+          // lucro. Com as alíquotas padrão, 0,0365 + 0,34·m = 0,0873 → 14,94%.
+          const pr = entrada.premissas.preco;
+          // No Presumido, a carga do próprio estudo; no Real, a do Presumido
+          // padrão (IRPJ 4% com o adicional, CSLL 1,08%) como comparação.
+          const noPresumido = pr.irpjCsllSobreLucroPct === 0;
+          const presumido = 0.0065 + 0.03 + (noPresumido ? pr.irpj + pr.csll : 0.04 + 0.0108);
+          const m = (presumido - 0.0365) / 0.34;
+          return (
+            <p className="mb-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <strong>Presumido × Real:</strong> com carga de {(presumido * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% no Presumido, o Lucro
+              Real paga menos imposto quando a margem antes do IR fica abaixo de{" "}
+              <strong>{(m * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%</strong>. A escolha vale para a empresa inteira no ano, não por
+              contrato — use como leitura, e decida com a contabilidade.
+            </p>
+          );
+        })()}
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
           Origem de cada número: <SeloOrigem origem="REAL" /> <SeloOrigem origem="BASE" /> <SeloOrigem origem="PADRAO" /> <SeloOrigem origem="AJUSTE" />
         </div>

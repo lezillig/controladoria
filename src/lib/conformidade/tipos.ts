@@ -35,7 +35,7 @@ export const AREAS: { valor: ConformidadeArea; rotulo: string; explicacao: strin
   { valor: "CONTABIL", rotulo: "Contábil", explicacao: "Escrituração, conciliação de contas, provisões, encerramento." },
   { valor: "FINANCEIRO", rotulo: "Financeiro", explicacao: "Caixa, endividamento, pagamentos, controles internos do dinheiro." },
   { valor: "SOCIETARIO", rotulo: "Societário", explicacao: "Contrato social, quadro societário, atos e registros." },
-  { valor: "REGULATORIO", rotulo: "Regulatório", explicacao: "Licenças, ANTT/EMTU, vistorias, exigências do setor de transporte." },
+  { valor: "REGULATORIO", rotulo: "Regulatório", explicacao: "Licenças, ANTT/ARTESP, vistorias, exigências do setor de transporte." },
   { valor: "CONTRATUAL", rotulo: "Contratual", explicacao: "Cláusulas, reajuste, garantias, vigência e risco de contrato." },
   { valor: "LGPD", rotulo: "LGPD e dados", explicacao: "Tratamento de dado pessoal de passageiro, motorista e cliente." },
   { valor: "OUTRO", rotulo: "Outro", explicacao: "Risco que não cabe nas demais áreas." },

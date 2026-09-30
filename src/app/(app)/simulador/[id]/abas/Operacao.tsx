@@ -1,6 +1,7 @@
 "use client";
 
 import { PERFIS_PADRAO } from "@/lib/simulador/premissas";
+import { tarifaParaPerfil, type PracaPedagio } from "@/lib/simulador/pedagio";
 import type { EntradaSimulacao, Item, Rota, UnidadePreco } from "@/lib/simulador/tipos";
 import { Cartao, CampoNumero, botao, num, pct, selecao, td, tdN, th, thN } from "../comum";
 
@@ -38,7 +39,7 @@ const ROTULO_CAMPO_ROTA: Record<string, string> = {
   monitoras: "Monitores",
 };
 
-export default function Operacao({ entrada, alterar, podeEditar }: { entrada: EntradaSimulacao; alterar: Alterar; podeEditar: boolean }) {
+export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: { entrada: EntradaSimulacao; alterar: Alterar; podeEditar: boolean; pracas?: PracaPedagio[] }) {
   const c = entrada.premissas.contrato;
   const unidade = entrada.unidadePreco ?? "KM";
   const perfisDisponiveis = [
@@ -82,6 +83,15 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
         const perfil = garantirPerfil(e, r.perfilVeiculo ?? null);
         if (perfil) r.motoristas = r.veiculos * perfil.motorista.motoristasPorVeiculo;
       }
+      // Tarifa da praça: muda com a categoria do novo tipo de veículo.
+      if (campo === "perfilVeiculo" || campo === "pracaPedagio") {
+        const praca = pracas.find((p) => p.chave === r.pracaPedagio);
+        const perfil = (e.premissas.perfis ?? []).find((p) => p.codigo === r.perfilVeiculo) ?? null;
+        const tarifa = praca ? tarifaParaPerfil(praca, perfil) : null;
+        if (tarifa !== null) r.tarifaPedagio = tarifa;
+      }
+      // Tarifa digitada à mão desliga a praça: vale o número digitado.
+      if (campo === "tarifaPedagio") r.pracaPedagio = null;
     });
 
   return (
@@ -292,6 +302,7 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
                   <th className={thN}>Monitores</th>
                   <th className={th}>Noturno</th>
                   <th className={thN}>Horas/dia</th>
+                  <th className={th}>Praça de pedágio</th>
                   <th className={thN}>Pedágios/mês</th>
                   <th className={thN}>Tarifa</th>
                   <th className={th} />
@@ -358,6 +369,23 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
                     </td>
                     <td className={`${tdN} w-20`}>
                       <CampoNumero rotulo={`Horas por dia — ${r.nome}`} valor={r.horasDia ?? null} casas={1} vazioPermitido desativado={!podeEditar} aoMudar={(v) => mudarRota(k, "horasDia", v && v > 0 ? v : null)} />
+                    </td>
+                    <td className={td}>
+                      <select
+                        aria-label={`Praça de pedágio — ${r.nome}`}
+                        className={`${selecao} max-w-[180px]`}
+                        disabled={!podeEditar || pracas.length === 0}
+                        title={pracas.length === 0 ? "Cadastre praças em Custos base para escolher aqui" : "A tarifa sai da praça e da categoria do tipo de veículo"}
+                        value={r.pracaPedagio ?? ""}
+                        onChange={(ev) => mudarRota(k, "pracaPedagio", ev.target.value || null)}
+                      >
+                        <option value="">{pracas.length === 0 ? "sem praças na base" : "tarifa digitada"}</option>
+                        {pracas.map((p) => (
+                          <option key={p.chave} value={p.chave}>
+                            {p.praca}
+                          </option>
+                        ))}
+                      </select>
                     </td>
                     <td className={`${tdN} w-24`}>
                       <CampoNumero rotulo={`Pedágios por mês — ${r.nome}`} valor={r.passagensPedagioMes} casas={1} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && mudarRota(k, "passagensPedagioMes", v)} />

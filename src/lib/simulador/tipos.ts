@@ -264,6 +264,19 @@ export const FONTES_ENERGIA: FonteEnergia[] = ["DIESEL", "GASOLINA", "ETANOL", "
 export const ROTULO_ENERGIA: Record<FonteEnergia, string> = { DIESEL: "Diesel", GASOLINA: "Gasolina", ETANOL: "Etanol", ELETRICO: "Elétrico" };
 export const UNIDADE_ENERGIA: Record<FonteEnergia, "l" | "kWh"> = { DIESEL: "l", GASOLINA: "l", ETANOL: "l", ELETRICO: "kWh" };
 
+// CATEGORIA DE PEDÁGIO: segue os eixos e a rodagem do eixo traseiro, não a
+// lotação. Van de rodagem simples (Master) paga como carro; van de rodagem
+// dupla (Sprinter 516), micro e ônibus de 2 eixos pagam o dobro; ônibus de 3
+// eixos, o triplo. (A "categoria 3" das praças de SP, ×1,5, é automóvel com
+// semirreboque — aplicá-la ao ônibus deixa 25% do pedágio de fora.)
+export type CategoriaPedagio = "RODAGEM_SIMPLES" | "DOIS_EIXOS" | "TRES_EIXOS";
+export const ROTULO_CATEGORIA_PEDAGIO: Record<CategoriaPedagio, string> = {
+  RODAGEM_SIMPLES: "Rodagem simples (×1)",
+  DOIS_EIXOS: "2 eixos, rodagem dupla (×2)",
+  TRES_EIXOS: "3 eixos (×3)",
+};
+export const MULTIPLICADOR_PEDAGIO: Record<CategoriaPedagio, number> = { RODAGEM_SIMPLES: 1, DOIS_EIXOS: 2, TRES_EIXOS: 3 };
+
 export type PerfilVeiculo = {
   codigo: string;
   descricao: string;
@@ -272,6 +285,9 @@ export type PerfilVeiculo = {
   categoriaCnh?: string | null;
   // Ausente = diesel (estudos salvos antes de existir o campo).
   energia?: FonteEnergia;
+  // Ausente = pela categoria (carro e van: rodagem simples; micro e ônibus:
+  // 2 eixos).
+  categoriaPedagio?: CategoriaPedagio;
   motorista: {
     // Salário base do motorista deste tipo — substitui Premissas.pessoal.salarioMotorista.
     salario: number;
@@ -318,6 +334,9 @@ export type Rota = {
   horasDia?: number | null;
   // Código de um perfil em Premissas.perfis; sem ele, o veículo padrão.
   perfilVeiculo?: string | null;
+  // Praça de pedágio da base (chave): a tarifa por passagem sai dela e da
+  // categoria do tipo de veículo da rota. Sem praça, a tarifa é digitada.
+  pracaPedagio?: string | null;
   viagensDia?: number | null;
   periodos?: string | null;
 };

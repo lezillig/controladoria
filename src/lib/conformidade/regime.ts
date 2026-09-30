@@ -110,7 +110,8 @@ export const MODALIDADES: Modalidade[] = [
     nome: "Transporte público coletivo urbano",
     oQueE:
       "Linha regular dentro do município ou da região metropolitana, aberta ao público, delegada por concessão ou permissão. Itinerário, horário e tarifa são fixados pelo poder concedente.",
-    regulador: "Prefeitura ou órgão metropolitano (SPTrans, EMTU)",
+    // A EMTU foi extinta em 2025; a ARTESP assumiu as funções dela.
+    regulador: "Prefeitura ou órgão metropolitano (SPTrans; na Grande SP, a ARTESP, que absorveu a EMTU)",
     documentoFiscal: "Bilhete de passagem / NFS-e",
     cnae: "4921-3/01 e 4921-3/02",
     impostoSobreOServico: "ISS quando estritamente municipal; ICMS na prestação metropolitana intermunicipal",

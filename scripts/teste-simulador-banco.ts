@@ -105,6 +105,14 @@ async function principal() {
   const ruim = await estudos.salvarVersao(EMPRESA, sjp.id, { entrada: { ...entrada2, rotas: [{ ...entrada2.rotas[0], item: "9" }] }, origem: {}, status: "RASCUNHO", observacoes: null, baseEm: null }, "teste");
   ok("rota apontando item inexistente é recusada", Boolean(ruim.erro), JSON.stringify(ruim));
   conferir("… e nada é gravado", (await prisma.simSimulacao.count({ where: { estudoId: sjp.id } })), 2);
+  const comPraca = await estudos.salvarVersao(
+    EMPRESA,
+    sjp.id,
+    { entrada: { ...entrada2, rotas: entrada2.rotas.map((x, k) => (k === 0 ? { ...x, pracaPedagio: "Imigrantes" } : x)) }, origem: {}, status: "RASCUNHO", observacoes: "praça", baseEm: null },
+    "teste"
+  );
+  const reaberto = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, sjp.id))!);
+  conferir("a praça de pedágio da rota volta ao reabrir", [comPraca.versao, reaberto.entrada.rotas[0].pracaPedagio ?? null, reaberto.entrada.rotas[1].pracaPedagio ?? null], [3, "Imigrantes", null]);
 
   console.log("\nESTUDO NOVO A PARTIR DA BASE");
   const novoId = await estudos.criarEstudo(EMPRESA, { tipo: "CONTRATO_PRIVADO", nome: "Fretamento fábrica X", cliente: "Fábrica X", tipoServico: "FRETAMENTO", criterioJulgamento: "ITEM", unidadePreco: "BINOMIA", vigenciaMeses: 24 }, "teste");

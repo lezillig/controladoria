@@ -1,8 +1,9 @@
 "use client";
 
 import { CAMPOS_PREMISSAS, PERFIS_PADRAO } from "@/lib/simulador/premissas";
-import { FONTES_ENERGIA, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, UNIDADE_ENERGIA, type EntradaSimulacao, type FonteEnergia, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
+import { FONTES_ENERGIA, ROTULO_CATEGORIA_PEDAGIO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, UNIDADE_ENERGIA, type CategoriaPedagio, type EntradaSimulacao, type FonteEnergia, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
 import { energiaDoPerfil, trocarEnergia } from "@/lib/simulador/energia";
+import { categoriaPedagioDe, tarifaParaPerfil, type PracaPedagio } from "@/lib/simulador/pedagio";
 import { Cartao, CampoNumero, botao, selecao } from "../comum";
 import type { AlterarComOrigem } from "./Premissas";
 import { CalculadoraFU } from "./Calculadoras";
@@ -21,6 +22,7 @@ export default function Veiculos({
   alterar,
   podeEditar,
   precosEnergia,
+  pracas = [],
 }: {
   entrada: EntradaSimulacao;
   alterar: AlterarComOrigem;
@@ -28,6 +30,7 @@ export default function Veiculos({
   // Preço por unidade de cada fonte (base de custos ou padrão do simulador),
   // para quando a pessoa troca a energia de um tipo de veículo.
   precosEnergia: Record<FonteEnergia, number>;
+  pracas?: PracaPedagio[];
 }) {
   const perfis = entrada.premissas.perfis ?? [];
   const emUso = (codigo: string) => entrada.rotas.filter((r) => r.perfilVeiculo === codigo).length;
@@ -148,6 +151,40 @@ export default function Veiculos({
                   {energiaDoPerfil(p) === "ELETRICO" && (
                     <span className="mt-1 block text-[11px] leading-tight text-slate-500">Confira valor do veículo, manutenção e IPVA (isento em alguns estados).</span>
                   )}
+                </td>
+              ))}
+            </tr>
+            <tr className="bg-slate-50/60">
+              <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium">Categoria de pedágio</td>
+              <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-500">2 eixos</td>
+              {perfis.map((p, k) => (
+                <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5 text-right">
+                  <select
+                    aria-label={`Categoria de pedágio — ${p.descricao}`}
+                    className={selecao}
+                    disabled={!podeEditar}
+                    value={categoriaPedagioDe(p)}
+                    title="Pelos eixos e pela rodagem do eixo traseiro, não pela lotação: van Master é rodagem simples; Sprinter 516 é rodagem dupla."
+                    onChange={(ev) =>
+                      alterar((e) => {
+                        const x = e.premissas.perfis![k];
+                        x.categoriaPedagio = ev.target.value as CategoriaPedagio;
+                        // As rotas desse tipo com praça escolhida passam à tarifa da nova categoria.
+                        for (const r of e.rotas) {
+                          if (r.perfilVeiculo !== x.codigo || !r.pracaPedagio) continue;
+                          const praca = pracas.find((q) => q.chave === r.pracaPedagio);
+                          const t = praca ? tarifaParaPerfil(praca, x) : null;
+                          if (t !== null) r.tarifaPedagio = t;
+                        }
+                      })
+                    }
+                  >
+                    {(Object.keys(ROTULO_CATEGORIA_PEDAGIO) as CategoriaPedagio[]).map((c) => (
+                      <option key={c} value={c}>
+                        {ROTULO_CATEGORIA_PEDAGIO[c]}
+                      </option>
+                    ))}
+                  </select>
                 </td>
               ))}
             </tr>

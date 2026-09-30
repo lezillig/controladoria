@@ -232,7 +232,8 @@ export function montarPainel(
     alertas.push({
       nivel: "INFO",
       titulo: "Contrato atravessa a reforma tributária",
-      detalhe: "A partir de 2027 a CBS substitui PIS/COFINS e é cobrada por fora do preço; de 2029 a 2032 ISS e ICMS caem com a entrada do IBS. Os tributos desta simulação são os de hoje: preveja cláusula de reequilíbrio pela mudança tributária (LC 214/2025).",
+      detalhe:
+        "A partir de 2027 a CBS substitui PIS/COFINS e é cobrada por fora do preço; de 2029 a 2032 ISS e ICMS caem com a entrada do IBS (em 2026, CBS 0,9% e IBS 0,1% são compensáveis — carga adicional zero). O fretamento não tem redução: vai à alíquota integral; a redução de 40% é do transporte coletivo regular (LC 214/2025, art. 284 e 286). Os tributos desta simulação são os de hoje: preveja cláusula de reequilíbrio pela mudança tributária.",
     });
   // IMPOSTO EM DOBRO: IRPJ/CSLL na receita (Presumido) E sobre o lucro
   // (Real) ao mesmo tempo; crédito de PIS/COFINS com alíquota cumulativa.

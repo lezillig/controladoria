@@ -19,6 +19,9 @@ conferência.
 
 ## O que acrescentar
 
+Itens 1 a 4 implementados em out/2026 (ver `DECISOES.md`, seção 7.2); o 5
+segue como proposta e o 6 como referência de conferência.
+
 1. **Pedágio pela categoria do veículo** (perguntas 3 e 4). A categoria segue
    os eixos e a rodagem do eixo traseiro, não a lotação:
    - Categoria 1, ×1,0: carro e **van de rodagem simples** (Master).

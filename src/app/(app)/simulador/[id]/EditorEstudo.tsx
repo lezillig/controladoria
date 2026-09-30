@@ -9,6 +9,7 @@ import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerCaminho } from "@/lib/simulador/premissas";
 import { ROTULO_UNIDADE, type EntradaSimulacao, type FonteEnergia, type ResultadoSimulacao } from "@/lib/simulador/tipos";
 import { salvarVersao } from "../actions";
+import type { PracaPedagio } from "@/lib/simulador/pedagio";
 import { botao, botaoPrimario, brl, pct, selecao } from "./comum";
 import Operacao from "./abas/Operacao";
 import Premissas from "./abas/Premissas";
@@ -57,6 +58,7 @@ export default function EditorEstudo({
   avisoInicial,
   podeConsultarEspecialista,
   precosEnergia,
+  pracas,
 }: {
   estudo: EstudoTela;
   entradaInicial: EntradaSimulacao;
@@ -73,6 +75,7 @@ export default function EditorEstudo({
   avisoInicial: string | null;
   podeConsultarEspecialista: boolean;
   precosEnergia: Record<FonteEnergia, number>;
+  pracas: PracaPedagio[];
 }) {
   const router = useRouter();
   const [entrada, setEntrada] = useState(entradaInicial);
@@ -356,8 +359,8 @@ export default function EditorEstudo({
         </div>
       )}
 
-      {aba === "operacao" && <Operacao entrada={entrada} alterar={alterar} podeEditar />}
-      {aba === "veiculos" && <Veiculos entrada={entrada} alterar={alterar} podeEditar precosEnergia={precosEnergia} />}
+      {aba === "operacao" && <Operacao entrada={entrada} alterar={alterar} podeEditar pracas={pracas} />}
+      {aba === "veiculos" && <Veiculos entrada={entrada} alterar={alterar} podeEditar precosEnergia={precosEnergia} pracas={pracas} />}
       {aba === "premissas" && <Premissas entrada={entrada} origem={origem} alterar={alterar} podeEditar indicadores={indicadores} lacunas={lacunas} />}
       {aba === "custos" && resultado && <Custos resultado={resultado} entrada={entrada} />}
       {aba === "cenarios" && resultado && <Cenarios resultado={resultado} entrada={entrada} alterar={alterar} />}

@@ -1961,6 +1961,9 @@ model SimRota {
   horasDia            Decimal?  @db.Decimal(18, 6)
   // Código do perfil de veículo (premissas.perfis) — van, micro, ônibus, carro.
   perfilVeiculo       String?
+  // Chave da praça de pedágio da base: a tarifa sai dela e da categoria do
+  // tipo de veículo.
+  pracaPedagio        String?
 
   @@index([estudoId, ordem])
 }
