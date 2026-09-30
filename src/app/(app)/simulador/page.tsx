@@ -5,6 +5,7 @@ import { ROTULO_STATUS_ESTUDO, ROTULO_TIPO_ESTUDO, ROTULO_TIPO_SERVICO } from "@
 import { ROTULO_UNIDADE, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao, podeAcao } from "../_dados";
 import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
+import ExcluirEstudo from "./ExcluirEstudo";
 import { larguraPainel, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
 
 // SIMULADOR DE CUSTOS — a lista de estudos.
@@ -91,7 +92,7 @@ export default async function SimuladorPage() {
         ) : (
           <>
             <Tabela
-              colunas={["Estudo", "Tipo", "Situação", "Versões", "Preço (última versão)", "Margem", "Lucro/apuração", "Atualizado", "Exportar"]}
+              colunas={["Estudo", "Tipo", "Situação", "Versões", "Preço (última versão)", "Margem", "Lucro/apuração", "Atualizado", "Exportar", ...(podeEditar ? [""] : [])]}
               alinharDireita={[3, 4, 5, 6]}
               linhas={estudos.map((e) => {
                 const v = e.simulacoes[0];
@@ -122,6 +123,7 @@ export default async function SimuladorPage() {
                   ) : (
                     <span key="x" className="text-xs text-slate-500" title="Salve uma versão, ou exporte o rascunho de dentro do estudo">—</span>
                   ),
+                  ...(podeEditar ? [<ExcluirEstudo key="del" id={e.id} nome={e.nome} versoes={e._count.simulacoes} />] : []),
                 ];
               })}
             />
