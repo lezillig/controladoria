@@ -14,7 +14,7 @@ export default async function NovoEstudoPage() {
         <h1 className="mt-2 text-xl font-semibold text-slate-900">Novo estudo de custo</h1>
         <p className="mt-1 text-sm text-slate-500">
           O essencial para começar. Rotas, veículos e premissas vêm no passo seguinte, na tabela do estudo — que já abre com os custos da
-          base da Azul.
+          base da Azul Mob.
         </p>
       </div>
       <NovoEstudoForm />

@@ -6,7 +6,6 @@ import { ROTULO_UNIDADE, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao, podeAcao } from "../_dados";
 import { AvisoVazio, Kpi, Secao, Tabela } from "../_componentes";
 import { larguraPainel, primaryButtonClass, secondaryButtonClass } from "@/lib/ui";
-import ImportarHistoricoBotao from "./ImportarHistoricoBotao";
 
 // SIMULADOR DE CUSTOS — a lista de estudos.
 //
@@ -40,7 +39,7 @@ export default async function SimuladorPage() {
           <h1 className="text-xl font-semibold text-slate-900">Simulador de custos e preços</h1>
           <p className="mt-1 max-w-[80ch] text-sm text-slate-500">
             Custeia qualquer operação antes de ela existir — licitação, contrato privado, renovação ou orçamento interno — a partir da
-            base de custos da Azul, e diz o preço, a margem, o risco e se vale lançar. Cada versão fica guardada com a conta inteira.
+            base de custos da Azul Mob, e diz o preço, a margem, o risco e se vale lançar. Cada versão fica guardada com a conta inteira.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -72,7 +71,7 @@ export default async function SimuladorPage() {
           <p className="text-sm font-semibold text-amber-900">A base de custos ainda está vazia</p>
           <p className="mt-1 text-xs leading-relaxed text-amber-800">
             Enquanto o Gabarito de dados não for importado, cada premissa de uma simulação nova é uma estimativa de mercado — e a tela marca
-            isso em cada número. Importar o Gabarito preenchido troca as estimativas pelos custos da Azul.{" "}
+            isso em cada número. Importar o Gabarito preenchido troca as estimativas pelos custos da Azul Mob.{" "}
             <Link href="/simulador/base" className="font-semibold underline">
               Ir para a base de custos
             </Link>
@@ -85,9 +84,9 @@ export default async function SimuladorPage() {
           <div className="space-y-4">
             <AvisoVazio
               titulo="Nenhum estudo ainda"
-              descricao="Comece por um estudo novo, ou traga as duas simulações já feitas em planilha (Holambra PE 036/2026 e São José dos Pinhais PE 089/2026) para ver o simulador com números conhecidos."
+              descricao="Crie o primeiro estudo: dê um nome, escolha o serviço, os tipos de veículo e como o contrato paga. Rotas e custos vêm no passo seguinte."
+              {...(podeEditar ? { acaoHref: "/simulador/novo", acaoLabel: "Novo estudo" } : {})}
             />
-            {podeEditar && <ImportarHistoricoBotao />}
           </div>
         ) : (
           <>
@@ -119,11 +118,6 @@ export default async function SimuladorPage() {
                 ];
               })}
             />
-            {podeEditar && (
-              <div className="mt-4">
-                <ImportarHistoricoBotao discreto />
-              </div>
-            )}
           </>
         )}
       </Secao>

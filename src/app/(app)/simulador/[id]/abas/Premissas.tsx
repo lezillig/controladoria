@@ -112,7 +112,7 @@ export default function Premissas({
   return (
     <div className="space-y-4">
       <Cartao
-        titulo="Custos reais da Azul"
+        titulo="Custos reais da Azul Mob"
         ajuda="Medidos na controladoria nos últimos 12 meses fechados: DRE por categoria da Omie, extrato do cartão de combustível e frota do sistema de gestão. Escolha os que servem a este estudo — a manutenção de uma frota velha não é a de uma frota nova — e aplique; a premissa passa a mostrar a origem 'custo real' com a conta."
         acao={
           podeEditar &&

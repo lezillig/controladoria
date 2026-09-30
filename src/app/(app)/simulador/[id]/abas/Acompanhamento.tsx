@@ -219,7 +219,7 @@ export default function Acompanhamento({
           )}
         </Cartao>
 
-        <Cartao titulo="Resultado da disputa" ajuda="Ganhou ou perdeu, para quem e a que preço. É o dado que ensina onde o preço da Azul está em relação ao mercado.">
+        <Cartao titulo="Resultado da disputa" ajuda="Ganhou ou perdeu, para quem e a que preço. É o dado que ensina onde o preço da Azul Mob está em relação ao mercado.">
           {podeEditar ? (
             <form
               className="grid grid-cols-2 gap-2"

@@ -51,7 +51,23 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
       e.rotas.push(
         ultima
           ? { ...structuredClone(ultima), nome: "Nova rota" }
-          : { item: e.itens[0].codigo, nome: "Nova rota", kmReferencia: e.premissas.contrato.modo === "MENSAL" ? 2000 : 20000, kmDia: 100, kmTerraDia: 0, diasMes: 22, veiculos: 1, motoristas: 1.2, monitoras: 0, noturno: false, passagensPedagioMes: 0, tarifaPedagio: 0, perfilVeiculo: null }
+          : {
+              item: e.itens[0].codigo,
+              nome: "Nova rota",
+              kmReferencia: e.premissas.contrato.modo === "MENSAL" ? 2000 : 20000,
+              kmDia: 100,
+              kmTerraDia: 0,
+              diasMes: 22,
+              veiculos: 1,
+              // A primeira rota nasce com o tipo principal do estudo (o
+              // primeiro escolhido ao criar) e os motoristas dele.
+              motoristas: e.premissas.perfis?.[0]?.motorista.motoristasPorVeiculo ?? 1.2,
+              monitoras: 0,
+              noturno: false,
+              passagensPedagioMes: 0,
+              tarifaPedagio: 0,
+              perfilVeiculo: e.premissas.perfis?.[0]?.codigo ?? null,
+            }
       );
     });
   const rotasDoItem = (codigo: string) => entrada.rotas.filter((r) => r.item === codigo).length;

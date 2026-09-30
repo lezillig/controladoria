@@ -2,9 +2,9 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { simular, VERSAO_MOTOR } from "./motor";
 import { baseVigente, paraNumero, type BaseVigente } from "./baseDeCustos";
-import { perfisDaBase, premissasDaBase, problemasNasPremissas, type MapaOrigem } from "./premissas";
+import { PERFIS_PADRAO, perfisDaBase, premissasDaBase, problemasNasPremissas, type MapaOrigem } from "./premissas";
 import { simulacoesHistoricas, FONTE_HISTORICO } from "./historico";
-import type { CriterioJulgamento, EntradaSimulacao, Item, Premissas, ResultadoSimulacao, Rota, UnidadePreco } from "./tipos";
+import type { CriterioJulgamento, EntradaSimulacao, Item, PerfilVeiculo, Premissas, ResultadoSimulacao, Rota, TipoVeiculo, UnidadePreco } from "./tipos";
 import type { RealizadoMes } from "./calibracao";
 
 // OS ESTUDOS DE CUSTO — a persistência do simulador.
@@ -66,6 +66,8 @@ export type DadosEstudo = {
   dataSessao?: Date | null;
   srp?: boolean;
   valorTotalMaximo?: number | null;
+  // Na ordem escolhida; o primeiro é o tipo das rotas novas.
+  tiposVeiculo?: TipoVeiculo[];
 };
 
 export async function criarEstudo(companyId: string, dados: DadosEstudo, autor: string | null): Promise<string> {
@@ -76,6 +78,7 @@ export async function criarEstudo(companyId: string, dados: DadosEstudo, autor: 
       nome: dados.nome,
       cliente: dados.cliente ?? null,
       tipoServico: dados.tipoServico,
+      tiposVeiculo: dados.tiposVeiculo ?? [],
       uf: dados.uf ?? null,
       municipio: dados.municipio ?? null,
       descricao: dados.descricao ?? null,
@@ -240,7 +243,7 @@ export async function entradaInicial(
   if (estudo.tipoServico === "FRETAMENTO_EVENTUAL") premissas.contrato.utilizacao = 1;
   if (estudo.vigenciaMeses) premissas.contrato.vigenciaMeses = estudo.vigenciaMeses;
   if (estudo.prazoPagamentoDias) premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
-  premissas.perfis = perfisDaBase(vazia ? null : baseCarregada);
+  premissas.perfis = perfisDoEstudo(perfisDaBase(vazia ? null : baseCarregada), estudo.tiposVeiculo as TipoVeiculo[]);
   return {
     entrada: {
       premissas,
@@ -253,6 +256,19 @@ export async function entradaInicial(
     versaoBase: null,
     baseEm: vazia ? null : (baseCarregada?.em ?? null),
   };
+}
+
+// OS TIPOS DE VEÍCULO DO ESTUDO: os escolhidos ao criar, na ordem escolhida.
+// Da base vêm os modelos daquele tipo (com os custos da Azul); tipo escolhido
+// sem modelo na base entra pelo padrão do simulador. Nada escolhido = todos.
+export function perfisDoEstudo(daBase: PerfilVeiculo[], tipos: TipoVeiculo[] | null | undefined): PerfilVeiculo[] {
+  if (!tipos || tipos.length === 0) return daBase;
+  return tipos.flatMap((t) => {
+    const achados = daBase.filter((p) => p.tipo === t);
+    if (achados.length > 0) return achados;
+    const padrao = PERFIS_PADRAO.find((p) => p.tipo === t);
+    return padrao ? [structuredClone(padrao)] : [];
+  });
 }
 
 // Regras de margem da base (aba 8): mínima e alvo, quando cadastradas.

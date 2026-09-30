@@ -100,7 +100,7 @@ export function CampoNumero({
 }
 
 const ESTILO_ORIGEM: Record<OrigemPremissa["origem"], { rotulo: string; classe: string }> = {
-  BASE: { rotulo: "base Azul", classe: "bg-emerald-50 text-emerald-800" },
+  BASE: { rotulo: "base Azul Mob", classe: "bg-emerald-50 text-emerald-800" },
   REAL: { rotulo: "custo real", classe: "bg-blue-50 text-blue-800" },
   PADRAO: { rotulo: "estimativa", classe: "bg-amber-50 text-amber-800" },
   HISTORICO: { rotulo: "estimativa de mercado", classe: "bg-amber-50 text-amber-800" },

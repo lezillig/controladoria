@@ -117,6 +117,9 @@ async function principal() {
   conferir("margens da base", estudos.regrasDeMargem(base), { margemMinima: 0.07, margemAlvo: 0.12 });
   const eventualId = await estudos.criarEstudo(EMPRESA, { tipo: "ORCAMENTO_INTERNO", nome: "Excursão", cliente: "Clube Y", tipoServico: "FRETAMENTO_EVENTUAL", criterioJulgamento: "ITEM", unidadePreco: "DIARIA", vigenciaMeses: 1 }, "teste");
   const eventual = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, eventualId))!);
+  const comTipos = await estudos.criarEstudo(EMPRESA, { tipo: "CONTRATO_PRIVADO", nome: "Executivo", tipoServico: "FRETAMENTO", criterioJulgamento: "ITEM", unidadePreco: "VEICULO_MES", tiposVeiculo: ["CARRO", "VAN"] }, "teste");
+  const entradaComTipos = (await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, comTipos))!)).entrada;
+  conferir("tipos escolhidos ao criar, na ordem: carro (padrão, sem modelo na base) e a van da base", entradaComTipos.premissas.perfis?.map((p) => p.tipo), ["CARRO", "VAN"]);
   conferir("fretamento eventual: km da viagem é o cobrado (utilização 100%) e preço por diária", [eventual.entrada.premissas.contrato.utilizacao, eventual.entrada.unidadePreco], [1, "DIARIA"]);
 
   console.log("\nLANCES, RESULTADO E REALIZADO");

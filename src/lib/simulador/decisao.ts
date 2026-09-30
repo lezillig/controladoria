@@ -254,7 +254,7 @@ export function montarPainel(
       titulo: "IRPJ sem o adicional",
       detalhe: `IRPJ de ${pctTexto(pr.irpj, 2)} da receita não inclui o adicional de 10% sobre o lucro presumido acima de R$ 20 mil/mês; na margem, uma empresa desse porte paga 4%. Confirme com a contabilidade, inclusive o aumento de presunção para receita acima de R$ 5 milhões/ano.`,
     });
-  if (!regrasDaBase) alertas.push({ nivel: "INFO", titulo: "Margem mínima padrão", detalhe: "A base de custos não tem as regras da Azul; margem mínima considerada = metade do alvo." });
+  if (!regrasDaBase) alertas.push({ nivel: "INFO", titulo: "Margem mínima padrão", detalhe: "A base de custos não tem as regras da Azul Mob; margem mínima considerada = metade do alvo." });
   const pior = sensibilidade[0];
   if (pior && lucroBase !== 0 && Math.abs(pior.efeitoLucro) > Math.abs(lucroBase) * 0.5)
     alertas.push({ nivel: "ATENCAO", titulo: `Resultado frágil à variação de ${minuscula(pior.rotulo)}`, detalhe: `10% pior leva metade ou mais do lucro.` });

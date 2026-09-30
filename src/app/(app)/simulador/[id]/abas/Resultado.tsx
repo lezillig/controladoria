@@ -326,7 +326,7 @@ export function Decisao({ painel }: { painel: PainelDecisao }) {
           <ReguaLance faixa={painel.faixa} />
           <p className="text-xs text-slate-500">
             Espaço de negociação entre o alvo e a margem mínima: <b>{brl(painel.faixa.espacoNegociacao)}</b> ({ROTULO_UNIDADE[painel.faixa.unidade]}). Margem mínima {pct(painel.margemMinima)}
-            {painel.regrasDaBase ? " (regras da Azul na base de custos)" : " (padrão: metade do alvo)"}.
+            {painel.regrasDaBase ? " (regras da Azul Mob na base de custos)" : " (padrão: metade do alvo)"}.
           </p>
         </Cartao>
         <Cartao titulo="O que mais derruba o lucro" ajuda="Cada premissa 10% pior, uma de cada vez, ao preço da proposta.">

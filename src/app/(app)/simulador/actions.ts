@@ -8,7 +8,6 @@ import { gravarLeitura } from "@/lib/simulador/baseDeCustos";
 import {
   criarEstudo as criarEstudoNoBanco,
   gravarRealizado,
-  importarHistorico as importarHistoricoNoBanco,
   registrarLance as registrarLanceNoBanco,
   registrarResultado as registrarResultadoNoBanco,
   salvarVersao as salvarVersaoNoBanco,
@@ -19,7 +18,7 @@ import {
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerNumero } from "@/lib/simulador/numeros";
-import type { EntradaSimulacao, UnidadePreco } from "@/lib/simulador/tipos";
+import type { EntradaSimulacao, TipoVeiculo, UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
 
 // AÇÕES DO SIMULADOR. Toda gravação exige "gerir-simulador" e deixa rastro na
@@ -49,6 +48,8 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   const unidade = (texto(formData, "unidadePreco") ?? "KM") as UnidadePreco;
   if (!UNIDADES.includes(unidade)) return { erro: "Unidade de preço inválida." };
   const dataSessao = texto(formData, "dataSessao");
+  const TIPOS_VEICULO: TipoVeiculo[] = ["CARRO", "VAN", "MICRO", "ONIBUS"];
+  const tiposVeiculo = [...new Set(formData.getAll("tiposVeiculo").map(String))].filter((t): t is TipoVeiculo => (TIPOS_VEICULO as string[]).includes(t));
   // Número digitado por extenso ("doze") ou fora de faixa não vira padrão
   // calado: volta como erro para a pessoa corrigir.
   for (const [campo, rotulo, max] of [["vigenciaMeses", "Vigência", 240], ["prazoPagamentoDias", "Prazo de pagamento", 365], ["valorTotalMaximo", "Valor total máximo", 1e12]] as const) {
@@ -77,6 +78,7 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
       dataSessao: dataSessao ? new Date(`${dataSessao}T12:00:00`) : null,
       srp: formData.get("srp") === "on",
       valorTotalMaximo: numero(formData, "valorTotalMaximo"),
+      tiposVeiculo,
     },
     session.name
   );
@@ -92,25 +94,6 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   });
   revalidatePath("/simulador");
   return { ok: true, id };
-}
-
-export async function importarHistorico(): Promise<Resultado> {
-  const session = await exigirPermissao("gerir-simulador");
-  const r = await importarHistoricoNoBanco(session.companyId, session.name);
-  if (r.criados.length > 0)
-    await registrarEvento({
-      companyId: session.companyId,
-      userId: session.userId,
-      userNome: session.name,
-      userEmail: session.email,
-      acao: "SIMULADOR_HISTORICO_IMPORTADO",
-      descricao: `Histórico do simulador importado: ${r.criados.join(", ")}.`,
-    });
-  revalidatePath("/simulador");
-  return {
-    ok: true,
-    mensagem: r.criados.length > 0 ? `Importados: ${r.criados.join(", ")}.` : `Nada a importar — ${r.existentes.join(", ")} já estão no sistema.`,
-  };
 }
 
 export async function salvarVersao(estudoId: string, entrada: EntradaSimulacao, origem: MapaOrigem, status: string, observacoes: string | null, baseEm: string | null): Promise<Resultado> {

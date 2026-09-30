@@ -22,7 +22,7 @@ const ROTULO_ENTIDADE: Record<string, string> = {
   TRIBUTO: "Tributos",
   FINANCEIRO: "Financeiro",
   INSUMO: "Insumos",
-  REGRA_AZUL: "Regras da Azul (margens)",
+  REGRA_AZUL: "Regras da Azul Mob (margens)",
 };
 
 const reais = (v: unknown, casas = 2) => {
@@ -71,6 +71,44 @@ export default async function BaseDeCustosPage() {
         </a>
       </div>
 
+      <Secao
+        titulo="O que é a base de custos"
+        descricao="É a tabela de custos da Azul Mob que todo estudo novo usa como ponto de partida: preço do diesel, encargos, salário do motorista por função, valor e consumo de cada modelo da frota, pedágios e as margens mínima e alvo da empresa. Ela entra pelo Gabarito, uma planilha Excel com uma aba por assunto."
+      >
+        <div className="grid gap-4 text-sm text-slate-700 lg:grid-cols-2">
+          <ol className="list-decimal space-y-1.5 pl-5">
+            <li>
+              <strong>Baixe o Gabarito em branco</strong> (botão no alto da página).
+            </li>
+            <li>
+              <strong>Preencha</strong> com os números da empresa. Não precisa preencher tudo: o que ficar vazio continua com o padrão do simulador,
+              marcado como “estimativa”.
+            </li>
+            <li>
+              <strong>Importe</strong> aqui. Os estudos novos passam a abrir com esses valores, marcados como “base Azul Mob”. Estudos já salvos não
+              mudam.
+            </li>
+            <li>
+              Quando um custo mudar (diesel, dissídio), importe de novo: o valor anterior fica guardado com a data em que deixou de valer.
+            </li>
+          </ol>
+          <ul className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[13px]">
+            <li><strong>Frota</strong> — modelos, valor, consumo, manutenção por km, pneus, seguro, IPVA.</li>
+            <li><strong>Mão de obra</strong> — piso e benefícios por função (motorista de carro, van, ônibus; monitor). Nunca salário de pessoas.</li>
+            <li><strong>Jornada</strong> — horas, motoristas por veículo, km improdutivo, reserva técnica.</li>
+            <li><strong>Indiretos</strong> — administração, escritório, sistemas, contabilidade, e o faturamento médio para o rateio.</li>
+            <li><strong>Tributos e financeiro</strong> — PIS, COFINS, IRPJ, CSLL, ISS, ICMS, capital de giro, prazos.</li>
+            <li><strong>Insumos</strong> — diesel, ARLA, óleo.</li>
+            <li><strong>Pedágios</strong> — praças e tarifas por categoria.</li>
+            <li><strong>Regras da Azul Mob</strong> — margem mínima e margem alvo.</li>
+          </ul>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Outra fonte, sem planilha: na aba Premissas de cada estudo, “Custos reais da Azul Mob” mostra o que a empresa gastou de fato nos últimos
+          doze meses (DRE da Omie, cartão de combustível, frota) para você escolher o que usar.
+        </p>
+      </Secao>
+
       {podeEditar && (
         <Secao titulo="Atualizar a base" descricao="Preencha o Gabarito (só valores por função — nunca salários de pessoas) e envie. Campos vazios não apagam o que já está na base.">
           <ImportarGabaritoForm />
@@ -80,7 +118,7 @@ export default async function BaseDeCustosPage() {
       {vazia ? (
         <AvisoVazio
           titulo="A base de custos está vazia"
-          descricao="Enquanto isso, os estudos usam os valores padrão do simulador, marcados como “estimativa” em cada premissa. Importe o Gabarito para trocar os padrões pelos custos da Azul."
+          descricao="Enquanto isso, os estudos usam os valores padrão do simulador, marcados como “estimativa” em cada premissa. Importe o Gabarito para trocar os padrões pelos custos da Azul Mob."
         />
       ) : (
         <>

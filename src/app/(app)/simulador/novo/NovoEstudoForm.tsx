@@ -17,10 +17,21 @@ const UNIDADES = [
   ["HORA", "Por hora", "Valor por hora de operação (informe as horas/dia nas rotas)."],
 ] as const;
 
+// Os tipos de veículo mudam o custo da mão de obra (CNH e faixa salarial da
+// convenção, motoristas por veículo), o valor do veículo e o consumo.
+const TIPOS_VEICULO = [
+  ["CARRO", "Carro", "Sedã ou SUV executivo · até 4 passageiros · CNH B"],
+  ["VAN", "Van", "15 a 19 lugares · CNH D"],
+  ["MICRO", "Micro-ônibus", "25 a 33 lugares · CNH D"],
+  ["ONIBUS", "Ônibus", "44 a 59 lugares · CNH D"],
+] as const;
+
 export default function NovoEstudoForm() {
   const [tipo, setTipo] = useState("LICITACAO");
   const [tipoServico, setTipoServico] = useState("FRETAMENTO");
   const [unidade, setUnidade] = useState("KM");
+  // Na ordem em que foram marcados: o primeiro é o tipo das rotas novas.
+  const [tipos, setTipos] = useState<string[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [processando, iniciar] = useTransition();
   const router = useRouter();
@@ -32,6 +43,8 @@ export default function NovoEstudoForm() {
       action={(formData) => {
         setErro(null);
         formData.set("unidadePreco", unidade);
+        formData.delete("tiposVeiculo");
+        for (const t of tipos) formData.append("tiposVeiculo", t);
         iniciar(async () => {
           const r = await criarEstudo(formData);
           if (r.erro) setErro(r.erro);
@@ -92,6 +105,33 @@ export default function NovoEstudoForm() {
           <input id="novo-prazoPagamentoDias" name="prazoPagamentoDias" inputMode="numeric" className={inputClass} placeholder={licitacao ? "30" : "30"} />
         </div>
       </div>
+
+      <fieldset>
+        <legend className={labelClass}>Tipos de veículo</legend>
+        <p className="mb-2 text-xs text-slate-500">
+          Marque os que o contrato usa. O primeiro marcado é o tipo das rotas novas; dá para trocar rota a rota e ajustar salário, motoristas por
+          veículo e custos na aba Veículos. Sem nenhum marcado, o estudo abre com todos.
+        </p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          {TIPOS_VEICULO.map(([valor, rotulo, ajuda]) => {
+            const ordem = tipos.indexOf(valor);
+            return (
+              <label key={valor} className={`cursor-pointer rounded-lg border px-3 py-2 text-sm ${ordem >= 0 ? "border-blue-600 bg-blue-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                <input
+                  type="checkbox"
+                  value={valor}
+                  checked={ordem >= 0}
+                  onChange={(e) => setTipos((atual) => (e.target.checked ? [...atual, valor] : atual.filter((t) => t !== valor)))}
+                  className="mr-2"
+                />
+                <span className="font-medium text-slate-800">{rotulo}</span>
+                {ordem === 0 && <span className="ml-2 rounded bg-blue-100 px-1.5 py-0.5 text-[11px] font-medium text-blue-800">principal</span>}
+                <span className="mt-0.5 block text-xs text-slate-500">{ajuda}</span>
+              </label>
+            );
+          })}
+        </div>
+      </fieldset>
 
       <fieldset>
         <legend className={labelClass}>Como o contrato paga</legend>
