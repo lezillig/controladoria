@@ -5,6 +5,7 @@ import { CAMPOS_PREMISSAS, ROTULO_GRUPO, lerCaminho, escreverCaminho, type Campo
 import { aplicarIndicadores, ROTULO_CONFIANCA, type IndicadorReal } from "@/lib/simulador/aplicarReais";
 import type { EntradaSimulacao } from "@/lib/simulador/tipos";
 import { Cartao, CampoNumero, SeloOrigem, botao, botaoPrimario, selecao } from "../comum";
+import { CalculadoraEncargos } from "./Calculadoras";
 
 export type AlterarComOrigem = (mudar: (e: EntradaSimulacao) => void, premissasAjustadas?: string[], novaOrigem?: MapaOrigem) => void;
 
@@ -231,6 +232,7 @@ export default function Premissas({
               <Campo key={c.caminho} campo={c} entrada={entrada} origem={origem} alterar={alterar} podeEditar={podeEditar} />
             ))}
           </div>
+          {grupo === "pessoal" && <CalculadoraEncargos entrada={entrada} origem={origem} alterar={alterar} podeEditar={podeEditar} />}
         </Cartao>
       ))}
     </div>

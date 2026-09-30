@@ -140,6 +140,25 @@ export default function Proposta({ entrada, resultado, nomeArquivo }: { entrada:
           </tfoot>
         </table>
       </div>
+      {unidade !== "KM" && unidade !== "BINOMIA" && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-900">
+          <p className="font-medium">Franquia de km e km excedente</p>
+          <p className="mt-0.5 text-xs">
+            Com preço fixo por {unidade === "HORA" ? "hora" : unidade === "DIARIA" ? "diária" : "veículo-mês"}, o km acima do previsto é custo sem receita. Prever no
+            contrato a franquia abaixo e o km excedente pelo custo variável com tributos e margem.
+          </p>
+          <ul className="mt-1 space-y-0.5 text-[13px]">
+            {resultado.itens.map((i) => {
+              const franquia = i.indicadores.veiculoMes.quantidade > 0 ? i.indicadores.km.quantidade / i.indicadores.veiculoMes.quantidade : null;
+              return (
+                <li key={i.item}>
+                  Item {i.item}: franquia de <strong>{num(franquia)} km</strong> por veículo-mês; km excedente a <strong>{brl(i.indicadores.binomia.variavelKm, 2)}</strong>.
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       {resultado.lote && (
         <p className="text-sm text-slate-600">
           Julgamento por lote: preço único de <strong>{brl(resultado.lote.precoPropostaUnidade)}</strong> ({ROTULO_UNIDADE[unidade]}), com margem de{" "}

@@ -103,7 +103,7 @@ export function precoDoConjunto(r: ResultadoSimulacao): number {
 export function montarPainel(
   entrada: EntradaSimulacao,
   resultado: ResultadoSimulacao,
-  opcoes: { margemMinima?: number | null; margemAlvo?: number | null; origem?: MapaOrigem | null } = {}
+  opcoes: { margemMinima?: number | null; margemAlvo?: number | null; origem?: MapaOrigem | null; inicioContrato?: Date } = {}
 ): PainelDecisao {
   const alvo = opcoes.margemAlvo ?? entrada.premissas.preco.lucroAlvoPct;
   const regrasDaBase = opcoes.margemMinima !== undefined && opcoes.margemMinima !== null;
@@ -187,6 +187,37 @@ export function montarPainel(
       nivel: "ATENCAO",
       titulo: "IRPJ na base presumida de cargas",
       detalhe: `IRPJ de ${pctTexto(pr.irpj, 2)} da receita corresponde à presunção de 8%, que é de transporte de cargas. Transporte de passageiros presume 16%: 2,4% da receita (+ adicional). O preço está subestimado em cerca de ${pctTexto(0.024 - pr.irpj, 2)} da receita.`,
+    });
+  // DEPRECIAÇÃO BAIXA para van e micro: vida útil real de 5 anos; abaixo de
+  // 8% a.a. pelo método percentual o veículo não se paga no contrato.
+  const depreciacaoBaixa = [
+    ...(entrada.premissas.perfis ?? []).filter(
+      (x) => (x.tipo === "VAN" || x.tipo === "MICRO") && (x.veiculo.metodoDepreciacao ?? entrada.premissas.veiculo.metodoDepreciacao) === "PERCENTUAL" && x.veiculo.depreciacaoAa < 0.08
+    ),
+  ];
+  if (depreciacaoBaixa.length > 0)
+    alertas.push({
+      nivel: "ATENCAO",
+      titulo: "Depreciação baixa para van ou micro",
+      detalhe: `${depreciacaoBaixa.map((x) => `${x.descricao} (${pctTexto(x.veiculo.depreciacaoAa)} a.a.)`).join(", ")}: van e micro rodam cerca de 5 anos; abaixo de 8% a.a. o preço não repõe o veículo.`,
+    });
+  // ARLA: 3 a 5% do consumo de diesel; acima de 6% do custo de combustível é
+  // premissa inflada ou digitada na unidade errada.
+  const custoDiesel = resultado.itens.reduce((a, i) => a + i.diesel, 0);
+  const custoArla = resultado.itens.reduce((a, i) => a + i.arla, 0);
+  if (custoDiesel > 0 && custoArla / custoDiesel > 0.06)
+    alertas.push({ nivel: "INFO", titulo: "ARLA acima do usual", detalhe: `ARLA é ${pctTexto(custoArla / custoDiesel)} do custo de combustível; o usual é de 3% a 5% do consumo de diesel.` });
+  // REFORMA TRIBUTÁRIA (LC 214/2025): a partir de 2027 a CBS substitui PIS e
+  // COFINS, cobrada por fora do preço; de 2029 a 2032 ISS e ICMS diminuem com a
+  // entrada do IBS. Contrato que atravessa 2027 precisa de cláusula de
+  // reequilíbrio pela mudança tributária.
+  const inicio = opcoes.inicioContrato ?? new Date();
+  const fim = new Date(inicio.getFullYear(), inicio.getMonth() + entrada.premissas.contrato.vigenciaMeses, 1);
+  if (fim > new Date(2027, 0, 1))
+    alertas.push({
+      nivel: "INFO",
+      titulo: "Contrato atravessa a reforma tributária",
+      detalhe: "A partir de 2027 a CBS substitui PIS/COFINS e é cobrada por fora do preço; de 2029 a 2032 ISS e ICMS caem com a entrada do IBS. Os tributos desta simulação são os de hoje: preveja cláusula de reequilíbrio pela mudança tributária (LC 214/2025).",
     });
   if (!regrasDaBase) alertas.push({ nivel: "INFO", titulo: "Margem mínima padrão", detalhe: "A base de custos não tem as regras da Azul; margem mínima considerada = metade do alvo." });
   const pior = sensibilidade[0];

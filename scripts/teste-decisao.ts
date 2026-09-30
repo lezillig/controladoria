@@ -10,6 +10,7 @@ import { historicoHolambra, historicoSaoJoseDosPinhais } from "../src/lib/simula
 import { simular } from "../src/lib/simulador/motor";
 import { montarPainel } from "../src/lib/simulador/decisao";
 import { calibrar } from "../src/lib/simulador/calibracao";
+import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "../src/lib/simulador/premissas";
 
 let falhas = 0;
 function ok(nome: string, passou: boolean, detalhe = "") {
@@ -96,6 +97,30 @@ console.log("\nCALIBRAÇÃO — realizado × previsto");
   const esc = historicoHolambra().entrada;
   const ce = calibrar(simular(esc), 12, []);
   ok("escolar: previsto mensal = período ÷ 12", Math.abs(ce.kmPrevistoMes - simular(esc).totais.kmUtil / 12) < 1e-6);
+}
+
+console.log("\nALERTAS DA PESQUISA — depreciação, ARLA, reforma tributária");
+{
+  const e = structuredClone(historicoSaoJoseDosPinhais().entrada);
+  e.premissas.perfis = [structuredClone(PERFIS_PADRAO.find((p) => p.tipo === "VAN")!)];
+  e.premissas.perfis[0].veiculo.metodoDepreciacao = "PERCENTUAL";
+  e.premissas.perfis[0].veiculo.depreciacaoAa = 0.05;
+  const r = simular(e);
+  const titulos = (p: ReturnType<typeof montarPainel>) => p.alertas.map((a) => a.titulo);
+  const p1 = montarPainel(e, r, { margemMinima: 0.05, margemAlvo: 0.09, inicioContrato: new Date(2026, 9, 1) });
+  ok("van a 5% a.a. pelo método percentual gera alerta", titulos(p1).includes("Depreciação baixa para van ou micro"), JSON.stringify(titulos(p1)));
+  ok("contrato de 12 meses a partir de out/2026 atravessa 2027", titulos(p1).includes("Contrato atravessa a reforma tributária"));
+  const e2 = structuredClone(e);
+  e2.premissas.perfis![0].veiculo.depreciacaoAa = 0.15;
+  e2.premissas.contrato.vigenciaMeses = 2;
+  const p2 = montarPainel(e2, simular(e2), { margemMinima: 0.05, margemAlvo: 0.09, inicioContrato: new Date(2026, 0, 1) });
+  ok("15% a.a. não alerta depreciação", !titulos(p2).includes("Depreciação baixa para van ou micro"));
+  ok("contrato jan–fev/2026 não atravessa a reforma", !titulos(p2).includes("Contrato atravessa a reforma tributária"));
+  ok("reforma é informativa: não muda o veredicto", p1.alertas.find((a) => a.titulo.startsWith("Contrato atravessa"))?.nivel === "INFO");
+  const e3 = structuredClone(e2);
+  e3.premissas.variaveis.arlaKm = e3.premissas.variaveis.dieselLitro / e3.premissas.variaveis.consumoAsfaltoKmL;
+  ok("ARLA do tamanho do diesel é apontada", titulos(montarPainel(e3, simular(e3), { inicioContrato: new Date(2026, 0, 1) })).includes("ARLA acima do usual"));
+  ok("o padrão do simulador deprecia 15% a.a.", Math.abs(PREMISSAS_PADRAO.veiculo.depreciacaoAa - 0.15) < 1e-12);
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

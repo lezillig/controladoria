@@ -142,7 +142,8 @@ export const PREMISSAS_PADRAO: Premissas = {
   },
   veiculo: {
     valor: 285000,
-    depreciacaoAa: 0.1 / 6,
+    // (1 − 10% de revenda) ÷ 6 anos até a venda = 15% a.a.
+    depreciacaoAa: (1 - 0.1) / 6,
     custoCapitalAa: 0.18,
     seguroMes: 650,
     ipvaLicenciamentoAno: 3900,

@@ -4,6 +4,7 @@ import { CAMPOS_PREMISSAS, PERFIS_PADRAO } from "@/lib/simulador/premissas";
 import { ROTULO_TIPO_VEICULO, type EntradaSimulacao, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
 import { Cartao, CampoNumero, botao, selecao } from "../comum";
 import type { AlterarComOrigem } from "./Premissas";
+import { CalculadoraFU } from "./Calculadoras";
 
 // OS TIPOS DE VEÍCULO DO ESTUDO — um por coluna, lado a lado.
 //
@@ -147,6 +148,7 @@ export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: En
         </table>
       </div>
       {perfis.length === 0 && <p className="text-sm text-slate-500">Nenhum tipo de veículo além do padrão. Adicione carro, van, micro ou ônibus para usar nas rotas.</p>}
+      <CalculadoraFU entrada={entrada} alterar={alterar} podeEditar={podeEditar} />
     </Cartao>
   );
 }

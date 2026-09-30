@@ -135,6 +135,9 @@ export const COLUNAS_FROTA: DefinicaoColuna[] = [
   { cabecalho: "Valor de compra (R$)", campo: "valorCompra", tipo: "numero" },
   { cabecalho: "Valor FIPE atual (R$)", campo: "valorFipe", tipo: "numero" },
   { cabecalho: "Forma de aquisição", campo: "formaAquisicao", tipo: "texto" },
+  // A parcela do financiamento é GUARDADA para o fluxo de caixa, e nunca entra
+  // no custo: o veículo já é pago por depreciação + remuneração do capital, e
+  // somar a parcela contaria o veículo duas vezes (PESQUISA.md, 9.3).
   { cabecalho: "Parcela mensal (R$)", campo: "parcelaMensal", tipo: "numero" },
   { cabecalho: "Taxa efetiva (% a.a.)", campo: "taxaAa", tipo: "pct" },
   { cabecalho: "Parcelas restantes", campo: "parcelasRestantes", tipo: "inteiro" },
