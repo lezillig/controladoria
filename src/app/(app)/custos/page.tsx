@@ -312,7 +312,18 @@ export default async function CustosPage({
         rota="/custos"
       />
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+        {/* RECEITA BRUTA ao lado da líquida: o faturamento como a empresa o
+            conhece, e quanto as deduções levam dele. */}
+        <Kpi
+          rotulo={anual ? `Receita bruta ${anoDaTela}` : "Receita bruta"}
+          valor={fmtBRL(valorDaLinha("RECEITA_BRUTA"))}
+          apoio={
+            valorDaLinha("RECEITA_BRUTA") > 0
+              ? `Deduções de ${fmtBRL(valorDaLinha("DEDUCOES"))} (${fmtPercent((valorDaLinha("DEDUCOES") / valorDaLinha("RECEITA_BRUTA")) * 100)})`
+              : "Receita operacional, antes das deduções"
+          }
+        />
         <Kpi
           rotulo={anual ? `Receita líquida ${anoDaTela}` : "Receita líquida"}
           valor={fmtBRL(dreAnual?.receitaLiquidaCents ?? dre.receitaLiquidaCents)}
