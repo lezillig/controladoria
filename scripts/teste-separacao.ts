@@ -32,6 +32,13 @@ for (const h of [historicoHolambra(), historicoSaoJoseDosPinhais()]) {
   perto("mão de obra = mão de obra do motor × meses", s.maoDeObra.direto, r.itens.reduce((a, i) => a + i.maoDeObraMes, 0) * p.contrato.mesesCustoFixo);
   ok("mão de obra e veículo positivos", s.maoDeObra.comIndiretos > 0 && s.veiculo.comIndiretos > 0);
 
+  // O detalhe de cada parte, mais a administração e contingência, fecha a parte.
+  for (const x of s.partes) {
+    const detalhe = s.componentes[x.chave].reduce((a, c) => a + c.valor, 0);
+    perto(`detalhe fecha: ${x.rotulo}`, detalhe * (1 + s.indiretosPct), x.comIndiretos);
+  }
+  ok("pessoas = motoristas + monitoras", Math.abs(s.pessoas - r.itens.reduce((a, i) => a + i.motoristas + i.monitoras, 0)) < 1e-9);
+
   // Um item sozinho é a mesma conta restrita a ele.
   const um = separarMaoDeObraEVeiculo([r.itens[0]], p);
   perto("um item: custo total do item", um.custoTotal, r.itens[0].custoTotal);

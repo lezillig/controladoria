@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { PainelDecisao } from "@/lib/simulador/decisao";
-import { separarMaoDeObraEVeiculo, type ChaveParte, type Parte } from "@/lib/simulador/separacao";
+import { separarMaoDeObraEVeiculo, type ChaveParte, type Componente, type Parte } from "@/lib/simulador/separacao";
 import { ROTULO_UNIDADE, type EntradaSimulacao, type ResultadoSimulacao } from "@/lib/simulador/tipos";
 import type { ComposicaoItem } from "@/lib/simulador/tipos";
 import { Cartao, CampoNumero, brl, brl0, num, pct, td, tdN, th, thN } from "../comum";
@@ -191,6 +191,7 @@ function MaoDeObraEVeiculo({ resultado, entrada }: { resultado: ResultadoSimulac
   const itens = item === null ? resultado.itens : resultado.itens.filter((i) => i.item === item);
   const s = separarMaoDeObraEVeiculo(itens, entrada.premissas);
   const apuracao = entrada.premissas.contrato.modo === "MENSAL" ? "mês" : "período";
+  const meses = entrada.premissas.contrato.mesesCustoFixo;
   const visiveis = s.partes.filter((p) => p.comIndiretos > 0);
   const linhas = [
     { ...s.maoDeObra, cor: COR_PARTE.maoDeObra, destaque: true, recuo: false },
@@ -220,9 +221,28 @@ function MaoDeObraEVeiculo({ resultado, entrada }: { resultado: ResultadoSimulac
         ) : undefined
       }
     >
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Resumo rotulo="Mão de obra" cor={COR_PARTE.maoDeObra} parte={s.maoDeObra} extra={s.maoDeObraPorPessoaMes > 0 ? `${brl0(s.maoDeObraPorPessoaMes)} por pessoa da equipe no mês, sem indiretos` : undefined} />
-        <Resumo rotulo="Veículo" cor={COR_PARTE.veiculoFixo} parte={s.veiculo} extra="fixo (capital, seguro, IPVA, garagem…) + variável (combustível, pneus, manutenção, pedágio)" />
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Resumo
+          rotulo="Mão de obra"
+          cor={COR_PARTE.maoDeObra}
+          parte={s.maoDeObra}
+          grupos={[{ titulo: null, itens: s.componentes.maoDeObra }]}
+          indiretosPct={s.indiretosPct}
+          divisor={{ quantidade: s.pessoas * meses, rotulo: "por pessoa-mês" }}
+          extra={s.pessoas > 0 ? `${num(s.pessoas, 1)} pessoas na equipe (motoristas e monitoras)` : undefined}
+        />
+        <Resumo
+          rotulo="Veículo"
+          cor={COR_PARTE.veiculoFixo}
+          parte={s.veiculo}
+          grupos={[
+            { titulo: "Custo fixo", itens: s.componentes.veiculoFixo },
+            { titulo: `Custo variável (${num(s.kmUtil)} km úteis)`, itens: s.componentes.veiculoVariavel },
+          ]}
+          indiretosPct={s.indiretosPct}
+          divisor={{ quantidade: s.veiculoMes, rotulo: "por veículo-mês" }}
+          extra={s.veiculoMes > 0 ? `${num(s.veiculoMes / meses)} veículos em operação; fixo com a reserva técnica` : undefined}
+        />
       </div>
       {s.custoTotal > 0 && (
         <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded" role="img" aria-label={visiveis.map((p) => `${p.rotulo} ${pct(p.participacao)}`).join(", ")}>
@@ -277,18 +297,87 @@ function MaoDeObraEVeiculo({ resultado, entrada }: { resultado: ResultadoSimulac
   );
 }
 
-function Resumo({ rotulo, cor, parte, extra }: { rotulo: string; cor: string; parte: Parte; extra?: string }) {
+function Resumo({
+  rotulo,
+  cor,
+  parte,
+  grupos,
+  indiretosPct,
+  divisor,
+  extra,
+}: {
+  rotulo: string;
+  cor: string;
+  parte: Parte;
+  grupos: { titulo: string | null; itens: Componente[] }[];
+  indiretosPct: number;
+  divisor: { quantidade: number; rotulo: string };
+  extra?: string;
+}) {
+  const porUnidade = (v: number) => (divisor.quantidade > 0 ? brl(v / divisor.quantidade) : "—");
+  const participacao = (v: number) => pct(parte.comIndiretos > 0 ? v / parte.comIndiretos : null);
+  const indiretos = parte.comIndiretos - parte.direto;
   return (
-    <div className="rounded-lg border border-slate-200 px-3 py-2">
-      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: cor }} />
-        {rotulo} · {pct(parte.participacao)} do custo
+    <div className="space-y-2 rounded-lg border border-slate-200 px-3 py-2">
+      <div>
+        <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+          <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: cor }} />
+          {rotulo} · {pct(parte.participacao)} do custo
+        </div>
+        <div className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-slate-900">{brl0(parte.comIndiretos)}</div>
+        <div className="text-xs text-slate-600">
+          preço rateado <b className="font-mono tabular-nums">{brl(parte.precoPorVeiculoMes)}</b> por veículo-mês
+        </div>
+        {extra && <div className="mt-0.5 text-[11px] text-slate-500">{extra}</div>}
       </div>
-      <div className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-slate-900">{brl0(parte.comIndiretos)}</div>
-      <div className="text-xs text-slate-600">
-        preço rateado <b className="font-mono tabular-nums">{brl(parte.precoPorVeiculoMes)}</b> por veículo-mês
-      </div>
-      {extra && <div className="mt-0.5 text-[11px] text-slate-500">{extra}</div>}
+      <table className="w-full text-[12.5px]">
+        <thead>
+          <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
+            <th className="py-1 text-left font-medium">Componente</th>
+            <th className="py-1 text-right font-medium">Valor</th>
+            <th className="py-1 text-right font-medium">%</th>
+            <th className="py-1 text-right font-medium">{divisor.rotulo}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {grupos.map((g) => {
+            const visiveis = g.itens.filter((c) => Math.abs(c.valor) >= 0.005);
+            const total = g.itens.reduce((a, c) => a + c.valor, 0);
+            return [
+              g.titulo && (
+                <tr key={`t-${g.titulo}`} className="font-semibold text-slate-700">
+                  <td className="border-t border-slate-100 pt-1.5">{g.titulo}</td>
+                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{brl0(total)}</td>
+                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{participacao(total)}</td>
+                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{porUnidade(total)}</td>
+                </tr>
+              ),
+              ...visiveis.map((c) => (
+                <tr key={`${g.titulo}-${c.rotulo}`} className="text-slate-700">
+                  <td className={`border-t border-slate-100 py-1 ${g.titulo ? "pl-3" : ""}`}>{c.rotulo}</td>
+                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl0(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{participacao(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{porUnidade(c.valor)}</td>
+                </tr>
+              )),
+            ];
+          })}
+          {indiretos > 0.005 && (
+            <tr className="text-slate-700">
+              <td className="border-t border-slate-100 py-1">Administração e contingência ({pct(indiretosPct)})</td>
+              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl0(indiretos)}</td>
+              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{participacao(indiretos)}</td>
+              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{porUnidade(indiretos)}</td>
+            </tr>
+          )}
+          <tr className="font-semibold text-slate-900">
+            <td className="border-t border-slate-300 py-1">Total</td>
+            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{brl0(parte.comIndiretos)}</td>
+            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{participacao(parte.comIndiretos)}</td>
+            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{porUnidade(parte.comIndiretos)}</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }

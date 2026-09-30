@@ -42,13 +42,20 @@ export type Parte = {
   precoPorKm: number;
 };
 
+// Um componente de uma parte, no custo direto da apuração (sem indiretos).
+export type Componente = { rotulo: string; valor: number };
+
 export type Separacao = {
   partes: Parte[];
+  // O que compõe cada parte, na ordem da composição. Somado à linha de
+  // administração e contingência, fecha o `comIndiretos` da parte.
+  componentes: Record<ChaveParte, Componente[]>;
+  indiretosPct: number;
   maoDeObra: Parte;
   // Fixo + variável.
   veiculo: Parte;
-  // Mão de obra por pessoa da equipe (motoristas e monitoras), por mês.
-  maoDeObraPorPessoaMes: number;
+  // Motoristas e monitoras (sem a supervisão, que é rateada).
+  pessoas: number;
   custoTotal: number;
   faturamento: number;
   kmUtil: number;
@@ -116,11 +123,44 @@ export function separarMaoDeObraEVeiculo(itens: ComposicaoItem[], p: Premissas):
   const veiculo = parte("veiculoFixo", diretos.veiculoFixo + diretos.veiculoVariavel, creditos.veiculoFixo + creditos.veiculoVariavel, "Veículo");
   const pessoas = soma((i) => i.motoristas + i.monitoras);
 
+  const mensal = (rotulo: string, f: (i: ComposicaoItem) => number): Componente => ({ rotulo, valor: soma(f) * meses });
+  const variavel = (rotulo: string, f: (i: ComposicaoItem) => number): Componente => ({ rotulo, valor: soma(f) });
+  const componentes: Record<ChaveParte, Componente[]> = {
+    maoDeObra: [
+      mensal("Salários (com horas extras e adicional noturno)", (i) => i.salarios),
+      mensal("Encargos sociais", (i) => i.encargos),
+      mensal("Benefícios, uniforme e exames", (i) => i.beneficios),
+      mensal("Supervisão local", (i) => i.supervisao),
+    ],
+    veiculoFixo: [
+      mensal("Depreciação", (i) => i.depreciacao),
+      mensal("Remuneração do capital", (i) => i.remuneracaoCapital),
+      mensal("Seguro", (i) => i.seguro),
+      mensal("IPVA, licenciamento e laudos", (i) => i.ipvaLicenciamento),
+      mensal("Telemetria e controle de embarque", (i) => i.telemetria),
+      mensal("Higienização e acessibilidade", (i) => i.higieneAcessibilidade),
+      mensal("Garagem / base local", (i) => i.garagem),
+      mensal("Adaptações", (i) => i.adaptacao),
+      mensal("Manutenção fixa", (i) => i.manutencaoFixa),
+    ],
+    veiculoVariavel: [
+      variavel("Combustível / energia", (i) => i.diesel),
+      variavel("ARLA", (i) => i.arla),
+      variavel("Óleo e lavagem", (i) => i.oleoLavagem),
+      variavel("Pneus", (i) => i.pneus),
+      variavel("Manutenção por km", (i) => i.manutencao),
+      variavel("Pedágio", (i) => i.pedagio),
+    ],
+    implantacao: [mensal("Implantação amortizada", (i) => i.implantacaoMes)],
+  };
+
   return {
     partes,
+    componentes,
+    indiretosPct,
     maoDeObra: partes[0],
     veiculo,
-    maoDeObraPorPessoaMes: dividir(soma((i) => i.maoDeObraMes), pessoas),
+    pessoas,
     custoTotal,
     faturamento,
     kmUtil,
