@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
 import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
-import { montarDreNoBanco, montarDreAnualNoBanco } from "@/lib/controladoria/dreNoBanco";
+import { montarDreNoBanco, montarDreAnualNoBanco, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
 import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
@@ -15,21 +15,10 @@ import {
   escopoDaPagina,
   podeAcao,
   resolverAno,
-  resolverPeriodo,
   resolverRegime,
 } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
-
-// Mesmo mês, um ano antes. O mês INTEIRO, mesmo quando o atual está pela
-// metade: comparar agosto até o dia 26 com agosto inteiro do ano passado daria
-// uma queda que é só de calendário. A tela diz que a comparação é com o mês
-// fechado, e quem lê decide o que fazer com isso.
-function mesmoMesAnoAnterior(mes: { inicio: Date }) {
-  const inicio = new Date(mes.inicio.getFullYear() - 1, mes.inicio.getMonth(), 1, 0, 0, 0, 0);
-  const fim = new Date(mes.inicio.getFullYear() - 1, mes.inicio.getMonth() + 1, 0, 23, 59, 59, 999);
-  return { inicio, fim, rotulo: `${inicio.getFullYear()}` };
-}
 
 // CUSTOS E DRE.
 //
@@ -77,20 +66,22 @@ export default async function CustosPage({
   // A JANELA COBRE O MESMO MÊS DO ANO PASSADO, na visão mensal — treze meses
   // em vez de três. É o custo do comparativo ano contra ano, e ele é pago só
   // aqui: nenhuma outra tela precisa dessa profundidade.
-  const referenciaProvisoria = resolverPeriodo(anual ? `${anoDaTela}-12` : params.competencia).dataReferencia;
   const { session, escopo, periodo, config, conexoes } = await escopoDaPagina(
     "custos",
     params.empresa,
     anual ? `${anoDaTela}-12` : params.competencia
   );
-  const desde = anual
-    ? new Date(anoDaTela, 0, 1)
-    : new Date(referenciaProvisoria.getFullYear() - 1, referenciaProvisoria.getMonth(), 1);
-  const escopoSql = {
+  // O recorte mensal vem de `recorteMensalDoDre`, o MESMO que a planilha de
+  // conferência usa: tela e planilha montando cada uma o seu foi como as duas
+  // passaram a mostrar DREs diferentes do mesmo mês.
+  const recorteMensal = recorteMensalDoDre({
     companyId: session.companyId,
     conexaoId: escopo.conexaoId,
-    janela: { desde, ate: null },
-  };
+    dataReferencia: periodo.dataReferencia,
+  });
+  const escopoSql = anual
+    ? { companyId: session.companyId, conexaoId: escopo.conexaoId, janela: { desde: new Date(anoDaTela, 0, 1), ate: null } }
+    : recorteMensal.escopo;
   const regime = resolverRegime(params.regime);
   const podeClassificar = await podeAcao(session, "classificar-dre");
 
@@ -144,17 +135,11 @@ export default async function CustosPage({
   // queda de calendário. Com uma competência fechada escolhida, os dois lados
   // são meses inteiros e nada muda.
   const janelas = comparativo.janelas;
-  const dre = await montarDreNoBanco(
-    escopoSql,
-    janelas.mesAtual,
-    janelas.mesParcial ? janelas.mesAnteriorMesmoDia : janelas.mesAnterior,
-    classificacoes,
-    {
-      somarRetencoes: config.retencoesNasDeducoes,
-      regime,
-      periodoAnoAnterior: anual ? undefined : mesmoMesAnoAnterior(comparativo.janelas.mesAtual),
-    }
-  );
+  const dre = await montarDreNoBanco(escopoSql, recorteMensal.periodo, recorteMensal.periodoAnterior, classificacoes, {
+    somarRetencoes: config.retencoesNasDeducoes,
+    regime,
+    periodoAnoAnterior: anual ? undefined : recorteMensal.periodoAnoAnterior,
+  });
 
   // LINHA VAZIA NÃO É MOSTRADA, e subtotal repetido tampouco.
   //

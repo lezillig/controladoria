@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { carregarContexto } from "@/lib/controladoria/contexto";
-import { LINHAS_DRE, montarDre, ROTULO_LINHA } from "@/lib/controladoria/dre";
+import { garantirConfig } from "@/lib/controladoria/contexto";
+import { LINHAS_DRE, ROTULO_LINHA } from "@/lib/controladoria/dre";
+import { montarDreNoBanco, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
-import { mesCompleto, rotuloMes } from "@/lib/controladoria/periodos";
+import { fmtData } from "@/lib/controladoria/format";
+import { rotuloMes } from "@/lib/controladoria/periodos";
 import { resolverEscopo, resolverPeriodo, resolverRegime } from "@/app/(app)/_dados";
 import { exigirPermissao } from "@/app/(app)/_dados";
 
@@ -32,16 +34,18 @@ export async function GET(req: NextRequest) {
   const escopo = await resolverEscopo(session.companyId, req.nextUrl.searchParams.get("empresa") ?? undefined);
   const periodo = resolverPeriodo(req.nextUrl.searchParams.get("competencia") ?? undefined);
   const regime = resolverRegime(req.nextUrl.searchParams.get("regime") ?? undefined);
-  const mes = mesCompleto(periodo.dataReferencia);
   const competencia = rotuloMes(periodo.dataReferencia);
 
-  // O mesmo contexto e a mesma função da tela. Uma consulta paralela daria uma
-  // planilha que diverge do que está no ar — e as duas circulariam.
-  const ctx = await carregarContexto(session.companyId, periodo.dataReferencia, escopo.conexaoId ?? undefined, {
-    desde: mes.inicio,
+  // O MESMO RECORTE E A MESMA COLHEITA DA TELA (ver `recorteMensalDoDre`).
+  // Esta rota carregava o contexto a partir do dia 1º do mês e comparava o mês
+  // inteiro com o anterior inteiro: o "mês anterior" perdia os títulos já
+  // liquidados, o caixa perdia pagamento de título emitido antes do mês, e a
+  // planilha que existe para conferir a tela mostrava outro DRE.
+  const recorte = recorteMensalDoDre({
+    companyId: session.companyId,
+    conexaoId: escopo.conexaoId,
+    dataReferencia: periodo.dataReferencia,
   });
-
-  const mesAnterior = mesCompleto(new Date(mes.inicio.getFullYear(), mes.inicio.getMonth() - 1, 1));
 
   const guardadas = await prisma.dreClassificacao.findMany({
     where: { companyId: session.companyId },
@@ -55,15 +59,24 @@ export async function GET(req: NextRequest) {
   );
   const quemClassificou = new Map(guardadas.map((c) => [c.categoriaCodigo, c.userNome]));
 
-  const config = await prisma.controladoriaConfig.findUnique({
-    where: { companyId: session.companyId },
-    select: { retencoesNasDeducoes: true },
-  });
-  const dre = montarDre(ctx, mes, mesAnterior, classificacoes, {
-    somarRetencoes: config?.retencoesNasDeducoes ?? true,
+  // `garantirConfig`, como a tela (via escopoDaPagina): a leitura das
+  // retenções tem que ser a mesma nos dois lados.
+  const config = await garantirConfig(session.companyId);
+  const dre = await montarDreNoBanco(recorte.escopo, recorte.periodo, recorte.periodoAnterior, classificacoes, {
+    somarRetencoes: config.retencoesNasDeducoes,
     regime,
+    incluirTitulos: false,
   });
-  const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
+  // As colunas "Omie:" do cadastro, no mesmo recorte de empresa da colheita.
+  const categorias = new Map(
+    (
+      await prisma.omieCategoria.findMany({
+        where: { companyId: session.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
+        select: { codigo: true, codigoDre: true, tipoCategoria: true, contaReceita: true, contaDespesa: true },
+      })
+    ).map((c) => [c.codigo, c])
+  );
+  const { janelas } = recorte;
 
   const empresa = escopo.apelido
     ? escopo.apelido
@@ -82,9 +95,14 @@ export async function GET(req: NextRequest) {
         (regime === "caixa"
           ? "Regime de CAIXA: o que foi pago ou recebido no mês, pela data da baixa. "
           : "Regime de COMPETÊNCIA, pela data de emissão do documento. ") +
+        // O mês parcial é dito, como a tela diz: um arquivo que circula com
+        // "setembro" no nome e metade de setembro dentro é lido como queda.
+        (janelas.mesParcial
+          ? `Mês até ${fmtData(recorte.periodo.fim)}, comparado ao mês anterior até o mesmo dia (${recorte.periodoAnterior.rotulo}) — o mesmo recorte da tela. `
+          : "") +
         "Ordem das linhas conforme o art. 187 da Lei 6.404/76. " +
         "As colunas 'Omie:' são o que o cadastro de categorias da Omie informa — é contra elas que se confere. " +
-        (config?.retencoesNasDeducoes ?? true
+        (config.retencoesNasDeducoes
           ? "Os tributos retidos na fonte pelos clientes ESTÃO somados às deduções, como item próprio."
           : "Os tributos retidos na fonte pelos clientes NÃO estão somados às deduções."),
       geradoEm: new Date(),

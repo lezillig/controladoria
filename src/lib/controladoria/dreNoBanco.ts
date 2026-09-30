@@ -357,6 +357,51 @@ export async function categoriasDoEscopo(escopo: EscopoDre): Promise<Map<string,
 }
 
 // ---------------------------------------------------------------------------
+// O RECORTE DA VISÃO MENSAL DE CUSTOS E DRE — escrito uma vez, lido por dois.
+//
+// A tela e a "planilha de conferência do DRE" mostram o MESMO DRE, e cada uma
+// montava o próprio recorte. A planilha lia o contexto a partir do dia 1º do
+// mês, com o mês inteiro contra o mês anterior inteiro; a tela soma no banco
+// com treze meses de janela, o mês até a referência contra o anterior até o
+// mesmo dia. O resultado, conferido contra Postgres: o "mês anterior" da
+// planilha perdia todo título de agosto já liquidado (fora da janela de um
+// mês), o caixa perdia o pagamento de título emitido antes do mês, e o lado de
+// cada categoria (que decide a linha proposta) era apurado sobre um mês só —
+// a mesma categoria podia cair em linhas diferentes nos dois arquivos.
+//
+// Agora os dois pedem o recorte aqui.
+// ---------------------------------------------------------------------------
+
+// Mesmo mês, um ano antes. O mês INTEIRO, mesmo quando o atual está pela
+// metade: comparar agosto até o dia 26 com agosto inteiro do ano passado daria
+// uma queda que é só de calendário. A tela diz que a comparação é com o mês
+// fechado, e quem lê decide o que fazer com isso.
+export function mesmoMesAnoAnterior(mes: { inicio: Date }): Periodo {
+  const inicio = new Date(mes.inicio.getFullYear() - 1, mes.inicio.getMonth(), 1, 0, 0, 0, 0);
+  const fim = new Date(mes.inicio.getFullYear() - 1, mes.inicio.getMonth() + 1, 0, 23, 59, 59, 999);
+  return { inicio, fim, rotulo: `${inicio.getFullYear()}` };
+}
+
+export function recorteMensalDoDre(params: { companyId: string; conexaoId: string | null; dataReferencia: Date }) {
+  const { companyId, conexaoId, dataReferencia } = params;
+  const janelas = montarJanelas(dataReferencia);
+  return {
+    janelas,
+    // Treze meses: cobre o mesmo mês do ano passado, que a tela compara.
+    escopo: {
+      companyId,
+      conexaoId,
+      janela: { desde: new Date(dataReferencia.getFullYear() - 1, dataReferencia.getMonth(), 1), ate: null },
+    } satisfies EscopoDre,
+    periodo: janelas.mesAtual,
+    // MÊS PARCIAL CONTRA MÊS PARCIAL (ver periodos.ts): no dia 10, o mês
+    // anterior inteiro faria toda variação ser queda de calendário.
+    periodoAnterior: janelas.mesParcial ? janelas.mesAnteriorMesmoDia : janelas.mesAnterior,
+    periodoAnoAnterior: mesmoMesAnoAnterior(janelas.mesAtual),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // A colheita completa, e o DRE do mês
 // ---------------------------------------------------------------------------
 

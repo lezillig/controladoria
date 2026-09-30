@@ -293,6 +293,29 @@ async function principal() {
     conferir(`o tributo sai da fila de corte — ${alvo}`, estrategiaNoBanco.foraDoCorte.map((f) => f.codigo), ["D3"]);
   }
 
+  // ------------------------------------------- planilha de conferência
+  // A PLANILHA E A TELA PEDEM O MESMO RECORTE (`recorteMensalDoDre`). A
+  // planilha montava o dela: contexto a partir de 1º de setembro, mês inteiro
+  // contra agosto inteiro. O "mês anterior" dela perdia A12 (folha de agosto,
+  // já liquidada, fora da janela de um mês) — a coluna que a tela mostrava com
+  // R$ 2.107,00 saía zerada no arquivo.
+  {
+    const { recorteMensalDoDre } = await import("../src/lib/controladoria/dreNoBanco");
+    const recorte = recorteMensalDoDre({ companyId: EMPRESA, conexaoId: null, dataReferencia: REFERENCIA });
+    conferir("recorte da planilha: janela de treze meses", recorte.escopo.janela.desde, desdeMensal);
+    conferir("recorte da planilha: mês até a referência", recorte.periodo, janelas.mesAtual);
+    conferir("recorte da planilha: anterior até o mesmo dia", recorte.periodoAnterior, janelas.mesAnteriorMesmoDia);
+    const dre = await montarDreNoBanco(recorte.escopo, recorte.periodo, recorte.periodoAnterior, classificacoes, {
+      regime: "competencia",
+      incluirTitulos: false,
+    });
+    conferir(
+      "o mês anterior da planilha enxerga o título de agosto já liquidado",
+      dre.linhas.find((l) => l.chave === "CUSTO_SERVICO")?.valorAnteriorCents,
+      210_700
+    );
+  }
+
   // ------------------------------------------------------------------ anual
   // A visão anual tem janela própria: o ano inteiro, como a tela carrega.
   const desdeAnual = new Date(2026, 0, 1);
