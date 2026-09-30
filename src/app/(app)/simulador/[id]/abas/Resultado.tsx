@@ -324,7 +324,7 @@ function Resumo({
           <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: cor }} />
           {rotulo} · {pct(parte.participacao)} do custo
         </div>
-        <div className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-slate-900">{brl0(parte.comIndiretos)}</div>
+        <div className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-slate-900">{brl(parte.comIndiretos)}</div>
         <div className="text-xs text-slate-600">
           preço rateado <b className="font-mono tabular-nums">{brl(parte.precoPorVeiculoMes)}</b> por veículo-mês
         </div>
@@ -347,7 +347,7 @@ function Resumo({
               g.titulo && (
                 <tr key={`t-${g.titulo}`} className="font-semibold text-slate-700">
                   <td className="border-t border-slate-100 pt-1.5">{g.titulo}</td>
-                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{brl0(total)}</td>
+                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{brl(total)}</td>
                   <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{participacao(total)}</td>
                   <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{porUnidade(total)}</td>
                 </tr>
@@ -355,7 +355,7 @@ function Resumo({
               ...visiveis.map((c) => (
                 <tr key={`${g.titulo}-${c.rotulo}`} className="text-slate-700">
                   <td className={`border-t border-slate-100 py-1 ${g.titulo ? "pl-3" : ""}`}>{c.rotulo}</td>
-                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl0(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl(c.valor)}</td>
                   <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{participacao(c.valor)}</td>
                   <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{porUnidade(c.valor)}</td>
                 </tr>
@@ -365,14 +365,14 @@ function Resumo({
           {indiretos > 0.005 && (
             <tr className="text-slate-700">
               <td className="border-t border-slate-100 py-1">Administração e contingência ({pct(indiretosPct)})</td>
-              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl0(indiretos)}</td>
+              <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums">{brl(indiretos)}</td>
               <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{participacao(indiretos)}</td>
               <td className="border-t border-slate-100 py-1 text-right font-mono tabular-nums text-slate-500">{porUnidade(indiretos)}</td>
             </tr>
           )}
           <tr className="font-semibold text-slate-900">
             <td className="border-t border-slate-300 py-1">Total</td>
-            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{brl0(parte.comIndiretos)}</td>
+            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{brl(parte.comIndiretos)}</td>
             <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{participacao(parte.comIndiretos)}</td>
             <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{porUnidade(parte.comIndiretos)}</td>
           </tr>
