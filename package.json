@@ -35,6 +35,8 @@
     "teste:projecao": "tsx scripts/teste-projecao.ts",
     "teste:simulador": "tsx scripts/teste-simulador.ts",
     "teste:gabarito": "tsx scripts/teste-gabarito.ts",
+    "teste:decisao": "tsx scripts/teste-decisao.ts",
+    "teste:simulador-banco": "tsx scripts/teste-simulador-banco.ts",
     "teste:exportar-xlsx": "tsx scripts/teste-exportar-xlsx.ts",
     "postinstall": "prisma generate"
   },

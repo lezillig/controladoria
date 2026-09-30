@@ -1900,15 +1900,18 @@ model SimRegra {
 }
 
 model SimItem {
-  id                  String    @id @default(cuid())
-  estudoId            String
-  estudo              SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
-  ordem               Int       @default(0)
-  codigo              String
-  descricao           String
-  shareIntermunicipal Decimal   @default(0) @db.Decimal(18, 6)
-  precoMaximoKm       Decimal?  @db.Decimal(18, 6)
-  precoReferenciaKm   Decimal?  @db.Decimal(18, 6)
+  id                           String    @id @default(cuid())
+  estudoId                     String
+  estudo                       SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  ordem                        Int       @default(0)
+  codigo                       String
+  descricao                    String
+  shareIntermunicipal          Decimal   @default(0) @db.Decimal(18, 6)
+  precoMaximoKm                Decimal?  @db.Decimal(18, 6)
+  precoReferenciaKm            Decimal?  @db.Decimal(18, 6)
+  // Locação sem motorista; combustível por conta do contratante.
+  comMotorista                 Boolean   @default(true)
+  combustivelPorContaDoCliente Boolean   @default(false)
 
   @@unique([estudoId, codigo])
 }
@@ -1939,6 +1942,10 @@ model SimRota {
   idadeMaxima         Int?
   kmMaximo            Int?
   acessivel           Boolean?
+  // Horas de operação por dia por veículo (preço por hora).
+  horasDia            Decimal?  @db.Decimal(18, 6)
+  // Código do perfil de veículo (premissas.perfis) — van, micro, ônibus, carro.
+  perfilVeiculo       String?
 
   @@index([estudoId, ordem])
 }

@@ -203,6 +203,8 @@ CREATE TABLE "SimItem" (
     "shareIntermunicipal" DECIMAL(18,6) NOT NULL DEFAULT 0,
     "precoMaximoKm" DECIMAL(18,6),
     "precoReferenciaKm" DECIMAL(18,6),
+    "comMotorista" BOOLEAN NOT NULL DEFAULT true,
+    "combustivelPorContaDoCliente" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "SimItem_pkey" PRIMARY KEY ("id")
 );
@@ -233,6 +235,8 @@ CREATE TABLE "SimRota" (
     "idadeMaxima" INTEGER,
     "kmMaximo" INTEGER,
     "acessivel" BOOLEAN,
+    "horasDia" DECIMAL(18,6),
+    "perfilVeiculo" TEXT,
 
     CONSTRAINT "SimRota_pkey" PRIMARY KEY ("id")
 );
