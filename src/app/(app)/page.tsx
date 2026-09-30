@@ -164,6 +164,9 @@ export default async function ControladoriaPage({
   if (escopo.conexaoId) recorte.set("empresa", escopo.conexaoId);
   if (periodo.competencia) recorte.set("competencia", periodo.competencia);
   const voltaParaOPainel = recorte.size > 0 ? `/?${recorte}` : "/";
+  // A composição completa abre na MESMA empresa e competência do cartão —
+  // sem isso, com a MCZ selecionada, "Composição completa" mostrava o grupo.
+  const linkResultados = recorte.size > 0 ? `/resultados?${recorte}` : "/resultados";
 
   const detalhe = (campos: Record<string, string>) => {
     const busca = new URLSearchParams({ ...Object.fromEntries(recorte), ...campos, volta: voltaParaOPainel });
@@ -221,7 +224,7 @@ export default async function ControladoriaPage({
           <Fatias fatias={comLink(agruparComposicao(receitaComp, "tipo", 6), "RECEBER", "tipo")} />
           <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por categoria</p>
           <Fatias fatias={comLink(agruparComposicao(receitaComp, "categoria", 6), "RECEBER", "categoria")} />
-          <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+          <Link href={linkResultados} className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
             Composição completa e maiores títulos →
           </Link>
         </KpiExpansivel>
@@ -235,7 +238,7 @@ export default async function ControladoriaPage({
           <Fatias fatias={comLink(agruparComposicao(despesaComp, "categoria", 8), "PAGAR", "categoria")} />
           <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por tipo de documento</p>
           <Fatias fatias={comLink(agruparComposicao(despesaComp, "tipo", 6), "PAGAR", "tipo")} />
-          <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+          <Link href={linkResultados} className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
             Composição completa e maiores títulos →
           </Link>
         </KpiExpansivel>
@@ -281,7 +284,7 @@ export default async function ControladoriaPage({
               },
             ]}
           />
-          <Link href="/resultados" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+          <Link href={linkResultados} className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
             DRE completo, mês a mês →
           </Link>
         </KpiExpansivel>
@@ -510,7 +513,10 @@ export default async function ControladoriaPage({
       )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Secao titulo="Comparativos" descricao="Regime de competência, pela data de vencimento.">
+        {/* O critério é o de competencia.ts — data de EMISSÃO (vencimento só
+            quando a emissão falta). O rótulo ainda dizia "vencimento", de
+            antes da troca, e mandava quem confere procurar pela data errada. */}
+        <Secao titulo="Comparativos" descricao="Regime de competência, pela data de emissão do documento.">
           <Tabela
             colunas={["Período", "Receita", "Despesa", "Resultado"]}
             alinharDireita={[1, 2, 3]}

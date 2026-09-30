@@ -45,7 +45,11 @@ export default async function ConciliacaoPage({
     );
   }
 
-  const porConta = agrupar(movimentos, (m) => m.contaCorrenteCodigo);
+  // Por CONEXÃO e código: o código da conta é único dentro de uma conta Omie,
+  // não no grupo (ver saldoPorContaCents). Só pelo código, no consolidado, a
+  // conta da Azul e a da MCZ com o mesmo código somariam o extrato uma da
+  // outra.
+  const porConta = agrupar(movimentos, (m) => `${m.conexaoId}:${m.contaCorrenteCodigo}`);
   const entradas = somar(
     movimentos.filter((m) => m.valorCents > 0),
     (m) => m.valorCents
@@ -86,12 +90,14 @@ export default async function ConciliacaoPage({
           linhas={ctx.contasCorrentes
             .filter((c) => !c.inativa)
             .map((c) => {
-              const lista = porConta.get(c.codigo) ?? [];
+              const lista = porConta.get(`${c.conexaoId}:${c.codigo}`) ?? [];
               const ok = lista.filter((m) => m.conciliado).length;
               const percentual = lista.length > 0 ? (ok / lista.length) * 100 : 0;
               return [
                 <span key="c" className="font-medium text-slate-800">
                   {c.descricao}
+                  {/* A empresa da conta: no consolidado há contas das duas. */}
+                  <span className="block text-xs font-normal text-slate-400">{c.conexaoApelido}</span>
                 </span>,
                 c.banco ?? "—",
                 fmtNumero(lista.length),

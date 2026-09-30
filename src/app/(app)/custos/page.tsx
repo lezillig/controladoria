@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
 import { ROTULO_CLASSIFICACAO } from "@/lib/controladoria/estrategiaCusto";
+import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import { analisarEstrategiaNoBanco } from "@/lib/controladoria/estrategiaCustoNoBanco";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
@@ -184,8 +185,13 @@ export default async function CustosPage({
     const l = linhaDaTela(chave);
     return !l ? 0 : "totalCents" in l ? l.totalCents : l.valorCents;
   };
+  // O DENOMINADOR DA PARTICIPAÇÃO DE CADA FORNECEDOR: as linhas de SAÍDA do
+  // DRE (sinal negativo). Filtrar "tudo menos receita bruta e financeira"
+  // deixava "(+) Outras receitas operacionais" dentro do total de despesa —
+  // venda de veículo e resgate de consórcio engordando a base, e a
+  // participação de todo fornecedor saindo menor do que é.
   const totalDespesa = dre.linhas
-    .filter((l) => l.tipo === "GRUPO" && l.chave !== "RECEITA_BRUTA" && l.chave !== "RECEITA_FINANCEIRA")
+    .filter((l) => l.tipo === "GRUPO" && (LINHAS_DRE.find((d) => d.chave === l.chave)?.sinal ?? 1) < 0)
     .reduce((a, l) => a + l.valorCents, 0);
 
   // O QUE A VISÃO DO GRUPO ELIMINOU — operação entre as empresas (ver

@@ -321,10 +321,13 @@ export default async function ResultadosPage({
       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
         <p className="text-sm font-medium text-slate-800">Como estes números são formados</p>
         <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs leading-relaxed text-slate-600">
+          {/* O critério mudou para a EMISSÃO (competencia.ts) e estes três
+              avisos continuavam descrevendo o vencimento — explicando à
+              pessoa uma regra que a tela não usa mais. */}
           <li>
-            <strong>Por vencimento, não por nota fiscal.</strong> Serviço prestado em junho e faturado com vencimento
-            em julho conta em julho. O faturamento que a contabilidade apura sai da nota emitida, e por isso pode
-            divergir.
+            <strong>Pela emissão do título, não pela nota fiscal.</strong> O mês é o da data de emissão do título na
+            Omie (o vencimento só quando a emissão falta). O faturamento que a contabilidade apura sai da nota emitida,
+            e título sem nota também entra aqui — por isso os dois podem divergir.
           </li>
           <li>
             <strong>Todo título a receber entra, de qualquer categoria.</strong> Aporte de sócio, empréstimo,
@@ -332,7 +335,7 @@ export default async function ResultadosPage({
             qual categoria cada real está.
           </li>
           <li>
-            <strong>Parcela conta no mês do seu vencimento.</strong> Um contrato em três vezes aparece em três meses.
+            <strong>Cada parcela é um título.</strong> Conta no mês da emissão dela — não no do vencimento.
           </li>
         </ul>
       </div>
@@ -349,7 +352,7 @@ export default async function ResultadosPage({
           espelho guarda NF-e e NFS-e, não CT-e. */}
       <Secao
         titulo={`Faturamento x títulos a receber — ${mes.rotulo}`}
-        descricao="Faturamento é nota emitida, não cancelada, pela data de emissão — o número que a contabilidade declara. Título a receber é cobrança, pela data de vencimento. Os dois divergem por motivo legítimo, e a diferença é o que esta seção existe para nomear."
+        descricao="Faturamento é nota emitida, não cancelada, pela data de emissão — o número que a contabilidade declara. Título a receber é cobrança, pela data de emissão do título. Os dois divergem por motivo legítimo, e a diferença é o que esta seção existe para nomear."
         acao={
           <a href={urlDasNotas} className="text-xs font-medium text-blue-700 hover:underline">
             Baixar lista de notas
@@ -383,12 +386,16 @@ export default async function ResultadosPage({
               fmtBRL(fiscal.todosPorEmissaoCents),
             ],
             [
-              <strong key="rf">Receita por título, por data de VENCIMENTO</strong>,
+              // O número é o da composição abaixo: competência pela EMISSÃO (ou
+              // baixas, no caixa). O rótulo dizia "por data de VENCIMENTO".
+              <strong key="rf">
+                {noCaixa ? "Recebido no mês, pelas baixas" : "Receita por título (competência, pela emissão)"}
+              </strong>,
               <strong key="rq">{fmtNumero(receita.quantidade)}</strong>,
               <strong key="rv">{fmtBRL(receita.totalCents)}</strong>,
             ],
             [
-              "Diferença (vencimento − emissão)",
+              noCaixa ? "Diferença (recebido − faturamento pelo título)" : "Diferença (todos os títulos − títulos com documento fiscal)",
               "",
               fmtBRL(receita.totalCents - fiscal.fiscaisPorEmissaoCents),
             ],
@@ -508,7 +515,7 @@ export default async function ResultadosPage({
         <Tabela
           colunas={["Tributo", "Retido sobre a receber", "Retido sobre a pagar"]}
           alinharDireita={[1, 2]}
-          vazio="Nenhuma retenção lançada em título com vencimento neste mês."
+          vazio="Nenhuma retenção lançada em título emitido neste mês."
           linhas={retencoes.linhas.map((l) => [l.tributo, fmtBRL(l.receberCents), fmtBRL(l.pagarCents)])}
         />
         {(retencoes.totalReceberCents !== 0 || retencoes.totalPagarCents !== 0) && (
@@ -530,7 +537,7 @@ export default async function ResultadosPage({
 
       <Secao
         titulo="Competência — o mês em que o resultado foi gerado"
-        descricao="Receita e despesa pelo vencimento dos títulos, independentemente de terem sido pagos. Responde 'a operação deu lucro no mês?'."
+        descricao="Receita e despesa pela data de emissão dos títulos, independentemente de terem sido pagos. Responde 'a operação deu lucro no mês?'."
       >
         <Tabela
           colunas={[

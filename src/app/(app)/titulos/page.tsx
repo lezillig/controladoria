@@ -28,9 +28,15 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
   const abertos = todos.filter(emAberto);
   const vencidos = abertos.filter((t) => diasDeAtraso(t, ctx.dataReferencia) > 0);
   const aging = resumoAging(ctx, natureza);
-  // Preserva a empresa selecionada ao alternar entre pagar e receber: perder o
-  // filtro a cada clique de aba faria o usuario refazer a escolha o tempo todo.
-  const escopoNaUrl = escopo.conexaoId ? `&empresa=${escopo.conexaoId}` : "";
+  // Preserva a empresa E a competência ao alternar entre pagar e receber e
+  // entre os filtros de situação. Os filtros ("Vencidos", "Todos"...) levavam
+  // só a natureza: com a MCZ selecionada, clicar em "Vencidos" mostrava os
+  // vencidos do GRUPO sob o seletor ainda marcando MCZ — número de outra
+  // empresa com cara de ser desta.
+  const recorte = new URLSearchParams();
+  if (escopo.conexaoId) recorte.set("empresa", escopo.conexaoId);
+  if (periodo.competencia) recorte.set("competencia", periodo.competencia);
+  const escopoNaUrl = recorte.size > 0 ? `&${recorte}` : "";
 
   const lista =
     filtro === "VENCIDOS"
@@ -120,10 +126,10 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
         descricao={ordenada.length === 300 ? "Mostrando os 300 primeiros por vencimento." : undefined}
         acao={
           <div className="flex flex-wrap gap-1 text-xs">
-            <Filtro natureza={natureza} valor="ABERTOS" rotulo="Em aberto" ativo={filtro === "ABERTOS"} />
-            <Filtro natureza={natureza} valor="VENCIDOS" rotulo="Vencidos" ativo={filtro === "VENCIDOS"} />
-            <Filtro natureza={natureza} valor="COM_ENCARGOS" rotulo="Com encargos" ativo={filtro === "COM_ENCARGOS"} />
-            <Filtro natureza={natureza} valor="TODOS" rotulo="Todos" ativo={filtro === "TODOS"} />
+            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="ABERTOS" rotulo="Em aberto" ativo={filtro === "ABERTOS"} />
+            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="VENCIDOS" rotulo="Vencidos" ativo={filtro === "VENCIDOS"} />
+            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="COM_ENCARGOS" rotulo="Com encargos" ativo={filtro === "COM_ENCARGOS"} />
+            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="TODOS" rotulo="Todos" ativo={filtro === "TODOS"} />
           </div>
         }
       >
@@ -201,10 +207,22 @@ function Aba({ href, rotulo, ativo }: { href: string; rotulo: string; ativo: boo
   );
 }
 
-function Filtro({ natureza, valor, rotulo, ativo }: { natureza: string; valor: string; rotulo: string; ativo: boolean }) {
+function Filtro({
+  natureza,
+  recorte,
+  valor,
+  rotulo,
+  ativo,
+}: {
+  natureza: string;
+  recorte: string;
+  valor: string;
+  rotulo: string;
+  ativo: boolean;
+}) {
   return (
     <Link
-      href={`/titulos?natureza=${natureza}&filtro=${valor}`}
+      href={`/titulos?natureza=${natureza}&filtro=${valor}${recorte}`}
       className={`rounded-full px-3 py-1 font-medium ${
         ativo ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
       }`}
