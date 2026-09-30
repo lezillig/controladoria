@@ -85,9 +85,10 @@ export function rotuloMes(d: Date): string {
 export type JanelasRelatorio = {
   dia: Periodo;
   mesAtual: Periodo;
-  // O MÊS ANTERIOR e o MESMO MÊS DO ANO ANTERIOR são sempre o mês FECHADO,
-  // inteiro — decisão da diretoria (out/2026): a comparação é com o mês
-  // fechado, sem recortar até o mesmo dia. A tela diz em que dia está o mês
+  // O MÊS ANTERIOR, o MESMO MÊS DO ANO ANTERIOR e o ACUMULADO DO ANO
+  // ANTERIOR são sempre meses FECHADOS, inteiros — decisão da diretoria
+  // (out/2026): a comparação é com meses fechados, sem recortar até o mesmo
+  // dia. A tela diz em que dia está o mês
   // atual ("dia 22 de 30") para quem lê pesar o mês pela metade.
   mesAnterior: Periodo;
   ano: Periodo;
@@ -141,10 +142,12 @@ export function montarJanelas(dataReferencia: Date): JanelasRelatorio {
     diaDoMes,
     diasNoMes,
     ano: { inicio: inicioDoAno(d), fim: fimDoDia(d), rotulo: `Acumulado ${d.getFullYear()}` },
+    // Janeiro até o FIM do mesmo mês do ano anterior: meses fechados, como o
+    // mês anterior e o mesmo mês do ano anterior (ver o tipo).
     anoAnterior: {
       inicio: inicioDoAno(anoAnteriorMesmoDia),
-      fim: fimDoDia(anoAnteriorMesmoDia),
-      rotulo: `Acumulado ${anoAnteriorMesmoDia.getFullYear()} (até ${anoAnteriorMesmoDia.toLocaleDateString("pt-BR")})`,
+      fim: fimDoMes(mesmoMesAnoAnteriorInicio),
+      rotulo: `Acumulado ${anoAnteriorMesmoDia.getFullYear()} (até ${rotuloMes(mesmoMesAnoAnteriorInicio)}, meses fechados)`,
     },
     mesmoMesAnoAnterior: {
       inicio: mesmoMesAnoAnteriorInicio,

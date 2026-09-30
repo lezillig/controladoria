@@ -145,7 +145,7 @@ function montarBriefing(entrada: EntradaAnalista): string {
   );
   linhas.push(`- Mês anterior fechado: receita ${fmtBRL(c.mesAnterior.receitaCents)}, resultado ${fmtBRL(c.mesAnterior.resultadoCents)}`);
   linhas.push(
-    `- Acumulado do ano: receita ${fmtBRL(c.ano.receitaCents)} (${fmtVariacao(c.variacoes.receitaAnoVsAnterior)} vs. mesmo período do ano anterior), ` +
+    `- Acumulado do ano: receita ${fmtBRL(c.ano.receitaCents)} (${fmtVariacao(c.variacoes.receitaAnoVsAnterior)} vs. acumulado do ano anterior até o mesmo mês, meses fechados), ` +
       `resultado ${fmtBRL(c.ano.resultadoCents)} (${fmtVariacao(c.variacoes.resultadoAnoVsAnterior)})`
   );
   if (c.semBaseAnoAnterior) {

@@ -70,12 +70,13 @@ console.log("\n3. Instante é outra coisa, e continua lido em Brasília");
   conferir("noite em Brasília não vira o dia seguinte", fmtDiaDoInstante(noite), "24/09/2026");
 }
 
-console.log("\n4. Mês anterior e mesmo mês do ano anterior: sempre o mês fechado");
+console.log("\n4. Mês anterior, mesmo mês e acumulado do ano anterior: sempre meses fechados");
 {
   const j = montarJanelas(new Date(2026, 8, 29)); // 29/09/2026, mês pela metade
   conferir("mês atual vai até a referência", [fmtData(j.mesAtual.inicio), fmtData(j.mesAtual.fim), j.mesParcial], ["01/09/2026", "29/09/2026", true]);
   conferir("mês anterior é agosto inteiro", [fmtData(j.mesAnterior.inicio), fmtData(j.mesAnterior.fim)], ["01/08/2026", "31/08/2026"]);
   conferir("mesmo mês do ano anterior é setembro/2025 inteiro", [fmtData(j.mesmoMesAnoAnterior.inicio), fmtData(j.mesmoMesAnoAnterior.fim)], ["01/09/2025", "30/09/2025"]);
+  conferir("acumulado do ano anterior: jan a set/2025, meses fechados", [fmtData(j.anoAnterior.inicio), fmtData(j.anoAnterior.fim)], ["01/01/2025", "30/09/2025"]);
   const marco = montarJanelas(new Date(2026, 2, 31));
   conferir("de 31/03, o anterior é fevereiro inteiro", [fmtData(marco.mesAnterior.inicio), fmtData(marco.mesAnterior.fim)], ["01/02/2026", "28/02/2026"]);
 }
