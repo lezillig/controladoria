@@ -78,7 +78,7 @@ async function principal() {
   });
   const cx2 = await prisma.omieConexao.create({
     // A MCZ é a empresa CORPORATIVA: a folha dela vai para "Despesas com
-    // pessoas — corporativo / administrativo".
+    // pessoas — corporativo".
     data: { companyId: EMPRESA, nome: "MCZ DRE", apelido: "MC", credencialRef: "MC", cnpj: "22.222.222/0001-91", papelNoGrupo: "CORPORATIVO" },
   });
   await prisma.controladoriaConfig.create({

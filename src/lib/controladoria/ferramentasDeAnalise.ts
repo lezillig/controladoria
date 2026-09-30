@@ -400,7 +400,7 @@ export function ferramentasDeAnalise(
         )
         .max(20)
         .optional(),
-      sensibilidadeEm: z.array(z.enum(LINHAS_DE_GRUPO as [string, ...string[]])).max(6).optional().describe("Linhas para medir o efeito de ±10% (padrão: receita bruta, veículos, pessoas — operação e corporativo / administrativo)."),
+      sensibilidadeEm: z.array(z.enum(LINHAS_DE_GRUPO as [string, ...string[]])).max(6).optional().describe("Linhas para medir o efeito de ±10% (padrão: receita bruta, veículos, pessoas — operação e corporativo)."),
     }),
     run: async (input) => {
       const [base, contratos] = await Promise.all([baseHistoricaNoBanco(escopo, dataReferencia), contratosDoEscopo(escopo)]);

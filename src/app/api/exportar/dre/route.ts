@@ -131,7 +131,7 @@ export async function GET(req: NextRequest) {
     if (!calculada) continue;
     // A LINHA DE PESSOAS DA OUTRA EMPRESA, vazia, não entra — como na tela.
     // Numa empresa só, a folha dela está numa das duas linhas (operação ou
-    // corporativo / administrativo); a outra seria uma linha de zeros.
+    // corporativo); a outra seria uma linha de zeros.
     if (
       (def.chave === "DESPESA_SALARIOS" || def.chave === LINHA_PESSOAS_CORPORATIVO) &&
       calculada.valorCents === 0 &&

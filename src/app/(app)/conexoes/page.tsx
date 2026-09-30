@@ -111,7 +111,7 @@ export default async function ConexoesPage() {
                 <span key="a">
                   <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">{c.apelido}</span>
                   <span className="mt-1 block text-xs text-slate-400">
-                    {c.papelNoGrupo === "CORPORATIVO" ? "corporativo / administrativo" : "operação"}
+                    {c.papelNoGrupo === "CORPORATIVO" ? "corporativo" : "operação"}
                   </span>
                 </span>,
                 fmtDocumento(c.cnpj),

@@ -210,7 +210,7 @@ model OmieConexao {
   // O PAPEL DA EMPRESA NO GRUPO: OPERACAO (roda os ônibus — a Azul) ou
   // CORPORATIVO (a estrutura administrativa — a MCZ). Decide em qual das duas
   // linhas de "Despesas com pessoas" do DRE cai a folha de cada título:
-  // "— operação" ou "— corporativo / administrativo". Texto, e não enum, como
+  // "— operação" ou "— corporativo". Texto, e não enum, como
   // os demais domínios pequenos deste schema; valores fora dos dois são lidos
   // como OPERACAO.
   papelNoGrupo  String   @default("OPERACAO")

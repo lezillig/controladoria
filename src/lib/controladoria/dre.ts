@@ -65,7 +65,7 @@ export const LINHAS_DRE = [
   // classificações manuais já feitas); a separação acontece na conta, título a
   // título. Por isso a linha corporativa NÃO é oferecida na classificação.
   { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com pessoas — operação", tipo: "GRUPO", sinal: -1 },
-  { chave: "DESPESA_SALARIOS_CORPORATIVO", rotulo: "(-) Despesas com pessoas — corporativo / administrativo", tipo: "GRUPO", sinal: -1 },
+  { chave: "DESPESA_SALARIOS_CORPORATIVO", rotulo: "(-) Despesas com pessoas — corporativo", tipo: "GRUPO", sinal: -1 },
   // SÓCIOS em linha própria porque a pergunta que ela responde é de governança,
   // não de operação: quanto a sociedade retira. Misturada na administrativa,
   // some — e é justamente o número que um sócio quer achar em dez segundos.
@@ -155,7 +155,7 @@ export function linhaDeClassificacao(chave: string): string {
 
 // Rótulo na CLASSIFICAÇÃO — a de pessoas diz que a empresa decide o resto.
 export function rotuloDeClassificacao(chave: string): string {
-  if (chave === "DESPESA_SALARIOS") return "(-) Despesas com pessoas (operação ou corporativo / administrativo, pela empresa)";
+  if (chave === "DESPESA_SALARIOS") return "(-) Despesas com pessoas (operação ou corporativo, pela empresa)";
   return LINHAS_DRE.find((l) => l.chave === chave)?.rotulo ?? chave;
 }
 

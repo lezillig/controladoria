@@ -37,7 +37,7 @@ import { larguraPainel } from "@/lib/ui";
 // A base termina no último mês fechado e a tela diz qual é. O mês em curso é
 // o primeiro projetado — nunca base.
 
-// As duas linhas de pessoas (operação e corporativo / administrativo) no lugar
+// As duas linhas de pessoas (operação e corporativo) no lugar
 // da antiga linha única — ver LINHAS_DRE em dre.ts.
 const LINHAS_DE_SENSIBILIDADE = ["RECEITA_BRUTA", "DESPESA_VEICULOS", "DESPESA_SALARIOS", "DESPESA_SALARIOS_CORPORATIVO"] as const;
 

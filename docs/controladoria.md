@@ -77,14 +77,14 @@ despesa na mesma medida, e toda margem do DRE sairia errada.
 - **Transparência**: a tela de Custos e DRE, na visão do grupo, diz quanto foi
   eliminado de receita e de despesa no período, com a mesma consulta.
 
-### Pessoas: operação × corporativo / administrativo
+### Pessoas: operação × corporativo
 
 Cada conexão tem um **papel no grupo** (`OmieConexao.papelNoGrupo`, editável
 em Conexões): `OPERACAO` (a Azul, que roda a frota) ou `CORPORATIVO` (a MCZ,
 estrutura administrativa — a migração marca `CORPORATIVO` nas conexões cujo
 apelido começa por MCZ). No DRE, a antiga linha "(-) Despesas com pessoas"
 deixou de existir: a folha cai em **"(-) Despesas com pessoas — operação"** ou
-**"(-) Despesas com pessoas — corporativo / administrativo"** pela EMPRESA do
+**"(-) Despesas com pessoas — corporativo"** pela EMPRESA do
 título, em qualquer visão. No grupo aparecem as duas; numa empresa só, a linha
 da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
 

@@ -77,18 +77,16 @@ export default function ConexaoForm({ conexao }: { conexao?: ConexaoEmEdicao }) 
           </p>
         </div>
         {/* O PAPEL NO GRUPO decide em qual das duas linhas de pessoas do DRE
-            cai a folha desta empresa: "— operação" ou "— corporativo /
-            administrativo". É da empresa, não da categoria: a mesma
+            cai a folha desta empresa: "— operação" ou "— corporativo". É da empresa, não da categoria: a mesma
             categoria "Salários" existe nas duas contas Omie. */}
         <div>
           <label className={labelClass}>Papel no grupo</label>
           <select name="papelNoGrupo" defaultValue={conexao?.papelNoGrupo ?? "OPERACAO"} className={inputClass}>
             <option value="OPERACAO">Operação</option>
-            <option value="CORPORATIVO">Corporativo / administrativo</option>
+            <option value="CORPORATIVO">Corporativo</option>
           </select>
           <p className="mt-1 text-xs text-slate-500">
-            No DRE, a folha desta empresa vai para &quot;Despesas com pessoas — operação&quot; ou &quot;— corporativo /
-            administrativo&quot;.
+            No DRE, a folha desta empresa vai para &quot;Despesas com pessoas — operação&quot; ou &quot;— corporativo&quot;.
           </p>
         </div>
         <div>

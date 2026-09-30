@@ -88,7 +88,7 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
     acao: id ? "CONEXAO_ALTERADA" : "CONEXAO_CADASTRADA",
     entidadeTipo: "OmieConexao",
     entidadeId: conexao.id,
-    descricao: `Conexão ${apelido} (${nome}) ${id ? "alterada" : "cadastrada"}, credencial ${credencialRef}, papel no grupo ${papelNoGrupo === "CORPORATIVO" ? "corporativo / administrativo" : "operação"}.`,
+    descricao: `Conexão ${apelido} (${nome}) ${id ? "alterada" : "cadastrada"}, credencial ${credencialRef}, papel no grupo ${papelNoGrupo === "CORPORATIVO" ? "corporativo" : "operação"}.`,
     depois: dados,
   });
 

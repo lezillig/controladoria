@@ -490,7 +490,7 @@ export function orcadoVersusRealizado(orcamento: LinhaOrcada[], base: BaseHistor
     gruposRealizado.set(linha, somaNosMeses(base.porLinha.get(linha)));
   }
   // ORÇAMENTO GRAVADO ANTES DA SEPARAÇÃO DAS PESSOAS. Até a linha de pessoas
-  // virar duas (operação e corporativo / administrativo), toda a folha era
+  // virar duas (operação e corporativo), toda a folha era
   // orçada em DESPESA_SALARIOS. Comparar esse orçado com o realizado só da
   // operação mostraria uma economia que não existe — do tamanho da folha
   // corporativa. Versão sem nenhuma linha corporativa orçada: o realizado das
