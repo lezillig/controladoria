@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { parseLocalDate } from "@/lib/date";
 import {
-  disponibilidadeGestao,
+  disponibilidadeGestaoDesde,
+  marcadorDeFalhasDaGestao,
   lerAbastecimentos,
   lerClientes,
   lerEscalas,
@@ -101,6 +102,10 @@ export async function carregarContexto(
   const recorteDeMovimento = ate ? { gte: corteRecente, lte: ate } : { gte: corteRecente };
 
   const escopo = conexaoId ? { companyId, conexaoId } : { companyId };
+
+  // As leituras da gestão abaixo correm em paralelo; a disponibilidade é a de
+  // TODAS elas, não a da que terminou por último (ver leitura.ts).
+  const marcadorDaGestao = marcadorDeFalhasDaGestao();
 
   const [
     conexoes,
@@ -289,8 +294,9 @@ export async function carregarContexto(
     versoesDeTitulo,
     // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
     // leitura (ver src/lib/gestao/leitura.ts), então só faz sentido consultá-la
-    // quando as quatro já rodaram.
-    gestao: disponibilidadeGestao(),
+    // quando as quatro já rodaram — e desde o marcador, para uma falha não ser
+    // apagada pelo sucesso de uma leitura paralela que terminou depois.
+    gestao: disponibilidadeGestaoDesde(marcadorDaGestao),
     ultimoSyncConcluido,
     // Uma por conexão ativa: a mais recente, seja qual for o status.
     ultimaExecucaoPorConexao: conexoes.map((c) => execucoesRecentes.find((r) => r.conexaoId === c.id) ?? null),

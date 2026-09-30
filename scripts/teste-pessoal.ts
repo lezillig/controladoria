@@ -665,5 +665,42 @@ console.log("\nPE-AFASTADO-COM-OPERACAO — ponto batido em dia de atestado ou f
 console.log("\nContexto vazio");
 conferir("sem motorista, título nem afastamento, nada é emitido", auditarPessoal(contexto({})).length, 0);
 
-console.log(falhas === 0 ? "\nTodos os casos passaram." : `\n${falhas} caso(s) falharam.`);
-process.exit(falhas === 0 ? 0 : 1);
+// ------------------------------------------------ disponibilidade da gestão
+// O agente cala sem motoristas — e o que diz ao supervisor e ao motor que
+// "sem motoristas" é falta de dado, e não ausência de gente, é
+// `ctx.gestao.disponivel`. O contexto lê motoristas e abastecimentos EM
+// PARALELO; a disponibilidade era a da leitura que terminava por último, e a
+// falha dos motoristas sumia sob o sucesso dos abastecimentos. Aqui a falha
+// é rápida e o sucesso é lento, como no caso real. Sem banco: a consulta é
+// substituída antes de qualquer conexão.
+async function disponibilidadeComLeiturasParalelas() {
+  console.log("\nDisponibilidade da gestão com leituras em paralelo");
+  const { prisma } = await import("../src/lib/prisma");
+  const leitura = await import("../src/lib/gestao/leitura");
+  const alvo = prisma as unknown as { $queryRaw: unknown };
+  const original = alvo.$queryRaw;
+  alvo.$queryRaw = (partes: TemplateStringsArray) =>
+    partes.join("?").includes('"Driver"')
+      ? Promise.reject(new Error("permission denied for table Driver"))
+      : new Promise((r) => setTimeout(() => r([]), 20));
+  try {
+    const marcador = leitura.marcadorDeFalhasDaGestao();
+    const [motoristas] = await Promise.all([leitura.lerMotoristas("c"), leitura.lerAbastecimentos("c", d("2026-01-01"))]);
+    const disp = leitura.disponibilidadeGestaoDesde(marcador);
+    conferir("motoristas não vieram", motoristas.length, 0);
+    conferir("a falha dos motoristas não é apagada pelo sucesso paralelo", disp.disponivel, false);
+    conferir("e o motivo diz o que faltou", disp.erro?.includes("os motoristas"), true);
+
+    const depois = leitura.marcadorDeFalhasDaGestao();
+    alvo.$queryRaw = () => Promise.resolve([]);
+    await Promise.all([leitura.lerMotoristas("c"), leitura.lerAbastecimentos("c", d("2026-01-01"))]);
+    conferir("rodada seguinte sem falha volta a disponível", leitura.disponibilidadeGestaoDesde(depois).disponivel, true);
+  } finally {
+    alvo.$queryRaw = original;
+  }
+}
+
+disponibilidadeComLeiturasParalelas().then(() => {
+  console.log(falhas === 0 ? "\nTodos os casos passaram." : `\n${falhas} caso(s) falharam.`);
+  process.exit(falhas === 0 ? 0 : 1);
+});

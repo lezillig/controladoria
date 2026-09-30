@@ -154,6 +154,31 @@ export function disponibilidadeGestao(): DisponibilidadeGestao {
   return ultimaDisponibilidade;
 }
 
+// LEITURAS EM PARALELO NÃO PODEM USAR "A ÚLTIMA LEITURA".
+//
+// `disponibilidadeGestao()` devolve o resultado da leitura que terminou por
+// último. `carregarContexto` dispara motoristas, clientes, veículos e
+// abastecimentos juntos: se motoristas falhava e abastecimentos respondia
+// depois, a gestão aparecia disponível com a lista de motoristas vazia — o
+// agente de pessoal e o cruzamento fornecedor × funcionário rodavam sobre
+// nada, sem a limitação escrita pelo supervisor, e o motor fechava os achados
+// deles como se a condição tivesse sumido.
+//
+// O contador só cresce: quem dispara várias leituras guarda o marcador antes
+// e pergunta depois se ALGUMA falhou no intervalo. Falha de outra requisição
+// no mesmo intervalo também conta — na dúvida, indisponível, que é o lado
+// que não fecha achado por falta de dado.
+let falhasDeLeitura = 0;
+let ultimaFalha: string | null = null;
+
+export function marcadorDeFalhasDaGestao(): number {
+  return falhasDeLeitura;
+}
+
+export function disponibilidadeGestaoDesde(marcador: number): DisponibilidadeGestao {
+  return falhasDeLeitura > marcador ? { disponivel: false, erro: ultimaFalha } : { disponivel: true, erro: null };
+}
+
 async function ler<T>(consulta: () => Promise<T[]>, rotulo: string): Promise<T[]> {
   try {
     const linhas = await consulta();
@@ -167,6 +192,8 @@ async function ler<T>(consulta: () => Promise<T[]>, rotulo: string): Promise<T[]
       disponivel: false,
       erro: `Não foi possível ler ${rotulo} do sistema de gestão: ${mensagem.slice(0, 200)}`,
     };
+    falhasDeLeitura++;
+    ultimaFalha = ultimaDisponibilidade.erro;
     return [];
   }
 }
