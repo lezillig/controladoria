@@ -33,7 +33,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "não encontrado" }, { status: 404 });
   }
 
-  return new NextResponse(relatorio.html, {
+  // Relatório gravado antes do layout fluido saiu com 600px fixos: na tela
+  // do sistema ele abre na largura da janela (até 1100px), como os novos.
+  const html = relatorio.html.replace(
+    "</head>",
+    "<style>.wrap{width:100% !important;max-width:1100px !important;}</style></head>"
+  );
+
+  return new NextResponse(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       // O conteúdo é gerado e escapado pelo próprio sistema (ver esc() em

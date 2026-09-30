@@ -25,8 +25,11 @@ import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
 //     (Apple Mail, iOS, Outlook mobile): abaixo de 600px as colunas viram
 //     blocos de largura total. Onde a media query e ignorada, o layout ja
 //     nasce legivel — nunca depende dela.
-//   - LARGURA MAXIMA 600px, o padrao historico de e-mail, que cabe na tela do
-//     celular sem zoom horizontal.
+//   - LARGURA FLUIDA ate 1100px: ocupa a tela do computador e encolhe no
+//     celular. Os cartoes sao blocos inline (tecnica "fluid hybrid"): lado a
+//     lado enquanto cabem — quatro no computador, dois no tablet, um no
+//     celular — sem depender de media query. O Outlook do Windows, que ignora
+//     max-width em div, empilha os cartoes na largura toda: legivel.
 //   - SEM IMAGEM EXTERNA. Alem de a maioria dos clientes bloquear imagem por
 //     padrao, um relatorio financeiro nao deveria disparar requisicao para
 //     servidor nenhum ao ser aberto (rastreamento de leitura de dado
@@ -100,18 +103,23 @@ function secao(titulo: string, conteudo: string, subtitulo?: string): string {
 }
 
 function cartaoKpi(rotulo: string, valor: string, apoio: string, cor = CINZA_TEXTO): string {
-  // class="col" e o gancho da media query: no celular cada cartao ocupa a
-  // linha inteira em vez de espremer quatro colunas de 140px.
+  // Bloco inline de 236 a 100%: vai para o lado enquanto cabe (ver o topo do
+  // arquivo). Os cartoes vao sempre dentro de gradeDeCartoes().
   return `
-  <td class="col" style="width:50%;padding:4px;" valign="top">
+  <div class="kpi" style="display:inline-block;vertical-align:top;width:100%;max-width:252px;min-width:200px;padding:4px;box-sizing:border-box;">
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#ffffff;border:1px solid ${BORDA};border-radius:10px;">
       <tr><td style="padding:12px 14px;">
         <div style="font:500 12px/1.3 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_SUAVE};">${esc(rotulo)}</div>
-        <div style="font:700 20px/1.3 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${cor};margin-top:4px;">${esc(valor)}</div>
+        <div style="font:700 20px/1.3 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${cor};margin-top:4px;white-space:nowrap;">${esc(valor)}</div>
         <div style="font:400 12px/1.4 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:${CINZA_SUAVE};margin-top:2px;">${esc(apoio)}</div>
       </td></tr>
     </table>
-  </td>`;
+  </div>`;
+}
+
+// font-size:0 tira o espaço que o HTML entre blocos inline deixaria.
+function gradeDeCartoes(cartoes: string[]): string {
+  return `<div style="font-size:0;line-height:0;margin:0 -4px;">${cartoes.join("")}</div>`;
 }
 
 function tabela(cabecalho: string[], linhas: string[][], alinhamentoDireita: number[] = []): string {
@@ -187,16 +195,12 @@ function secaoConformidade(c: PanoramaConformidade): string {
   const partes: string[] = [];
 
   partes.push(`
-  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-    <tr>
-      ${cartaoKpi("Apontamentos em aberto", fmtNumero(c.abertos), c.valorEnvolvidoCents > 0 ? `${fmtBRLCompacto(c.valorEnvolvidoCents)} envolvidos` : "De consultoria, contabilidade e auditoria")}
-      ${cartaoKpi("Graves", fmtNumero(c.criticos), "Críticos e altos sem conclusão", c.criticos > 0 ? "#b91c1c" : "#15803d")}
-    </tr>
-    <tr>
-      ${cartaoKpi("Prazo vencido", fmtNumero(c.vencidos), "Prazo combinado que passou", c.vencidos > 0 ? "#b91c1c" : "#15803d")}
-      ${cartaoKpi("Reincidentes", fmtNumero(c.reincidentes), "Mesmo ponto em 3+ competências", c.reincidentes > 0 ? "#b91c1c" : "#15803d")}
-    </tr>
-  </table>`);
+  ${gradeDeCartoes([
+    cartaoKpi("Apontamentos em aberto", fmtNumero(c.abertos), c.valorEnvolvidoCents > 0 ? `${fmtBRLCompacto(c.valorEnvolvidoCents)} envolvidos` : "De consultoria, contabilidade e auditoria"),
+    cartaoKpi("Graves", fmtNumero(c.criticos), "Críticos e altos sem conclusão", c.criticos > 0 ? "#b91c1c" : "#15803d"),
+    cartaoKpi("Prazo vencido", fmtNumero(c.vencidos), "Prazo combinado que passou", c.vencidos > 0 ? "#b91c1c" : "#15803d"),
+    cartaoKpi("Reincidentes", fmtNumero(c.reincidentes), "Mesmo ponto em 3+ competências", c.reincidentes > 0 ? "#b91c1c" : "#15803d"),
+  ])}`);
 
   if (!c.documentoEsperadoRecebido && c.competenciaEsperada) {
     partes.push(`
@@ -329,38 +333,32 @@ export function montarHtml(dados: DadosRelatorio): string {
   partes.push(
     secao(
       "Caixa e resultado",
-      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-        <tr>
-          ${cartaoKpi(
-            "Saldo em caixa",
-            fmtBRL(panorama.saldoAtualCents),
-            `A pagar em aberto ${fmtBRLCompacto(panorama.aPagarEmAbertoCents)} · a receber ${fmtBRLCompacto(panorama.aReceberEmAbertoCents)}`,
-            panorama.saldoAtualCents >= 0 ? CINZA_TEXTO : "#b91c1c"
-          )}
-          ${cartaoKpi(
-            `Resultado de ${fechado.rotulo} (DRE)`,
-            fmtBRL(fechado.resultadoLiquidoCents),
-            `EBIT ${fmtBRLCompacto(fechado.ebitCents)} · margem líquida ${fmtPercent(fechado.margemLiquidaPercent)} · ${porClassificar(fechado)}`,
-            fechado.resultadoLiquidoCents >= 0 ? "#15803d" : "#b91c1c"
-          )}
-        </tr>
-        <tr>
-          ${cartaoKpi("Títulos a receber do mês", fmtBRL(c.mesAtual.receitaCents), `${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`)}
-          ${cartaoKpi("Títulos a pagar do mês", fmtBRL(c.mesAtual.despesaCents), `${fmtVariacao(c.variacoes.despesaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`)}
-        </tr>
-        ${
-          corrente
-            ? `<tr>
-          ${cartaoKpi(
-            `${c.janelas.mesAtual.rotulo} — parcial (DRE)`,
-            fmtBRL(corrente.resultadoLiquidoCents),
-            `EBIT ${fmtBRLCompacto(corrente.ebitCents)} · ${porClassificar(corrente)} · comparável só com o mês anterior até o mesmo dia`,
-            corrente.resultadoLiquidoCents >= 0 ? "#15803d" : "#b91c1c"
-          )}
-        </tr>`
-            : ""
-        }
-      </table>`,
+      gradeDeCartoes([
+        cartaoKpi(
+          "Saldo em caixa",
+          fmtBRL(panorama.saldoAtualCents),
+          `A pagar em aberto ${fmtBRLCompacto(panorama.aPagarEmAbertoCents)} · a receber ${fmtBRLCompacto(panorama.aReceberEmAbertoCents)}`,
+          panorama.saldoAtualCents >= 0 ? CINZA_TEXTO : "#b91c1c"
+        ),
+        cartaoKpi(
+          `Resultado de ${fechado.rotulo} (DRE)`,
+          fmtBRL(fechado.resultadoLiquidoCents),
+          `EBIT ${fmtBRLCompacto(fechado.ebitCents)} · margem líquida ${fmtPercent(fechado.margemLiquidaPercent)} · ${porClassificar(fechado)}`,
+          fechado.resultadoLiquidoCents >= 0 ? "#15803d" : "#b91c1c"
+        ),
+        ...(corrente
+          ? [
+              cartaoKpi(
+                `${c.janelas.mesAtual.rotulo} — parcial (DRE)`,
+                fmtBRL(corrente.resultadoLiquidoCents),
+                `EBIT ${fmtBRLCompacto(corrente.ebitCents)} · ${porClassificar(corrente)} · mês em curso, comparado ao mês anterior fechado`,
+                corrente.resultadoLiquidoCents >= 0 ? "#15803d" : "#b91c1c"
+              ),
+            ]
+          : []),
+        cartaoKpi("Títulos a receber do mês", fmtBRL(c.mesAtual.receitaCents), `${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`),
+        cartaoKpi("Títulos a pagar do mês", fmtBRL(c.mesAtual.despesaCents), `${fmtVariacao(c.variacoes.despesaMesVsAnterior)} ${c.rotuloDaVariacaoMensal}`),
+      ]),
       `Movimento de ${fmtData(dados.dataReferencia)}: títulos a receber ${fmtBRL(c.dia.receitaCents)} · a pagar ${fmtBRL(c.dia.despesaCents)}. O resultado é o do DRE gerencial de Custos e DRE, pelo mesmo cálculo.`
     )
   );
@@ -417,16 +415,12 @@ export function montarHtml(dados: DadosRelatorio): string {
   partes.push(
     secao(
       "Dinheiro em jogo",
-      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
-        <tr>
-          ${cartaoKpi("Perdas do mês", fmtBRL(c.mesAtual.perdaTotalCents), "Juros, multa, tarifa e desconto", c.mesAtual.perdaTotalCents > 0 ? "#b91c1c" : "#15803d")}
-          ${cartaoKpi("Economia identificada", fmtBRL(economiaTotal), "Impacto anual estimado das oportunidades", economiaTotal > 0 ? "#15803d" : CINZA_TEXTO)}
-        </tr>
-        <tr>
-          ${cartaoKpi("Perdas apontadas", fmtBRL(perdasTotal), "Total dos achados de perda em aberto")}
-          ${cartaoKpi("Vencido a receber", fmtBRL(panorama.vencidoReceberCents), `De ${fmtBRLCompacto(panorama.aReceberEmAbertoCents)} em aberto`)}
-        </tr>
-      </table>`
+      gradeDeCartoes([
+        cartaoKpi("Perdas do mês", fmtBRL(c.mesAtual.perdaTotalCents), "Juros, multa, tarifa e desconto", c.mesAtual.perdaTotalCents > 0 ? "#b91c1c" : "#15803d"),
+        cartaoKpi("Economia identificada", fmtBRL(economiaTotal), "Impacto anual estimado das oportunidades", economiaTotal > 0 ? "#15803d" : CINZA_TEXTO),
+        cartaoKpi("Perdas apontadas", fmtBRL(perdasTotal), "Total dos achados de perda em aberto"),
+        cartaoKpi("Vencido a receber", fmtBRL(panorama.vencidoReceberCents), `De ${fmtBRLCompacto(panorama.aReceberEmAbertoCents)} em aberto`),
+      ])
     )
   );
 
@@ -623,6 +617,7 @@ export function montarHtml(dados: DadosRelatorio): string {
   @media only screen and (max-width:600px) {
     .col { display:block !important; width:100% !important; }
     .wrap { width:100% !important; }
+    .kpi { max-width:100% !important; }
   }
 </style>
 </head>
@@ -632,7 +627,7 @@ export function montarHtml(dados: DadosRelatorio): string {
   </div>
   <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:${FUNDO};">
     <tr><td align="center" style="padding:16px 8px;">
-      <table role="presentation" class="wrap" cellpadding="0" cellspacing="0" border="0" width="600" style="width:600px;max-width:600px;background:${FUNDO};border-radius:14px;overflow:hidden;">
+      <table role="presentation" class="wrap" cellpadding="0" cellspacing="0" border="0" width="100%" style="width:100%;max-width:1100px;background:${FUNDO};border-radius:14px;overflow:hidden;">
         ${partes.join("")}
       </table>
     </td></tr>
