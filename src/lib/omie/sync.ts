@@ -4,6 +4,7 @@ import {
   OMIE_ENDPOINTS,
   OMIE_PACE_MS,
   OmieVazioError,
+  OmieTransitorioError,
   extrairItens,
   extrairTotalPaginas,
   omieCall,
@@ -182,6 +183,17 @@ function acabouOTempo(ctx: ContextoFase): boolean {
   return Date.now() > ctx.fimDoOrcamento;
 }
 
+// Falha passageira da Omie (limite de consumo, rede) no meio de uma fase: a
+// fase PARA e devolve o cursor da página que falhou, em vez de registrar o
+// erro e pular para o passo seguinte. Pular era perder a página para sempre
+// na carga histórica — a janela concluía sem ela e nunca era relida. A linha
+// de erro continua indo para o run, para o diagnóstico ver o que aconteceu.
+function pausaPorFalhaPassageira(res: ResultadoFase, rotulo: string, e: unknown, cursor: object): ResultadoFase | null {
+  if (!(e instanceof OmieTransitorioError)) return null;
+  res.erros.push(`${rotulo}: ${e.message} Retomada na próxima invocação, da mesma página.`);
+  return { ...res, proximoCursor: JSON.stringify(cursor) };
+}
+
 function lerCursor<T>(cursor: string | null, padrao: T): T {
   if (!cursor) return padrao;
   try {
@@ -258,6 +270,8 @@ async function sincronizarCadastros(ctx: ContextoFase, backfill: boolean): Promi
         );
       } catch (e) {
         if (e instanceof OmieVazioError) break;
+        const pausa = pausaPorFalhaPassageira(res, entidade, e, { entidade, pagina } satisfies CursorCadastros);
+        if (pausa) return pausa;
         res.erros.push(`${entidade}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
         break;
       }
@@ -531,6 +545,8 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         resposta = await buscarTitulos(ctx, { nPagina: pagina, nRegPorPagina: REGISTROS_POR_PAGINA, ...passo.param });
       } catch (e) {
         if (e instanceof OmieVazioError) break;
+        const pausa = pausaPorFalhaPassageira(res, `títulos ${passo.id}`, e, { passo: indice, pagina } satisfies CursorTitulos);
+        if (pausa) return pausa;
         res.erros.push(`títulos ${passo.id}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
         break;
       }
@@ -715,6 +731,8 @@ async function sincronizarMovimentos(ctx: ContextoFase): Promise<ResultadoFase> 
         { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true }
       );
     } catch (e) {
+      const pausa = pausaPorFalhaPassageira(res, `extrato conta ${codigo}`, e, { conta: i } satisfies CursorMovimentos);
+      if (pausa) return pausa;
       if (!(e instanceof OmieVazioError)) {
         res.erros.push(`extrato conta ${codigo}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
       }
@@ -844,6 +862,8 @@ async function sincronizarNotas(ctx: ContextoFase): Promise<ResultadoFase> {
           toleraVazio: true,
         });
       } catch (e) {
+        const pausa = pausaPorFalhaPassageira(res, `notas ${tipo}`, e, { tipo, pagina } satisfies CursorNotas);
+        if (pausa) return pausa;
         if (!(e instanceof OmieVazioError)) {
           res.erros.push(`notas ${tipo}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
         }
@@ -928,6 +948,8 @@ async function sincronizarContratos(ctx: ContextoFase, backfill: boolean): Promi
         toleraVazio: true,
       });
     } catch (e) {
+      const pausa = pausaPorFalhaPassageira(res, "contratos", e, { pagina, completo: cursor.completo } satisfies CursorContratos);
+      if (pausa) return pausa;
       if (!(e instanceof OmieVazioError)) {
         res.erros.push(`contratos: ${e instanceof Error ? e.message : "erro desconhecido"}`);
       }
@@ -1055,6 +1077,8 @@ async function sincronizarCte(ctx: ContextoFase): Promise<ResultadoFase> {
           toleraVazio: true,
         });
       } catch (e) {
+        const pausa = pausaPorFalhaPassageira(res, `CT-e modelo ${modelo}`, e, { modelo, pagina } satisfies CursorCte);
+        if (pausa) return pausa;
         if (!(e instanceof OmieVazioError)) {
           res.erros.push(`CT-e modelo ${modelo}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
         }

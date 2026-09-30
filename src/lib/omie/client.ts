@@ -539,6 +539,18 @@ const RATE_LIMIT_PATTERNS = [
 
 export class OmieVazioError extends Error {}
 
+// FALHA TRANSITÓRIA — limite de consumo, rede, gateway fora — que não coube
+// retentar dentro da invocação. É diferente de recusa de negócio (tag,
+// credencial, método): a mesma chamada, feita de novo daqui a pouco, passa.
+//
+// Existe como classe própria porque o sync tratava as duas do mesmo jeito:
+// registrava o erro e PULAVA o passo inteiro, e a fase concluía. Numa janela
+// de carga histórica isso é buraco permanente — o mês fica CONCLUIDO sem os
+// títulos das páginas que faltavam, e `obterOuCriarRun` nunca o relê. Com a
+// classe, o sync para e devolve o cursor da página que falhou; a invocação
+// seguinte continua dali.
+export class OmieTransitorioError extends Error {}
+
 const MAX_RETRIES = 3;
 
 // Remove qualquer eco de credencial da mensagem antes dela virar
@@ -631,7 +643,7 @@ export async function omieCall(
       await sleep(backoffMs(tentativa));
       return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
-    throw new Error(`Falha de rede ao chamar ${call}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
+    throw new OmieTransitorioError(`Falha de rede ao chamar ${call}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
   }
 
   const texto = await res.text();
@@ -643,7 +655,10 @@ export async function omieCall(
       await sleep(backoffMs(tentativa));
       return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
-    throw new Error(
+    // 429 e gateway fora (502/503/504, página HTML do balanceador) são
+    // passageiros: a página é refeita na próxima invocação, não pulada.
+    const Erro = res.status === 429 || res.status >= 502 ? OmieTransitorioError : Error;
+    throw new Erro(
       `Omie respondeu ${res.status} em ${call} com conteúdo não-JSON: ${sanitizeErro(texto, opts.credencialRef)}`
     );
   }
@@ -681,7 +696,7 @@ export async function omieCall(
       await sleep(backoffMs(tentativa));
       return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
-    throw new Error(`Omie recusou por limite de consumo em ${call} e não há orçamento de tempo para retentativa.`);
+    throw new OmieTransitorioError(`Omie recusou por limite de consumo em ${call} e não há orçamento de tempo para retentativa.`);
   }
 
   if (fault) {
