@@ -968,3 +968,24 @@ O que ainda não existe, e a revisão de FP&A lista: direcionadores operacionais
 (km, litros, headcount) como série ligada ao financeiro, fluxo de caixa mensal
 de doze meses com saídas recorrentes, curva de recebimento por cliente, metas
 do BSC derivadas do orçamento.
+
+## 13. Simulador de custos e preços
+
+`src/lib/simulador/` (motor puro e serviços), telas em **Simulador de
+custos** (`/simulador`), especialista de IA **Precificação e propostas** na
+tela Investigar. Decisões, fontes e pendências em
+`docs/simulador_custos/DECISOES.md`; a pesquisa que sustenta o método em
+`docs/simulador_custos/PESQUISA.md`.
+
+Um **estudo** custeia uma operação antes de ela existir (licitação, contrato
+privado, renovação, orçamento interno). O editor monta o orçamento em
+tabelas — itens, rotas, tipos de veículo (carro, van, micro, ônibus, cada um
+com o seu motorista), premissas — e mostra a cada mudança o preço, a margem
+e o veredicto, pelo mesmo motor que grava a versão. As premissas vêm da
+**base de custos** (Gabarito importado, com vigência) e podem ser trocadas
+pelos **custos reais medidos** nesta controladoria (DRE por categoria,
+cartão de combustível, frota), sempre com a origem de cada número à vista.
+
+Cada versão salva é um snapshot reexecutável; a planilha Excel sai em
+fórmulas. Lances, resultado da disputa e o realizado do contrato fecham o
+ciclo: a calibração compara a versão lançada com o que o contrato custou.

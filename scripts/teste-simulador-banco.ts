@@ -128,6 +128,19 @@ async function principal() {
   const recusa = await estudos.gravarRealizado("outra-empresa", sjp.id, { competencia: "2027-02", kmRealizado: 1 }, "x", null);
   ok("outra empresa não grava no estudo", Boolean(recusa.erro));
 
+  console.log("\nEXPORTAR — versão salva e rascunho, sem gravar nada");
+  const { exportarEstudo } = await import("../src/lib/simulador/exportacaoEstudo");
+  const versoesAntes = await prisma.simSimulacao.count({ where: { estudoId: sjp.id } });
+  const daVersao = await exportarEstudo(EMPRESA, sjp.id, { simulacaoId: v1.id });
+  ok("versão salva vira .xlsx", !("erro" in daVersao) && daVersao.conteudo.subarray(0, 2).toString() === "PK" && /_v1\.xlsx$/.test(daVersao.nome), JSON.stringify("erro" in daVersao ? daVersao : daVersao.nome));
+  const rascunho = await exportarEstudo(EMPRESA, sjp.id, { entrada: historicoSaoJoseDosPinhais().entrada });
+  ok("rascunho vira .xlsx", !("erro" in rascunho) && /_rascunho\.xlsx$/.test(rascunho.nome));
+  const invalido = await exportarEstudo(EMPRESA, sjp.id, { entrada: { ...historicoSaoJoseDosPinhais().entrada, itens: [] } });
+  ok("rascunho inválido é recusado pela mesma validação de salvar", "erro" in invalido);
+  const deOutra = await exportarEstudo("outra-empresa", sjp.id, { simulacaoId: v1.id });
+  ok("outra empresa não exporta o estudo", "erro" in deOutra);
+  conferir("exportar não cria versão", await prisma.simSimulacao.count({ where: { estudoId: sjp.id } }), versoesAntes);
+
   await limpar();
   await prisma.$disconnect();
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
