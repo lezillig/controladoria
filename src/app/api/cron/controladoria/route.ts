@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { redigir } from "@/lib/controladoria/falhas";
 import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { disponibilidadeGestao, listarEmpresasAtivas } from "@/lib/gestao/leitura";
@@ -137,7 +138,9 @@ export async function GET(req: NextRequest) {
       resultados.push({ empresa: empresa.name, ...passo });
       if (passo.continua) continua = true;
     } catch (e) {
-      const mensagem = e instanceof Error ? e.message : "erro desconhecido";
+      // Redigida antes de gravar e de devolver: a mensagem de um erro de
+      // banco ou da Omie pode trazer host, usuário ou trecho de consulta.
+      const mensagem = redigir(e instanceof Error ? e.message : "erro desconhecido");
       resultados.push({ empresa: empresa.name, erro: mensagem });
       // Marca a execução em andamento como falha, para a próxima invocação
       // abrir uma nova em vez de retomar indefinidamente uma que quebra.
