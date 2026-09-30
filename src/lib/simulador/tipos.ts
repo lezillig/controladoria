@@ -255,12 +255,23 @@ export function tipoDe(categoria: CategoriaVeiculo, variante: VarianteVeiculo): 
   return TIPOS_VEICULO.find((t) => CATEGORIA_DO_TIPO[t] === categoria && VARIANTE_DO_TIPO[t] === variante) ?? categoria;
 }
 
+// FONTE DE ENERGIA do tipo de veículo. O motor não muda com ela: o campo de
+// preço (variaveis.dieselLitro) é o preço por UNIDADE de energia — litro ou
+// kWh — e o consumo é km por essa unidade. Custo por km = preço ÷ consumo,
+// igual para diesel, gasolina, etanol e elétrico.
+export type FonteEnergia = "DIESEL" | "GASOLINA" | "ETANOL" | "ELETRICO";
+export const FONTES_ENERGIA: FonteEnergia[] = ["DIESEL", "GASOLINA", "ETANOL", "ELETRICO"];
+export const ROTULO_ENERGIA: Record<FonteEnergia, string> = { DIESEL: "Diesel", GASOLINA: "Gasolina", ETANOL: "Etanol", ELETRICO: "Elétrico" };
+export const UNIDADE_ENERGIA: Record<FonteEnergia, "l" | "kWh"> = { DIESEL: "l", GASOLINA: "l", ETANOL: "l", ELETRICO: "kWh" };
+
 export type PerfilVeiculo = {
   codigo: string;
   descricao: string;
   tipo: TipoVeiculo;
   lotacao?: number | null;
   categoriaCnh?: string | null;
+  // Ausente = diesel (estudos salvos antes de existir o campo).
+  energia?: FonteEnergia;
   motorista: {
     // Salário base do motorista deste tipo — substitui Premissas.pessoal.salarioMotorista.
     salario: number;

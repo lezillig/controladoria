@@ -94,6 +94,9 @@ export const CATALOGO_PARAMETROS: DefinicaoParametro[] = [
   // 6 — Insumos
   p("INSUMO", "diesel_rs_l", "Diesel S10", "numero"),
   p("INSUMO", "gasolina_rs_l", "Gasolina / etanol", "numero", false),
+  // Sem linha no Gabarito: preenchidos na tela Custos base.
+  p("INSUMO", "etanol_rs_l", "Etanol", "numero", false),
+  p("INSUMO", "energia_rs_kwh", "Energia elétrica (recarga)", "numero", false),
   p("INSUMO", "forma_abastecimento", "Forma de abastecimento", "texto"),
   p("INSUMO", "reajuste_diesel_pct", "Reajuste médio anual do diesel", "pct", false),
   p("INSUMO", "arla", "ARLA 32", "texto"),

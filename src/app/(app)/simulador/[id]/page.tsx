@@ -16,7 +16,8 @@ import {
   STATUS_ESTUDO,
 } from "@/lib/simulador/estudos";
 import { simular } from "@/lib/simulador/motor";
-import type { EntradaSimulacao } from "@/lib/simulador/tipos";
+import { FONTES_ENERGIA, type EntradaSimulacao, type FonteEnergia } from "@/lib/simulador/tipos";
+import { CHAVE_PRECO_ENERGIA, PRECO_ENERGIA_PADRAO } from "@/lib/simulador/energia";
 import { larguraPainel } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
 import EditorEstudo from "./EditorEstudo";
@@ -138,6 +139,7 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
         lacunas={lacunas}
         acompanhamento={acompanhamento}
         podeConsultarEspecialista={podeConsultarEspecialista}
+        precosEnergia={Object.fromEntries(FONTES_ENERGIA.map((f) => [f, base.parametros.get(CHAVE_PRECO_ENERGIA[f])?.valor ?? PRECO_ENERGIA_PADRAO[f]])) as Record<FonteEnergia, number>}
         avisoInicial={salva && /^\d{1,5}$/.test(salva) ? `Versão ${salva} salva.` : null}
       />
       <p className="text-xs text-slate-500">

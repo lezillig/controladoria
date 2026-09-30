@@ -241,6 +241,14 @@ são estimativas, ajustáveis em Custos base. Os custos reais são medidos por
 categoria e valem para as variantes dela; o salário do motorista vem da
 função do mesmo tipo ou, sem ela, da categoria.
 
+Energia: cada tipo de veículo tem a sua — diesel, gasolina, etanol ou
+elétrico. O motor não muda: o campo de preço é o preço por unidade de
+energia (litro ou kWh) e o consumo é km por essa unidade. Trocar a energia
+na aba Veículos puxa o preço da base (diesel, gasolina, etanol ou tarifa da
+recarga em R$/kWh), zera a ARLA fora do diesel e, no elétrico, põe o
+consumo típico da categoria em km/kWh. Preço e consumo medidos no cartão de
+combustível não se aplicam aos tipos elétricos.
+
 ## 7.1 Custos base editáveis
 
 A tela **Custos base** (submenu do simulador) mostra cada parâmetro do

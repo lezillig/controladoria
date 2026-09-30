@@ -316,6 +316,10 @@ export default function NovoEstudoForm() {
               <option value="ITEM">Um preço por item</option>
               <option value="LOTE">Preço único do lote (média ponderada dos itens)</option>
             </select>
+            <p className="mt-1.5 text-xs text-slate-500">
+              O estudo pode ter vários itens — os itens ou lotes do edital, as linhas da proposta. Depois de criar, inclua-os na aba Operação
+              (“Adicionar item”); cada item tem as suas rotas, os seus veículos e o seu preço.
+            </p>
           </div>
         </div>
       </div>

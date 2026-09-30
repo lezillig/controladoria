@@ -1,7 +1,8 @@
 "use client";
 
 import { CAMPOS_PREMISSAS, PERFIS_PADRAO } from "@/lib/simulador/premissas";
-import { ROTULO_TIPO_VEICULO, type EntradaSimulacao, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
+import { FONTES_ENERGIA, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, UNIDADE_ENERGIA, type EntradaSimulacao, type FonteEnergia, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
+import { energiaDoPerfil, trocarEnergia } from "@/lib/simulador/energia";
 import { Cartao, CampoNumero, botao, selecao } from "../comum";
 import type { AlterarComOrigem } from "./Premissas";
 import { CalculadoraFU } from "./Calculadoras";
@@ -15,7 +16,19 @@ import { CalculadoraFU } from "./Calculadoras";
 
 const CAMPOS_VEICULO = CAMPOS_PREMISSAS.filter((c) => (c.grupo === "veiculo" || c.grupo === "variaveis") && c.tipo !== "bool" && c.tipo !== "metodoDepreciacao");
 
-export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: EntradaSimulacao; alterar: AlterarComOrigem; podeEditar: boolean }) {
+export default function Veiculos({
+  entrada,
+  alterar,
+  podeEditar,
+  precosEnergia,
+}: {
+  entrada: EntradaSimulacao;
+  alterar: AlterarComOrigem;
+  podeEditar: boolean;
+  // Preço por unidade de cada fonte (base de custos ou padrão do simulador),
+  // para quando a pessoa troca a energia de um tipo de veículo.
+  precosEnergia: Record<FonteEnergia, number>;
+}) {
   const perfis = entrada.premissas.perfis ?? [];
   const emUso = (codigo: string) => entrada.rotas.filter((r) => r.perfilVeiculo === codigo).length;
   const faltando = PERFIS_PADRAO.filter((p) => !perfis.some((x) => x.codigo === p.codigo));
@@ -110,11 +123,40 @@ export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: En
               ))}
             </tr>
             <tr className="bg-slate-50/60">
+              <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium">Energia</td>
+              <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-500">Diesel</td>
+              {perfis.map((p, k) => (
+                <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5 text-right">
+                  <select
+                    aria-label={`Energia — ${p.descricao}`}
+                    className={selecao}
+                    disabled={!podeEditar}
+                    value={energiaDoPerfil(p)}
+                    onChange={(ev) =>
+                      alterar((e) => {
+                        const x = e.premissas.perfis![k];
+                        e.premissas.perfis![k] = trocarEnergia(x, ev.target.value as FonteEnergia, precosEnergia, e.premissas.variaveis.arlaKm);
+                      })
+                    }
+                  >
+                    {FONTES_ENERGIA.map((f) => (
+                      <option key={f} value={f}>
+                        {ROTULO_ENERGIA[f]}
+                      </option>
+                    ))}
+                  </select>
+                  {energiaDoPerfil(p) === "ELETRICO" && (
+                    <span className="mt-1 block text-[11px] leading-tight text-slate-500">Confira valor do veículo, manutenção e IPVA (isento em alguns estados).</span>
+                  )}
+                </td>
+              ))}
+            </tr>
+            <tr className="bg-slate-50/60">
               <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium">Lotação / CNH</td>
               <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-500">—</td>
               {perfis.map((p) => (
                 <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5 text-right text-xs text-slate-600">
-                  {p.lotacao ?? "—"} lugares · CNH {p.categoriaCnh ?? "—"}
+                  {p.lotacao ? `${p.lotacao} lugares` : "sem passageiros"} · CNH {p.categoriaCnh ?? "—"}
                 </td>
               ))}
             </tr>
@@ -128,11 +170,17 @@ export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: En
                 </td>
                 {perfis.map((p, k) => (
                   <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5">
+                    {(c.caminho === "variaveis.dieselLitro" || c.caminho.startsWith("variaveis.consumo")) && (
+                      <span className="mb-0.5 block text-right text-[10px] text-slate-500">
+                        {c.caminho === "variaveis.dieselLitro" ? `R$/${UNIDADE_ENERGIA[energiaDoPerfil(p)]}` : `km/${UNIDADE_ENERGIA[energiaDoPerfil(p)]}`}
+                      </span>
+                    )}
                     <CampoNumero
                       valor={valorDo(p, c.caminho)}
                       percentual={c.tipo === "pct"}
                       casas={4}
                       desativado={!podeEditar}
+                      rotulo={`${c.rotulo} — ${p.descricao}`}
                       aoMudar={(v) =>
                         v !== null &&
                         mudarPerfil(k, (x) => {

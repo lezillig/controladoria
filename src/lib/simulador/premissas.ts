@@ -1,5 +1,6 @@
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
+import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, IRPJ_LOCACAO_PADRAO } from "./motor";
@@ -88,9 +89,9 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("veiculo.taxaFinanciamentoAa", "Taxa do financiamento (CDC, leasing, FINAME)", "% a.a.", "pct"),
   c("veiculo.custoCapitalProprioAa", "Custo de oportunidade do capital próprio", "% a.a.", "pct", "O que o dinheiro renderia fora da frota — CDI, Selic ou a taxa mínima de atratividade da empresa."),
   c("veiculo.remuneracaoSobreValorMedio", "Remunerar só o valor não depreciado", "", "bool", "Como o GEIPOT: o capital rende sobre o valor médio do veículo no contrato, e não sobre o valor cheio."),
-  c("variaveis.dieselLitro", "Combustível", "R$/litro", "moeda"),
-  c("variaveis.consumoAsfaltoKmL", "Consumo em asfalto", "km/l", "numero"),
-  c("variaveis.consumoTerraKmL", "Consumo em terra", "km/l", "numero"),
+  c("variaveis.dieselLitro", "Combustível / energia", "R$ por litro (ou kWh no elétrico)", "moeda"),
+  c("variaveis.consumoAsfaltoKmL", "Consumo em asfalto", "km por litro (ou kWh)", "numero"),
+  c("variaveis.consumoTerraKmL", "Consumo em terra", "km por litro (ou kWh)", "numero"),
   c("variaveis.arlaKm", "ARLA 32", "R$/km", "moeda"),
   c("variaveis.oleoLavagemKm", "Óleo, filtros, lavagem", "R$/km", "moeda"),
   c("variaveis.pneusAsfaltoKm", "Pneus — asfalto", "R$/km", "moeda"),
@@ -405,7 +406,7 @@ function perfil(
   };
 }
 
-const PERFIS_BASE: PerfilVeiculo[] = [] = [
+const PERFIS_BASE: PerfilVeiculo[] = [
   perfil("CARRO", "CARRO", "Carro executivo (sedã/SUV)", 4, "B", 2400, 1.2,
     { valor: 140000, seguroMes: 350, ipvaLicenciamentoAno: 5200, laudoVistoriaAno: 300, rastreadorMes: 80 },
     { dieselLitro: 6.3, consumoAsfaltoKmL: 11, consumoTerraKmL: 9, arlaKm: 0, pneusAsfaltoKm: 0.05, pneusTerraKm: 0.07, manutencaoAsfaltoKm: 0.18, manutencaoTerraKm: 0.25 }),
@@ -417,6 +418,10 @@ const PERFIS_BASE: PerfilVeiculo[] = [] = [
     { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90 },
     { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),
 ]
+
+// Carro roda a gasolina; van, micro e ônibus, a diesel. Elétrico se escolhe
+// no tipo de veículo do estudo (aba Veículos) ou pela frota da base.
+for (const p of PERFIS_BASE) p.energia = p.tipo === "CARRO" ? "GASOLINA" : "DIESEL";
 
 // ADAPTADOS (acessibilidade): o veículo da categoria com elevador ou rampa,
 // ancoragem de cadeira de rodas e cinto de 4 pontos (NBR 14022), depreciados
@@ -460,6 +465,7 @@ export const PERFIS_PADRAO: PerfilVeiculo[] = [
   variante("ONIBUS", "ONIBUS_UNIDADE_MOVEL", "Ônibus unidade móvel (consultório/atendimento)", null, "C", { adaptacaoValor: 500000, higienizacaoMes: 800, manutencaoFixaPctMes: 0.002 }, { consumoAsfaltoKmL: 2.6 }),
 ];
 
+
 export function tipoDoTexto(texto: string | null | undefined): TipoVeiculo | null {
   const t = (texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
   const categoria: CategoriaVeiculo | null = /micro/.test(t)
@@ -491,6 +497,7 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
   return base.veiculos.map((v, i) => {
     const tipo = tipoDoTexto(String(v.tipo ?? "")) ?? "VAN";
     const padrao = PERFIS_PADRAO.find((p) => p.tipo === tipo)!;
+    const energia = energiaDoTexto(String(v.combustivel ?? "")) ?? energiaDoPerfil(padrao);
     // Salário: a função do mesmo tipo ("Motorista de van adaptada"); sem ela,
     // a da mesma categoria ("Motorista de van").
     const motoristas = base.funcoes.filter((f) => /motorista/i.test(String(f.funcao ?? "")));
@@ -525,9 +532,14 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
         laudoVistoriaAno: n(v, "licencasAnual") ?? padrao.veiculo.laudoVistoriaAno,
         rastreadorMes: n(v, "rastreadorMensal") ?? padrao.veiculo.rastreadorMes,
       },
+      energia,
       variaveis: {
         ...padrao.variaveis,
-        consumoAsfaltoKmL: n(v, "consumoKmL") ?? padrao.variaveis.consumoAsfaltoKmL,
+        // Preço da energia do modelo (diesel, gasolina, etanol ou kWh), da
+        // base quando houver; ARLA só no diesel.
+        dieselLitro: base.parametros.get(CHAVE_PRECO_ENERGIA[energia])?.valor ?? (energia === energiaDoPerfil(padrao) ? padrao.variaveis.dieselLitro : PRECO_ENERGIA_PADRAO[energia]),
+        arlaKm: energia === "DIESEL" ? padrao.variaveis.arlaKm : 0,
+        consumoAsfaltoKmL: n(v, "consumoKmL") ?? (energia === "ELETRICO" && energiaDoPerfil(padrao) !== "ELETRICO" ? CONSUMO_ELETRICO_PADRAO[CATEGORIA_DO_TIPO[tipo]] : padrao.variaveis.consumoAsfaltoKmL),
         manutencaoAsfaltoKm: n(v, "manutencaoKm") ?? padrao.variaveis.manutencaoAsfaltoKm,
         pneusAsfaltoKm: qtde && preco && vidaPneu ? (qtde * preco) / vidaPneu : padrao.variaveis.pneusAsfaltoKm,
       },

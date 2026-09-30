@@ -7,7 +7,7 @@ import { montarPainel } from "@/lib/simulador/decisao";
 import type { IndicadorReal } from "@/lib/simulador/aplicarReais";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerCaminho } from "@/lib/simulador/premissas";
-import { ROTULO_UNIDADE, type EntradaSimulacao, type ResultadoSimulacao } from "@/lib/simulador/tipos";
+import { ROTULO_UNIDADE, type EntradaSimulacao, type FonteEnergia, type ResultadoSimulacao } from "@/lib/simulador/tipos";
 import { salvarVersao } from "../actions";
 import { botao, botaoPrimario, brl, pct, selecao } from "./comum";
 import Operacao from "./abas/Operacao";
@@ -56,6 +56,7 @@ export default function EditorEstudo({
   acompanhamento,
   avisoInicial,
   podeConsultarEspecialista,
+  precosEnergia,
 }: {
   estudo: EstudoTela;
   entradaInicial: EntradaSimulacao;
@@ -71,6 +72,7 @@ export default function EditorEstudo({
   acompanhamento: ReactNode;
   avisoInicial: string | null;
   podeConsultarEspecialista: boolean;
+  precosEnergia: Record<FonteEnergia, number>;
 }) {
   const router = useRouter();
   const [entrada, setEntrada] = useState(entradaInicial);
@@ -355,7 +357,7 @@ export default function EditorEstudo({
       )}
 
       {aba === "operacao" && <Operacao entrada={entrada} alterar={alterar} podeEditar />}
-      {aba === "veiculos" && <Veiculos entrada={entrada} alterar={alterar} podeEditar />}
+      {aba === "veiculos" && <Veiculos entrada={entrada} alterar={alterar} podeEditar precosEnergia={precosEnergia} />}
       {aba === "premissas" && <Premissas entrada={entrada} origem={origem} alterar={alterar} podeEditar indicadores={indicadores} lacunas={lacunas} />}
       {aba === "custos" && resultado && <Custos resultado={resultado} entrada={entrada} />}
       {aba === "cenarios" && resultado && <Cenarios resultado={resultado} entrada={entrada} alterar={alterar} />}

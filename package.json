@@ -41,6 +41,7 @@
     "teste:custos-reais": "tsx scripts/teste-custos-reais.ts",
     "teste:mao-de-obra": "tsx scripts/teste-mao-de-obra.ts",
     "teste:numeros": "tsx scripts/teste-numeros.ts",
+    "teste:energia": "tsx scripts/teste-energia.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

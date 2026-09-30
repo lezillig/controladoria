@@ -4,7 +4,8 @@ import { paraNumero } from "@/lib/simulador/baseDeCustos";
 import { CATALOGO_PARAMETROS } from "@/lib/simulador/catalogo";
 import { camposEditaveis, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
-import { ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
+import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
+import { energiaDoPerfil } from "@/lib/simulador/energia";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
 import { Secao } from "../../_componentes";
@@ -84,6 +85,7 @@ export default async function BaseDeCustosPage() {
         modelo: p.descricao,
         lotacao: p.lotacao ?? null,
         acessivel: VARIANTE_DO_TIPO[p.tipo] === "ADAPTADO" ? true : null,
+        combustivel: ROTULO_ENERGIA[energiaDoPerfil(p)],
         valorCompra: v.valor,
         consumoKmL: va.consumoAsfaltoKmL,
         manutencaoKm: va.manutencaoAsfaltoKm,

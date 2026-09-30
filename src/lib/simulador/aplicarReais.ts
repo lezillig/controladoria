@@ -73,8 +73,13 @@ export function aplicarIndicadores(
       // O indicador da categoria (medido em todas as vans) vale para as
       // variantes dela (van adaptada, van unidade móvel), salvo se a pessoa
       // escolheu também um indicador próprio da variante.
+      // Preço e consumo medidos no cartão de combustível não servem ao
+      // elétrico (R$/kWh e km/kWh): ele fica de fora.
+      const deCombustivel = /^variaveis\.(dieselLitro|consumoAsfaltoKmL|consumoTerraKmL|arlaKm)$/.test(campo);
       const alvos = novosPerfis.filter(
-        (p) => p.tipo === tipo || (CATEGORIA_DO_TIPO[p.tipo] === tipo && !caminhosEscolhidos.includes(`perfil:${p.tipo}:${campo}`))
+        (p) =>
+          (p.tipo === tipo || (CATEGORIA_DO_TIPO[p.tipo] === tipo && !caminhosEscolhidos.includes(`perfil:${p.tipo}:${campo}`))) &&
+          !(deCombustivel && p.energia === "ELETRICO")
       );
       const grupoDe = (p: PerfilVeiculo) => p[grupo as "veiculo" | "variaveis"] as Record<string, unknown>;
       if (alvos.length === 0 || !numericos.has(campo) || typeof grupoDe(alvos[0])[chave] !== "number") {

@@ -3,6 +3,7 @@ import { gravarLeitura, type ResumoGravacao } from "./baseDeCustos";
 import { CATALOGO_PARAMETROS, COLUNAS_FROTA, COLUNAS_MAO_DE_OBRA, COLUNAS_PEDAGIO, normalizarPct, todosOsNumeros, type DefinicaoColuna } from "./catalogo";
 import { normalizarChave, type LeituraGabarito, type RegistroLido } from "./gabarito";
 import { lerCaminho, PREMISSAS_PADRAO } from "./premissas";
+import { PRECO_ENERGIA_PADRAO } from "./energia";
 
 // AJUSTAR A BASE DE CUSTOS PELA TELA — sem planilha.
 //
@@ -18,7 +19,7 @@ export const FONTE_AJUSTE = "ajuste na tela";
 
 // Onde cada parâmetro da base entra na conta. O que não está aqui é
 // informativo (fica na base para consulta e para o especialista de IA).
-export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unidade?: string; unidadePadrao?: string }> = {
+export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unidade?: string; unidadePadrao?: string; padrao?: number }> = {
   km_morto_pct: { caminho: "contrato.kmMortoPct", como: "Km improdutivo das rotas" },
   utilizacao_srp: { caminho: "contrato.utilizacao", como: "Utilização prevista do km" },
   meses_custo_fixo_escolar: { caminho: "contrato.mesesCustoFixo", como: "Meses de custo fixo no contrato escolar", unidade: "meses" },
@@ -48,11 +49,15 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   prazo_empresas: { caminho: "preco.prazoRecebimentoDias", como: "Prazo de recebimento em contrato privado", unidade: "dias" },
   seguro_garantia_pct: { caminho: "preco.despesasSobrePrecoPct", como: "Garantia contratual, como despesa sobre o preço" },
   diesel_rs_l: { caminho: "variaveis.dieselLitro", como: "Preço do diesel", unidade: "R$/l" },
+  gasolina_rs_l: { como: "Preço da gasolina — tipos de veículo a gasolina (carro)", unidade: "R$/l", padrao: PRECO_ENERGIA_PADRAO.GASOLINA },
+  etanol_rs_l: { como: "Preço do etanol — tipos de veículo a etanol", unidade: "R$/l", padrao: PRECO_ENERGIA_PADRAO.ETANOL },
+  energia_rs_kwh: { como: "Tarifa da recarga — tipos de veículo elétricos (consumo em km/kWh)", unidade: "R$/kWh", padrao: PRECO_ENERGIA_PADRAO.ELETRICO },
   oleo_rs_km: { caminho: "variaveis.oleoLavagemKm", como: "Óleo e filtros por km", unidade: "R$/km" },
   arla: { caminho: "variaveis.arlaKm", como: "ARLA por km (preço × % do diesel ÷ consumo)", unidadePadrao: "R$/km (já calculado)" },
 };
 
 export function padraoDoSimulador(chave: string): number | null {
+  if (USO_DA_BASE[chave]?.padrao !== undefined) return USO_DA_BASE[chave].padrao!;
   const caminho = USO_DA_BASE[chave]?.caminho;
   if (!caminho) return null;
   const v = lerCaminho(PREMISSAS_PADRAO, caminho);
