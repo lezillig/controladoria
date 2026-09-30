@@ -46,6 +46,14 @@ export default function Proposta({
   const mensal = entrada.premissas.contrato.modo === "MENSAL";
   const unidade = resultado.unidade;
   const periodo = mensal ? "mês" : "período";
+  // No lote vale o preço único: o total (valor, lucro, margem) é o desse
+  // preço, como no topo do editor, na versão salva e na aba Proposta do
+  // Excel. A soma dos itens ao preço de cada um aparecia ao lado do preço
+  // único, com outro valor e outra margem.
+  const lote = resultado.lote;
+  const total = lote
+    ? { faturamento: lote.faturamentoAoPrecoProposta, lucro: lote.lucroAoPrecoProposta, margem: lote.margemAoPrecoProposta }
+    : { faturamento: resultado.totais.faturamento, lucro: resultado.totais.lucro, margem: resultado.totais.margem };
 
   const exportarCsv = () => {
     const cab = [
@@ -86,8 +94,8 @@ export default function Proposta({
       i.veiculos,
       i.motoristas,
     ]);
-    const total = ["TOTAL", "", "", null, null, resultado.totais.faturamento, resultado.totais.custoTotal, resultado.totais.lucro, pctCsv(resultado.totais.margem), null, null, null, null, null, null, resultado.totais.veiculos, resultado.totais.motoristas];
-    baixar(`${nomeArquivo}.csv`, csv([cab, ...linhas, total]), "text/csv;charset=utf-8");
+    const linhaTotal = [lote ? "TOTAL (preço único do lote)" : "TOTAL", "", "", null, lote ? lote.precoPropostaUnidade : null, total.faturamento, resultado.totais.custoTotal, total.lucro, pctCsv(total.margem), null, null, null, null, null, null, resultado.totais.veiculos, resultado.totais.motoristas];
+    baixar(`${nomeArquivo}.csv`, csv([cab, ...linhas, linhaTotal]), "text/csv;charset=utf-8");
   };
 
   return (
@@ -150,11 +158,11 @@ export default function Proposta({
             <tr className="bg-slate-50 font-semibold">
               <td className={td}>Total</td>
               <td className={tdN} />
-              <td className={tdN}>{resultado.lote ? brl(resultado.lote.precoPropostaUnidade) : ""}</td>
-              <td className={tdN}>{brl(resultado.totais.faturamento)}</td>
+              <td className={tdN}>{lote ? brl(lote.precoPropostaUnidade) : ""}</td>
+              <td className={tdN}>{brl(total.faturamento)}</td>
               <td className={tdN}>{brl(resultado.totais.custoTotal)}</td>
-              <td className={tdN}>{brl(resultado.totais.lucro)}</td>
-              <td className={tdN}>{pct(resultado.totais.margem)}</td>
+              <td className={`${tdN} ${total.lucro < 0 ? "text-red-700" : ""}`}>{brl(total.lucro)}</td>
+              <td className={tdN}>{pct(total.margem)}</td>
               <td className={tdN} colSpan={5} />
             </tr>
           </tfoot>

@@ -100,7 +100,12 @@ export function CalculadoraEncargos({ entrada, origem, alterar, podeEditar }: { 
 export function CalculadoraFU({ entrada, alterar, podeEditar }: { entrada: EntradaSimulacao; alterar: AlterarComOrigem; podeEditar: boolean }) {
   const perfis = entrada.premissas.perfis ?? [];
   const [p, setP] = useState<ParametrosFU>(FU_PADRAO);
-  const [perfil, setPerfil] = useState(perfis[0]?.codigo ?? "");
+  const [escolhido, setPerfil] = useState(perfis[0]?.codigo ?? "");
+  // O estado nasce com os tipos da montagem: se o estudo não tinha tipo e um
+  // foi adicionado depois (ou o escolhido foi removido), o select mostrava o
+  // primeiro tipo com o estado vazio — botão desativado e, com um tipo só,
+  // sem como escolher. Código que não existe mais cai no primeiro tipo.
+  const perfil = perfis.some((x) => x.codigo === escolhido) ? escolhido : (perfis[0]?.codigo ?? "");
   const calc = fatorDeUtilizacao(p);
   const alvo = perfis.find((x) => x.codigo === perfil);
   return (
