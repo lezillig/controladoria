@@ -195,7 +195,11 @@ export const PREMISSAS_PADRAO: Premissas = {
   },
 };
 
-export type OrigemPremissa = { origem: "BASE" | "PADRAO" | "AJUSTE" | "HISTORICO"; fonte: string; detalhe?: string };
+// REAL: medido nos custos da própria empresa (DRE da Omie, cartão de frota,
+// cadastro da gestão) — ver custosReais.ts. Difere de BASE, que é o número
+// que alguém escreveu no Gabarito: REAL é o que o caixa e o cartão registraram.
+// A `fonte` diz qual indicador e o `detalhe`, a conta com os números.
+export type OrigemPremissa = { origem: "BASE" | "PADRAO" | "AJUSTE" | "HISTORICO" | "REAL"; fonte: string; detalhe?: string };
 export type MapaOrigem = Record<string, OrigemPremissa>;
 
 export type EscolhasDaBase = {

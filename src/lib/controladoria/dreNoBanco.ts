@@ -162,7 +162,7 @@ function somaPorCategoria(escopo: EscopoDre, periodo: Periodo, regime: "competen
 // Restringir ao mês foi um defeito com efeito visível (ver o comentário no
 // original): categoria sem movimento no mês ficava sem lado e caía no ramo de
 // despesa, e uma ENTRADA aparecia como saída.
-async function movimentoPorCategoria(escopo: EscopoDre) {
+export async function movimentoPorCategoria(escopo: EscopoDre) {
   const linhas = await prisma.$queryRaw<LinhaMovimento[]>`
     SELECT ${CATEGORIA} AS categoria,
            t.natureza::text AS natureza,
@@ -255,7 +255,7 @@ async function retencoesCaixa(escopo: EscopoDre, periodo: Periodo): Promise<Rete
   return retencaoDaLinha(linha);
 }
 
-function retencoes(escopo: EscopoDre, periodo: Periodo, regime: "competencia" | "caixa") {
+export function retencoes(escopo: EscopoDre, periodo: Periodo, regime: "competencia" | "caixa") {
   return regime === "caixa" ? retencoesCaixa(escopo, periodo) : retencoesCompetencia(escopo, periodo);
 }
 
@@ -348,7 +348,7 @@ function agruparDrill(linhas: LinhaDrill[]) {
   return { titulos, totais };
 }
 
-async function categoriasDoEscopo(escopo: EscopoDre): Promise<Map<string, CategoriaParaDre>> {
+export async function categoriasDoEscopo(escopo: EscopoDre): Promise<Map<string, CategoriaParaDre>> {
   const linhas = await prisma.omieCategoria.findMany({
     where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
     select: { codigo: true, descricao: true, natureza: true, contaReceita: true, contaDespesa: true },
