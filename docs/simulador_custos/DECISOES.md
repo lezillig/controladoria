@@ -98,9 +98,10 @@ manter a reprodução, os dois estudos históricos guardam as premissas
 originais, inclusive as que a pesquisa corrigiu:
 
 - **IRPJ de 1,2%** (base presumida de 8%, que é a de cargas). Transporte de
-  passageiros presume 16%: 2,4% da receita. O painel mostra o alerta "IRPJ na
+  passageiros presume 16%: 2,4% da receita, e 4% com o adicional de 10% que
+  toda empresa desse porte paga na margem. O painel mostra o alerta "IRPJ na
   base presumida de cargas" quando o estudo usa a alíquota antiga; o padrão
-  de estudos novos e o preset Presumido já usam 2,4%.
+  de estudos novos e o preset Presumido usam 4%.
 - **Depreciação percentual sobre o valor cheio** e remuneração do capital
   sobre o valor cheio. Estudos novos podem usar linear ou soma dos dígitos e
   remuneração sobre o valor médio.
@@ -116,7 +117,8 @@ motoristas por van, que bate com o limite inferior do GEIPOT.
 
 ## 6. Correções e acréscimos da pesquisa
 
-- **Regimes tributários.** Três presets: Presumido (IRPJ 2,4%, CSLL 1,08%,
+- **Regimes tributários.** Três presets: Presumido (IRPJ 4% com o
+  adicional, CSLL 1,08%,
   PIS/COFINS cumulativos 3,65%); Real para transporte de passageiros (IR/CSLL
   34% sobre o lucro, PIS/COFINS **continuam cumulativos e sem crédito**,
   Solução de Consulta Cosit 50/2026); Real para locação sem motorista
@@ -175,6 +177,38 @@ motoristas por van, que bate com o limite inferior do GEIPOT.
   são Presumido, sem item sem motorista e sem horas noturnas: nada muda
   neles. Versões salvas antes (motor `2026.09-v1`) com Real, locação ou
   horas noturnas dão outro número ao reexecutar.
+
+## 6.1 Correções das revisões de especialistas (set/2026)
+
+Duas revisões independentes — precificação e experiência de uso — rodaram
+sobre o módulo pronto. O que foi confirmado e corrigido, além das três
+correções do motor acima:
+
+- **Leitura de números pt-BR** (`numeros.ts`, uma regra para tela e
+  servidor). Entrar e sair de um campo com "2.000" gravava 2; no servidor,
+  "9.31" virava 931. Passar pelo campo não grava; Esc desiste; entrar com
+  Tab seleciona o valor.
+- **Administração central sobre o custo direto.** O motor aplica a
+  administração sobre o custo direto, mas o custo real e a base a ofereciam
+  como % da receita. O custo real mede sobre o custo direto do DRE; a base
+  converte `x = a/(d − a)`, com `d` o divisor do preço.
+- **IRPJ presumido com o adicional**: 4% da receita, com aviso quando o
+  estudo usa 2,4%. Alertas críticos para IRPJ/CSLL na receita e no lucro ao
+  mesmo tempo e para crédito de PIS/COFINS no regime cumulativo.
+- **Encargos padrão** pelos grupos A a D com as férias no fator de
+  utilização: 62,45% (os 68% anteriores somavam as férias duas vezes).
+- **Sensibilidade**: no preço por veículo, diária ou hora, o risco medido é
+  rodar mais km.
+- **Garantia contratual** da base entra como despesa sobre o preço.
+- **Estudo sem rota** não mostra veredicto nem zeros, e não se salva.
+
+Ficaram registrados como melhoria, sem mudança agora: o piso salarial por
+convenção coletiva (alerta de salário abaixo do piso), um ônibus 0 km entre
+os tipos padrão, remuneração do capital sobre o valor médio como padrão,
+deságio contra o preço de referência do edital e indício de
+inexequibilidade, data-base da convenção antes do reajuste anual,
+presets de IPVA e ICMS por UF, e PIS/COFINS por item em estudo misto no
+Lucro Real (transporte cumulativo e locação não cumulativa).
 
 ## 7. Especialista de IA em precificação
 
