@@ -6,6 +6,9 @@ import { camposEditaveis, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
 import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
 import { energiaDoPerfil } from "@/lib/simulador/energia";
+import { carregarDreDosMeses } from "@/lib/simulador/custosReais";
+import { indiretosDoDre, type IndiretoDoDre } from "@/lib/simulador/indiretosDoDre";
+import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
 import { Secao } from "../../_componentes";
@@ -51,6 +54,14 @@ export default async function BaseDeCustosPage() {
     prisma.simPedagioPraca.findMany({ where: vigente, orderBy: [{ praca: "asc" }] }),
   ]);
   const vazia = parametros.length + veiculos.length + funcoes.length + pedagios.length === 0;
+  // Os indiretos do DRE consolidado: o padrão de cada custo indireto que a
+  // base não tem digitado (ver indiretosDoDre.ts). Sem o DRE, a tela segue.
+  let doDre = new Map<string, IndiretoDoDre>();
+  try {
+    doDre = indiretosDoDre(await carregarDreDosMeses(session.companyId, null, dataReferenciaPadrao()));
+  } catch (e) {
+    console.warn("[simulador] base: DRE indisponível para os indiretos", e instanceof Error ? e.message.slice(0, 200) : e);
+  }
   const atualPorChave = new Map(parametros.map((p) => [p.chave, p]));
   const anteriorPorChave = new Map<string, (typeof encerrados)[number]>();
   for (const e of encerrados) if (!anteriorPorChave.has(e.chave)) anteriorPorChave.set(e.chave, e);
@@ -68,6 +79,7 @@ export default async function BaseDeCustosPage() {
       atual: a ? { valor: paraNumero(a.valor), texto: a.texto, desde: a.vigenciaInicio.toISOString(), fonte: a.fonte, autor: a.atualizadoPorNome } : null,
       anterior: ant && ant.vigenciaFim ? { valor: paraNumero(ant.valor), texto: ant.texto, ate: ant.vigenciaFim.toISOString() } : null,
       padrao: padraoDoSimulador(d.chave),
+      doDre: doDre.get(d.chave) ?? null,
       unidadePadrao: USO_DA_BASE[d.chave]?.unidadePadrao ?? null,
       uso: USO_DA_BASE[d.chave]?.como ?? null,
     };

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { baseComIndiretosDoDre, indiretosDoDre } from "@/lib/simulador/indiretosDoDre";
 import { notFound } from "next/navigation";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { baseVigente, paraNumero } from "@/lib/simulador/baseDeCustos";
@@ -45,20 +46,23 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
   const { estudo, versoes } = carregado;
   const versaoPedida = versao && estudo.simulacoes.some((s) => s.id === versao) ? versao : null;
 
-  const base = await baseVigente(session.companyId);
-  const inicial = await entradaInicial(session.companyId, carregado, versaoPedida, base);
-  const { margemMinima, margemAlvo } = regrasDeMargem(base);
-
   let indicadores: IndicadorReal[] = [];
   let lacunas: string[] = [];
+  let dados: Awaited<ReturnType<typeof carregarDadosReais>> | null = null;
   try {
-    const dados = await carregarDadosReais(session.companyId, null, dataReferenciaPadrao());
+    dados = await carregarDadosReais(session.companyId, null, dataReferenciaPadrao());
     const analise = analisarCustosReais(dados);
     indicadores = analise.indicadores;
     lacunas = [...new Set([...dados.avisos, ...analise.lacunas])];
   } catch {
     lacunas = ["Os custos reais não puderam ser lidos agora. O estudo segue com a base e os padrões."];
   }
+
+  // Os indiretos que a base não tem vêm do DRE consolidado (ver
+  // indiretosDoDre.ts): é com eles que o estudo novo calcula a administração.
+  const base = baseComIndiretosDoDre(await baseVigente(session.companyId), dados ? indiretosDoDre(dados) : new Map());
+  const inicial = await entradaInicial(session.companyId, carregado, versaoPedida, base);
+  const { margemMinima, margemAlvo } = regrasDeMargem(base);
 
   // Calibração: a última versão LANÇADA (a que virou preço) contra o realizado.
   const lancada = estudo.simulacoes.find((s) => s.status === "LANCADA");

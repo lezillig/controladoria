@@ -26,6 +26,8 @@ export type ParametroTela = {
   // "R$ 4,20; 4,5%", o padrão já é R$/km).
   unidadePadrao: string | null;
   uso: string | null;
+  // Indireto medido no DRE consolidado: vale enquanto a base não tem valor.
+  doDre?: { valor: number; fonte: string; composicao: { descricao: string; valorMes: number }[]; linhas: string[] } | null;
 };
 
 export type CampoTela = { campo: string; rotulo: string; tipo: "texto" | "numero" | "pct" | "inteiro" | "simnao" };
@@ -64,6 +66,36 @@ function useAcao() {
   return { pendente, rodar, msg };
 }
 
+const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
+// O VALOR QUE VEM DO DRE e do que ele é feito: a linha do DRE e as categorias
+// da Omie classificadas nela, com a média mensal de cada uma.
+function DoDre({ d }: { d: NonNullable<ParametroTela["doDre"]> }) {
+  return (
+    <>
+      <span className="rounded bg-blue-50 px-1.5 py-0.5 font-medium text-blue-800">DRE consolidado</span> <strong>{reais(d.valor)}/mês</strong>
+      <span className="block text-slate-500">
+        {d.linhas.join(" + ")} · {d.fonte.replace(/^DRE consolidado — /, "")}
+      </span>
+      {d.composicao.length > 0 && (
+        <details className="mt-0.5">
+          <summary className="cursor-pointer text-slate-500 hover:text-slate-700">
+            {d.composicao.length} {d.composicao.length === 1 ? "categoria" : "categorias"}
+          </summary>
+          <ul className="mt-1 space-y-0.5">
+            {d.composicao.map((c) => (
+              <li key={c.descricao} className="flex justify-between gap-3">
+                <span>{c.descricao}</span>
+                <span className="tabular-nums">{reais(c.valorMes)}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </>
+  );
+}
+
 function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boolean }) {
   const valorAtual = p.atual ? (p.tipo === "texto" ? p.atual.texto : p.atual.valor) : null;
   const [rascunho, setRascunho] = useState<number | string | null>(valorAtual);
@@ -96,7 +128,13 @@ function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boole
               vazioPermitido
               desativado={!podeEditar}
               aoMudar={(v) => setRascunho(v)}
-              placeholder={p.padrao !== null && !p.unidadePadrao ? `padrão ${formatar(p, p.padrao, null)}` : undefined}
+              placeholder={
+                p.doDre
+                  ? `DRE ${formatar(p, p.doDre.valor, null)}`
+                  : p.padrao !== null && !p.unidadePadrao
+                    ? `padrão ${formatar(p, p.padrao, null)}`
+                    : undefined
+              }
             />
             <span className="w-14 shrink-0 text-[11px] text-slate-500">{p.tipo === "pct" ? "%" : (p.unidade ?? "")}</span>
           </div>
@@ -126,8 +164,14 @@ function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boole
               {p.atual.fonte}
               {p.atual.autor ? ` · ${p.atual.autor}` : ""}
             </span>
-            {p.padrao !== null && <span className="block text-slate-500">padrão do simulador: {formatarPadrao(p)}</span>}
+            {p.doDre ? (
+              <span className="block text-slate-500">no DRE consolidado: {reais(p.doDre.valor)}/mês</span>
+            ) : (
+              p.padrao !== null && <span className="block text-slate-500">padrão do simulador: {formatarPadrao(p)}</span>
+            )}
           </>
+        ) : p.doDre ? (
+          <DoDre d={p.doDre} />
         ) : p.padrao !== null ? (
           <>
             <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800">estimativa</span> padrão do simulador: <strong>{formatarPadrao(p)}</strong>

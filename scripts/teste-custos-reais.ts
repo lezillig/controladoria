@@ -10,6 +10,7 @@
 // REAL sem tocar no resto.
 //
 // Sem banco.
+import { baseComIndiretosDoDre, indiretosDoDre } from "../src/lib/simulador/indiretosDoDre";
 import {
   aplicarIndicadores,
   analisarCustosReais,
@@ -333,6 +334,49 @@ console.log("\nAPLICAR os indicadores escolhidos");
   conferir("aplicados", r.aplicados, ["variaveis.dieselLitro", "perfil:VAN:variaveis.consumoAsfaltoKmL", "pessoal.encargosPct"]);
   conferir("ignorados: referência, caminho inexistente, indicador ausente", r.ignorados, ["referencia:kmPorVeiculoMes", "variaveis.naoExiste", "perfil:MICRO:variaveis.dieselLitro"]);
   conferir("padrão intacto", PREMISSAS_PADRAO.variaveis.dieselLitro, 6.15);
+}
+
+console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");
+{
+  const d = montarDados();
+  // Dez meses com receita: os dois primeiros sem movimento não puxam a média.
+  d.linhasDre.RECEITA_BRUTA = d.linhasDre.RECEITA_BRUTA.map((v, i) => (i < 2 ? 0 : v));
+  d.linhasDre.DESPESA_SALARIOS_CORPORATIVO = doze(800_000).map((v, i) => (i < 2 ? 0 : v));
+  d.linhasDre.DESPESA_COMERCIAL = doze(20_000);
+  d.categorias.push(categoria("3.01@corporativo", "Salários e ordenados", "DESPESA_SALARIOS_CORPORATIVO", doze(500_000).map((v, i) => (i < 2 ? 0 : v))));
+  d.categorias.push(categoria("3.02@corporativo", "INSS e FGTS", "DESPESA_SALARIOS_CORPORATIVO", doze(300_000).map((v, i) => (i < 2 ? 0 : v))));
+  const ind = indiretosDoDre(d);
+  perto("folha administrativa = pessoas — corporativo, média dos meses com receita", ind.get("folha_adm")?.valor, 8_000);
+  conferir("composição da folha, maior primeiro", ind.get("folha_adm")?.composicao, [
+    { descricao: "Salários e ordenados", valorMes: 5_000 },
+    { descricao: "INSS e FGTS", valorMes: 3_000 },
+  ]);
+  perto("contabilidade = despesas administrativas", ind.get("contabilidade")?.valor, 500);
+  perto("sistemas = informática", ind.get("sistemas")?.valor, 300);
+  perto("sede = estrutura", ind.get("sede_garagem_sp")?.valor, 2_000);
+  perto("gerais = comercial + outras despesas", ind.get("gerais")?.valor, 200 + 500);
+  perto("faturamento médio = receita bruta", ind.get("faturamento_medio")?.valor, 50_000);
+  ok("oficina própria não tem linha no DRE", !ind.has("oficina"));
+  ok("a fonte diz o período", /média de 10 meses fechados/.test(ind.get("folha_adm")?.fonte ?? ""), ind.get("folha_adm")?.fonte);
+
+  const baseComValor = {
+    em: new Date(),
+    parametros: new Map([["sistemas", { valor: 999, texto: null, fonte: "ajuste na tela", vigenciaInicio: new Date() }]]),
+    veiculos: [],
+    funcoes: [],
+    pedagios: [],
+  };
+  const mesclada = baseComIndiretosDoDre(baseComValor, ind);
+  conferir("valor digitado na base prevalece", mesclada.parametros.get("sistemas")?.valor, 999);
+  perto("o que falta vem do DRE", mesclada.parametros.get("folha_adm")?.valor ?? undefined, 8_000);
+  ok("a base original não muda", !baseComValor.parametros.has("folha_adm"));
+  const semBase = baseComIndiretosDoDre(null, ind);
+  conferir("sem base, nasce uma só com os indiretos", [semBase?.parametros.size, semBase?.veiculos.length], [6, 0]);
+  const { premissas, origem } = premissasDaBase(semBase, { clientePublico: false, escolar: false, baseLocal: false });
+  const total = 8_000 + 500 + 300 + 2_000 + 700;
+  ok("a administração do estudo sai do rateio real", premissas.indiretos.administracaoPct > (total / 50_000) * 0.99, `${premissas.indiretos.administracaoPct}`);
+  ok("e diz que veio do DRE", /DRE consolidado/.test(origem["indiretos.administracaoPct"]?.fonte ?? ""), origem["indiretos.administracaoPct"]?.fonte);
+  conferir("DRE sem receita não traz nada", indiretosDoDre({ ...d, linhasDre: { ...d.linhasDre, RECEITA_BRUTA: doze(0) } }).size, 0);
 }
 
 console.log(falhas === 0 ? "\nTodos os testes passaram." : `\n${falhas} falha(s).`);

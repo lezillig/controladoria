@@ -260,6 +260,18 @@ usa a mesma gravação da importação: valor diferente fecha a vigência do
 anterior e abre uma nova com a fonte "ajuste na tela"; "voltar ao padrão"
 encerra o valor da base. Estudos já salvos não mudam.
 
+**Custos indiretos vindos do DRE.** Enquanto a base não tem o valor
+digitado, cada custo indireto (administração central) é a média mensal da
+linha do DRE consolidado — Azul + MCZ, sem as operações entre elas — nos
+doze meses fechados com receita: folha administrativa = pessoas —
+corporativo; contabilidade e jurídico = despesas administrativas; sistemas =
+informática; sede = estrutura; despesas gerais = comerciais + outras
+despesas operacionais; faturamento médio = receita bruta. Oficina própria
+não tem linha no DRE. A tela mostra o valor, o período e as categorias da
+Omie que o compõem; o estudo novo calcula a administração com eles, e a
+origem da premissa diz "DRE consolidado". Digitar um valor na base continua
+valendo acima do DRE.
+
 ## 7.2 Pedágio pela categoria, margem de indiferença e reforma
 
 Aprendido com o roteiro de outro kit de custeio (detalhe em

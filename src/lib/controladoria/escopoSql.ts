@@ -66,8 +66,7 @@ export function ehIntercompanySql(companyId: string, alias = "t"): Prisma.Sql {
 }
 
 // O TÍTULO É DE EMPRESA CORPORATIVA DO GRUPO (OmieConexao.papelNoGrupo)? É o
-// que separa as duas linhas de pessoas do DRE — "— operação" e "— corporativo
-// / administrativo" (ver LINHAS_DRE em dre.ts). Nunca nulo: a conexão do
+// que separa as duas linhas de pessoas do DRE — "— operação" e "— corporativo" (ver LINHAS_DRE em dre.ts). Nunca nulo: a conexão do
 // título é obrigatória, e `IN` sem nenhuma conexão corporativa dá falso.
 export function ehCorporativoSql(companyId: string, alias = "t"): Prisma.Sql {
   return Prisma.sql`(${Prisma.raw(`${alias}."conexaoId"`)} IN (

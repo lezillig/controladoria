@@ -468,6 +468,21 @@ async function principal() {
         }
       }
     }
+    // OS CUSTOS REAIS DO SIMULADOR (e os indiretos da base) leem o mesmo DRE:
+    // agosto fechado, no grupo, com a folha da MCZ na linha corporativa — e a
+    // parte corporativa da categoria numa entrada própria.
+    {
+      const { carregarDreDosMeses } = await import("../src/lib/simulador/custosReais");
+      const doze = await carregarDreDosMeses(EMPRESA, null, REFERENCIA);
+      const agosto = doze.meses.indexOf("2026-08");
+      conferir("custos reais: agosto é o último mês fechado", agosto, 11);
+      conferir("custos reais: pessoas — corporativo de agosto igual ao DRE", doze.linhasDre.DESPESA_SALARIOS_CORPORATIVO[agosto], 55_500);
+      // D5 só tem títulos da MCZ: a entrada é a corporativa, e a folha da
+      // operação não recebe nada dela.
+      const d5 = doze.categorias.filter((c) => c.codigo === "D5");
+      conferir("custos reais: a categoria da MCZ fica na linha corporativa", d5.map((c) => [c.linha, c.porMesCents[agosto]]), [["DESPESA_SALARIOS_CORPORATIVO", 55_500]]);
+    }
+
     // O resultado não muda com a separação: as duas linhas somam o que a
     // antiga somava, e o EBIT desconta as duas.
     const grupo = await montarDreNoBanco(

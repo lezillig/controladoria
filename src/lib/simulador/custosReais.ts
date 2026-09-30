@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "@/lib/controladoria/competencia";
-import { CATEGORIA_SQL, filtroConexaoTitulo, naJanela, type EscopoSql } from "@/lib/controladoria/escopoSql";
+import { CATEGORIA_SQL, ehCorporativoSql, filtroConexaoTitulo, naJanela, type EscopoSql } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE, RETENCOES_ZERADAS, montarDreDeInsumos, type Retencoes } from "@/lib/controladoria/dre";
 import { categoriasDoEscopo, movimentoPorCategoria, retencoes } from "@/lib/controladoria/dreNoBanco";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
@@ -162,7 +162,7 @@ const LINHAS_DO_VEICULO = ["DESPESA_VEICULOS", "CUSTO_SERVICO"];
 const LINHAS_DE_RECEITA = new Set(["RECEITA_BRUTA", "OUTRAS_RECEITAS", "RECEITA_FINANCEIRA"]);
 // Administração central: tudo o que a empresa gasta para existir e que não é
 // frota, gente da operação, sócio, financeiro ou investimento.
-const LINHAS_DE_ADMINISTRACAO = ["DESPESA_ADMINISTRATIVA", "DESPESA_ESTRUTURA", "DESPESA_INFORMATICA", "DESPESA_GERAL"];
+const LINHAS_DE_ADMINISTRACAO = ["DESPESA_SALARIOS_CORPORATIVO", "DESPESA_ADMINISTRATIVA", "DESPESA_ESTRUTURA", "DESPESA_INFORMATICA", "DESPESA_COMERCIAL", "DESPESA_GERAL"];
 // O custo DIRETO da operação, para converter a administração para a base em
 // que o simulador a aplica.
 const LINHAS_DE_CUSTO_DIRETO = ["CUSTO_SERVICO", "DESPESA_VEICULOS", "DESPESA_SALARIOS"];
@@ -798,7 +798,7 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
       const avisos = [
         ...avisosDoDre,
         `Sobre a receita líquida (${deCents(receitaLiquida)}) a administração é ${pct(adm / receitaLiquida)}; o simulador a aplica sobre o CUSTO DIRETO, por isso o número oferecido é a razão sobre o custo direto do DRE.`,
-        "A folha do escritório está em Despesas com pessoas, junto com a da operação, e não entra aqui: a administração real tende a ser maior que este número.",
+        "A folha da empresa corporativa (Despesas com pessoas — corporativo) entra na administração; a da operação fica no custo direto. Despesas com sócios ficam fora.",
       ];
       indicadores.push({
         caminho: "indiretos.administracaoPct",
@@ -872,20 +872,17 @@ export { aplicarIndicadores } from "./aplicarReais";
 // A colheita
 // ---------------------------------------------------------------------------
 
-type LinhaCategoriaMes = { categoria: string; mes: string; cents: bigint };
+type LinhaCategoriaMes = { categoria: string; mes: string; cents: bigint; corp: bigint };
+
+// O DRE dos doze meses fechados, mês a mês — a parte dos custos reais que não
+// depende da gestão (a tela Custos base usa só esta).
+export type DreDosMeses = Pick<DadosReais, "meses" | "linhasDre" | "categorias" | "naoConfirmadoCents" | "semCategoriaCents">;
 
 
-// Reúne o material da análise. O DRE é SOMADO NO BANCO — uma consulta
-// agrupada por (categoria, mês) sobre os doze meses, e não os títulos: são
-// quarenta categorias × doze meses atravessando a rede, e não dezenas de
-// milhares de linhas (ver a medida em dreNoBanco.ts). A classificação e os
-// subtotais saem de `montarDreDeInsumos`, a MESMA função da tela de Custos e
-// DRE — o número daqui é o número de lá.
-//
-// A gestão é lida pelas funções de leitura.ts, que devolvem lista vazia
-// quando o banco dela não responde; aqui isso vira aviso e
-// `gestaoDisponivel = false`, e a análise segue só com o DRE.
-export async function carregarDadosReais(companyId: string, conexaoId: string | null, dataReferencia: Date): Promise<DadosReais> {
+// O DRE DOS DOZE MESES FECHADOS, mês a mês. Na visão do grupo (sem conexão),
+// sem as operações entre as empresas e com a folha da empresa corporativa na
+// linha própria — os mesmos números da tela de Custos e DRE.
+export async function carregarDreDosMeses(companyId: string, conexaoId: string | null, dataReferencia: Date): Promise<DreDosMeses> {
   const fechado = ultimoMesFechado(dataReferencia);
   const inicio = new Date(fechado.inicio.getFullYear(), fechado.inicio.getMonth() - 11, 1, 0, 0, 0, 0);
   const fim = fechado.fim;
@@ -896,7 +893,8 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
     prisma.$queryRaw<LinhaCategoriaMes[]>`
       SELECT ${CATEGORIA_SQL} AS categoria,
              to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
-             COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
+             COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
+             COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(companyId)}), 0)::bigint AS corp
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
@@ -938,10 +936,18 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
     : meses.map(() => RETENCOES_ZERADAS);
 
   const porMes = new Map<string, Map<string, number>>();
+  // A parcela de cada categoria que vem da empresa CORPORATIVA: separa as duas
+  // linhas de pessoas, como na tela de Custos e DRE.
+  const corpPorMes = new Map<string, Map<string, number>>();
   for (const l of somas) {
     const mapa = porMes.get(l.mes) ?? new Map<string, number>();
     mapa.set(l.categoria, (mapa.get(l.categoria) ?? 0) + Number(l.cents));
     porMes.set(l.mes, mapa);
+    if (Number(l.corp) !== 0) {
+      const corp = corpPorMes.get(l.mes) ?? new Map<string, number>();
+      corp.set(l.categoria, (corp.get(l.categoria) ?? 0) + Number(l.corp));
+      corpPorMes.set(l.mes, corp);
+    }
   }
 
   const linhasDre: Record<string, number[]> = Object.fromEntries(LINHAS_DRE.map((l) => [l.chave, new Array<number>(12).fill(0)]));
@@ -963,6 +969,7 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
         retencoesAnteriores: RETENCOES_ZERADAS,
         retencoesAnoAnterior: null,
         categorias: categoriasDaOmie,
+        corporativo: { atual: corpPorMes.get(mes) ?? vazio, anterior: vazio, anoAnterior: null },
       },
       classificacoes,
       { somarRetencoes, regime: "competencia" }
@@ -977,8 +984,12 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
         // A retenção na fonte é um agregado calculado, não uma categoria:
         // está no total da linha e não na lista.
         if (item.categoriaCodigo === "RETENCAO_NA_FONTE") continue;
+        // A mesma categoria de pessoal aparece nas duas linhas de pessoas
+        // (operação e corporativo): uma entrada por linha, para a parte
+        // corporativa não somar na folha da operação.
+        const chave = linha.chave === "DESPESA_SALARIOS_CORPORATIVO" ? `${item.categoriaCodigo}@corporativo` : item.categoriaCodigo;
         const c =
-          categorias.get(item.categoriaCodigo) ??
+          categorias.get(chave) ??
           ({
             codigo: item.categoriaCodigo,
             descricao: item.descricao,
@@ -987,10 +998,28 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
             porMesCents: new Array<number>(12).fill(0),
           } satisfies CategoriaReal);
         c.porMesCents[i] += item.ehReceita === linhaEhReceita ? Math.abs(item.valorCents) : -Math.abs(item.valorCents);
-        categorias.set(item.categoriaCodigo, c);
+        categorias.set(chave, c);
       }
     }
   });
+
+  return { meses, linhasDre, categorias: [...categorias.values()], naoConfirmadoCents, semCategoriaCents };
+}
+
+// Reúne o material da análise. O DRE é SOMADO NO BANCO — uma consulta
+// agrupada por (categoria, mês) sobre os doze meses, e não os títulos: são
+// quarenta categorias × doze meses atravessando a rede, e não dezenas de
+// milhares de linhas (ver a medida em dreNoBanco.ts). A classificação e os
+// subtotais saem de `montarDreDeInsumos`, a MESMA função da tela de Custos e
+// DRE — o número daqui é o número de lá.
+//
+// A gestão é lida pelas funções de leitura.ts, que devolvem lista vazia
+// quando o banco dela não responde; aqui isso vira aviso e
+// `gestaoDisponivel = false`, e a análise segue só com o DRE.
+export async function carregarDadosReais(companyId: string, conexaoId: string | null, dataReferencia: Date): Promise<DadosReais> {
+  const fechado = ultimoMesFechado(dataReferencia);
+  const inicio = new Date(fechado.inicio.getFullYear(), fechado.inicio.getMonth() - 11, 1, 0, 0, 0, 0);
+  const dre = await carregarDreDosMeses(companyId, conexaoId, dataReferencia);
 
   // ---- Gestão ----
   const avisos: string[] = [];
@@ -1042,11 +1071,7 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
 
   return {
     dataReferencia,
-    meses,
-    linhasDre,
-    categorias: [...categorias.values()],
-    naoConfirmadoCents,
-    semCategoriaCents,
+    ...dre,
     abastecimentos: abastecimentosGestao
       .filter((a) => a.dataHora < ateReferencia)
       .map((a) => ({
