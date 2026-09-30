@@ -1764,6 +1764,8 @@ model SimFuncao {
   noturnoPct        Decimal?  @db.Decimal(18, 6)
   encargosPct       Decimal?  @db.Decimal(18, 6)
   vrVa              Decimal?  @db.Decimal(18, 6)
+  // Vale-refeição por dia trabalhado.
+  vrDia             Decimal?  @db.Decimal(18, 6)
   cesta             Decimal?  @db.Decimal(18, 6)
   valeTransporte    Decimal?  @db.Decimal(18, 6)
   planoSaude        Decimal?  @db.Decimal(18, 6)

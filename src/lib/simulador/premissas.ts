@@ -1,5 +1,5 @@
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
-import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B } from "./convencoes";
+import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B, VR_TRANSFRETUR_DIA } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
@@ -62,7 +62,8 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("pessoal.horasExtras100Mes", "Horas extras a 100%", "h/mês por motorista", "numero"),
   c("pessoal.horasNoturnasMes", "Horas noturnas na jornada (22h–5h)", "h/mês por motorista", "numero", "Horas de relógio da jornada normal entre 22h e 5h. O salário já as paga: entra só o adicional noturno, com a hora reduzida de 52′30″ — (1 + adicional) × 60 ÷ 52,5 − 1 do valor da hora (37,1% com 20%). Hora noturna ALÉM da jornada é hora extra."),
   c("pessoal.adicionalNoturnoPct", "Adicional noturno", "% da hora", "pct", "CLT, art. 73: ao menos 20%. Há CCT com 25% (RP/Franca). Não use junto com o fator de jornada noturna para cobrir o mesmo adicional nas mesmas rotas."),
-  c("pessoal.beneficiosPorFuncionario", "Benefícios (VR/VA, cesta, VT, plano, seguro)", "R$/mês por pessoa", "moeda"),
+  c("pessoal.valeRefeicaoDia", "Vale-refeição por dia trabalhado", "R$/dia por pessoa", "moeda", "A convenção paga por dia trabalhado. Os dias saem da operação de cada rota (dias no mês do item: segunda a sexta ≈ 22), até 26 (escala 6x1)."),
+  c("pessoal.beneficiosPorFuncionario", "Outros benefícios (cesta, plano, PLR, VA, VT, seguro)", "R$/mês por pessoa", "moeda", "Os mensais fixos. O vale-refeição é por dia, no campo acima."),
   c("pessoal.uniformeEpiPorFuncionario", "Uniforme, EPI, exames e cursos", "R$/mês por pessoa", "moeda"),
   c("pessoal.supervisaoMes", "Preposto / supervisão local", "R$/mês (total)", "moeda", "Rateado entre os itens pelo km."),
   c("veiculo.valor", "Valor do veículo", "R$", "moeda", "FIPE ou valor contábil."),
@@ -149,9 +150,10 @@ export const PREMISSAS_PADRAO: Premissas = {
     horasExtras100Mes: 0,
     horasNoturnasMes: 0,
     adicionalNoturnoPct: ADICIONAL_NOTURNO_PADRAO,
-    // PLR + cesta + VR (26 dias) + plano médico e odontológico da circular
-    // TRANSFRETUR 013-A/2026 — R$ 1.753,26 por mês.
+    // PLR + cesta + plano médico e odontológico da circular TRANSFRETUR
+    // 013-A/2026 — R$ 661,26 por mês — e o VR de R$ 42 por dia trabalhado.
     beneficiosPorFuncionario: Object.values(BENEFICIOS_MOTORISTA_TRANSFRETUR).reduce((a, v) => a + v, 0),
+    valeRefeicaoDia: VR_TRANSFRETUR_DIA,
     uniformeEpiPorFuncionario: 100,
     supervisaoMes: 0,
   },
@@ -362,8 +364,13 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     // Só quando a função da base informa ao menos um benefício: a linha sem
     // eles zerava VR, cesta e plano, e o motorista saía sem benefício nenhum.
     const informado = (campos: string[]) => campos.some((k) => typeof motorista[k] === "number");
+    // O VR por dia (vrDia) vai ao seu campo; o VR/VA mensal (vrVa), quando a
+    // linha o traz, soma aos mensais — e então o VR por dia padrão sai, para
+    // não pagar o mesmo vale duas vezes.
     const beneficios = ["vrVa", "cesta", "valeTransporte", "planoSaude", "seguroVida", "plrMes"];
-    if (informado(beneficios)) definir("pessoal.beneficiosPorFuncionario", beneficios.reduce((a, k) => a + n(k), 0), f, "VR/VA + cesta + VT + plano + seguro de vida + PLR");
+    if (informado(beneficios)) definir("pessoal.beneficiosPorFuncionario", beneficios.reduce((a, k) => a + n(k), 0), f, "VR/VA mensal + cesta + VT + plano + seguro de vida + PLR");
+    if (typeof motorista.vrDia === "number") definir("pessoal.valeRefeicaoDia", n("vrDia"), f, "VR por dia trabalhado");
+    else if (typeof motorista.vrVa === "number") definir("pessoal.valeRefeicaoDia", 0, f, "o VR/VA desta função é mensal (coluna VR/VA)");
     if (informado(["uniformeEpi", "examesCursos"])) definir("pessoal.uniformeEpiPorFuncionario", n("uniformeEpi") + n("examesCursos"), f, "uniforme/EPI + exames e cursos");
   }
   const monitora = funcao(escolhas.monitoraId);

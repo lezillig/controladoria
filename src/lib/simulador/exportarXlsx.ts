@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, IRPJ_LOCACAO_PADRAO } from "./motor";
+import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, DIAS_VR_MAXIMO, IRPJ_LOCACAO_PADRAO } from "./motor";
 import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, type EntradaSimulacao, type PerfilVeiculo, type Premissas, type ResultadoSimulacao } from "./tipos";
 
 // A PLANILHA EXCEL DE UMA SIMULAÇÃO — abas Regras do Edital, Premissas, Perfis
@@ -306,7 +306,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("hNoturnas", "Horas noturnas na jornada (22h–5h)", p.pessoal.horasNoturnasMes, "h/mês por motorista", "Horas de relógio da jornada normal, já pagas no salário: entra só o custo a mais da linha abaixo. Hora noturna além da jornada é hora extra.", NUM);
   premissa("adNoturno", "Adicional noturno", p.pessoal.adicionalNoturnoPct ?? ADICIONAL_NOTURNO_PADRAO, "% da hora", "CLT, art. 73: ao menos 20%; há CCT com 25%.", PCT);
   derivada("fatorHoraNoturna", "Custo a mais por hora noturna", `(1+${P.adNoturno})*60/52.5-1`, "× valor da hora", "(1 + adicional) × 60 ÷ 52,5 − 1: a hora reduzida de 52′30″ com o adicional, sem a hora-base que o salário já paga (37,1% com 20%).", PCT2);
-  premissa("beneficios", "Benefícios (VA/VR, cesta, seguro de vida, VT)", p.pessoal.beneficiosPorFuncionario, "R$/mês por func.", "Motoristas e monitoras.", BRL);
+  premissa("vrDia", "Vale-refeição por dia trabalhado", p.pessoal.valeRefeicaoDia ?? 0, "R$/dia por func.", "Dias de operação da rota no mês, até 26.", BRL);
+  premissa("beneficios", "Outros benefícios (cesta, plano, PLR, VA, VT, seguro)", p.pessoal.beneficiosPorFuncionario, "R$/mês por func.", "Motoristas e monitoras.", BRL);
   premissa("epi", "Uniforme, EPI, exames e cursos", p.pessoal.uniformeEpiPorFuncionario, "R$/mês por func.", "Motoristas e monitoras.", BRL);
   premissa("supervisao", "Preposto / supervisão local (total)", p.pessoal.supervisaoMes, "R$/mês (total)", "Rateado pelo km útil entre os itens com motorista.", BRL);
 
@@ -624,6 +625,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     ["remP", "Capital próprio — não dedutível (R$/mês)", 12],
     ["dias", `Dias de operação no ${apuracao}`, 10],
     ["diarias", "Diárias (veículo × dia)", 10],
+    ["vr", "Vale-refeição (R$/mês)", 11],
     ["horas", "Horas (veículo × dia × h)", 10],
     ["semHoras", "Sem horas/dia? (1 = sim)", 9],
   ] as const;
@@ -712,12 +714,13 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     const pelaDistancia = `IF(${$("kmDia")}>0,${$("kmRef")}/${$("kmDia")},0)`;
     f("dias", `IF(${P.modo}="MENSAL",IF(${$("diasMes")}="",${pelaDistancia},${$("diasMes")}),IF(${pelaDistancia}<>0,${pelaDistancia},N(${$("diasMes")})*${P.meses}))`, NUM);
     f("diarias", `${$("veic")}*${$("dias")}`, NUM);
+    f("vr", `(${$("mot")}+${$("mon")})*${P.vrDia}*MIN(${DIAS_VR_MAXIMO},IF(${P.modo}="MENSAL",${$("dias")},IF(${P.meses}>0,${$("dias")}/${P.meses},0)))`, BRL);
     f("horas", `${$("veic")}*${$("dias")}*N(${$("horasDia")})`, NUM);
     f("semHoras", `IF(N(${$("horasDia")})=0,1,0)`, INT);
     wr.getRow(l).height = 30;
   });
   escrever(wr, RTOT, 2, "TOTAL", { negrito: true, fundo: FUNDO_TOTAL });
-  const somaRotas: ChaveRota[] = ["kmRef", "veic", "mot", "mon", "passagens", "pedagio", "kmUtil", "kmRod", "salarios", "diesel", "arla", "oleo", "pneus", "manut", "veicRes", "dep", "rem", "seg", "ipva", "tel", "hig", "gar", "adDep", "adCap", "manF", "remP", "diarias", "horas"];
+  const somaRotas: ChaveRota[] = ["kmRef", "veic", "mot", "mon", "passagens", "pedagio", "kmUtil", "kmRod", "salarios", "diesel", "arla", "oleo", "pneus", "manut", "veicRes", "dep", "rem", "seg", "ipva", "tel", "hig", "gar", "adDep", "adCap", "manF", "remP", "diarias", "vr", "horas"];
   COLS_ROTA.forEach(([k], i) => {
     if (i === 1) return;
     if ((somaRotas as string[]).includes(k)) {
@@ -797,7 +800,13 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { rotulo: "B. MÃO DE OBRA (fixo mensal)", secao: true },
     { chave: "sal", rotulo: "Salários (motoristas c/ HE, noturno e horas + monitoras)", item: comEquipe("salarios"), total: "soma", memo: "Rotas: salário do perfil × (1+HE) × fator noturno + horas extras/noturnas em horas; zero sem motorista" },
     { chave: "enc", rotulo: "Encargos e provisões", item: (c, _i, R) => `${c}${R.sal}*${P.encargos}`, total: "soma", memo: "salários × encargos" },
-    { chave: "ben", rotulo: "Benefícios + uniforme/EPI/cursos", item: (c, _i, R) => `(${c}${R.mot}+${c}${R.mon})*(${P.beneficios}+${P.epi})`, total: "soma", memo: "(motoristas + monitoras) × (benefícios + EPI)" },
+    {
+      chave: "ben",
+      rotulo: "Benefícios + vale-refeição + uniforme/EPI/cursos",
+      item: (c, i, R) => `(${c}${R.mot}+${c}${R.mon})*(${P.beneficios}+${P.epi})+${comEquipe("vr")(c, i, R)}`,
+      total: "soma",
+      memo: "(motoristas + monitoras) × (benefícios + EPI) + VR das rotas (R$/dia × dias trabalhados)",
+    },
     {
       chave: "sup",
       rotulo: "Preposto / supervisão local (rateio por km útil)",

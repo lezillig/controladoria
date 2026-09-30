@@ -367,7 +367,7 @@ export function ferramentasDoSimulador(escopo: { companyId: string }, consultas:
       return JSON.stringify({
         parametros: [...base.parametros.entries()].map(([chave, v]) => ({ chave, valor: v.valor, texto: v.texto, fonte: v.fonte, desde: v.vigenciaInicio.toISOString().slice(0, 10) })),
         veiculos: base.veiculos.map((v) => campos(v, ["tipo", "modelo", "ano", "quantidade", "lotacao", "valorCompra", "valorFipe", "formaAquisicao", "taxaAa", "consumoKmL", "manutencaoKm", "seguroAnual", "ipvaLicenciamentoAnual", "idadeVenda", "revendaPctFipe"])),
-        funcoes: base.funcoes.map((f) => campos(f, ["funcao", "cct", "regiao", "salarioBase", "adicionaisFixos", "encargosPct", "vrVa", "planoSaude", "absenteismoPct"])),
+        funcoes: base.funcoes.map((f) => campos(f, ["funcao", "cct", "regiao", "salarioBase", "adicionaisFixos", "encargosPct", "vrVa", "vrDia", "planoSaude", "absenteismoPct"])),
       });
     },
   });

@@ -108,6 +108,12 @@ async function principal() {
     conferir("função sem benefícios: mantém o padrão da convenção", p2.pessoal.beneficiosPorFuncionario, PREMISSAS_PADRAO.pessoal.beneficiosPorFuncionario);
     conferir("… e o uniforme padrão", p2.pessoal.uniformeEpiPorFuncionario, PREMISSAS_PADRAO.pessoal.uniformeEpiPorFuncionario);
     ok("… sem origem na base", o2["pessoal.beneficiosPorFuncionario"]?.origem !== "BASE");
+    conferir("… e o VR por dia da convenção", p2.pessoal.valeRefeicaoDia, 42);
+    // VR/VA mensal na linha: o VR por dia sai (não paga o vale duas vezes).
+    const mensal = { ...base, funcoes: [{ ...base.funcoes[0], vrVa: 900, vrDia: null }] };
+    conferir("VR/VA mensal: VR por dia zero", premissasDaBase(mensal, { motoristaId: base.funcoes[0].id, clientePublico: true, escolar: false, baseLocal: false }).premissas.pessoal.valeRefeicaoDia, 0);
+    const porDia = { ...base, funcoes: [{ ...base.funcoes[0], vrVa: null, vrDia: 45 }] };
+    conferir("VR por dia da base", premissasDaBase(porDia, { motoristaId: base.funcoes[0].id, clientePublico: true, escolar: false, baseLocal: false }).premissas.pessoal.valeRefeicaoDia, 45);
   }
   conferir("prazo de órgão público", premissas.preco.prazoRecebimentoDias, 55);
   conferir("preposto local", premissas.pessoal.supervisaoMes, 9500);

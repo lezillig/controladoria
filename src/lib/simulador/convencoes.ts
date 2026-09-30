@@ -49,12 +49,13 @@ export const VR_TRANSFRETUR_DIA = 42;
 export const PLANO_MEDICO_TRANSFRETUR = 283.76;
 export const ODONTO_FAMILIAR_TRANSFRETUR = 50;
 
-// Os benefícios mensais do motorista pela circular 013-A (iguais nos dois
-// níveis). O vale-refeição da circular conta 26 dias trabalhados.
+// Os benefícios MENSAIS do motorista pela circular 013-A (iguais nos dois
+// níveis). O vale-refeição fica fora: é por dia trabalhado (VR_TRANSFRETUR_DIA)
+// e os dias saem da operação do estudo — a circular conta 26 (escala 6x1);
+// um contrato de segunda a sexta paga ~22.
 export const BENEFICIOS_MOTORISTA_TRANSFRETUR = {
   plrMes: 137.5,
   cesta: 190,
-  vrVa: 1092,
   planoSaude: PLANO_MEDICO_TRANSFRETUR + ODONTO_FAMILIAR_TRANSFRETUR,
 };
 
@@ -79,9 +80,10 @@ export function funcaoPelaConvencao(categoria: CategoriaVeiculo, salarioPadrao: 
         ...base,
         salarioBase: nivelA ? PISO_TRANSFRETUR_NIVEL_A : PISO_TRANSFRETUR_NIVEL_B,
         ...BENEFICIOS_MOTORISTA_TRANSFRETUR,
+        vrDia: VR_TRANSFRETUR_DIA,
         observacoes: nivelA
-          ? "Nível A (acima de 32 lugares): R$ 3.663,66 de mai/26 a out/26, R$ 3.733,44 desde 01/11/2026. Plano = médico R$ 283,76 + odonto R$ 50. VR R$ 42 × 26 dias. Seguro de vida: cobertura mínima de 10 pisos (prêmio a informar). Jornada 44 h (7h20/dia); HE legal, domingo e feriado 100%."
-          : "Nível B (van e micro, com acordo coletivo da empresa): 80% do Nível A — R$ 2.930,93 de mai/26 a out/26, R$ 2.986,75 desde 01/11/2026. Plano = médico R$ 283,76 + odonto R$ 50. VR R$ 42 × 26 dias. Sem acordo coletivo, vale o piso do Nível A.",
+          ? "Nível A (acima de 32 lugares): R$ 3.663,66 de mai/26 a out/26, R$ 3.733,44 desde 01/11/2026. Plano = médico R$ 283,76 + odonto R$ 50. VR R$ 42 por dia trabalhado (dias da operação do estudo). Seguro de vida: cobertura mínima de 10 pisos (prêmio a informar). Jornada 44 h (7h20/dia); HE legal, domingo e feriado 100%."
+          : "Nível B (van e micro, com acordo coletivo da empresa): 80% do Nível A — R$ 2.930,93 de mai/26 a out/26, R$ 2.986,75 desde 01/11/2026. Plano = médico R$ 283,76 + odonto R$ 50. VR R$ 42 por dia trabalhado (dias da operação do estudo). Sem acordo coletivo, vale o piso do Nível A.",
       },
     };
   }
@@ -105,11 +107,11 @@ export function funcaoAdministrativa(): { convencao: Convencao; campos: Record<s
       cct: convencao.nome,
       regiao: convencao.abrangencia,
       salarioBase: PISO_SINDRASP_AUXILIAR_ADM,
-      vrVa: VR_TRANSFRETUR_DIA * 22,
+      vrDia: VR_TRANSFRETUR_DIA,
       plrMes: Math.round(((PISO_SINDRASP_AUXILIAR_ADM * 0.4) / 12) * 100) / 100,
       planoSaude: 50,
       observacoes:
-        "Piso R$ 1.921,24 de mai/26 a out/26, R$ 1.957,83 desde 01/11/2026. PLR 40% do salário (até R$ 1.605/ano). VR R$ 42 por dia (22 dias). Odontológico familiar pago pela empresa (R$ 50); plano médico familiar: 60% de até R$ 472,94 por adesão.",
+        "Piso R$ 1.921,24 de mai/26 a out/26, R$ 1.957,83 desde 01/11/2026. PLR 40% do salário (até R$ 1.605/ano). VR R$ 42 por dia trabalhado. Odontológico familiar pago pela empresa (R$ 50); plano médico familiar: 60% de até R$ 472,94 por adesão.",
     },
   };
 }
@@ -135,4 +137,19 @@ export function sugestaoDaFuncao<S extends { campos: Record<string, unknown> }>(
   const chave = chaves.find(([k]) => nome.includes(k));
   if (!chave) return null;
   return sugestoes.find((s) => typeof s.campos[campo] === "string" && chave[1](semAcento(s.campos[campo] as string))) ?? null;
+}
+
+// O que "Completar pela convenção" preenche numa linha da base: só os campos
+// vazios que a tabela tem. O VR por dia não entra se a linha já traz o VR/VA
+// mensal — seria o mesmo vale duas vezes.
+export function camposParaCompletar<V>(
+  valores: Record<string, unknown>,
+  sugestao: { campos: Record<string, V> },
+  identificador: string,
+  camposDaTabela: string[]
+): [string, V][] {
+  const vazio = (v: unknown) => v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+  return Object.entries(sugestao.campos).filter(
+    ([k, v]) => k !== identificador && camposDaTabela.includes(k) && vazio(valores[k]) && !vazio(v) && !(k === "vrDia" && !vazio(valores.vrVa))
+  );
 }

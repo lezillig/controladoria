@@ -45,7 +45,11 @@ import type {
 
 // v2: adicional noturno sem a hora-base, tributos da locação sem motorista e
 // base do IR no Lucro Real (docs/simulador_custos/DECISOES.md, seção 6).
-export const VERSAO_MOTOR = "2026.09-v2";
+// v3: vale-refeição por dia trabalhado (seção 7.1.2).
+export const VERSAO_MOTOR = "2026.10-v3";
+// Teto de dias de vale-refeição por pessoa no mês: a escala 6x1 da referência
+// da convenção. Operação de 30 dias tem folguista; cada pessoa trabalha ~26.
+export const DIAS_VR_MAXIMO = 26;
 export const UTILIZACOES_PADRAO = [0.6, 0.7, 0.8, 0.85, 0.9, 1];
 
 // ROUNDUP(x; 2) do Excel: para cima, afastando do zero. O `toPrecision(12)`
@@ -181,6 +185,7 @@ type PorRota = {
   salarios: number;
   encargos: number;
   beneficios: number;
+  valeRefeicao: number;
   depreciacao: number;
   remuneracaoCapital: number;
   remuneracaoCapitalProprio: number;
@@ -236,7 +241,12 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
     motoristas * (salarioMotorista * (1 + pessoal.horaExtraPct) * fatorNoturno + adicionaisEmHoras) +
     monitoras * pessoal.salarioMonitora;
   const encargos = salarios * pessoal.encargosPct;
-  const beneficios = (motoristas + monitoras) * (pessoal.beneficiosPorFuncionario + pessoal.uniformeEpiPorFuncionario);
+  // Vale-refeição: por dia trabalhado, nos dias de operação da rota no mês
+  // (5x2 ≈ 22), até o teto da escala 6x1.
+  const dias = diasNaApuracao(p, r);
+  const diasNoMes = contrato.modo === "MENSAL" ? dias : dividir(dias, contrato.mesesCustoFixo);
+  const valeRefeicao = (motoristas + monitoras) * (pessoal.valeRefeicaoDia ?? 0) * Math.min(DIAS_VR_MAXIMO, diasNoMes);
+  const beneficios = (motoristas + monitoras) * (pessoal.beneficiosPorFuncionario + pessoal.uniformeEpiPorFuncionario) + valeRefeicao;
 
   // Veículo — ter o veículo custa também para a reserva técnica;
   // higienização e acessibilidade, só para o que roda.
@@ -262,7 +272,6 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const pneusKm = pctAsfalto * variaveis.pneusAsfaltoKm + pctTerra * variaveis.pneusTerraKm;
   const manutencaoKm = pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm;
 
-  const dias = diasNaApuracao(p, r);
   return {
     kmReferencia: r.kmReferencia,
     kmUtil,
@@ -270,6 +279,7 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
     salarios,
     encargos,
     beneficios,
+    valeRefeicao,
     depreciacao,
     remuneracaoCapital,
     remuneracaoCapitalProprio,
@@ -473,6 +483,7 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
       salarios,
       encargos,
       beneficios,
+      valeRefeicao: s("valeRefeicao"),
       supervisao,
       maoDeObraMes,
       depreciacao,

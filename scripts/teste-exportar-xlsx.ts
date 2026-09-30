@@ -295,6 +295,7 @@ function conferirNumeros(nome: string, motor: string, m: Mapa, v: Valores, r: Re
     sup: m.comp("Preposto / supervisão"),
     impl: m.comp("Implantação amortizada"),
     sal: m.comp("Salários"),
+    ben: m.comp("Benefícios + vale-refeição"),
     veicm: m.comp("Subtotal veículos"),
     die: m.comp("Diesel"),
     cred: m.comp("Crédito de PIS/COFINS"),
@@ -322,6 +323,7 @@ function conferirNumeros(nome: string, motor: string, m: Mapa, v: Valores, r: Re
     perto("quantidades", `${nomeItem}: quantidade na unidade`, g(L.qtdU), it.quantidadeUnidade, TOTAL);
     perto("custos por item", `${nomeItem}: custo total`, g(L.tot), it.custoTotal, TOTAL);
     perto("custos por item", `${nomeItem}: salários`, g(L.sal), it.salarios, TOTAL);
+    perto("custos por item", `${nomeItem}: benefícios com VR`, g(L.ben), it.beneficios, TOTAL);
     perto("custos por item", `${nomeItem}: supervisão`, g(L.sup), it.supervisao, TOTAL);
     perto("custos por item", `${nomeItem}: implantação/mês`, g(L.impl), it.implantacaoMes, TOTAL);
     perto("custos por item", `${nomeItem}: veículo/mês`, g(L.veicm), it.veiculoMes, TOTAL);
@@ -505,6 +507,15 @@ const casos: Caso[] = [
   // As três correções da revisão de precificação, cada uma num caso.
   variar("Holambra horas noturnas a 25% nas linhas noturnas com fator", HOL, (e) => {
     Object.assign(e.premissas.pessoal, { horasNoturnasMes: 30, adicionalNoturnoPct: 0.25, horasExtras50Mes: 6 });
+  }),
+  // Holambra é período (ano letivo): o VR mensal é dias do período ÷ meses.
+  variar("SJP vale-refeição por dia (22 dias por rota)", SJP, (e) => {
+    e.premissas.pessoal.valeRefeicaoDia = 42;
+    for (const r of e.rotas) r.diasMes = 22;
+  }),
+  variar("Holambra vale-refeição por dia (período letivo)", HOL, (e) => {
+    e.premissas.pessoal.valeRefeicaoDia = 42;
+    e.itens[0].comMotorista = false;
   }),
   variar("SJP item 2 sem motorista no Presumido (locação, lote)", SJP, (e) => {
     e.itens[1].comMotorista = false;

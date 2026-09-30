@@ -1,7 +1,7 @@
 // CALCULADORAS DE MÃO DE OBRA — `npm run teste:mao-de-obra`.
 // Encargos por grupos contra a referência GEIPOT e fator de utilização
 // contra os exemplos da pesquisa (docs/simulador_custos/PESQUISA.md, 3.4–3.5).
-import { sugestaoDaFuncao } from "../src/lib/simulador/convencoes";
+import { camposParaCompletar, sugestaoDaFuncao } from "../src/lib/simulador/convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO, fatorDeUtilizacao, FU_PADRAO, PRESETS_ENCARGOS } from "../src/lib/simulador/maoDeObra";
 
 let falhas = 0;
@@ -44,6 +44,11 @@ ok("micro antes de ônibus", da("Motorista micro-ônibus") === "Motorista de mic
 ok("ônibus não pega micro", da("Motorista ônibus rodoviário") === "Motorista de ônibus");
 ok("administrativo", da("Aux. adm") === "Auxiliar administrativo");
 ok("sem correspondência: nada", da("Mecânico") === null && da("") === null);
+const conv = { campos: { funcao: "Motorista de van", salarioBase: 2986.75, cesta: 190, vrDia: 42, planoSaude: 333.76 } };
+const tabela = ["funcao", "salarioBase", "cesta", "vrVa", "vrDia", "planoSaude"];
+const chaves = (v: Record<string, unknown>) => camposParaCompletar(v, conv, "funcao", tabela).map(([k]) => k).join(",");
+ok("completa só o vazio", chaves({ funcao: "Motorista de van", salarioBase: 3100, cesta: null }) === "cesta,vrDia,planoSaude");
+ok("VR/VA mensal na linha: não põe VR por dia", chaves({ funcao: "Motorista de van", vrVa: 1092 }) === "salarioBase,cesta,planoSaude");
 
 console.log(falhas === 0 ? "\nTudo certo.\n" : `\n${falhas} FALHA(S).\n`);
 process.exit(falhas === 0 ? 0 : 1);

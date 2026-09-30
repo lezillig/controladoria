@@ -344,6 +344,19 @@ nota sem os tributos (fim de semana, feriado, viagem longa; 5% em dia útil
 fora do expediente) no lugar de horas extras e adicional noturno — o estudo
 eventual nasce com o prêmio nas despesas sobre o preço e sem hora extra.
 
+### Vale-refeição por dia trabalhado
+
+A convenção paga o VR por dia trabalhado (R$ 42). A circular conta 26 dias
+(escala 6x1), mas um contrato de segunda a sexta paga ~22. Por isso o VR é
+uma premissa própria, em R$ por dia (`pessoal.valeRefeicaoDia`), e os dias
+saem da operação de cada rota: dias no mês do item (ou km ÷ km/dia; no
+período letivo, dias do período ÷ meses), até 26 por pessoa. Os demais
+benefícios (cesta, PLR, plano) continuam mensais em "Outros benefícios".
+Na base, a função ganhou "VR por dia trabalhado"; uma linha com VR/VA
+mensal continua valendo como está, sem o VR por dia (não paga o mesmo vale
+duas vezes). Versões salvas antes não têm o campo e mantêm o VR no mensal.
+Motor 2026.10-v3.
+
 ## 7.2 Pedágio pela categoria, margem de indiferença e reforma
 
 Aprendido com o roteiro de outro kit de custeio (detalhe em

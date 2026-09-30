@@ -62,6 +62,10 @@ export type Premissas = {
     fatorJornadaNoturna: number;
     beneficiosPorFuncionario: number;
     uniformeEpiPorFuncionario: number;
+    // Vale-refeição por DIA TRABALHADO (a convenção paga por dia): os dias
+    // saem da operação de cada rota. Ausente nas versões salvas antes dele,
+    // cujo VR está no mensal de `beneficiosPorFuncionario`.
+    valeRefeicaoDia?: number;
     // Preposto/supervisão local — total mensal, rateado entre os itens pelo km.
     supervisaoMes: number;
     // Adicionais em HORAS por motorista por mês, a salário ÷ divisor — alternativa
@@ -375,6 +379,8 @@ export type ComposicaoItem = {
   salarios: number;
   encargos: number;
   beneficios: number;
+  // Parte de `beneficios`: o vale-refeição pelos dias trabalhados.
+  valeRefeicao: number;
   supervisao: number;
   maoDeObraMes: number;
   // Veículo (mensal). capital = depreciação + remuneração do capital.

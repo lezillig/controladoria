@@ -4,7 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ajustarParametroBase, encerrarRegistroBase, salvarRegistroBase, voltarParametroAoPadrao, type Resultado } from "../actions";
 import { CampoNumero, botao } from "../[id]/comum";
-import { sugestaoDaFuncao } from "@/lib/simulador/convencoes";
+import { camposParaCompletar, sugestaoDaFuncao } from "@/lib/simulador/convencoes";
 
 // A BASE DE CUSTOS, EDITÁVEL.
 //
@@ -251,8 +251,6 @@ export function ParametrosBase({ parametros, podeEditar }: { parametros: Paramet
 type Sugestao = { rotulo: string; campos: RegistroTela["campos"] };
 const sugestaoDaLinha = (id: unknown, sugestoes: Sugestao[], campo: string) => sugestaoDaFuncao(id, sugestoes, campo);
 
-const vazioNaLinha = (v: unknown) => v === null || v === undefined || (typeof v === "string" && v.trim() === "");
-
 function LinhaRegistro({
   tipo,
   campos,
@@ -293,9 +291,7 @@ function LinhaRegistro({
   const identificador = campos[0]?.campo ?? "";
   const convencao = completarCom ? sugestaoDaLinha(valores[identificador], completarCom, identificador) : null;
   const rotuloDe = (k: string) => campos.find((c) => c.campo === k)?.rotulo ?? k;
-  const faltando = convencao
-    ? Object.entries(convencao.campos).filter(([k, v]) => k !== identificador && campos.some((c) => c.campo === k) && vazioNaLinha(valores[k]) && !vazioNaLinha(v))
-    : [];
+  const faltando = convencao ? camposParaCompletar(valores, convencao, identificador, campos.map((c) => c.campo)) : [];
   const completar = () => {
     if (!faltando.length) return;
     valoresRef.current = { ...valoresRef.current, ...Object.fromEntries(faltando) };

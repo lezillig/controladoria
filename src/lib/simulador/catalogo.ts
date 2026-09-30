@@ -182,6 +182,9 @@ export const COLUNAS_MAO_DE_OBRA: DefinicaoColuna[] = [
   { cabecalho: "Adicional noturno médio (%)", campo: "noturnoPct", tipo: "pct" },
   { cabecalho: "Encargos sociais (%)", campo: "encargosPct", tipo: "pct" },
   { cabecalho: "VR/VA (R$/mês)", campo: "vrVa", tipo: "numero" },
+  // Vale-refeição por dia trabalhado (a convenção paga por dia): os dias saem
+  // da operação do estudo. Com ele, deixe o VR/VA mensal só para o que for fixo.
+  { cabecalho: "VR por dia trabalhado (R$/dia)", campo: "vrDia", tipo: "numero", opcional: true },
   { cabecalho: "Cesta básica (R$/mês)", campo: "cesta", tipo: "numero" },
   { cabecalho: "Vale-transporte líquido (R$/mês)", campo: "valeTransporte", tipo: "numero" },
   { cabecalho: "Plano de saúde/odonto (R$/mês)", campo: "planoSaude", tipo: "numero" },

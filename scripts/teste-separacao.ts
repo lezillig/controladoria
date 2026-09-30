@@ -85,9 +85,21 @@ console.log("\nUM MOTORISTA DE VAN (o estudo do print)");
   perto("salários = 2.986,75 × 1,14", sal.valor, 3404.90);
   perto("encargos = 62,45% dos salários", enc.valor, 2126.36);
   ok("encargos abertos nos grupos A a D", enc.sub?.map((x) => x.rotulo[0]).join("") === "ABCD");
-  perto("benefícios da convenção: 1 × (1.753,26 + 100)", ben.valor, 1853.26);
+  // 4.400 km ÷ 200 km/dia = 22 dias (segunda a sexta): VR R$ 42 × 22 = R$ 924.
+  perto("VR por dia trabalhado: 42 × 22 dias", r.itens[0].valeRefeicao, 924);
+  perto("benefícios: 924 de VR + 661,26 da convenção + 100 de uniforme", ben.valor, 1685.26);
   ok("benefícios abertos: VR, cesta, PLR, plano, uniforme", ben.sub?.map((x) => x.rotulo.split(" ")[0]).join(",") === "Vale-refeição,Cesta,PLR,Plano,Uniforme,");
+  ok("o VR diz os dias", /22 dias trabalhados/.test(ben.sub?.[0].memo ?? ""));
   parcelasFecham("van", s);
+
+  // Operação de 30 dias: cada pessoa trabalha até 26 (escala 6x1).
+  const trinta: EntradaSimulacao = clone(e);
+  trinta.rotas[0].diasMes = 30;
+  perto("30 dias de operação: VR até 26 dias", simular(trinta).itens[0].valeRefeicao, 42 * 26);
+  // Versão salva antes do VR por dia: sem o campo, VR zero (já no mensal).
+  const antiga: EntradaSimulacao = clone(e);
+  delete antiga.premissas.pessoal.valeRefeicaoDia;
+  perto("versão antiga, sem VR por dia: VR zero", simular(antiga).itens[0].valeRefeicao, 0);
 }
 
 console.log("\nSEM ITENS");
