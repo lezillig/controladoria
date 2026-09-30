@@ -158,9 +158,31 @@ export type Premissas = {
   perfis?: PerfilVeiculo[];
 };
 
+// Tipo de veículo. Muda o custo do veículo, o variável por km E a mão de
+// obra: o motorista de ônibus (CNH D, outra faixa da convenção) não ganha o
+// mesmo que o de carro (CNH B), e a quantidade de motoristas por veículo muda
+// com a jornada que o tipo costuma cumprir.
+export type TipoVeiculo = "CARRO" | "VAN" | "MICRO" | "ONIBUS";
+
+export const ROTULO_TIPO_VEICULO: Record<TipoVeiculo, string> = {
+  CARRO: "Carro",
+  VAN: "Van",
+  MICRO: "Micro-ônibus",
+  ONIBUS: "Ônibus",
+};
+
 export type PerfilVeiculo = {
   codigo: string;
   descricao: string;
+  tipo: TipoVeiculo;
+  lotacao?: number | null;
+  categoriaCnh?: string | null;
+  motorista: {
+    // Salário base do motorista deste tipo — substitui Premissas.pessoal.salarioMotorista.
+    salario: number;
+    // Referência para montar as rotas: motoristas = veículos × este número.
+    motoristasPorVeiculo: number;
+  };
   veiculo: Premissas["veiculo"];
   variaveis: Premissas["variaveis"];
 };

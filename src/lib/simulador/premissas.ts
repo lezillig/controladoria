@@ -1,4 +1,4 @@
-import type { Premissas } from "./tipos";
+import type { PerfilVeiculo, Premissas, TipoVeiculo } from "./tipos";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 
@@ -341,4 +341,103 @@ export function problemasNasPremissas(p: Premissas): string[] {
   if (p.contrato.mesesCustoFixo <= 0) problemas.push("Meses de custo fixo precisa ser ao menos 1.");
   if (p.contrato.vigenciaMeses <= 0) problemas.push("Vigência precisa ser ao menos 1 mês.");
   return problemas;
+}
+
+// PERFIS PADRÃO POR TIPO DE VEÍCULO — o ponto de partida quando a base de
+// custos ainda não tem o modelo. ESTIMATIVAS de mercado (set/2026), marcadas
+// como tal; a van usa os exemplos do Gabarito, os demais seguem a mesma lógica
+// e as planilhas de referência (ônibus de Holambra). Salário por categoria de
+// CNH: carro (B), van e micro (D), ônibus (D, faixa de ônibus da convenção).
+function perfil(
+  codigo: string,
+  tipo: TipoVeiculo,
+  descricao: string,
+  lotacao: number,
+  cnh: string,
+  salario: number,
+  motoristasPorVeiculo: number,
+  v: Partial<Premissas["veiculo"]>,
+  x: Partial<Premissas["variaveis"]>
+): PerfilVeiculo {
+  return {
+    codigo,
+    tipo,
+    descricao,
+    lotacao,
+    categoriaCnh: cnh,
+    motorista: { salario, motoristasPorVeiculo },
+    veiculo: { ...PREMISSAS_PADRAO.veiculo, ...v },
+    variaveis: { ...PREMISSAS_PADRAO.variaveis, ...x },
+  };
+}
+
+export const PERFIS_PADRAO: PerfilVeiculo[] = [
+  perfil("CARRO", "CARRO", "Carro executivo (sedã/SUV)", 4, "B", 2400, 1.2,
+    { valor: 140000, seguroMes: 350, ipvaLicenciamentoAno: 5200, laudoVistoriaAno: 300, rastreadorMes: 80 },
+    { dieselLitro: 6.3, consumoAsfaltoKmL: 11, consumoTerraKmL: 9, arlaKm: 0, pneusAsfaltoKm: 0.05, pneusTerraKm: 0.07, manutencaoAsfaltoKm: 0.18, manutencaoTerraKm: 0.25 }),
+  perfil("VAN", "VAN", "Van 15–19 lugares", 19, "D", 2950, 1.2, {}, {}),
+  perfil("MICRO", "MICRO", "Micro-ônibus 25–33 lugares", 30, "D", 3150, 1.2,
+    { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95 },
+    { consumoAsfaltoKmL: 4.7, consumoTerraKmL: 3.9, arlaKm: 0.05, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0 }),
+  perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares", 50, "D", 3200, 1.2,
+    { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90 },
+    { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),
+];
+
+// A que tipo de veículo uma linha da base (aba 1, tipo; aba 2, função) se
+// refere, pelo texto. Null quando não dá para dizer.
+export function tipoDoTexto(texto: string | null | undefined): TipoVeiculo | null {
+  const t = (texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/micro/.test(t)) return "MICRO";
+  if (/onibus|rodoviario|urbano/.test(t)) return "ONIBUS";
+  if (/\bvan\b|minivan|sprinter|master|ducato/.test(t)) return "VAN";
+  if (/carro|executivo|leve|sedan|suv/.test(t)) return "CARRO";
+  return null;
+}
+
+// PERFIS A PARTIR DA BASE: um perfil por modelo de veículo cadastrado (aba 1),
+// com o salário da função de motorista do mesmo tipo (aba 2, "Motorista van",
+// "Motorista ônibus"…) e os motoristas por veículo das regras de jornada. O
+// que a base não tem vem do perfil padrão do tipo.
+export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
+  if (!base || base.veiculos.length === 0) return PERFIS_PADRAO.map((p) => structuredClone(p));
+  const n = (r: Record<string, unknown>, k: string) => (typeof r[k] === "number" ? (r[k] as number) : null);
+  const motoristasPorVeiculo = base.parametros.get("mot_fretamento_2p")?.valor ?? null;
+  return base.veiculos.map((v, i) => {
+    const tipo = tipoDoTexto(String(v.tipo ?? "")) ?? "VAN";
+    const padrao = PERFIS_PADRAO.find((p) => p.tipo === tipo)!;
+    const funcao = base.funcoes.find((f) => /motorista/i.test(String(f.funcao ?? "")) && tipoDoTexto(String(f.funcao)) === tipo);
+    const salario = funcao && typeof funcao.salarioBase === "number" ? funcao.salarioBase + (n(funcao, "adicionaisFixos") ?? 0) : padrao.motorista.salario;
+    const vidaVenda = n(v, "idadeVenda");
+    const revenda = n(v, "revendaPctFipe");
+    const ano = n(v, "ano");
+    const idade = ano ? Math.max(0, base.em.getFullYear() - ano) : 0;
+    const qtde = n(v, "pneusQtde");
+    const preco = n(v, "pneuPreco");
+    const vidaPneu = n(v, "pneuVidaKm");
+    return {
+      codigo: `BASE-${i + 1}`,
+      tipo,
+      descricao: `${v.tipo ?? ""} ${v.modelo ?? ""}`.trim(),
+      lotacao: n(v, "lotacao"),
+      categoriaCnh: tipo === "CARRO" ? "B" : "D",
+      motorista: { salario, motoristasPorVeiculo: motoristasPorVeiculo ?? padrao.motorista.motoristasPorVeiculo },
+      veiculo: {
+        ...padrao.veiculo,
+        valor: n(v, "valorFipe") ?? n(v, "valorCompra") ?? padrao.veiculo.valor,
+        custoCapitalAa: n(v, "taxaAa") ?? padrao.veiculo.custoCapitalAa,
+        depreciacaoAa: vidaVenda && revenda !== null ? (1 - revenda) / Math.max(1, vidaVenda - idade) : padrao.veiculo.depreciacaoAa,
+        seguroMes: n(v, "seguroAnual") !== null ? n(v, "seguroAnual")! / 12 : padrao.veiculo.seguroMes,
+        ipvaLicenciamentoAno: n(v, "ipvaLicenciamentoAnual") ?? padrao.veiculo.ipvaLicenciamentoAno,
+        laudoVistoriaAno: n(v, "licencasAnual") ?? padrao.veiculo.laudoVistoriaAno,
+        rastreadorMes: n(v, "rastreadorMensal") ?? padrao.veiculo.rastreadorMes,
+      },
+      variaveis: {
+        ...padrao.variaveis,
+        consumoAsfaltoKmL: n(v, "consumoKmL") ?? padrao.variaveis.consumoAsfaltoKmL,
+        manutencaoAsfaltoKm: n(v, "manutencaoKm") ?? padrao.variaveis.manutencaoAsfaltoKm,
+        pneusAsfaltoKm: qtde && preco && vidaPneu ? (qtde * preco) / vidaPneu : padrao.variaveis.pneusAsfaltoKm,
+      },
+    };
+  });
 }

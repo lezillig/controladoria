@@ -9,7 +9,8 @@
 // Sem banco: o motor é puro.
 import esperado from "../src/lib/simulador/historico/casos_de_teste_esperados.json";
 import { historicoHolambra, historicoSaoJoseDosPinhais } from "../src/lib/simulador/historico";
-import { arredondarParaCima, simular } from "../src/lib/simulador/motor";
+import { arredondarParaCima, custoDeCapital, simular } from "../src/lib/simulador/motor";
+import { PERFIS_PADRAO } from "../src/lib/simulador/premissas";
 
 let falhas = 0;
 function ok(nome: string, passou: boolean, detalhe = "") {
@@ -197,6 +198,67 @@ console.log("\nCUSTOS DOS MODELOS DE CONCORRENTES — somam o que devem");
   });
   ok("2% sobre o preço sobem o preço", sobrePreco.itens[0].precoKm > r0.itens[0].precoKm);
   ok("… e a margem continua perto do alvo", Math.abs(sobrePreco.itens[0].margem! - 0.09) < 0.005, `margem ${sobrePreco.itens[0].margem}`);
+}
+
+console.log("\nTIPO DE VEÍCULO — muda o veículo, o variável e a mão de obra");
+{
+  const base = historicoSaoJoseDosPinhais().entrada;
+  const r0 = simular(base);
+  const onibus = PERFIS_PADRAO.find((p) => p.tipo === "ONIBUS")!;
+  const carro = PERFIS_PADRAO.find((p) => p.tipo === "CARRO")!;
+  const comPerfil = (codigo: string) =>
+    simular({ ...base, premissas: { ...base.premissas, perfis: PERFIS_PADRAO }, rotas: base.rotas.map((r) => (r.item === "2" ? { ...r, perfilVeiculo: codigo } : r)) });
+  const rOnibus = comPerfil("ONIBUS");
+  const rCarro = comPerfil("CARRO");
+  // Item 2: 3 motoristas, sem HE de horas; HE% 12% e encargos 70% de SJP.
+  perto("salário do item 2 com ônibus = 3 × 3.200 × 1,12", rOnibus.itens[1].salarios, 3 * onibus.motorista.salario * 1.12, "total");
+  perto("salário do item 2 com carro = 3 × 2.400 × 1,12", rCarro.itens[1].salarios, 3 * carro.motorista.salario * 1.12, "total");
+  ok("ônibus custa mais que carro no mesmo trajeto", rOnibus.itens[1].custoTotal > rCarro.itens[1].custoTotal);
+  perto("o item 1 (sem perfil) não muda", rOnibus.itens[0].custoTotal, r0.itens[0].custoTotal, "total");
+  ok("diesel do ônibus (2,9 km/l) acima do da van (8,5 km/l)", rOnibus.itens[1].diesel > r0.itens[1].diesel);
+
+  console.log("\n  sem motorista e combustível do cliente");
+  const semMotorista = simular({ ...base, itens: base.itens.map((i) => (i.codigo === "2" ? { ...i, comMotorista: false } : i)) });
+  conferir("sem motorista: nenhum salário no item 2", [semMotorista.itens[1].salarios, semMotorista.itens[1].motoristas], [0, 0]);
+  perto("… e a supervisão inteira vai para o item 1", semMotorista.itens[0].supervisao, 7500, "total");
+  const combustivelCliente = simular({ ...base, itens: base.itens.map((i) => ({ ...i, combustivelPorContaDoCliente: true })) });
+  conferir("combustível do cliente: sem diesel nem ARLA", [combustivelCliente.itens[0].diesel, combustivelCliente.itens[0].arla], [0, 0]);
+}
+
+console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
+{
+  const base = historicoSaoJoseDosPinhais().entrada;
+  const v = base.premissas.veiculo;
+  // Capital composto: 80% a 18% + 20% a 12% = 16,8% a.a.
+  const comp = custoDeCapital({ ...v, capitalComposto: true, fracaoFinanciada: 0.8, taxaFinanciamentoAa: 0.18, custoCapitalProprioAa: 0.12 }, 12);
+  ok("capital composto = 0,8 × 18% + 0,2 × 12%", Math.abs(comp.taxaCapitalAa - 0.168) < 1e-12, `${comp.taxaCapitalAa}`);
+  // Linear: 290.000 × (1 − 20%) ÷ 5 anos = 46.400/ano.
+  const lin = custoDeCapital({ ...v, metodoDepreciacao: "LINEAR", vidaUtilAnos: 5, valorResidualPct: 0.2, idadeInicialAnos: 0 }, 12);
+  perto("linear: 290.000 × 0,8 ÷ 5", lin.depreciacaoAnual, 46400, "total");
+  // Soma dos dígitos, 5 anos: 1º ano = 5/15 do depreciável; 3º ano = 3/15.
+  const sd1 = custoDeCapital({ ...v, metodoDepreciacao: "SOMA_DIGITOS", vidaUtilAnos: 5, valorResidualPct: 0.2, idadeInicialAnos: 0 }, 12);
+  const sd3 = custoDeCapital({ ...v, metodoDepreciacao: "SOMA_DIGITOS", vidaUtilAnos: 5, valorResidualPct: 0.2, idadeInicialAnos: 2 }, 12);
+  perto("soma dos dígitos, 1º ano: 232.000 × 5/15", sd1.depreciacaoAnual, (232000 * 5) / 15, "total");
+  perto("soma dos dígitos, 3º ano: 232.000 × 3/15", sd3.depreciacaoAnual, (232000 * 3) / 15, "total");
+  const velho = custoDeCapital({ ...v, metodoDepreciacao: "LINEAR", vidaUtilAnos: 5, valorResidualPct: 0.2, idadeInicialAnos: 6 }, 12);
+  conferir("veículo além da vida útil não deprecia mais", velho.depreciacaoAnual, 0);
+  // Contrato de 3 anos, linear 5 anos, idade 0: média constante; valor médio
+  // não depreciado = 290.000 − 46.400 × (0,5 + 1,5 + 2,5)/3.
+  const medio = custoDeCapital({ ...v, metodoDepreciacao: "LINEAR", vidaUtilAnos: 5, valorResidualPct: 0.2, idadeInicialAnos: 0, remuneracaoSobreValorMedio: true }, 36);
+  perto("remuneração sobre o valor médio não depreciado", medio.valorMedio, 290000 - 46400 * 1.5, "total");
+
+  console.log("\n  Lucro Real × Presumido");
+  const r0 = simular(base);
+  const real = simular({
+    ...base,
+    premissas: { ...base.premissas, preco: { ...base.premissas.preco, pis: 0.0165, cofins: 0.076, irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34, creditoPisCofinsPct: 0.0925 } },
+  });
+  const i = real.itens[0];
+  ok("crédito = 9,25% dos custos com crédito", Math.abs(i.creditoPisCofins - i.custoComCredito * 0.0925) < 1e-6);
+  ok("custos com crédito incluem combustível e depreciação", i.custoComCredito >= i.diesel + i.depreciacao);
+  perto("lucro = lucro antes do IR × (1 − 34%)", i.lucro, i.lucroAntesIr * 0.66, "total");
+  ok("margem líquida perto do alvo (9%) também no Real", Math.abs(i.margem! - 0.09) < 0.005, `margem ${i.margem}`);
+  ok("preço muda com o regime", i.precoKm !== r0.itens[0].precoKm, `${i.precoKm} × ${r0.itens[0].precoKm}`);
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

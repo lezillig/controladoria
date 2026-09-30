@@ -169,11 +169,13 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   // Mão de obra — o fator noturno incide só sobre o salário do motorista; as
   // horas extras e noturnas em horas, por motorista, a salário ÷ divisor.
   const fatorNoturno = r.noturno ? pessoal.fatorJornadaNoturna : 1;
-  const valorHora = pessoal.divisorHorasMes > 0 ? pessoal.salarioMotorista / pessoal.divisorHorasMes : 0;
+  // O salário do motorista é o do tipo de veículo da rota, quando há perfil.
+  const salarioMotorista = perfil?.motorista.salario ?? pessoal.salarioMotorista;
+  const valorHora = pessoal.divisorHorasMes > 0 ? salarioMotorista / pessoal.divisorHorasMes : 0;
   const adicionaisEmHoras =
     valorHora * (pessoal.horasExtras50Mes * 1.5 + pessoal.horasExtras100Mes * 2 + pessoal.horasNoturnasMes * 1.2);
   const salarios =
-    motoristas * (pessoal.salarioMotorista * (1 + pessoal.horaExtraPct) * fatorNoturno + adicionaisEmHoras) +
+    motoristas * (salarioMotorista * (1 + pessoal.horaExtraPct) * fatorNoturno + adicionaisEmHoras) +
     monitoras * pessoal.salarioMonitora;
   const encargos = salarios * pessoal.encargosPct;
   const beneficios = (motoristas + monitoras) * (pessoal.beneficiosPorFuncionario + pessoal.uniformeEpiPorFuncionario);
