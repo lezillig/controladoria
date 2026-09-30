@@ -115,6 +115,19 @@ export function fmtVariacao(valor: number | null): string {
   return `${sinal}${fmtPercent(valor)}`;
 }
 
+// Valor em reais DIGITADO num campo de parâmetro ("10000", "10.000,50",
+// "R$ 1.500,00") para centavos. Vazio é `null` — campo deixado em branco de
+// propósito, que desliga a regra. Texto que não vira número é "invalido", e
+// não `null`: a versão anterior devolvia `null` nos dois casos, e
+// "R$ 10.000,00" digitado na alçada APAGAVA a alçada em silêncio — o
+// antifraude de fracionamento desligado com a tela respondendo "salvo".
+export function lerReaisEmCents(texto: string): number | null | "invalido" {
+  const limpo = texto.trim().replace(/^R\$/i, "").replace(/\s/g, "").replace(/\./g, "").replace(",", ".");
+  if (limpo === "") return null;
+  const numero = Number(limpo);
+  return Number.isFinite(numero) ? Math.round(numero * 100) : "invalido";
+}
+
 // Rotulo de documento (CNPJ/CPF) para exibicao. Mascara o CPF de pessoa
 // fisica (11 digitos) porque a lista de fornecedores pode conter autonomo, e
 // nem todo usuario do modulo precisa ver o documento completo de uma pessoa

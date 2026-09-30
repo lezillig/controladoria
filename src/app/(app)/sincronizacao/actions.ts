@@ -585,7 +585,9 @@ export async function medirBaseAntiga(): Promise<{ medida?: MedidaDaBaseAntiga; 
   try {
     return { medida: await medir(session.companyId) };
   } catch (e) {
-    return { erro: `Não consegui medir: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}` };
+    // Redigido como as demais mensagens desta tela: erro de banco traz host e,
+    // às vezes, a string de conexão.
+    return { erro: `Não consegui medir: ${redigir(e instanceof Error ? e.message : String(e)).slice(0, 300)}` };
   }
 }
 
@@ -606,7 +608,9 @@ export async function limparBaseAntiga(confirmacao: string): Promise<{ resultado
   try {
     resultado = await limpar(session.companyId);
   } catch (e) {
-    return { erro: `A limpeza falhou e nada foi apagado: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}` };
+    return {
+      erro: `A limpeza falhou e nada foi apagado: ${redigir(e instanceof Error ? e.message : String(e)).slice(0, 300)}`,
+    };
   }
 
   await registrarEvento({

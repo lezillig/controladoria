@@ -9,6 +9,7 @@ import { executarAuditoria } from "@/lib/controladoria/engine";
 import { gerarEEnviarRelatorio } from "@/lib/controladoria/relatorio";
 import { parseLocalDate } from "@/lib/date";
 import { registrarEvento } from "@/lib/controladoria/trilha";
+import { redigir } from "@/lib/controladoria/falhas";
 import { exigirPermissao } from "../_dados";
 
 // Geração manual do relatório. O caminho normal é o agendamento diário; este
@@ -88,6 +89,8 @@ export async function gerarRelatorioAgora(formData: FormData): Promise<Resultado
       erro: resultado.erro ?? undefined,
     };
   } catch (e) {
-    return { erro: e instanceof Error ? e.message : "Falha ao gerar o relatório." };
+    // Redigido: a geração passa por banco, IA e e-mail, e qualquer um deles
+    // pode devolver texto com credencial; este vai direto para a tela.
+    return { erro: e instanceof Error ? redigir(e.message).slice(0, 500) : "Falha ao gerar o relatório." };
   }
 }

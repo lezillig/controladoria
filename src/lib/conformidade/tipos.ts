@@ -15,6 +15,19 @@ import type { ConformidadeArea, ConformidadeNatureza, ConformidadeOrigem, Confor
 // bundle por causa de uma string.
 export const EXTENSOES_ACEITAS = ".msg,.pdf,.png,.jpg,.jpeg,.webp,.xlsx,.docx,.csv,.txt,.md";
 
+// A MESMA lista, cobrada no servidor. O `accept` do <input> é sugestão ao
+// seletor de arquivos, não controle: um formulário montado à mão enviava
+// .html, .svg ou executável, e o arquivo ficava guardado como "evidência" com
+// o mime-type que o próprio remetente declarou — e saía de novo pela rota de
+// download. Recusar na entrada é o que mantém a promessa da tela ("aceita PDF,
+// imagem, planilha, Word ou texto").
+export function extensaoAceita(nomeArquivo: string): boolean {
+  const ponto = nomeArquivo.lastIndexOf(".");
+  if (ponto < 0) return false;
+  const extensao = nomeArquivo.slice(ponto).toLowerCase();
+  return EXTENSOES_ACEITAS.split(",").includes(extensao);
+}
+
 export const AREAS: { valor: ConformidadeArea; rotulo: string; explicacao: string }[] = [
   { valor: "FISCAL", rotulo: "Fiscal", explicacao: "Tributos, créditos, obrigações acessórias, enquadramento." },
   { valor: "TRABALHISTA", rotulo: "Trabalhista", explicacao: "Jornada, verbas, acordos, terceirização, passivo de reclamatória." },

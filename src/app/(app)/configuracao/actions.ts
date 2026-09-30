@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { garantirConfig } from "@/lib/controladoria/contexto";
 import { parseLocalDate } from "@/lib/date";
+import { lerReaisEmCents } from "@/lib/controladoria/format";
 import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao } from "../_dados";
 
@@ -13,13 +14,6 @@ import { exigirPermissao } from "../_dados";
 // R$ 9.900 no mesmo dia são fracionamento de um de R$ 29.700.
 
 export type ResultadoConfig = { erro?: string; ok?: boolean };
-
-function reaisParaCents(valor: string): number | null {
-  const limpo = valor.trim().replace(/\./g, "").replace(",", ".");
-  if (limpo === "") return null;
-  const numero = Number(limpo);
-  return Number.isFinite(numero) ? Math.round(numero * 100) : null;
-}
 
 export async function salvarConfiguracao(formData: FormData): Promise<ResultadoConfig> {
   const session = await exigirPermissao("gerir-modelo");
@@ -37,8 +31,11 @@ export async function salvarConfiguracao(formData: FormData): Promise<ResultadoC
   const dataInicioBase = dataInicioBruta ? parseLocalDate(dataInicioBruta) : anterior.dataInicioBase;
   if (Number.isNaN(dataInicioBase.getTime())) return { erro: "Data inicial da base inválida." };
 
-  const limiteAlcadaCents = reaisParaCents(String(formData.get("limiteAlcada") ?? ""));
-  const saldoMinimoCaixaCents = reaisParaCents(String(formData.get("saldoMinimo") ?? ""));
+  // Valor ilegível é erro, não campo vazio — ver `lerReaisEmCents`.
+  const limiteAlcadaCents = lerReaisEmCents(String(formData.get("limiteAlcada") ?? ""));
+  if (limiteAlcadaCents === "invalido") return { erro: "Limite de alçada inválido (use só números, ex.: 10000 ou 10.000,00)." };
+  const saldoMinimoCaixaCents = lerReaisEmCents(String(formData.get("saldoMinimo") ?? ""));
+  if (saldoMinimoCaixaCents === "invalido") return { erro: "Saldo mínimo de caixa inválido (use só números, ex.: 50000)." };
 
   const numero = (campo: string, padrao: number): number => {
     const bruto = String(formData.get(campo) ?? "").trim().replace(",", ".");

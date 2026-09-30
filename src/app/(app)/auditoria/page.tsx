@@ -43,11 +43,22 @@ const STATUS_ROTULO: Record<string, string> = {
 
 export default async function AuditoriaPage({ searchParams }: { searchParams: Promise<Filtros> }) {
   const session = await exigirPermissao("auditoria");
-  const filtros = await searchParams;
+  // Parâmetro repetido na URL (`?regra=A&regra=B`) chega como LISTA, apesar do
+  // tipo, e uma lista como `regra` ou `agente` derrubava a consulta do Prisma.
+  // Fica valendo o primeiro, como em qualquer link de filtro.
+  const filtros = Object.fromEntries(
+    Object.entries(await searchParams).map(([chave, valor]) => [chave, Array.isArray(valor) ? valor[0] : valor])
+  ) as Filtros;
   const podeTratar = await podeAcao(session, "tratar-achado");
   const podeInvestigar = await podeAcao(session, "investigar");
 
-  const statusFiltro = filtros.status ?? "ABERTOS";
+  // Validado contra o enum, como os demais filtros abaixo: `?status=xyz` (link
+  // colado errado ou montado à mão) ia direto ao Prisma como AuditStatus e
+  // derrubava a tela inteira com erro de enum. Valor desconhecido cai no
+  // padrão, os em aberto.
+  const statusPedido = filtros.status ?? "ABERTOS";
+  const statusFiltro =
+    statusPedido === "ABERTOS" || statusPedido === "TODOS" || Object.hasOwn(STATUS_ROTULO, statusPedido) ? statusPedido : "ABERTOS";
   const where: Prisma.AuditFindingWhereInput = {
     companyId: session.companyId,
     ...(statusFiltro === "ABERTOS"

@@ -7,6 +7,7 @@ import {
 } from "@/lib/controladoria/investigador";
 import { exigirPermissao, resolverEscopo } from "../../_dados";
 import { registrarEvento } from "@/lib/controladoria/trilha";
+import { redigir } from "@/lib/controladoria/falhas";
 
 const TAMANHO_MAXIMO_DA_PERGUNTA = 2000;
 
@@ -74,7 +75,8 @@ export async function avancar(id: string): Promise<RespostaDaAction> {
 }
 
 function mensagem(e: unknown): string {
-  const texto = e instanceof Error ? e.message : String(e);
+  // Redigido: erro da API de IA ou do banco chega aqui cru e vai para a tela.
+  const texto = redigir(e instanceof Error ? e.message : String(e));
   const digest = (e as { digest?: string })?.digest;
   return `${texto.slice(0, 300)}${digest ? ` (identificador ${digest})` : ""}`;
 }

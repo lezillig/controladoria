@@ -15,7 +15,14 @@ import { lerDocumento, sugestoesDoEmail, type ApontamentoExtraido } from "@/lib/
 import { classificarArquivo } from "@/lib/conformidade/extracao";
 import { OBRIGACAO_POR_CODIGO } from "@/lib/conformidade/obrigacoes";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
-import { chaveRecorrencia, competenciaDe, competenciaDeTexto, escolherChaveRecorrencia, rotuloCompetencia } from "@/lib/conformidade/tipos";
+import {
+  chaveRecorrencia,
+  competenciaDe,
+  competenciaDeTexto,
+  escolherChaveRecorrencia,
+  extensaoAceita,
+  rotuloCompetencia,
+} from "@/lib/conformidade/tipos";
 import { DECISOES, PREPARACAO } from "@/lib/conformidade/regime";
 import { parseLocalDate } from "@/lib/date";
 import { registrarEvento } from "@/lib/controladoria/trilha";
@@ -79,6 +86,12 @@ export async function enviarDocumento(formData: FormData): Promise<ResultadoDocu
   if (arquivo.size > LIMITE_ARQUIVO_BYTES) {
     return {
       erro: `Arquivo de ${(arquivo.size / 1024 / 1024).toFixed(1)} MB — o limite é 8 MB. Reexporte o PDF em resolução menor ou divida o documento.`,
+    };
+  }
+  // Tipo cobrado aqui, e não só no `accept` do formulário — ver `extensaoAceita`.
+  if (!extensaoAceita(arquivo.name)) {
+    return {
+      erro: "Formato não aceito. Envie o e-mail (.msg), PDF, imagem (.png, .jpg, .webp), planilha (.xlsx), Word (.docx) ou texto (.csv, .txt, .md).",
     };
   }
 

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { credencialConfigurada, normalizarCredencialRef } from "@/lib/omie/client";
 import { diagnosticarConexao, type ResultadoDiagnostico } from "@/lib/omie/diagnostico";
 import { registrarEvento } from "@/lib/controladoria/trilha";
+import { redigir } from "@/lib/controladoria/falhas";
 import { exigirPermissao } from "../_dados";
 
 // Cadastro das conexões Omie — uma por CNPJ do grupo.
@@ -147,7 +148,9 @@ export async function testarConexao(formData: FormData): Promise<ResultadoTeste>
 
     return { diagnostico };
   } catch (e) {
-    return { erro: e instanceof Error ? e.message : "Falha ao testar a conexão." };
+    // Redigido: a Omie é mascarada no cliente dela, mas aqui também chega erro
+    // de banco, que pode trazer host e credencial da conexão.
+    return { erro: e instanceof Error ? redigir(e.message).slice(0, 500) : "Falha ao testar a conexão." };
   }
 }
 

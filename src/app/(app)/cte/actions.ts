@@ -11,6 +11,7 @@ import { fimDoDia, inicioDoDia } from "@/lib/controladoria/periodos";
 import { fmtData } from "@/lib/controladoria/format";
 import { exigirPermissao, resolverEscopo } from "../_dados";
 import { registrarEvento } from "@/lib/controladoria/trilha";
+import { redigir } from "@/lib/controladoria/falhas";
 
 export type EstadoConferencia = {
   resultado?: ResultadoConferencia;
@@ -55,7 +56,8 @@ export async function conferirListaDeCte(formData: FormData): Promise<EstadoConf
     // tivesse acontecido — foi exatamente o que o usuário viu ("colei, apertei
     // o botão e sumiu"). Falha silenciosa numa tela de conferência é pior que
     // falha barulhenta: ela é indistinguível de "está tudo certo".
-    const texto = e instanceof Error ? e.message : String(e);
+    // Redigido: é erro de banco, e vai para a tela.
+    const texto = redigir(e instanceof Error ? e.message : String(e));
     const digest = (e as { digest?: string })?.digest;
     return {
       erro:
