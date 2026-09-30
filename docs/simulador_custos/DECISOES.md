@@ -288,6 +288,26 @@ para todos os tipos de veículo dos estudos novos, por cima da taxa de cada
 modelo da tabela da frota. Cada regra tem na tela um "o que é?" com o
 conceito.
 
+## 7.1.2 Mão de obra pelas convenções coletivas
+
+Padrões da mão de obra (em `convencoes.ts`), com os valores de 01/11/2026:
+- **Fretamento — TRANSFRETUR × SINDIFRETUR 2026/2028** e Circular 013-A/2026:
+  Nível A (ônibus acima de 32 lugares) R$ 3.733,44; Nível B (van e micro,
+  empresa com acordo coletivo) R$ 2.986,75 (80% do A); por mês, PLR
+  R$ 137,50 (R$ 1.650/ano, sem encargos), cesta R$ 190, VR R$ 1.092 (R$ 42 ×
+  26 dias), plano médico R$ 283,76 e odontológico R$ 50. Jornada de 44 h
+  (7h20/dia); domingo e feriado a 100%.
+- **Administrativo — TRANSFRETUR × SINDRASP 2026/2028** (Circular 028/2026):
+  auxiliar administrativo R$ 1.957,83; PLR de 40% do salário (até
+  R$ 1.605/ano); VR R$ 42 por dia; odontológico familiar pago pela empresa.
+- **Carro — SINDILOCADESP**: convenção não obtida; padrão do simulador.
+
+A tabela de mão de obra ganhou a coluna PLR (R$/mês), somada aos benefícios.
+**Fretamento eventual**: a cláusula 9ª paga ao motorista um prêmio de 8% da
+nota sem os tributos (fim de semana, feriado, viagem longa; 5% em dia útil
+fora do expediente) no lugar de horas extras e adicional noturno — o estudo
+eventual nasce com o prêmio nas despesas sobre o preço e sem hora extra.
+
 ## 7.2 Pedágio pela categoria, margem de indiferença e reforma
 
 Aprendido com o roteiro de outro kit de custeio (detalhe em

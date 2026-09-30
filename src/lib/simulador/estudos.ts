@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { PREMIO_EVENTUAL_FIM_DE_SEMANA } from "./convencoes";
 import { horarioValido, jornadaDoHorario } from "./horario";
 import { prisma } from "@/lib/prisma";
 import { simular, VERSAO_MOTOR } from "./motor";
@@ -351,7 +352,24 @@ export async function entradaInicial(
   // cobra — não há demanda que possa cair. O custo fixo do veículo se paga
   // pelos dias vendidos no mês (os dias/mês da rota), por isso a diária é a
   // unidade natural.
-  if (estudo.tipoServico === "FRETAMENTO_EVENTUAL") premissas.contrato.utilizacao = 1;
+  if (estudo.tipoServico === "FRETAMENTO_EVENTUAL") {
+    premissas.contrato.utilizacao = 1;
+    // PRÊMIO DO MOTORISTA (CCT TRANSFRETUR, cláusula 9ª): 8% da nota sem os
+    // tributos em fim de semana, feriado ou viagem longa (5% em dia útil
+    // fora do expediente), no lugar das horas extras e do adicional noturno.
+    // Entra como despesa sobre o preço; a hora extra sai.
+    const pr = premissas.preco;
+    const tributosDaNota = pr.pis + pr.cofins + Math.max(pr.iss, pr.icms);
+    const premio = PREMIO_EVENTUAL_FIM_DE_SEMANA * (1 - tributosDaNota);
+    pr.despesasSobrePrecoPct = Number((pr.despesasSobrePrecoPct + premio).toFixed(6));
+    origem["preco.despesasSobrePrecoPct"] = {
+      origem: "PADRAO",
+      fonte: "CCT TRANSFRETUR × SINDIFRETUR 2026/2028, cláusula 9ª",
+      detalhe: `prêmio do motorista no fretamento eventual: 8% da nota sem tributos = ${(premio * 100).toFixed(2)}% do preço (5% em dia útil fora do expediente)`,
+    };
+    premissas.pessoal.horaExtraPct = 0;
+    origem["pessoal.horaExtraPct"] = { origem: "PADRAO", fonte: "CCT TRANSFRETUR × SINDIFRETUR 2026/2028, cláusula 9ª", detalhe: "o prêmio da viagem compensa horas extras e adicional noturno" };
+  }
   if (estudo.vigenciaMeses) premissas.contrato.vigenciaMeses = estudo.vigenciaMeses;
   if (estudo.prazoPagamentoDias) premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
   premissas.perfis = perfisDoEstudo(perfisDaBase(vazia ? null : baseCarregada), estudo.tiposVeiculo as TipoVeiculo[]);

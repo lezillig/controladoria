@@ -167,7 +167,7 @@ function lerTabular(
   avisos: string[]
 ): RegistroLido[] {
   const saida: RegistroLido[] = [];
-  const faltando = colunas.filter((c) => !linhasTabularesTemCabecalho(ws, c.cabecalho));
+  const faltando = colunas.filter((c) => !c.opcional && !linhasTabularesTemCabecalho(ws, c.cabecalho));
   for (const c of faltando) avisos.push(`${ws.name}: coluna "${c.cabecalho}" não encontrada no cabeçalho (linha ${LINHA_CABECALHO}).`);
   const vistas = new Set<string>();
   for (const { linha, valores } of linhasTabulares(ws)) {

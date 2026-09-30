@@ -136,7 +136,9 @@ export const CATALOGO_PARAMETROS: DefinicaoParametro[] = [
 
 // ---------------------------------------------------------------- tabulares
 
-export type DefinicaoColuna = { cabecalho: string; campo: string; tipo: TipoValor | "pneus" };
+// `opcional`: coluna que o Gabarito original não tem — a falta dela não vira
+// aviso na importação.
+export type DefinicaoColuna = { cabecalho: string; campo: string; tipo: TipoValor | "pneus"; opcional?: boolean };
 
 export const COLUNAS_FROTA: DefinicaoColuna[] = [
   { cabecalho: "Tipo", campo: "tipo", tipo: "texto" },
@@ -184,6 +186,9 @@ export const COLUNAS_MAO_DE_OBRA: DefinicaoColuna[] = [
   { cabecalho: "Vale-transporte líquido (R$/mês)", campo: "valeTransporte", tipo: "numero" },
   { cabecalho: "Plano de saúde/odonto (R$/mês)", campo: "planoSaude", tipo: "numero" },
   { cabecalho: "Seguro de vida (R$/mês)", campo: "seguroVida", tipo: "numero" },
+  // PLR da convenção em média mensal: sem encargos (Lei 10.101), soma aos
+  // benefícios.
+  { cabecalho: "PLR (R$/mês)", campo: "plrMes", tipo: "numero", opcional: true },
   { cabecalho: "Uniforme + EPI (R$/mês)", campo: "uniformeEpi", tipo: "numero" },
   { cabecalho: "Exames e cursos (R$/mês)", campo: "examesCursos", tipo: "numero" },
   { cabecalho: "Absenteísmo/folguista (%)", campo: "absenteismoPct", tipo: "pct" },

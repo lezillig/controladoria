@@ -129,6 +129,16 @@ async function principal() {
   const entradaComTipos = (await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, comTipos))!)).entrada;
   conferir("tipos escolhidos ao criar, na ordem: carro (padrão, sem modelo na base) e a van da base", entradaComTipos.premissas.perfis?.map((p) => p.tipo), ["CARRO", "VAN"]);
   conferir("fretamento eventual: km da viagem é o cobrado (utilização 100%) e preço por diária", [eventual.entrada.premissas.contrato.utilizacao, eventual.entrada.unidadePreco], [1, "DIARIA"]);
+  {
+    const pr = eventual.entrada.premissas.preco;
+    const esperado = 0.08 * (1 - pr.pis - pr.cofins - Math.max(pr.iss, pr.icms));
+    const semPremio = (await estudos.entradaInicial(EMPRESA, novo)).entrada.premissas.preco.despesasSobrePrecoPct;
+    ok(
+      "fretamento eventual: prêmio de 8% da nota sem tributos nas despesas sobre o preço, sem hora extra",
+      Math.abs(pr.despesasSobrePrecoPct - semPremio - esperado) < 1e-6 && eventual.entrada.premissas.pessoal.horaExtraPct === 0 && /cláusula 9/.test(eventual.origem["preco.despesasSobrePrecoPct"]?.fonte ?? ""),
+      `${pr.despesasSobrePrecoPct} vs ${semPremio} + ${esperado}`
+    );
+  }
   const comItens = await estudos.criarEstudo(
     EMPRESA,
     {

@@ -1768,6 +1768,8 @@ model SimFuncao {
   valeTransporte    Decimal?  @db.Decimal(18, 6)
   planoSaude        Decimal?  @db.Decimal(18, 6)
   seguroVida        Decimal?  @db.Decimal(18, 6)
+  // PLR da convenção, média mensal (sem encargos).
+  plrMes            Decimal?  @db.Decimal(18, 6)
   uniformeEpi       Decimal?  @db.Decimal(18, 6)
   examesCursos      Decimal?  @db.Decimal(18, 6)
   absenteismoPct    Decimal?  @db.Decimal(18, 6)

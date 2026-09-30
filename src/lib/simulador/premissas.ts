@@ -1,5 +1,5 @@
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
-import { PISO_TRANSFRETUR_NIVEL_A } from "./convencoes";
+import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
@@ -134,7 +134,8 @@ export const FONTE_PADRAO = "padrão do simulador (exemplos do Gabarito — esti
 export const PREMISSAS_PADRAO: Premissas = {
   contrato: { modo: "MENSAL", mesesCustoFixo: 1, vigenciaMeses: 12, utilizacao: 0.85, kmMortoPct: 0.12, reservaTecnicaPct: 0.1, implantacaoTotal: 0 },
   pessoal: {
-    salarioMotorista: 3450,
+    // Van em fretamento: piso do Nível B da TRANSFRETUR (ver convencoes.ts).
+    salarioMotorista: PISO_TRANSFRETUR_NIVEL_B,
     salarioMonitora: 1900,
     horaExtraPct: 0.14,
     // Os grupos A a D da calculadora (maoDeObra.ts) no modo em que as férias
@@ -148,7 +149,9 @@ export const PREMISSAS_PADRAO: Premissas = {
     horasExtras100Mes: 0,
     horasNoturnasMes: 0,
     adicionalNoturnoPct: ADICIONAL_NOTURNO_PADRAO,
-    beneficiosPorFuncionario: 1072,
+    // PLR + cesta + VR (26 dias) + plano médico e odontológico da circular
+    // TRANSFRETUR 013-A/2026 — R$ 1.753,26 por mês.
+    beneficiosPorFuncionario: Object.values(BENEFICIOS_MOTORISTA_TRANSFRETUR).reduce((a, v) => a + v, 0),
     uniformeEpiPorFuncionario: 100,
     supervisaoMes: 0,
   },
@@ -356,7 +359,7 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     if (typeof motorista.salarioBase === "number") definir("pessoal.salarioMotorista", n("salarioBase") + n("adicionaisFixos"), f);
     if (typeof motorista.hePct === "number") definir("pessoal.horaExtraPct", n("hePct"), f);
     if (typeof motorista.encargosPct === "number") definir("pessoal.encargosPct", n("encargosPct"), f);
-    definir("pessoal.beneficiosPorFuncionario", n("vrVa") + n("cesta") + n("valeTransporte") + n("planoSaude") + n("seguroVida"), f, "VR/VA + cesta + VT + plano + seguro de vida");
+    definir("pessoal.beneficiosPorFuncionario", n("vrVa") + n("cesta") + n("valeTransporte") + n("planoSaude") + n("seguroVida") + n("plrMes"), f, "VR/VA + cesta + VT + plano + seguro de vida + PLR");
     definir("pessoal.uniformeEpiPorFuncionario", n("uniformeEpi") + n("examesCursos"), f, "uniforme/EPI + exames e cursos");
   }
   const monitora = funcao(escolhas.monitoraId);
@@ -476,12 +479,11 @@ const PERFIS_BASE: PerfilVeiculo[] = [
   perfil("CARRO", "CARRO", "Carro executivo (sedã/SUV)", 4, "B", 2400, 1.2,
     { valor: 140000, seguroMes: 350, ipvaLicenciamentoAno: 5200, laudoVistoriaAno: 300, rastreadorMes: 80 },
     { dieselLitro: 6.3, consumoAsfaltoKmL: 11, consumoTerraKmL: 9, arlaKm: 0, pneusAsfaltoKm: 0.05, pneusTerraKm: 0.07, manutencaoAsfaltoKm: 0.18, manutencaoTerraKm: 0.25 }),
-  perfil("VAN", "VAN", "Van 15–19 lugares", 19, "D", 2950, 1.2, {}, {}),
-  perfil("MICRO", "MICRO", "Micro-ônibus 25–33 lugares", 30, "D", 3150, 1.2,
+  // Van e micro (até 32 lugares): Nível B da TRANSFRETUR; ônibus: Nível A.
+  perfil("VAN", "VAN", "Van 15–19 lugares", 19, "D", PISO_TRANSFRETUR_NIVEL_B, 1.2, {}, {}),
+  perfil("MICRO", "MICRO", "Micro-ônibus 25–33 lugares", 30, "D", PISO_TRANSFRETUR_NIVEL_B, 1.2,
     { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95 },
     { consumoAsfaltoKmL: 4.7, consumoTerraKmL: 3.9, arlaKm: 0.05, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0 }),
-  // Salário: piso do Nível A da TRANSFRETUR-SP × SINDIFRETUR desde 01/01/2026
-  // (ver convencoes.ts).
   perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", PISO_TRANSFRETUR_NIVEL_A, 1.2,
     { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90 },
     { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),

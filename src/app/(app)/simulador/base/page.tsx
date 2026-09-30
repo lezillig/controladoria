@@ -5,7 +5,7 @@ import { CATALOGO_PARAMETROS } from "@/lib/simulador/catalogo";
 import { camposEditaveis, CONCEITO_DA_REGRA, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
 import { CATEGORIA_DO_TIPO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
-import { funcaoPelaConvencao } from "@/lib/simulador/convencoes";
+import { funcaoAdministrativa, funcaoPelaConvencao } from "@/lib/simulador/convencoes";
 import { energiaDoPerfil } from "@/lib/simulador/energia";
 import { carregarDreDosMeses } from "@/lib/simulador/custosReais";
 import { CHAVE_FORNECEDOR_CONTABILIDADE, FORNECEDOR_CONTABILIDADE_PADRAO, folhaDaOficina, indiretosDoDre, pagamentosDoFornecedor, type IndiretoDoDre } from "@/lib/simulador/indiretosDoDre";
@@ -126,6 +126,8 @@ export default async function BaseDeCustosPage() {
       campos: { funcao: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`, encargosPct: PREMISSAS_PADRAO.pessoal.encargosPct, ...campos },
     };
   });
+  const adm = funcaoAdministrativa();
+  sugestoesFuncao.push({ rotulo: `Auxiliar administrativo · ${adm.convencao.chave}`, campos: { funcao: "Auxiliar administrativo", encargosPct: PREMISSAS_PADRAO.pessoal.encargosPct, ...adm.campos } });
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
