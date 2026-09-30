@@ -176,6 +176,14 @@ export default async function CustosPage({
     ultimoSubtotal = linha.valorCents;
   }
   const linhasOcultas = dre.linhas.length - linhasVisiveis.length;
+  // A linha da demonstração que está NA TELA — a anual na visão do ano, a do
+  // mês na mensal —, para os cartões lerem do mesmo objeto que a tabela.
+  const linhaDaTela = (chave: string) =>
+    dreAnual ? dreAnual.linhas.find((l) => l.chave === chave) : dre.linhas.find((l) => l.chave === chave);
+  const valorDaLinha = (chave: string) => {
+    const l = linhaDaTela(chave);
+    return !l ? 0 : "totalCents" in l ? l.totalCents : l.valorCents;
+  };
   const totalDespesa = dre.linhas
     .filter((l) => l.tipo === "GRUPO" && l.chave !== "RECEITA_BRUTA" && l.chave !== "RECEITA_FINANCEIRA")
     .reduce((a, l) => a + l.valorCents, 0);
@@ -309,22 +317,24 @@ export default async function CustosPage({
           valor={fmtBRL(dreAnual?.receitaLiquidaCents ?? dre.receitaLiquidaCents)}
           apoio="Receita bruta menos as deduções"
         />
+        {/* RESULTADO ANTES DOS INVESTIMENTOS no lugar do lucro bruto.
+            Enquanto nenhuma categoria está em "custo dos serviços" — e a
+            operação desta empresa está em veículos e pessoas, abaixo do lucro
+            bruto —, o cartão de lucro bruto repetia a receita líquida ao lado
+            dela, 100%, todo mês. Este é o número que separa o que a operação
+            gerou do que se gasta renovando a frota. Os dois cartões saem da
+            MESMA demonstração da tabela (mês ou ano, empresa, regime). */}
         <Kpi
-          rotulo="Lucro bruto"
-          valor={fmtBRL(
-            dreAnual
-              ? (dreAnual.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.totalCents ?? 0)
-              : (dre.linhas.find((l) => l.chave === "LUCRO_BRUTO")?.valorCents ?? 0)
-          )}
-          apoio={`${fmtPercent(
-            (dreAnual ?? dre).linhas.find((l) => l.chave === "LUCRO_BRUTO")?.percentReceitaLiquida ?? null
-          )} da receita líquida`}
+          rotulo="Resultado antes dos investimentos"
+          valor={fmtBRL(valorDaLinha("LAIR"))}
+          apoio={`${fmtPercent(linhaDaTela("LAIR")?.percentReceitaLiquida ?? null)} da receita líquida`}
+          tom={valorDaLinha("LAIR") >= 0 ? "bom" : "ruim"}
         />
         <Kpi
-          rotulo="Resultado líquido"
-          valor={fmtBRL(dreAnual?.resultadoLiquidoCents ?? dre.resultadoLiquidoCents)}
-          apoio={`Margem ${fmtPercent(dreAnual?.margemLiquidaPercent ?? dre.margemLiquidaPercent)}`}
-          tom={(dreAnual?.resultadoLiquidoCents ?? dre.resultadoLiquidoCents) >= 0 ? "bom" : "ruim"}
+          rotulo="Resultado líquido do período"
+          valor={fmtBRL(valorDaLinha("RESULTADO_LIQUIDO"))}
+          apoio={`${fmtPercent(linhaDaTela("RESULTADO_LIQUIDO")?.percentReceitaLiquida ?? null)} da receita líquida`}
+          tom={valorDaLinha("RESULTADO_LIQUIDO") >= 0 ? "bom" : "ruim"}
         />
         <Kpi
           rotulo="Por classificar"
