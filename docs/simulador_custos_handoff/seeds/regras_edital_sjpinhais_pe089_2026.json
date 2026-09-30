@@ -1,0 +1,104 @@
+[
+  {
+    "tema": "Sessão / plataforma",
+    "regra": "28/09/2026 09h, Comprasgov (UASG 987885). Lote único com 2 itens; menor preço por lote; disputa ABERTA; lance mínimo R$ 0,20; lance por valor unitário com 2 casas.",
+    "impacto": "Mesmo preço/km nos dois itens é o mais simples; o julgamento é pelo valor do lote.",
+    "campo": "Cenários!B4"
+  },
+  {
+    "tema": "Preço máximo",
+    "regra": "R$ 11,11/km em ambos os itens; valor total R$ 4.906.176 (374.400 + 67.200 km/ano). Cotações de referência: R$ 10,71 a R$ 11,44 (Chapecó, Rondonópolis, Alto Garças).",
+    "impacto": "Proposta acima do teto é desclassificada; abaixo do piso de custo pode sofrer diligência de exequibilidade (edital 70).",
+    "campo": "Composição!B/C pmax"
+  },
+  {
+    "tema": "Pagamento só por km útil",
+    "regra": "SRP: paga-se exclusivamente km útil rodado e validado por telemetria + lista de presença eletrônica (TR 3.6, 8.22, 9.31, 10.2–10.7). Sem indenização por ociosidade (TR 3.9, 10.3).",
+    "impacto": "Custos fixos (folha, vans) não têm garantia de diluição. Fase 1 = só CDR local + UBS; rotas externas na Fase 2.",
+    "campo": "Premissas.utilização; Cenários"
+  },
+  {
+    "tema": "Ponto de partida do km útil",
+    "regra": "Pacientes: Central de Veículos (R. Francisco Dal Negro, 2684). Servidores: Paço Municipal (TR 8.14). Garagem pública vedada (TR 8.27).",
+    "impacto": "Km garagem→ponto de partida e retorno vazio não são pagos → km morto + base própria em SJP.",
+    "campo": "Premissas.km_morto / garagem"
+  },
+  {
+    "tema": "Frota",
+    "regra": "Vans ≥15 lugares, ≤5 anos E ≤150.000 km, mínimo 6 vans na frota inicial, ajuste dinâmico de frota (TR 8.8–8.10); substituição em 2 h (quebra) / 48 h (avaria menor).",
+    "impacto": "Item 01 roda ~300 km/van/dia → ~94 mil km/ano: van usada estoura 150 mil km em 1–2 anos. Reserva técnica obrigatória na prática.",
+    "campo": "Premissas.valor_van, deprec, reserva"
+  },
+  {
+    "tema": "Jornada",
+    "regra": "Hemodiálise: 3 turnos 06h–19h, seg. a SÁBADO, inclusive feriados (TR 8.2, 8.16); coleta domiciliar antes e entrega depois. Servidores: 07h–17h seg. a sex. (TR 8.25).",
+    "impacto": "Item 01 exige ~2 motoristas por van ou banco de horas; sábados e feriados = HE/adicional.",
+    "campo": "Premissas.mot_por_van_hd, he"
+  },
+  {
+    "tema": "Motoristas",
+    "regra": "CNH D + EAR + curso CONTRAN transporte coletivo + curso primeiros socorros (TR 2.26–2.27); declaração de vinculação futura assinada pelos motoristas (Anexo VI); uniforme e crachá (TR 9.19); substituição em 2 h.",
+    "impacto": "Recrutamento LOCAL (RMC) antes da sessão para assinar o Anexo VI; custos de cursos e toxicológico.",
+    "campo": "Premissas.sal_mot, epi"
+  },
+  {
+    "tema": "Telemetria",
+    "regra": "Rastreamento GPRS em 100% da frota no dia 1 + sistema HÍBRIDO GPRS/satélite em 60 dias (TR 2.21–2.23, 9.24–9.26); acesso web/app para fiscalização; relatório mensal de telemetria.",
+    "impacto": "Rastreador híbrido custa 2–3× o convencional; Ituran atual da Azul pode precisar de upgrade satelital.",
+    "campo": "Premissas.telemetria"
+  },
+  {
+    "tema": "Controle de embarque",
+    "regra": "Registro biométrico/QR Code/app por passageiro integrado ao rastreador; Relatório Consolidado de Frequência mensal; sem registro não há pagamento do km (TR 9.27–9.31).",
+    "impacto": "Custo de app/dispositivo por van + treinamento; risco de glosa se o motorista não registrar.",
+    "campo": "Premissas.embarque"
+  },
+  {
+    "tema": "Seguro",
+    "regra": "RCF-V mínimo: R$ 40 mil DM, R$ 100 mil DC, R$ 5 mil DMo (TR 9.17). Laudo técnico de frota em 5 dias úteis (TR 5.7).",
+    "impacto": "Apólice específica por van vinculada ao contrato.",
+    "campo": "Premissas.seguro, laudo"
+  },
+  {
+    "tema": "Insumos por conta da contratada",
+    "regra": "Combustível, ARLA (notas arquivadas), lubrificantes, pneus, manutenção, seguros, taxas, licenciamento, alimentação e fardamento (TR 5.2, 8.6).",
+    "impacto": "Todos os insumos estão na composição; ARLA é obrigatório e fiscalizado.",
+    "campo": "Premissas seção 5"
+  },
+  {
+    "tema": "Pedágio",
+    "regra": "Edital NÃO prevê reembolso de pedágio. Rotas externas: Curitiba (sem pedágio), Campo Largo (BR-277 — praça da nova concessão), Campina Grande do Sul (BR-116, praça normalmente após a cidade). Rotas UBS: BR-376 km 615–621 (praça de SJP no km ~632).",
+    "impacto": "Pedágio entra no custo; confirmar na vistoria (facultativa — TR 5.4–5.6) quais trajetos cruzam praças.",
+    "campo": "Premissas seção 6; Rotas col. J–K"
+  },
+  {
+    "tema": "Reajuste",
+    "regra": "Preços fixos por 12 meses contados de 22/06/2026 (data do orçamento); depois IPCA a pedido (cl. 7ª). Início da execução após 05/12/2026.",
+    "impacto": "Diesel e CCT 2027 sobem antes do 1º reajuste (só em 06/2027) → embutir na margem.",
+    "campo": "Premissas.diesel, risco"
+  },
+  {
+    "tema": "Pagamento",
+    "regra": "Mensal, até 30 dias da fatura correta, com 6 certidões + folha de pagamento dos empregados do contrato (TR 10.8–10.16); atraso corrigido por IPCA.",
+    "impacto": "Capital de giro de ~2 meses de custo; certidão de tributos de SJP é exigida (empresa de fora precisa de inscrição/ certidão de não contribuinte).",
+    "campo": "Premissas.prazo_pgto, juros_cg"
+  },
+  {
+    "tema": "Tributos",
+    "regra": "Serviço prestado em SJP: ISS devido ao município da prestação (transporte municipal). Viagens intermunicipais (Curitiba, Campo Largo, Campina G. do Sul) = ICMS (PR), não ISS.",
+    "impacto": "Definir com a contabilidade o enquadramento (ISS × ICMS, retenção na fonte, inscrição estadual PR). Diferença de até ~9 p.p. no preço.",
+    "campo": "Premissas seção 7"
+  },
+  {
+    "tema": "Habilitação",
+    "regra": "Atestados somando ≥25% de 441.600 km/ano (=110.400 km/ano) em transporte coletivo de passageiros em vans/similares com rotas e monitoramento (TR 2.16–2.17); aceita escolar/funcionários. Certidões: federal, estadual, municipal da sede E de SJP, FGTS, CNDT, falência (≤90 dias), declaração TCE/PR.",
+    "impacto": "Azul atende com atestados de fretamento/escolar; providenciar certidão de SJP.",
+    "campo": "—"
+  },
+  {
+    "tema": "Sanções",
+    "regra": "Multa de 0,5% a 30% sobre o valor do objeto; impedimento de licitar. Vedada subcontratação do objeto principal (TR 5.3).",
+    "impacto": "Contingência de 3% sobre custo direto.",
+    "campo": "Premissas.risco"
+  }
+]

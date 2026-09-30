@@ -1,0 +1,379 @@
+[
+  {
+    "secao": "1. DADOS DO LICITANTE",
+    "itens": [
+      {
+        "item": "Razão social",
+        "valor": "AZUL TRANSPORTES E TURISMO LTDA",
+        "unidade": null,
+        "nota": "Nome fantasia Azul Mob."
+      },
+      {
+        "item": "CNPJ",
+        "valor": "10.764.533/0001-01",
+        "unidade": null,
+        "nota": null
+      },
+      {
+        "item": "Endereço da sede",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER (São Paulo/SP). Atenção: o edital exige certidão de tributos municipais de São José dos Pinhais também (TR 2.9)."
+      },
+      {
+        "item": "Representante legal (nome / RG / CPF)",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER — assina proposta, Anexo VI (vinculação dos motoristas) e declaração de rastreamento."
+      }
+    ]
+  },
+  {
+    "secao": "2. PARÂMETROS DO CONTRATO (extraídos do edital / TR nº 225/2026)",
+    "itens": [
+      {
+        "item": "Vigência considerada",
+        "valor": 12,
+        "unidade": "meses",
+        "nota": "Ata 12 meses prorrogável; contrato 12 meses prorrogável até 10 anos (TR 4.6/4.7). Início após 05/12/2026 (TR 8.1)."
+      },
+      {
+        "item": "Dias de operação/mês — Item 01 hemodiálise",
+        "valor": 26,
+        "unidade": "dias",
+        "nota": "Segunda a SÁBADO, inclusive feriados (TR 8.2/8.16)."
+      },
+      {
+        "item": "Dias de operação/mês — Item 02 servidores",
+        "valor": 22,
+        "unidade": "dias",
+        "nota": "Segunda a sexta, 07h00–17h00 (TR 8.25)."
+      },
+      {
+        "item": "Utilização esperada do km máximo registrado",
+        "valor": 0.85,
+        "unidade": "%",
+        "nota": "RISCO-CHAVE: SRP paga só km útil validado (telemetria + presença). Fase 1 = só CDR local + UBS; rotas externas (Curitiba etc.) entram na Fase 2, gradualmente (TR 3.3–3.9). Sem indenização por ociosidade (TR 10.3). Use 0,7–1,0 para testar."
+      },
+      {
+        "item": "Km improdutivo (garagem ↔ ponto de partida, retornos vazios)",
+        "valor": 0.15,
+        "unidade": "% do km útil",
+        "nota": "Km útil conta a partir da Central de Veículos (pacientes) ou Paço Municipal (servidores) — TR 8.14. Deslocamento da garagem própria até lá NÃO é pago; garagem pública é vedada (TR 8.27)."
+      },
+      {
+        "item": "Reserva técnica de frota",
+        "valor": 0.15,
+        "unidade": "% da frota",
+        "nota": "Substituição em até 2 h por quebra (TR 8.4) e 48 h por avaria menor (TR 9.18) → 1 van reserva para cada ~7. Frota inicial mínima: 6 vans (TR 8.8)."
+      }
+    ]
+  },
+  {
+    "secao": "3. MÃO DE OBRA",
+    "itens": [
+      {
+        "item": "Salário base — motorista de van (CNH D + EAR + curso coletivo)",
+        "valor": 2950,
+        "unidade": "R$/mês",
+        "nota": "ESTIMATIVA CCT SETRANSP/SINDIMOC Curitiba-RMC 2026 (motorista de micro/van). Exige curso CONTRAN transporte coletivo + primeiros socorros (TR 2.26/2.27)."
+      },
+      {
+        "item": "Motoristas por van — Item 01 (3 turnos 06h–19h + coleta domiciliar)",
+        "valor": 1.8,
+        "unidade": "motoristas/van",
+        "nota": "Jornada útil ≈ 05h00–20h00 (15 h) → 2 motoristas por van ou 1 + escala. 1,8 = 2 motoristas com folgas compensadas por reserva. Sábado = jornada 44 h/sem."
+      },
+      {
+        "item": "Motoristas por van — Item 02 (07h–17h, ociosa no meio do dia)",
+        "valor": 1,
+        "unidade": "motoristas/van",
+        "nota": "1 motorista; horas de espera são jornada (TR 8.26 — veículo livre, mas pontualidade obrigatória)."
+      },
+      {
+        "item": "Horas extras / adicional (média sobre salário)",
+        "valor": 0.12,
+        "unidade": "%",
+        "nota": "Sábados, feriados (TR 8.2), atrasos de clínica. Estimativa."
+      },
+      {
+        "item": "Encargos e provisões (INSS patronal, RAT, FGTS, férias+1/3, 13º, rescisão)",
+        "valor": 0.7,
+        "unidade": "%",
+        "nota": "Regime CLT, lucro presumido/real (não Simples). Folha deve ser apresentada com a NF (TR 10.16)."
+      },
+      {
+        "item": "Benefícios (VA/VR + cesta + seguro de vida + VT)",
+        "valor": 950,
+        "unidade": "R$/mês por func.",
+        "nota": "Curitiba/RMC: VA ~R$ 30/dia + VT (equipe local). Alimentação e fardamento são da contratada (TR 8.6)."
+      },
+      {
+        "item": "Uniforme, crachá, EPI, ASO, toxicológico, cursos",
+        "valor": 90,
+        "unidade": "R$/mês por func.",
+        "nota": "Uniforme + crachá obrigatórios (TR 9.19); curso primeiros socorros; toxicológico CNH D."
+      },
+      {
+        "item": "Preposto / supervisor local + apoio administrativo",
+        "valor": 7500,
+        "unidade": "R$/mês (total)",
+        "nota": "Preposto formal obrigatório (TR 9.4). Relatórios mensais de telemetria + presença (TR 10.5). Salário + encargos."
+      }
+    ]
+  },
+  {
+    "secao": "4. VEÍCULO — van ≥15 lugares, ≤5 anos e ≤150.000 km (TR 8.8/8.10) — custo fixo mensal por van",
+    "itens": [
+      {
+        "item": "Valor da van (ex.: Sprinter 415/517, Master, Ducato — 2–3 anos)",
+        "valor": 290000,
+        "unidade": "R$",
+        "nota": "ESTIMATIVA FIPE set/2026. Vans com >5 anos ou >150 mil km ficam INELEGÍVEIS durante o contrato → renovação obrigatória."
+      },
+      {
+        "item": "Depreciação anual",
+        "valor": 0.15,
+        "unidade": "% a.a.",
+        "nota": "Van roda ~90–100 mil km/ano no Item 01 → atinge 150 mil km em ~18 meses se comprada usada. Considere veículo 0 km ou troca."
+      },
+      {
+        "item": "Custo de capital / financiamento (CDC/consórcio)",
+        "valor": 0.15,
+        "unidade": "% a.a.",
+        "nota": "Taxa média dos contratos de financiamento da Azul."
+      },
+      {
+        "item": "Seguro casco + RCF-V (DM 40 mil / DC 100 mil / DMo 5 mil — TR 9.17)",
+        "valor": 750,
+        "unidade": "R$/mês",
+        "nota": "ESTIMATIVA. Apólice exigida antes do início."
+      },
+      {
+        "item": "IPVA + licenciamento + DPVAT (PR)",
+        "valor": 3800,
+        "unidade": "R$/ano",
+        "nota": "PR: micro-ônibus/transporte coletivo tem alíquota reduzida; conferir enquadramento da van."
+      },
+      {
+        "item": "Telemetria HÍBRIDA (GPRS + satélite) + plataforma web",
+        "valor": 260,
+        "unidade": "R$/mês por van",
+        "nota": "Rastreamento GPRS no dia 1 e satélite/híbrido em 60 dias (TR 2.21–2.23, 9.24–9.26). Ituran/Onixsat/Sascar híbrido custa 2–3× o GPRS comum."
+      },
+      {
+        "item": "Sistema de controle de embarque (QR Code/biometria/app) + relatório de frequência",
+        "valor": 90,
+        "unidade": "R$/mês por van",
+        "nota": "Obrigatório e condição de pagamento (TR 9.27–9.31). App + tablet/celular embarcado."
+      },
+      {
+        "item": "Higienização diária + desinfecção periódica",
+        "valor": 320,
+        "unidade": "R$/mês por van",
+        "nota": "TR 9.21. Produtos + mão de obra."
+      },
+      {
+        "item": "Acessibilidade (barras, estribo/escada móvel) + identificação visual (adesivagem)",
+        "valor": 45,
+        "unidade": "R$/mês por van",
+        "nota": "R$ ~2.700 por van amortizado em 5 anos (TR 8.12, 9.20)."
+      },
+      {
+        "item": "Laudo técnico anual de frota + vistorias",
+        "valor": 600,
+        "unidade": "R$/ano por van",
+        "nota": "Relatório assinado por profissional em 5 dias úteis (TR 5.7); CRLV anual (TR 8.11)."
+      },
+      {
+        "item": "Garagem / base operacional em São José dos Pinhais (rateio)",
+        "valor": 700,
+        "unidade": "R$/mês por van",
+        "nota": "ESTIMATIVA: pátio + sala ~R$ 6.000/mês ÷ 8–9 vans. Sede da Azul é em SP → base local obrigatória; pátio público vedado (TR 8.27)."
+      }
+    ]
+  },
+  {
+    "secao": "5. INSUMOS VARIÁVEIS (por km rodado)",
+    "itens": [
+      {
+        "item": "Diesel S10 — preço bomba (Curitiba/RMC)",
+        "valor": 6.05,
+        "unidade": "R$/litro",
+        "nota": "ESTIMATIVA ANP PR set/2026. Reajuste só após 12 meses do orçamento (22/06/2026) pelo IPCA — variação de diesel entre 06/2026 e 06/2027 é risco da contratada."
+      },
+      {
+        "item": "Consumo médio da van (urbano/rodoviário misto, ar-condicionado)",
+        "valor": 8.5,
+        "unidade": "km/litro",
+        "nota": "Sprinter/Master diesel com carga de passageiros: 8–9,5 km/l."
+      },
+      {
+        "item": "ARLA 32 (uso obrigatório, notas arquivadas — TR 5.2)",
+        "valor": 0.04,
+        "unidade": "R$/km",
+        "nota": "~4% do diesel × R$ 4/l."
+      },
+      {
+        "item": "Pneus (215/75 R16 — 6 unid. + reserva) e alinhamento",
+        "valor": 0.13,
+        "unidade": "R$/km",
+        "nota": "6 × R$ 1.100 ÷ 55.000 km + serviços."
+      },
+      {
+        "item": "Manutenção preventiva + corretiva (peças, óleo, freios, MO)",
+        "valor": 0.48,
+        "unidade": "R$/km",
+        "nota": "Van ≤5 anos, plano de manutenção preventiva obrigatório (TR 9.16). Inclui revisões de concessionária p/ garantia."
+      },
+      {
+        "item": "Lavagem externa, lubrificantes, pequenos consumíveis",
+        "valor": 0.05,
+        "unidade": "R$/km",
+        "nota": null
+      }
+    ]
+  },
+  {
+    "secao": "6. PEDÁGIO (por passagem; quantidades na aba Rotas)",
+    "itens": [
+      {
+        "item": "Pedágio BR-277 sentido Campo Largo (praça Campo Largo/Balsa Nova) — van cat. 2 eixos",
+        "valor": 12,
+        "unidade": "R$/passagem",
+        "nota": "CONFERIR tarifa vigente da nova concessão (Lote 2 – Via Araucária/EPR). Van 2 eixos (rodagem simples) costuma pagar tarifa de automóvel ×1 ou ×2 conforme classe."
+      },
+      {
+        "item": "Pedágio BR-116 norte (Campina Grande do Sul)",
+        "valor": 0,
+        "unidade": "R$/passagem",
+        "nota": "Praça mais próxima fica após Campina Grande do Sul (Régis Bittencourt sentido SP); trajeto até clínicas no município normalmente NÃO paga. Ajuste se a clínica ficar além da praça."
+      },
+      {
+        "item": "Pedágio BR-376 sul (km 620–632, rotas UBS Malhada/Córrego Fundo/Faxina)",
+        "valor": 0,
+        "unidade": "R$/passagem",
+        "nota": "Praça de pedágio de SJP na BR-376 (Litoral Sul) fica no km ~632; as UBS e PEDs listados estão no km 615–621. CONFERIR na vistoria se algum trecho cruza a praça. Curitiba: sem pedágio."
+      },
+      {
+        "item": "% das viagens do Item 01 que vão a Campo Largo (com pedágio)",
+        "valor": 0.1,
+        "unidade": "%",
+        "nota": "Fase 2. Estimativa: maioria dos pacientes fica na CDR local e Curitiba (sem pedágio)."
+      },
+      {
+        "item": "Passagens de pedágio por viagem a Campo Largo (ida+volta)",
+        "valor": 2,
+        "unidade": "passagens",
+        "nota": null
+      }
+    ]
+  },
+  {
+    "secao": "7. INDIRETOS, TRIBUTOS E LUCRO",
+    "itens": [
+      {
+        "item": "Administração central (rateio SP: RH, contabilidade, TI, sistema de motoristas)",
+        "valor": 0.07,
+        "unidade": "% s/ custo direto",
+        "nota": null
+      },
+      {
+        "item": "Contingência / risco (ociosidade Fase 1, multas 0,5–30%, sinistros)",
+        "valor": 0.03,
+        "unidade": "% s/ custo direto",
+        "nota": "Edital: multa de 0,5% a 30% sobre o valor do objeto; risco de demanda alocado à contratada."
+      },
+      {
+        "item": "Lucro líquido desejado",
+        "valor": 0.09,
+        "unidade": "% s/ preço",
+        "nota": "Ajuste para a estratégia de lance (ver aba Cenários)."
+      },
+      {
+        "item": "PIS",
+        "valor": 0.0065,
+        "unidade": "% s/ fat.",
+        "nota": "Lucro presumido (cumulativo)."
+      },
+      {
+        "item": "COFINS",
+        "valor": 0.03,
+        "unidade": "% s/ fat.",
+        "nota": "Lucro presumido (cumulativo)."
+      },
+      {
+        "item": "IRPJ (base 8% × 15% + adicional)",
+        "valor": 0.0135,
+        "unidade": "% s/ fat.",
+        "nota": "Serviços de transporte: base 8%; adicional 10% acima de R$ 20 mil/mês de lucro presumido → ~1,35% efetivo."
+      },
+      {
+        "item": "CSLL (base 12% × 9%)",
+        "valor": 0.0108,
+        "unidade": "% s/ fat.",
+        "nota": null
+      },
+      {
+        "item": "ISS — São José dos Pinhais (transporte MUNICIPAL de passageiros)",
+        "valor": 0.03,
+        "unidade": "% s/ fat. municipal",
+        "nota": "CONFERIR LC municipal 01/2003 (item 16.01/16.02): 2% a 5%. ISS é devido no município da prestação; empresa de SP recolhe para SJP (retenção na fonte provável)."
+      },
+      {
+        "item": "ICMS — transporte INTERMUNICIPAL (Curitiba, Campo Largo, Campina G. do Sul)",
+        "valor": 0.12,
+        "unidade": "% s/ fat. intermunicipal",
+        "nota": "ATENÇÃO: transporte intermunicipal de passageiros é fato gerador de ICMS (não ISS). PR: 12% com possibilidade de crédito presumido/regime especial (RICMS-PR). Confirmar com contabilidade — pode exigir inscrição estadual no PR."
+      },
+      {
+        "item": "% do faturamento do Item 01 que é intermunicipal (Fase 2)",
+        "valor": 0.35,
+        "unidade": "%",
+        "nota": "Estimativa: rotas externas entram gradualmente. Item 02 é 100% municipal."
+      },
+      {
+        "item": "Tributos totais — faturamento municipal",
+        "valor": 0.0908,
+        "unidade": "%",
+        "nota": "PIS+COFINS+IRPJ+CSLL+ISS"
+      },
+      {
+        "item": "Tributos totais — faturamento intermunicipal",
+        "valor": 0.1808,
+        "unidade": "%",
+        "nota": "PIS+COFINS+IRPJ+CSLL+ICMS"
+      },
+      {
+        "item": "Tributos médios — Item 01",
+        "valor": 0.1223,
+        "unidade": "%",
+        "nota": "Ponderado pela parcela intermunicipal"
+      },
+      {
+        "item": "Tributos médios — Item 02",
+        "valor": 0.0908,
+        "unidade": "%",
+        "nota": "100% municipal"
+      },
+      {
+        "item": "Prazo de pagamento (custo financeiro do capital de giro)",
+        "valor": 30,
+        "unidade": "dias",
+        "nota": "Pagamento em até 30 dias da fatura correta (edital, cl. pagamento). Na prática, medição + documentos (6 certidões + folha) → 45–60 dias."
+      },
+      {
+        "item": "Custo do capital de giro",
+        "valor": 0.018,
+        "unidade": "% a.m.",
+        "nota": "Taxa de desconto/antecipação de recebíveis."
+      },
+      {
+        "item": "Custo financeiro sobre faturamento",
+        "valor": 0.018,
+        "unidade": "% s/ fat.",
+        "nota": "Juros × prazo médio de recebimento"
+      }
+    ]
+  }
+]

@@ -1,0 +1,302 @@
+[
+  {
+    "secao": "1. DADOS DO LICITANTE (Anexo II)",
+    "itens": [
+      {
+        "item": "Denominação",
+        "valor": "AZUL TRANSPORTES E TURISMO LTDA",
+        "unidade": null,
+        "nota": "Razão social conforme CNPJ (nome fantasia: Azul Mob)."
+      },
+      {
+        "item": "Endereço",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER — endereço completo da sede (São Paulo/SP)."
+      },
+      {
+        "item": "CNPJ",
+        "valor": "10.764.533/0001-01",
+        "unidade": null,
+        "nota": null
+      },
+      {
+        "item": "Telefone",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER"
+      },
+      {
+        "item": "E-mail",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER"
+      },
+      {
+        "item": "Responsável pela assinatura do contrato (nome)",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER"
+      },
+      {
+        "item": "RG",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER"
+      },
+      {
+        "item": "CPF",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER"
+      },
+      {
+        "item": "Cargo",
+        "valor": null,
+        "unidade": null,
+        "nota": "PREENCHER (ex.: Sócio-administrador)"
+      },
+      {
+        "item": "Cidade, dia, mês e ano da proposta",
+        "valor": "São Paulo, 28 de setembro de 2026",
+        "unidade": null,
+        "nota": "Sessão do pregão: 28/09/2026 (título do arquivo enviado)."
+      }
+    ]
+  },
+  {
+    "secao": "2. PARÂMETROS DO CONTRATO",
+    "itens": [
+      {
+        "item": "Dias letivos considerados no edital",
+        "valor": 200,
+        "unidade": "dias",
+        "nota": "Derivado do edital: em todas as 9 linhas, KM total ÷ KM por dia = 200 (ex.: Linha 01: 27.160 ÷ 135,8 = 200)."
+      },
+      {
+        "item": "Meses de custo fixo (salários, veículo) no período",
+        "valor": 12,
+        "unidade": "meses",
+        "nota": "200 dias letivos ≈ ano letivo completo. A equipe e o veículo custam também nos meses sem aula (férias/recesso). Ajuste se o contrato for menor."
+      },
+      {
+        "item": "Km morto / deslocamento garagem ↔ ponto inicial",
+        "valor": 0.1,
+        "unidade": "% do km",
+        "nota": "Estimativa: 10% sobre o km pago. Depende de onde ficará a garagem de apoio em Holambra."
+      },
+      {
+        "item": "Reserva técnica de frota",
+        "valor": 0.1,
+        "unidade": "% da frota",
+        "nota": "1 ônibus reserva a cada 10 (edital costuma exigir veículo reserva). Aplicado sobre o custo fixo do veículo."
+      }
+    ]
+  },
+  {
+    "secao": "3. PESSOAL (por funcionário)",
+    "itens": [
+      {
+        "item": "Salário base — motorista de ônibus (cat. D)",
+        "valor": 3200,
+        "unidade": "R$/mês",
+        "nota": "ESTIMATIVA. Conferir CCT vigente (SETPESP / Sindicato dos Motoristas) para transporte escolar/fretamento interior SP, 2026."
+      },
+      {
+        "item": "Salário base — monitora escolar",
+        "valor": 1900,
+        "unidade": "R$/mês",
+        "nota": "ESTIMATIVA (piso ≈ salário mínimo 2026 + acréscimo). Conferir CCT."
+      },
+      {
+        "item": "Encargos e provisões sobre salário",
+        "valor": 0.7,
+        "unidade": "%",
+        "nota": "INSS patronal + RAT + terceiros (~28,8%), FGTS 8%, provisão férias + 1/3, 13º, rescisão/multa FGTS — total típico 68–72% no regime CLT (não Simples)."
+      },
+      {
+        "item": "Fator jornada estendida — linhas com período NOTURNO",
+        "valor": 1.35,
+        "unidade": "x",
+        "nota": "Linhas 01, 04 e 06 rodam de 5h50 às 23h00: jornada excede 8h → horas extras (50%) + adicional noturno (20%) ou 2º motorista parcial. Fator sobre o custo do motorista."
+      },
+      {
+        "item": "Benefícios — VR/VA + cesta + seguro de vida",
+        "valor": 780,
+        "unidade": "R$/mês por func.",
+        "nota": "ESTIMATIVA: VA R$ 26/dia × 22 + cesta R$ 200 + seguro/assist. R$ 8. Vale-transporte tende a zero (equipe local, rural)."
+      },
+      {
+        "item": "Uniforme / EPI / exames (ASO, toxicológico)",
+        "valor": 60,
+        "unidade": "R$/mês por func.",
+        "nota": "ESTIMATIVA rateada."
+      }
+    ]
+  },
+  {
+    "secao": "4. VEÍCULO — ônibus mín. 59 lugares (custo fixo mensal por veículo)",
+    "itens": [
+      {
+        "item": "Valor do ônibus (usado, ~8 anos, 59 lug., adequado escolar)",
+        "valor": 280000,
+        "unidade": "R$",
+        "nota": "ESTIMATIVA de mercado set/2026. Se usar veículo já da frota Azul, informe o valor contábil/FIPE."
+      },
+      {
+        "item": "Depreciação anual",
+        "valor": 0.12,
+        "unidade": "% a.a.",
+        "nota": "Linear, vida útil restante ~8 anos com residual."
+      },
+      {
+        "item": "Custo de capital / financiamento",
+        "valor": 0.14,
+        "unidade": "% a.a.",
+        "nota": "Frota Azul é financiada via CDC/consórcio — use a taxa média real dos contratos."
+      },
+      {
+        "item": "Seguro RC + casco (rateio mensal)",
+        "valor": 1100,
+        "unidade": "R$/mês",
+        "nota": "ESTIMATIVA. Apólice escolar Sombrero — conferir prêmio real/veículo."
+      },
+      {
+        "item": "IPVA + licenciamento + DPVAT (anual)",
+        "valor": 4200,
+        "unidade": "R$/ano",
+        "nota": "IPVA SP ônibus 1,5% s/ valor venal + taxas."
+      },
+      {
+        "item": "Rastreamento / telemetria (Ituran)",
+        "valor": 90,
+        "unidade": "R$/mês",
+        "nota": "Valor contratual Azul (estimado)."
+      },
+      {
+        "item": "Inspeção escolar semestral + vistoria + tacógrafo (anual)",
+        "valor": 900,
+        "unidade": "R$/ano",
+        "nota": "ESTIMATIVA."
+      },
+      {
+        "item": "Garagem / ponto de apoio em Holambra (rateio por veículo)",
+        "valor": 450,
+        "unidade": "R$/mês por veíc.",
+        "nota": "ESTIMATIVA: aluguel de pátio ~R$ 4.500/mês ÷ 10 veículos. Necessário porque a sede é em São Paulo (≈140 km)."
+      }
+    ]
+  },
+  {
+    "secao": "5. CUSTOS VARIÁVEIS (por km rodado)",
+    "itens": [
+      {
+        "item": "Diesel S10 — preço médio bomba (SP)",
+        "valor": 6.2,
+        "unidade": "R$/litro",
+        "nota": "ESTIMATIVA (ANP, SP, set/2026). Atualize com a cotação do posto/fornecedor."
+      },
+      {
+        "item": "Consumo em ASFALTO — ônibus 59 lug.",
+        "valor": 2.9,
+        "unidade": "km/litro",
+        "nota": "ESTIMATIVA para ônibus urbano/rodoviário leve com paradas."
+      },
+      {
+        "item": "Consumo em TERRA (estrada rural)",
+        "valor": 2.4,
+        "unidade": "km/litro",
+        "nota": "ESTIMATIVA: piso de terra reduz ~15–20% o rendimento."
+      },
+      {
+        "item": "ARLA 32",
+        "valor": 0.07,
+        "unidade": "R$/km",
+        "nota": "≈5% do volume de diesel × R$ 4,00/l."
+      },
+      {
+        "item": "Pneus (novos + recapagem) — asfalto",
+        "valor": 0.24,
+        "unidade": "R$/km",
+        "nota": "6 pneus × R$ 2.300 + 2 recapagens ÷ ~70.000 km."
+      },
+      {
+        "item": "Pneus — terra",
+        "valor": 0.34,
+        "unidade": "R$/km",
+        "nota": "Desgaste ~40% maior em terra."
+      },
+      {
+        "item": "Manutenção (peças + mão de obra) — asfalto",
+        "valor": 0.95,
+        "unidade": "R$/km",
+        "nota": "ESTIMATIVA para veículo ~8 anos."
+      },
+      {
+        "item": "Manutenção — terra",
+        "valor": 1.35,
+        "unidade": "R$/km",
+        "nota": "Suspensão, freios e filtros sofrem mais em terra (~40%)."
+      },
+      {
+        "item": "Lubrificantes, filtros, lavagem",
+        "valor": 0.09,
+        "unidade": "R$/km",
+        "nota": "ESTIMATIVA."
+      }
+    ]
+  },
+  {
+    "secao": "6. INDIRETOS, TRIBUTOS E LUCRO (BDI)",
+    "itens": [
+      {
+        "item": "Administração central / overhead",
+        "valor": 0.08,
+        "unidade": "% s/ custo direto",
+        "nota": "Gestão, RH, contabilidade, TI, sistema de motoristas, monitoramento de rota."
+      },
+      {
+        "item": "Lucro desejado",
+        "valor": 0.1,
+        "unidade": "% s/ preço",
+        "nota": "Margem líquida alvo — ajuste conforme estratégia de lance."
+      },
+      {
+        "item": "PIS",
+        "valor": 0.0065,
+        "unidade": "% s/ faturamento",
+        "nota": "Lucro presumido (cumulativo)."
+      },
+      {
+        "item": "COFINS",
+        "valor": 0.03,
+        "unidade": "% s/ faturamento",
+        "nota": "Lucro presumido (cumulativo)."
+      },
+      {
+        "item": "IRPJ (presumido: 8% × 15%)",
+        "valor": 0.012,
+        "unidade": "% s/ faturamento",
+        "nota": "Lucro presumido — serviços de transporte, base 8%."
+      },
+      {
+        "item": "CSLL (presumido: 12% × 9%)",
+        "valor": 0.0108,
+        "unidade": "% s/ faturamento",
+        "nota": "Lucro presumido — transporte, base 12%."
+      },
+      {
+        "item": "ISS — Holambra",
+        "valor": 0.05,
+        "unidade": "% s/ faturamento",
+        "nota": "CONFERIR alíquota municipal para transporte escolar (LC 116, item 16). Pode ser 2% a 5%."
+      },
+      {
+        "item": "Total de tributos sobre faturamento",
+        "valor": 0.1093,
+        "unidade": "%",
+        "nota": "Se a Azul estiver no Lucro Real ou Simples, substitua as linhas acima."
+      }
+    ]
+  }
+]

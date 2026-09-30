@@ -1,0 +1,230 @@
+{
+  "holambra": {
+    "edital": "PE 036/2026 Holambra/SP",
+    "unidade": "R$/km",
+    "linhas": [
+      {
+        "linha": 1,
+        "km_edital": 27160,
+        "km_dia": 135.8,
+        "km_terra_dia": 44.1,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 1,
+        "noturno": "S",
+        "preco_ref": 23.54,
+        "esperado": {
+          "custo_total": 396601.62,
+          "custo_km": 14.6024,
+          "preco_km": 18.47,
+          "valor_total": 501645.2,
+          "lucro_liquido": 50213.76
+        }
+      },
+      {
+        "linha": 2,
+        "km_edital": 21760,
+        "km_dia": 108.8,
+        "km_terra_dia": 14.72,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 0,
+        "noturno": "N",
+        "preco_ref": 23.55,
+        "esperado": {
+          "custo_total": 290203.24,
+          "custo_km": 13.3365,
+          "preco_km": 16.87,
+          "valor_total": 367091.2,
+          "lucro_liquido": 36764.89
+        }
+      },
+      {
+        "linha": 3,
+        "km_edital": 17520,
+        "km_dia": 87.6,
+        "km_terra_dia": 33.08,
+        "onibus": 2,
+        "motoristas": 2,
+        "monitoras": 2,
+        "noturno": "N",
+        "preco_ref": 25.66,
+        "esperado": {
+          "custo_total": 578983.32,
+          "custo_km": 33.047,
+          "preco_km": 41.8,
+          "valor_total": 732336,
+          "lucro_liquido": 73308.36
+        }
+      },
+      {
+        "linha": 4,
+        "km_edital": 29120,
+        "km_dia": 145.6,
+        "km_terra_dia": 30.64,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 1,
+        "noturno": "S",
+        "preco_ref": 27.6,
+        "esperado": {
+          "custo_total": 401699.71,
+          "custo_km": 13.7946,
+          "preco_km": 17.45,
+          "valor_total": 508144,
+          "lucro_liquido": 50904.15
+        }
+      },
+      {
+        "linha": 5,
+        "km_edital": 20160,
+        "km_dia": 100.8,
+        "km_terra_dia": 18.56,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 1,
+        "noturno": "N",
+        "preco_ref": 25.5,
+        "esperado": {
+          "custo_total": 337183.16,
+          "custo_km": 16.7254,
+          "preco_km": 21.16,
+          "valor_total": 426585.6,
+          "lucro_liquido": 42776.64
+        }
+      },
+      {
+        "linha": 6,
+        "km_edital": 32920,
+        "km_dia": 164.6,
+        "km_terra_dia": 49.02,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 1,
+        "noturno": "S",
+        "preco_ref": 26.36,
+        "esperado": {
+          "custo_total": 421574.28,
+          "custo_km": 12.806,
+          "preco_km": 16.2,
+          "valor_total": 533304,
+          "lucro_liquido": 53439.59
+        }
+      },
+      {
+        "linha": 7,
+        "km_edital": 16720,
+        "km_dia": 83.6,
+        "km_terra_dia": 44.32,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 1,
+        "noturno": "N",
+        "preco_ref": 25.49,
+        "esperado": {
+          "custo_total": 328715.36,
+          "custo_km": 19.66,
+          "preco_km": 24.87,
+          "valor_total": 415826.4,
+          "lucro_liquido": 41661.21
+        }
+      },
+      {
+        "linha": 8,
+        "km_edital": 14880,
+        "km_dia": 74.4,
+        "km_terra_dia": 23.74,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 1,
+        "noturno": "N",
+        "preco_ref": 27.8,
+        "esperado": {
+          "custo_total": 316468.19,
+          "custo_km": 21.268,
+          "preco_km": 26.9,
+          "valor_total": 400272,
+          "lucro_liquido": 40054.08
+        }
+      },
+      {
+        "linha": 9,
+        "km_edital": 11120,
+        "km_dia": 55.6,
+        "km_terra_dia": 0,
+        "onibus": 1,
+        "motoristas": 1,
+        "monitoras": 1,
+        "noturno": "N",
+        "preco_ref": 28.9,
+        "esperado": {
+          "custo_total": 295555.36,
+          "custo_km": 26.5787,
+          "preco_km": 33.62,
+          "valor_total": 373854.4,
+          "lucro_liquido": 37436.75
+        }
+      }
+    ],
+    "totais_esperados": {
+      "valor_proposta": 4259058.8,
+      "custo_total": 3366984.24,
+      "lucro_liquido": 426559.43
+    }
+  },
+  "sjpinhais": {
+    "edital": "PE 089/2026 São José dos Pinhais/PR",
+    "unidade": "R$/km",
+    "utilizacao": 0.85,
+    "itens": {
+      "item1_pacientes": {
+        "km_util_mes": 26520,
+        "custo_total_mes": 157979.7146,
+        "custo_km": 5.957,
+        "preco_km": 7.74,
+        "lucro_mes": 18486.434
+      },
+      "item2_servidores": {
+        "km_util_mes": 4760,
+        "custo_total_mes": 68664.4248,
+        "custo_km": 14.4253,
+        "preco_km": 18.01,
+        "lucro_mes": 7736.0123
+      },
+      "lote": {
+        "km_util_mes": 31280,
+        "custo_total_mes": 226644.1393,
+        "custo_km": 7.2457,
+        "preco_km": 9.3028,
+        "lucro_mes": 26222.4463
+      }
+    },
+    "cenarios_a_9_89_por_km_8_vans": {
+      "60%": {
+        "lucro_mes": -19795,
+        "margem": -0.091
+      },
+      "70%": {
+        "lucro_mes": 5095,
+        "margem": 0.02
+      },
+      "80%": {
+        "lucro_mes": 29985,
+        "margem": 0.103
+      },
+      "85%": {
+        "lucro_mes": 42430,
+        "margem": 0.137
+      },
+      "90%": {
+        "lucro_mes": 54875,
+        "margem": 0.168
+      },
+      "100%": {
+        "lucro_mes": 79765,
+        "margem": 0.219
+      },
+      "ponto_equilibrio_utilizacao": 0.68
+    }
+  }
+}

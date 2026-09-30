@@ -33,6 +33,7 @@
     "teste:rateio": "tsx scripts/teste-rateio.ts",
     "teste:margem-omie": "tsx scripts/teste-margem-omie.ts",
     "teste:projecao": "tsx scripts/teste-projecao.ts",
+    "teste:simulador": "tsx scripts/teste-simulador.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
