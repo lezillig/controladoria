@@ -7,6 +7,7 @@ import { fmtBRL, fmtData, fmtDiaDoInstante } from "./format";
 import { AGENTES } from "./registry";
 import { especialistaPorId, type Especialista } from "./especialistas";
 import { ferramentasDeAnalise } from "./ferramentasDeAnalise";
+import { ferramentasDoSimulador } from "@/lib/simulador/ferramentasDoSimulador";
 
 // O investigador roda num modelo mais barato que o analista do relatório
 // diário, de propósito. O relatório é uma chamada por dia e é onde o
@@ -54,7 +55,7 @@ export type StatusInvestigacao = "EXECUTANDO" | "CONCLUIDA" | "ERRO";
 export type EstadoInvestigacao = {
   id: string;
   status: StatusInvestigacao;
-  // Quem respondeu: investigador, auditor, controller, custos ou orcamento
+  // Quem respondeu: investigador, auditor, controller, custos, orcamento ou precificacao
   // (ver especialistas.ts). Decide modelo, prompt e ferramentas da rodada.
   especialista: string;
   pergunta: string;
@@ -674,6 +675,7 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
         tools: [
           ...(especialista.ferramentas.includes("auditoria") ? ferramentasDeAuditoria(escopo, consultas) : []),
           ...(especialista.ferramentas.includes("analise") ? ferramentasDeAnalise(escopo, consultas) : []),
+          ...(especialista.ferramentas.includes("simulador") ? ferramentasDoSimulador(escopo, consultas) : []),
         ],
         messages: mensagens,
       });

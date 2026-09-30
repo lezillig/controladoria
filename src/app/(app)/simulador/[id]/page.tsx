@@ -35,7 +35,7 @@ import Acompanhamento from "./abas/Acompanhamento";
 
 export default async function EstudoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ versao?: string; salva?: string }> }) {
   const session = await exigirPermissao("simulador");
-  const podeEditar = await podeAcao(session, "gerir-simulador");
+  const [podeEditar, podeConsultarEspecialista] = await Promise.all([podeAcao(session, "gerir-simulador"), podeAcao(session, "investigar")]);
   const { id } = await params;
   const { versao, salva } = await searchParams;
 
@@ -137,6 +137,7 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
         indicadores={indicadores}
         lacunas={lacunas}
         acompanhamento={acompanhamento}
+        podeConsultarEspecialista={podeConsultarEspecialista}
         avisoInicial={salva && /^\d{1,5}$/.test(salva) ? `Versão ${salva} salva.` : null}
       />
       <p className="text-xs text-slate-500">

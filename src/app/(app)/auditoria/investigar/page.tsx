@@ -70,7 +70,7 @@ export default async function InvestigarPage({
         <h1 className="mt-1 text-xl font-semibold text-slate-900">Investigar e pedir pareceres à IA</h1>
         <p className="mt-1 text-sm text-slate-500">
           Escolha quem responde — o investigador de auditoria, o auditor interno, o controller, o especialista em
-          custos ou o de orçamento e cenários — e faça a pergunta. Cada um consulta a base pelas mesmas somas e
+          custos, o de orçamento e cenários ou o de precificação e propostas — e faça a pergunta. Cada um consulta a base pelas mesmas somas e
           registros que as telas usam, só leitura, só desta empresa, e responde citando o dado. Cada consulta feita
           aparece abaixo da resposta, para você ver o que foi olhado e o que não foi.
         </p>

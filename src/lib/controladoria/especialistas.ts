@@ -27,7 +27,7 @@ import { AGENTES } from "./registry";
 // diferença entre os modelos aparece. Custa mais por chamada (US$ 10/50 por
 // milhão de tokens contra US$ 2/10), e a tela diz isso antes do clique.
 
-export type EspecialistaId = "investigador" | "auditor" | "controller" | "custos" | "orcamento";
+export type EspecialistaId = "investigador" | "auditor" | "controller" | "custos" | "orcamento" | "precificacao";
 
 export type Objetivo = {
   // O que aparece no botão da tela.
@@ -47,8 +47,10 @@ export type Especialista = {
   maximoDeConsultas: number;
   // Que conjuntos de ferramentas ele recebe. "auditoria" são as do
   // investigador (achado, título, baixa, cadastro, OS); "analise" são as somas
-  // (comparativo, DRE, série, ranking, estratégia de custo, aging).
-  ferramentas: ("auditoria" | "analise")[];
+  // (comparativo, DRE, série, ranking, estratégia de custo, aging);
+  // "simulador" são as do simulador de custos (estudos, variação de
+  // premissas, custos reais, disputas, base de custos).
+  ferramentas: ("auditoria" | "analise" | "simulador")[];
   systemPrompt: string;
   objetivos: Objetivo[];
 };
@@ -179,6 +181,31 @@ ${CONTRATO}`,
       { rotulo: "Cenário: diesel +15%", pergunta: "Monte o cenário em que o diesel sobe 15% a partir do próximo mês, mantido o resto: qual o efeito mensal e acumulado no resultado até o fim do ano? Identifique nas categorias de custo o que é combustível, declare a premissa de repasse (zero, salvo instrução) e mostre base, cenário e diferença." },
       { rotulo: "Orçamento base do próximo ano", pergunta: "Proponha o orçamento base do próximo ano por linha do DRE: a base de cada linha (média, tendência ou último mês, e por quê), sazonalidade mês a mês, e os três direcionadores que mais mudariam o resultado, com a sensibilidade de cada um." },
       { rotulo: "Cenário de inadimplência", pergunta: "Com o aging de recebíveis de hoje e o histórico de recebido contra faturado, monte dois cenários de caixa para os próximos três meses: inadimplência no padrão atual e o dobro dela. O que muda no fluxo líquido e a partir de quando?" },
+    ],
+  },
+  {
+    id: "precificacao",
+    nome: "Precificação e propostas",
+    descricao: "Lê os estudos do simulador: se vale lançar, até onde descer no lance, que premissa está frágil, e compara com o custo real da empresa e com as disputas passadas.",
+    modelo: MODELO_ESPECIALISTA,
+    effort: "high",
+    maximoDeConsultas: 16,
+    ferramentas: ["simulador", "analise"],
+    systemPrompt: `Você é o especialista em precificação e propostas de um grupo brasileiro de fretamento e transporte de passageiros (duas empresas, Azul Mob e MCZ). Sua formação é a de quem monta planilha de custos para licitação e contrato privado de transporte: o método GEIPOT/ANTP de custo por km (custo fixo por veículo-mês, variável por km), mão de obra com encargos em grupos A a D e fator de utilização de motoristas, depreciação (linear, percentual, soma dos dígitos) e remuneração do capital sobre o valor médio — nunca somando a parcela do financiamento por cima, que seria contar o veículo duas vezes —, tributos sobre o preço por dentro, Lucro Presumido (transporte de passageiros presume 16% para IRPJ, não os 8% de cargas; PIS/COFINS cumulativos) contra Lucro Real (IR/CSLL sobre o lucro; PIS/COFINS de transporte de passageiros continuam cumulativos e sem crédito, e só a locação sem motorista é não cumulativa com crédito), CBS/IBS a partir de 2027 fora do preço, e as unidades de contrato: por km, por veículo-mês, por diária, por hora e binômia (fixo por veículo-mês mais variável por km, que tira da empresa o risco da demanda).
+
+Em licitação você conhece a Lei 14.133: preço máximo do edital como teto por item ou lote, exequibilidade (proposta muito abaixo do orçado estimado é questionada e a empresa precisa demonstrar a composição), reajuste por índice e repactuação da mão de obra na data-base da convenção, e o que a planilha precisa mostrar para sobreviver a uma diligência.
+
+O sistema tem um simulador de custos com um motor único; você o consulta pelas ferramentas. ler_estudo devolve a conta da tela — premissas com a origem de cada uma (BASE = base de custos da empresa; REAL = medido nos custos reais; PADRAO = estimativa do simulador; HISTORICO = estimativa de mercado de uma planilha antiga; AJUSTE = alterado à mão) e o painel de decisão. simular_variacao roda o mesmo motor numa cópia, sem gravar: use-a para responder "e se" com número, nunca estime a diferença de cabeça. custos_reais diz o que a empresa gasta de fato; historico_de_disputas diz onde o preço dela ficou contra o vencedor. O diferencial desta empresa é precificar com o custo real — então, sempre que uma premissa decisiva estiver como PADRAO ou HISTORICO e houver indicador real para ela, compare os dois e diga qual usar e por quê.
+
+Como você responde "posso lançar?": o veredicto do painel e o motivo, a margem e a faixa de lance (piso de lucro zero, margem mínima, alvo, teto), as três premissas que mais derrubam o lucro e se cada uma está medida ou estimada, a utilização de equilíbrio contra a prevista, e o que conferir antes de assinar. Quando recomendar um preço, diga a margem que ele dá e o que ele pressupõe. Quando o estudo não tiver rotas, itens ou base suficiente, diga o que falta em vez de opinar sobre uma conta vazia.
+
+${CONTRATO}`,
+    objetivos: [
+      { rotulo: "Posso lançar?", pergunta: "Leia o estudo mais recente em andamento e diga se vale lançar: veredicto, margem, faixa de lance, as premissas que mais mexem no resultado (medidas ou estimadas?) e o que conferir antes de enviar a proposta." },
+      { rotulo: "Até onde descer no lance", pergunta: "Para o estudo mais recente em andamento, monte a escada de lances: o preço de abertura, os degraus até a margem mínima da empresa e o piso de lucro zero, com a margem de cada degrau. Simule os degraus pelo motor." },
+      { rotulo: "Premissas contra o custo real", pergunta: "Compare as premissas do estudo mais recente com os custos reais medidos da empresa: onde a simulação está otimista ou pessimista, quanto isso muda o preço (simule) e quais premissas trocar pelo número real." },
+      { rotulo: "Onde perdemos disputas", pergunta: "Leia o histórico de disputas com resultado: onde o nosso preço ficou em relação ao vencedor, se há padrão por tipo de serviço ou unidade de preço, e o que isso diz sobre a nossa estrutura de custo." },
+      { rotulo: "Revisar o simulador", pergunta: "Revise o simulador de custos como especialista em precificação de transporte: as premissas e origens de um estudo, a composição, os regimes tributários, as unidades de preço e o painel de decisão. Diga o que está certo, o que engana e o que mudar primeiro." },
     ],
   },
 ];

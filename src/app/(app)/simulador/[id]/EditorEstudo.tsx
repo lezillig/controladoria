@@ -55,6 +55,7 @@ export default function EditorEstudo({
   lacunas,
   acompanhamento,
   avisoInicial,
+  podeConsultarEspecialista,
 }: {
   estudo: EstudoTela;
   entradaInicial: EntradaSimulacao;
@@ -69,6 +70,7 @@ export default function EditorEstudo({
   lacunas: string[];
   acompanhamento: ReactNode;
   avisoInicial: string | null;
+  podeConsultarEspecialista: boolean;
 }) {
   const router = useRouter();
   const [entrada, setEntrada] = useState(entradaInicial);
@@ -329,6 +331,7 @@ export default function EditorEstudo({
       {aba === "custos" && resultado && <Custos resultado={resultado} entrada={entrada} />}
       {aba === "cenarios" && resultado && <Cenarios resultado={resultado} entrada={entrada} alterar={alterar} />}
       {aba === "decisao" && (painel ? <Decisao painel={painel} /> : !calculo.erro && <p className="text-sm text-slate-500">Calculando…</p>)}
+      {aba === "decisao" && podeConsultarEspecialista && <PerguntarAoEspecialista nome={estudo.nome} versao={versaoBase} sujo={sujo} />}
       {aba === "proposta" && resultado && <Proposta entrada={entrada} resultado={resultado} nomeArquivo={nomeArquivo} />}
       <div hidden={aba !== "acompanhamento"}>{acompanhamento}</div>
     </div>
@@ -346,4 +349,31 @@ function Numero({ rotulo, valor, destaque, negativo }: { rotulo: string; valor: 
 
 function Selo({ cor, children }: { cor: "amber" | "slate"; children: ReactNode }) {
   return <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${cor === "amber" ? "bg-amber-100 text-amber-800" : "bg-slate-200/70 text-slate-600"}`}>{children}</span>;
+}
+
+// O ESPECIALISTA DE PRECIFICAÇÃO lê as versões SALVAS do estudo (é o que ele
+// consegue abrir pelo servidor); com alteração não salva, a tela avisa.
+function PerguntarAoEspecialista({ nome, versao, sujo }: { nome: string; versao: number | null; sujo: boolean }) {
+  const alvo = `o estudo "${nome}"${versao ? ` (versão ${versao})` : ""}`;
+  const perguntas = [
+    { rotulo: "Posso lançar?", texto: `Leia ${alvo} e diga se vale lançar: veredicto, margem, faixa de lance, as premissas que mais mexem no resultado (medidas ou estimadas?) e o que conferir antes de enviar a proposta.` },
+    { rotulo: "Escada de lances", texto: `Para ${alvo}, monte a escada de lances: preço de abertura, os degraus até a margem mínima e o piso de lucro zero, com a margem de cada degrau, simulando cada um pelo motor.` },
+    { rotulo: "Premissas × custo real", texto: `Compare as premissas de ${alvo} com os custos reais medidos da empresa: onde a simulação está otimista ou pessimista, quanto isso muda o preço (simule) e quais premissas trocar pelo número real.` },
+  ];
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4">
+      <p className="text-sm font-semibold text-slate-900">Pedir parecer ao especialista de precificação (IA)</p>
+      <p className="mt-0.5 text-xs text-slate-500">
+        Ele lê o estudo pelo mesmo motor, testa variações sem gravar nada e compara com o custo real e com as disputas passadas.
+        {sujo && <span className="font-medium text-amber-700"> Salve a versão antes: o especialista só enxerga o que está salvo.</span>}
+      </p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {perguntas.map((p) => (
+          <a key={p.rotulo} className={botao} href={`/auditoria/investigar?especialista=precificacao&pergunta=${encodeURIComponent(p.texto)}`}>
+            {p.rotulo}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
 }

@@ -81,7 +81,7 @@ function comPremissa(entrada: EntradaSimulacao, mudar: (p: Premissas) => void): 
 
 // Piora uma premissa no padrão E nos perfis de veículo que a repetem — senão
 // "diesel 10% mais caro" não mexeria nas rotas de ônibus, que têm perfil.
-function piorar(p: Premissas, caminho: string, fator: number) {
+export function piorar(p: Premissas, caminho: string, fator: number) {
   const atual = lerCaminho(p, caminho) as number;
   escreverCaminho(p, caminho, atual * fator);
   const [grupo, campo] = caminho.split(".");
@@ -94,7 +94,7 @@ function piorar(p: Premissas, caminho: string, fator: number) {
 
 // Preço proposto na unidade do contrato, para o conjunto (lote) ou a média
 // ponderada dos itens.
-function precoDoConjunto(r: ResultadoSimulacao): number {
+export function precoDoConjunto(r: ResultadoSimulacao): number {
   if (r.lote) return r.lote.precoPropostaUnidade;
   const quantidade = r.itens.reduce((a, i) => a + i.quantidadeUnidade, 0);
   return quantidade > 0 ? r.itens.reduce((a, i) => a + i.precoUnidade * i.quantidadeUnidade, 0) / quantidade : 0;

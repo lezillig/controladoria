@@ -9,6 +9,7 @@
 import { ESPECIALISTAS, especialistaPorId, faixaDeCusto, MODELO_ESPECIALISTA } from "../src/lib/controladoria/especialistas";
 import { ferramentasDeAuditoria } from "../src/lib/controladoria/investigador";
 import { ferramentasDeAnalise } from "../src/lib/controladoria/ferramentasDeAnalise";
+import { ferramentasDoSimulador } from "../src/lib/simulador/ferramentasDoSimulador";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -21,7 +22,7 @@ function conferir(nome: string, real: unknown, esperado: unknown) {
 
 console.log("\nRegistro");
 const ids = ESPECIALISTAS.map((e) => e.id);
-conferir("cinco especialistas", ids.length, 5);
+conferir("seis especialistas", ids.length, 6);
 conferir("ids únicos", new Set(ids).size, ids.length);
 conferir("o investigador é o primeiro e o padrão", especialistaPorId(undefined).id, "investigador");
 conferir("id desconhecido cai no investigador", especialistaPorId("gerente-de-marketing").id, "investigador");
@@ -54,13 +55,17 @@ console.log("\nFerramentas");
 const escopo = { companyId: "teste", conexaoId: null };
 const auditoria = ferramentasDeAuditoria(escopo, []);
 const analise = ferramentasDeAnalise(escopo, [], new Date(2026, 8, 22));
-const nomes = [...auditoria, ...analise].map((f) => f.name);
-conferir("nenhum nome de ferramenta repetido entre os dois conjuntos", new Set(nomes).size, nomes.length);
+const simulador = ferramentasDoSimulador({ companyId: "teste" }, []);
+const nomes = [...auditoria, ...analise, ...simulador].map((f) => f.name);
+conferir("nenhum nome de ferramenta repetido entre os três conjuntos", new Set(nomes).size, nomes.length);
+conferir("as ferramentas do simulador existem", simulador.map((f) => f.name), ["listar_estudos", "ler_estudo", "simular_variacao", "custos_reais", "historico_de_disputas", "base_de_custos"]);
+conferir("só o especialista de precificação recebe as do simulador", ESPECIALISTAS.filter((e) => e.ferramentas.includes("simulador")).map((e) => e.id), ["precificacao"]);
+conferir("a precificação é instruída a simular em vez de estimar", /simular_variacao roda o mesmo motor/.test(especialistaPorId("precificacao").systemPrompt), true);
 conferir("as ferramentas de análise existem", analise.length >= 11, true);
 conferir("o especialista de orçamento é instruído a começar pela projeção", /projecao_dre/.test(especialistaPorId("orcamento").systemPrompt), true);
 conferir(
   "toda ferramenta tem descrição que diga quando usá-la",
-  [...auditoria, ...analise].every((f) => {
+  [...auditoria, ...analise, ...simulador].every((f) => {
     const descricao = (f as { description?: unknown }).description;
     return typeof descricao === "string" && descricao.length > 40;
   }),
