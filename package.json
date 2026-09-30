@@ -44,6 +44,7 @@
     "teste:energia": "tsx scripts/teste-energia.ts",
     "teste:pedagio": "tsx scripts/teste-pedagio.ts",
     "teste:itens": "tsx scripts/teste-itens.ts",
+    "teste:separacao": "tsx scripts/teste-separacao.ts",
     "teste:horario": "tsx scripts/teste-horario.ts",
     "teste:mes-em-formacao": "tsx scripts/teste-mes-em-formacao.ts",
     "postinstall": "prisma generate"

@@ -263,6 +263,21 @@ abre com "alterações não salvas".
 intermunicipal põem o % intermunicipal de todos os itens em 0 ou 100%; misto
 deixa o % por item na aba Operação.
 
+## 7.0.2 Mão de obra × veículo
+
+A aba Custos abre com o custo separado em mão de obra (salários, encargos,
+benefícios, supervisão) e veículo — fixo (capital, seguro, IPVA, telemetria,
+garagem, adaptações, manutenção fixa, com a reserva técnica) e variável
+(combustível, ARLA, óleo, pneus, manutenção por km, pedágio) — com a
+implantação à parte. Cada parte leva a sua fração de administração e
+contingência (são % do custo direto), e o crédito de PIS/COFINS abate só do
+veículo, de onde ele vem. O preço de cada parte é o faturamento rateado pelo
+custo líquido: uma leitura do preço calculado (quanto paga a equipe, quanto
+paga o carro, por veículo-mês e por km), não um segundo preço. Serve para
+quem pede os dois valores separados e para comparar com a locação pura.
+Conta em `src/lib/simulador/separacao.ts`; a tabela de composição ganhou os
+subtotais de cada parte.
+
 ## 7.1 Custos base editáveis
 
 A tela **Custos base** (submenu do simulador) mostra cada parâmetro do

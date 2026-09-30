@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import type { PainelDecisao } from "@/lib/simulador/decisao";
+import { separarMaoDeObraEVeiculo, type ChaveParte, type Parte } from "@/lib/simulador/separacao";
 import { ROTULO_UNIDADE, type EntradaSimulacao, type ResultadoSimulacao } from "@/lib/simulador/tipos";
 import type { ComposicaoItem } from "@/lib/simulador/tipos";
 import { Cartao, CampoNumero, brl, brl0, num, pct, td, tdN, th, thN } from "../comum";
@@ -14,6 +16,7 @@ type Linha = { rotulo: string; f: (i: ComposicaoItem) => number; fmt?: (v: numbe
 export function Custos({ resultado, entrada }: { resultado: ResultadoSimulacao; entrada: EntradaSimulacao }) {
   const it = resultado.itens;
   const mensal = entrada.premissas.contrato.modo === "MENSAL";
+  const meses = entrada.premissas.contrato.mesesCustoFixo;
   const secoes: [string, Linha[]][] = [
     ["Operação", [
       { rotulo: "Km útil", f: (i) => i.kmUtil, fmt: (v) => num(v) },
@@ -26,8 +29,9 @@ export function Custos({ resultado, entrada }: { resultado: ResultadoSimulacao; 
       { rotulo: "Encargos", f: (i) => i.encargos },
       { rotulo: "Benefícios, uniforme e exames", f: (i) => i.beneficios },
       { rotulo: "Supervisão local", f: (i) => i.supervisao },
+      { rotulo: "= Mão de obra no mês", f: (i) => i.maoDeObraMes, destaque: true },
     ]],
-    ["Veículo (mensal, com reserva técnica)", [
+    ["Veículo — custo fixo (mensal, com reserva técnica)", [
       { rotulo: "Depreciação", f: (i) => i.depreciacao },
       { rotulo: "Remuneração do capital", f: (i) => i.remuneracaoCapital },
       { rotulo: "Seguro", f: (i) => i.seguro },
@@ -37,18 +41,24 @@ export function Custos({ resultado, entrada }: { resultado: ResultadoSimulacao; 
       { rotulo: "Garagem / base local", f: (i) => i.garagem },
       { rotulo: "Adaptações", f: (i) => i.adaptacao },
       { rotulo: "Manutenção fixa", f: (i) => i.manutencaoFixa },
-      { rotulo: "Implantação (amortizada)", f: (i) => i.implantacaoMes },
+      { rotulo: "= Veículo, custo fixo no mês", f: (i) => i.veiculoMes, destaque: true },
     ]],
-    [mensal ? "Variáveis (mês)" : "Variáveis (período)", [
+    [mensal ? "Veículo — custo variável (mês)" : "Veículo — custo variável (período)", [
       { rotulo: "Combustível", f: (i) => i.diesel },
       { rotulo: "ARLA", f: (i) => i.arla },
       { rotulo: "Óleo e lavagem", f: (i) => i.oleoLavagem },
       { rotulo: "Pneus", f: (i) => i.pneus },
       { rotulo: "Manutenção", f: (i) => i.manutencao },
       { rotulo: "Pedágio", f: (i) => i.pedagio },
+      { rotulo: "= Veículo, custo variável", f: (i) => i.variaveis, destaque: true },
+    ]],
+    ["Contrato", [
+      { rotulo: "Implantação (amortizada, mensal)", f: (i) => i.implantacaoMes },
     ]],
     ["Totais", [
-      { rotulo: "Custo fixo na apuração", f: (i) => i.custoFixo },
+      { rotulo: `Mão de obra no ${mensal ? "mês" : "período"}`, f: (i) => i.maoDeObraMes * meses },
+      { rotulo: `Veículo no ${mensal ? "mês" : "período"} (fixo + variável)`, f: (i) => i.veiculoMes * meses + i.variaveis },
+      { rotulo: `Implantação no ${mensal ? "mês" : "período"}`, f: (i) => i.implantacaoMes * meses },
       { rotulo: "Custo direto", f: (i) => i.custoDireto },
       { rotulo: "Administração e contingência", f: (i) => i.indiretos },
       { rotulo: "Custo total", f: (i) => i.custoTotal, destaque: true },
@@ -73,6 +83,7 @@ export function Custos({ resultado, entrada }: { resultado: ResultadoSimulacao; 
   ];
   return (
     <div className="space-y-4">
+      <MaoDeObraEVeiculo resultado={resultado} entrada={entrada} />
       <Cartao
         titulo="Composição de custo e preço"
         ajuda={`${mensal ? "Valores mensais na utilização prevista." : `Valores do período: custo fixo por ${entrada.premissas.contrato.mesesCustoFixo} meses e km do ano letivo.`} Mão de obra e veículo são mensais em qualquer caso.`}
@@ -161,6 +172,124 @@ function FragmentoSecao({ titulo, linhas, itens }: { titulo: string; linhas: Lin
         );
       })}
     </>
+  );
+}
+
+// ---------------------------------------------------------------- mão de obra × veículo
+
+const COR_PARTE: Record<ChaveParte, string> = {
+  maoDeObra: "#1d4ed8",
+  veiculoFixo: "#0d9488",
+  veiculoVariavel: "#d97706",
+  implantacao: "#9333ea",
+};
+
+// Quanto do custo e do preço é gente e quanto é carro — do conjunto ou de um
+// item. Ver src/lib/simulador/separacao.ts.
+function MaoDeObraEVeiculo({ resultado, entrada }: { resultado: ResultadoSimulacao; entrada: EntradaSimulacao }) {
+  const [item, setItem] = useState<string | null>(null);
+  const itens = item === null ? resultado.itens : resultado.itens.filter((i) => i.item === item);
+  const s = separarMaoDeObraEVeiculo(itens, entrada.premissas);
+  const apuracao = entrada.premissas.contrato.modo === "MENSAL" ? "mês" : "período";
+  const visiveis = s.partes.filter((p) => p.comIndiretos > 0);
+  const linhas = [
+    { ...s.maoDeObra, cor: COR_PARTE.maoDeObra, destaque: true, recuo: false },
+    { ...s.veiculo, cor: null, destaque: true, recuo: false },
+    ...s.partes.filter((p) => p.chave === "veiculoFixo" || p.chave === "veiculoVariavel").map((p) => ({ ...p, cor: COR_PARTE[p.chave], destaque: false, recuo: true })),
+    ...s.partes.filter((p) => p.chave === "implantacao" && p.comIndiretos > 0).map((p) => ({ ...p, cor: COR_PARTE[p.chave], destaque: false, recuo: false })),
+  ];
+  return (
+    <Cartao
+      titulo="Mão de obra × veículo"
+      ajuda={`Custos no ${apuracao}, cada parte com a sua fração de administração e contingência. O preço de cada parte é o faturamento rateado pelo custo líquido (o crédito de PIS/COFINS é todo do veículo): quanto do preço calculado paga a equipe e quanto paga o veículo.`}
+      acao={
+        resultado.itens.length > 1 ? (
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Item">
+            {[null, ...resultado.itens.map((i) => i.item)].map((c) => (
+              <button
+                key={c ?? "todos"}
+                type="button"
+                onClick={() => setItem(c)}
+                aria-pressed={item === c}
+                className={`rounded-md px-2 py-0.5 text-xs font-medium ${item === c ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+              >
+                {c === null ? "Todos" : `Item ${c}`}
+              </button>
+            ))}
+          </div>
+        ) : undefined
+      }
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Resumo rotulo="Mão de obra" cor={COR_PARTE.maoDeObra} parte={s.maoDeObra} extra={s.maoDeObraPorPessoaMes > 0 ? `${brl0(s.maoDeObraPorPessoaMes)} por pessoa da equipe no mês, sem indiretos` : undefined} />
+        <Resumo rotulo="Veículo" cor={COR_PARTE.veiculoFixo} parte={s.veiculo} extra="fixo (capital, seguro, IPVA, garagem…) + variável (combustível, pneus, manutenção, pedágio)" />
+      </div>
+      {s.custoTotal > 0 && (
+        <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded" role="img" aria-label={visiveis.map((p) => `${p.rotulo} ${pct(p.participacao)}`).join(", ")}>
+          {visiveis.map((p) => (
+            <span key={p.chave} title={`${p.rotulo}: ${brl0(p.comIndiretos)} (${pct(p.participacao)})`} style={{ width: `${p.participacao * 100}%`, background: COR_PARTE[p.chave] }} className="first:rounded-l last:rounded-r" />
+          ))}
+        </div>
+      )}
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr>
+              <th className={th}>Parte</th>
+              <th className={thN}>Custo no {apuracao}</th>
+              <th className={thN}>% do custo</th>
+              <th className={thN}>Custo por km</th>
+              <th className={thN}>Custo por veículo-mês</th>
+              <th className={thN}>Preço por veículo-mês</th>
+              <th className={thN}>Preço por km</th>
+            </tr>
+          </thead>
+          <tbody>
+            {linhas.map((l) => (
+              <tr key={l.rotulo} className={l.destaque ? "font-semibold" : ""}>
+                <td className={td}>
+                  <span className={`inline-flex items-center gap-2 ${l.recuo ? "pl-4 text-slate-600" : ""}`}>
+                    {l.cor ? <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: l.cor }} /> : <span className="inline-block w-2.5" />}
+                    {l.recuo ? l.rotulo.replace("Veículo — ", "") : l.rotulo}
+                  </span>
+                </td>
+                <td className={tdN}>{brl0(l.comIndiretos)}</td>
+                <td className={tdN}>{pct(l.participacao)}</td>
+                <td className={tdN}>{brl(l.porKm, 4)}</td>
+                <td className={tdN}>{brl(l.porVeiculoMes)}</td>
+                <td className={tdN}>{brl(l.precoPorVeiculoMes)}</td>
+                <td className={tdN}>{brl(l.precoPorKm, 4)}</td>
+              </tr>
+            ))}
+            <tr className="font-semibold">
+              <td className={td}>Total</td>
+              <td className={tdN}>{brl0(s.custoTotal)}</td>
+              <td className={tdN}>{pct(s.custoTotal > 0 ? 1 : null)}</td>
+              <td className={tdN}>{brl(s.kmUtil > 0 ? s.custoTotal / s.kmUtil : null, 4)}</td>
+              <td className={tdN}>{brl(s.veiculoMes > 0 ? s.custoTotal / s.veiculoMes : null)}</td>
+              <td className={tdN}>{brl(s.veiculoMes > 0 ? s.faturamento / s.veiculoMes : null)}</td>
+              <td className={tdN}>{brl(s.kmUtil > 0 ? s.faturamento / s.kmUtil : null, 4)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Cartao>
+  );
+}
+
+function Resumo({ rotulo, cor, parte, extra }: { rotulo: string; cor: string; parte: Parte; extra?: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 px-3 py-2">
+      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+        <span className="inline-block h-2.5 w-2.5 rounded-sm" style={{ background: cor }} />
+        {rotulo} · {pct(parte.participacao)} do custo
+      </div>
+      <div className="mt-0.5 font-mono text-lg font-semibold tabular-nums text-slate-900">{brl0(parte.comIndiretos)}</div>
+      <div className="text-xs text-slate-600">
+        preço rateado <b className="font-mono tabular-nums">{brl(parte.precoPorVeiculoMes)}</b> por veículo-mês
+      </div>
+      {extra && <div className="mt-0.5 text-[11px] text-slate-500">{extra}</div>}
+    </div>
   );
 }
 
