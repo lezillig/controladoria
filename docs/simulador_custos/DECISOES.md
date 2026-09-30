@@ -18,6 +18,7 @@ IN 5/2017, editais, TCU, legislação tributária e trabalhista).
 | Motor (função pura `simular`) | `src/lib/simulador/motor.ts`, tipos em `tipos.ts` |
 | Premissas, origem de cada número, tipos de veículo | `src/lib/simulador/premissas.ts` |
 | Base de custos com vigência (Gabarito) | `baseDeCustos.ts`, `gabarito.ts`, `catalogo.ts` |
+| Ajuste da base pela tela (tela Custos base) | `edicaoBase.ts`, `src/app/(app)/simulador/base/` |
 | Estudos, versões, lances, resultado, realizado | `estudos.ts` |
 | Painel de decisão | `decisao.ts` |
 | Calibração realizado × previsto | `calibracao.ts` |
@@ -220,6 +221,17 @@ margem alvo e o resultado ao preço já lançado; ajuste proporcional que
 alcança os tipos de veículo), custos reais, histórico de disputas e base de
 custos. A aba Decisão leva ao especialista com perguntas prontas sobre o
 estudo aberto. Ele lê só versões salvas.
+
+## 7.1 Custos base editáveis
+
+A tela **Custos base** (submenu do simulador) mostra cada parâmetro do
+Gabarito com o valor que vale hoje, de onde veio (base, com data e autor, ou
+o padrão do simulador), o valor anterior e onde ele entra na conta. Frota,
+mão de obra por função e pedágios são tabelas editáveis, e os tipos padrão
+do simulador podem ser trazidos para a base e ajustados. Ajustar pela tela
+usa a mesma gravação da importação: valor diferente fecha a vigência do
+anterior e abre uma nova com a fonte "ajuste na tela"; "voltar ao padrão"
+encerra o valor da base. Estudos já salvos não mudam.
 
 ## 8. O que ainda não existe
 

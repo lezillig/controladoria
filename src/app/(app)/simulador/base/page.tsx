@@ -1,57 +1,103 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { paraNumero } from "@/lib/simulador/baseDeCustos";
-import { fmtData } from "@/lib/controladoria/format";
+import { CATALOGO_PARAMETROS } from "@/lib/simulador/catalogo";
+import { camposEditaveis, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from "@/lib/simulador/edicaoBase";
+import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
+import { ROTULO_TIPO_VEICULO } from "@/lib/simulador/tipos";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
-import { AvisoVazio, Secao, Tabela } from "../../_componentes";
+import { Secao } from "../../_componentes";
 import ImportarGabaritoForm from "./ImportarGabaritoForm";
+import { ParametrosBase, TabelaRegistrosBase, type ParametroTela, type RegistroTela } from "./EditorBase";
 
-// A BASE DE CUSTOS DO SIMULADOR — o que está valendo hoje.
+// A BASE DE CUSTOS DO SIMULADOR — o que está valendo hoje, e ajustável.
 //
-// É daqui que todo estudo novo tira as premissas: diesel, encargos, salário
-// por função, valor de cada modelo da frota, pedágios, margens da Azul. Cada
-// linha mostra de onde veio e desde quando vale, porque "de onde saiu esse
-// número?" é a primeira pergunta de quem confere um orçamento.
+// É daqui que todo estudo novo tira as premissas: diesel, tributos, salário
+// por função, valor de cada modelo da frota, pedágios, margens da Azul Mob.
+// Cada linha mostra de onde veio e desde quando vale, porque "de onde saiu
+// esse número?" é a primeira pergunta de quem confere um orçamento. Ajustar
+// aqui grava uma vigência nova, como a importação do Gabarito.
 //
 // Salário aqui é POR FUNÇÃO (convenção coletiva), nunca por pessoa.
 
-const ROTULO_ENTIDADE: Record<string, string> = {
-  JORNADA: "Jornada e operação",
-  INDIRETO: "Custos indiretos",
-  TRIBUTO: "Tributos",
-  FINANCEIRO: "Financeiro",
-  INSUMO: "Insumos",
-  REGRA_AZUL: "Regras da Azul Mob (margens)",
-};
+type Linha = Record<string, unknown> & { id: string; vigenciaInicio: Date; fonte: string };
 
-const reais = (v: unknown, casas = 2) => {
-  const n = paraNumero(v);
-  return n === null ? "—" : n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: casas, maximumFractionDigits: casas });
-};
-const numero = (v: unknown, casas = 0) => {
-  const n = paraNumero(v);
-  return n === null ? "—" : n.toLocaleString("pt-BR", { maximumFractionDigits: casas });
-};
-const percentual = (v: unknown) => {
-  const n = paraNumero(v);
-  return n === null ? "—" : `${(n * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%`;
-};
+function paraTela(tipo: TipoTabela, linhas: Linha[]): RegistroTela[] {
+  const campos = camposEditaveis(tipo);
+  return linhas.map((l) => ({
+    id: l.id,
+    desde: l.vigenciaInicio.toISOString(),
+    fonte: l.fonte,
+    campos: Object.fromEntries(
+      campos.map((c) => {
+        const v = l[c.campo];
+        return [c.campo, c.tipo === "texto" ? ((v as string | null) ?? null) : c.tipo === "simnao" ? ((v as boolean | null) ?? null) : paraNumero(v)];
+      })
+    ),
+  }));
+}
 
 export default async function BaseDeCustosPage() {
   const session = await exigirPermissao("simulador");
   const podeEditar = await podeAcao(session, "gerir-simulador");
   const vigente = { companyId: session.companyId, vigenciaFim: null };
-  const [parametros, veiculos, funcoes, pedagios, historico] = await Promise.all([
-    prisma.simParametro.findMany({ where: vigente, orderBy: [{ entidade: "asc" }, { rotulo: "asc" }] }),
+  const [parametros, encerrados, veiculos, funcoes, pedagios] = await Promise.all([
+    prisma.simParametro.findMany({ where: vigente }),
+    prisma.simParametro.findMany({ where: { companyId: session.companyId, vigenciaFim: { not: null } }, orderBy: { vigenciaFim: "desc" }, take: 500 }),
     prisma.simVeiculoModelo.findMany({ where: vigente, orderBy: [{ tipo: "asc" }, { modelo: "asc" }] }),
     prisma.simFuncao.findMany({ where: vigente, orderBy: [{ funcao: "asc" }] }),
     prisma.simPedagioPraca.findMany({ where: vigente, orderBy: [{ praca: "asc" }] }),
-    prisma.simParametro.count({ where: { companyId: session.companyId, vigenciaFim: { not: null } } }),
   ]);
   const vazia = parametros.length + veiculos.length + funcoes.length + pedagios.length === 0;
-  const grupos = new Map<string, typeof parametros>();
-  for (const p of parametros) grupos.set(p.entidade, [...(grupos.get(p.entidade) ?? []), p]);
+  const atualPorChave = new Map(parametros.map((p) => [p.chave, p]));
+  const anteriorPorChave = new Map<string, (typeof encerrados)[number]>();
+  for (const e of encerrados) if (!anteriorPorChave.has(e.chave)) anteriorPorChave.set(e.chave, e);
+
+  const telaParametros: ParametroTela[] = CATALOGO_PARAMETROS.map((d) => {
+    const a = atualPorChave.get(d.chave);
+    const ant = anteriorPorChave.get(d.chave);
+    return {
+      chave: d.chave,
+      entidade: d.entidade,
+      rotulo: d.rotulo,
+      tipo: d.tipo,
+      essencial: d.essencial,
+      unidade: a?.unidade ?? USO_DA_BASE[d.chave]?.unidade ?? null,
+      atual: a ? { valor: paraNumero(a.valor), texto: a.texto, desde: a.vigenciaInicio.toISOString(), fonte: a.fonte, autor: a.atualizadoPorNome } : null,
+      anterior: ant && ant.vigenciaFim ? { valor: paraNumero(ant.valor), texto: ant.texto, ate: ant.vigenciaFim.toISOString() } : null,
+      padrao: padraoDoSimulador(d.chave),
+      unidadePadrao: USO_DA_BASE[d.chave]?.unidadePadrao ?? null,
+      uso: USO_DA_BASE[d.chave]?.como ?? null,
+    };
+  });
+
+  // Os padrões do simulador por tipo de veículo, prontos para trazer à base e
+  // ajustar — é o que os estudos usam enquanto a frota não estiver cadastrada.
+  const sugestoesVeiculo = PERFIS_PADRAO.map((p) => {
+    const v = { ...PREMISSAS_PADRAO.veiculo, ...p.veiculo };
+    const va = { ...PREMISSAS_PADRAO.variaveis, ...p.variaveis };
+    return {
+      rotulo: ROTULO_TIPO_VEICULO[p.tipo],
+      campos: {
+        tipo: ROTULO_TIPO_VEICULO[p.tipo],
+        modelo: p.descricao,
+        lotacao: p.lotacao ?? null,
+        valorCompra: v.valor,
+        consumoKmL: va.consumoAsfaltoKmL,
+        manutencaoKm: va.manutencaoAsfaltoKm,
+        seguroAnual: v.seguroMes * 12,
+        ipvaLicenciamentoAnual: v.ipvaLicenciamentoAno,
+        licencasAnual: v.laudoVistoriaAno,
+        rastreadorMensal: v.rastreadorMes,
+        reservaTecnicaPct: PREMISSAS_PADRAO.contrato.reservaTecnicaPct,
+      },
+    };
+  });
+  const sugestoesFuncao = PERFIS_PADRAO.map((p) => ({
+    rotulo: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`,
+    campos: { funcao: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`, salarioBase: p.motorista.salario, encargosPct: PREMISSAS_PADRAO.pessoal.encargosPct },
+  }));
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -60,10 +106,10 @@ export default async function BaseDeCustosPage() {
           <Link href="/simulador" className="text-xs font-medium text-blue-700 hover:underline">
             ← Simulador
           </Link>
-          <h1 className="mt-2 text-xl font-semibold text-slate-900">Base de custos</h1>
-          <p className="mt-1 max-w-[80ch] text-sm text-slate-500">
-            Os valores que os estudos novos usam como premissa. Nada é sobrescrito: quando um valor muda, o anterior fica guardado com a
-            vigência encerrada{historico > 0 ? ` (${historico} ${historico === 1 ? "parâmetro" : "parâmetros"} no histórico)` : ""}, e cada estudo salvo lembra a base do dia.
+          <h1 className="mt-2 text-xl font-semibold text-slate-900">Custos base</h1>
+          <p className="mt-1 max-w-[85ch] text-sm text-slate-500">
+            Os custos que todo estudo novo usa como ponto de partida — veja o valor de cada um, de onde veio e para que serve na conta, e ajuste
+            aqui mesmo. Ajustar não apaga nada: o valor anterior fica no histórico, e estudos já salvos continuam com a base do dia deles.
           </p>
         </div>
         <a href="/api/simulador/gabarito" className={secondaryButtonClass}>
@@ -71,12 +117,16 @@ export default async function BaseDeCustosPage() {
         </a>
       </div>
 
-      <Secao
-        titulo="O que é a base de custos"
-        descricao="É a tabela de custos da Azul Mob que todo estudo novo usa como ponto de partida: preço do diesel, encargos, salário do motorista por função, valor e consumo de cada modelo da frota, pedágios e as margens mínima e alvo da empresa. Ela entra pelo Gabarito, uma planilha Excel com uma aba por assunto."
-      >
+      <details className="rounded-xl border border-slate-200 bg-white px-4 py-3" open={vazia}>
+        <summary className="cursor-pointer text-sm font-semibold text-slate-900">Como funciona a base de custos</summary>
+        <div className="mt-3">
+      <div>
+        <p className="mb-3 text-sm text-slate-600">É a tabela de custos da Azul Mob que todo estudo novo usa como ponto de partida: preço do diesel, encargos, salário do motorista por função, valor e consumo de cada modelo da frota, pedágios e as margens mínima e alvo da empresa. Ela entra pelo Gabarito, uma planilha Excel com uma aba por assunto.</p>
         <div className="grid gap-4 text-sm text-slate-700 lg:grid-cols-2">
           <ol className="list-decimal space-y-1.5 pl-5">
+            <li>
+              <strong>Para um ajuste pontual</strong> (o diesel subiu, o dissídio saiu), edite o valor direto nas tabelas desta página e salve.
+            </li>
             <li>
               <strong>Baixe o Gabarito em branco</strong> (botão no alto da página).
             </li>
@@ -107,63 +157,45 @@ export default async function BaseDeCustosPage() {
           Outra fonte, sem planilha: na aba Premissas de cada estudo, “Custos reais da Azul Mob” mostra o que a empresa gastou de fato nos últimos
           doze meses (DRE da Omie, cartão de combustível, frota) para você escolher o que usar.
         </p>
+      </div>
+
+        </div>
+      </details>
+
+      <Secao titulo="Parâmetros" descricao="Diesel, tributos, prazos, jornada, administração e margens. “Estimativa” é o padrão do simulador enquanto a empresa não informa o seu número.">
+        <ParametrosBase parametros={telaParametros} podeEditar={podeEditar} />
+      </Secao>
+
+      <Secao titulo="Frota (modelos)" descricao="Um modelo por linha: valor, consumo, manutenção por km, pneus, seguro, IPVA. Viram os tipos de veículo dos estudos novos (carro, van, micro, ônibus, reconhecidos pelo texto do tipo).">
+        <TabelaRegistrosBase
+          tipo="veiculo"
+          campos={camposEditaveis("veiculo")}
+          registros={paraTela("veiculo", veiculos as unknown as Linha[])}
+          sugestoes={sugestoesVeiculo}
+          podeEditar={podeEditar}
+          vazio="Nenhum modelo na base: os estudos usam os tipos padrão do simulador. Traga um padrão abaixo para ajustar com os números da frota."
+        />
+      </Secao>
+
+      <Secao titulo="Mão de obra (por função)" descricao="Piso, adicionais, encargos e benefícios da convenção coletiva por função. O salário do motorista de cada tipo de veículo sai daqui (“Motorista de van”, “Motorista de ônibus”…). Nunca salário de pessoas.">
+        <TabelaRegistrosBase
+          tipo="funcao"
+          campos={camposEditaveis("funcao")}
+          registros={paraTela("funcao", funcoes as unknown as Linha[])}
+          sugestoes={sugestoesFuncao}
+          podeEditar={podeEditar}
+          vazio="Nenhuma função na base: os estudos usam o salário padrão de cada tipo de veículo."
+        />
+      </Secao>
+
+      <Secao titulo="Pedágios" descricao="Praças e tarifas por categoria de veículo.">
+        <TabelaRegistrosBase tipo="pedagio" campos={camposEditaveis("pedagio")} registros={paraTela("pedagio", pedagios as unknown as Linha[])} podeEditar={podeEditar} vazio="Nenhuma praça na base." />
       </Secao>
 
       {podeEditar && (
-        <Secao titulo="Atualizar a base" descricao="Preencha o Gabarito (só valores por função — nunca salários de pessoas) e envie. Campos vazios não apagam o que já está na base.">
+        <Secao titulo="Atualizar tudo de uma vez pelo Gabarito" descricao="Para muitas mudanças, preencha o Gabarito e envie. Campos vazios não apagam o que já está na base.">
           <ImportarGabaritoForm />
         </Secao>
-      )}
-
-      {vazia ? (
-        <AvisoVazio
-          titulo="A base de custos está vazia"
-          descricao="Enquanto isso, os estudos usam os valores padrão do simulador, marcados como “estimativa” em cada premissa. Importe o Gabarito para trocar os padrões pelos custos da Azul Mob."
-        />
-      ) : (
-        <>
-          {[...grupos.entries()].map(([entidade, linhas]) => (
-            <Secao key={entidade} titulo={ROTULO_ENTIDADE[entidade] ?? entidade}>
-              <Tabela
-                colunas={["Parâmetro", "Valor", "Unidade", "Desde", "Fonte"]}
-                alinharDireita={[1]}
-                linhas={linhas.map((p) => [
-                  p.rotulo,
-                  p.texto ?? (p.unidade?.includes("%") ? percentual(p.valor) : numero(p.valor, 4)),
-                  p.unidade ?? "",
-                  fmtData(p.vigenciaInicio),
-                  <span key="f" className="text-xs text-slate-500">
-                    {p.fonte}
-                  </span>,
-                ])}
-              />
-            </Secao>
-          ))}
-          <Secao titulo="Frota (modelos)" descricao="Valor, consumo, manutenção e custos anuais de cada modelo. Alimentam os tipos de veículo dos estudos.">
-            <Tabela
-              colunas={["Tipo", "Modelo", "Ano", "Qtde", "Lotação", "Valor de compra", "Consumo (km/l)", "Manutenção (R$/km)", "Seguro/ano", "Desde"]}
-              alinharDireita={[2, 3, 4, 5, 6, 7, 8]}
-              linhas={veiculos.map((v) => [v.tipo, v.modelo, v.ano ?? "—", numero(v.quantidade), numero(v.lotacao), reais(v.valorCompra, 0), numero(v.consumoKmL, 2), reais(v.manutencaoKm, 4), reais(v.seguroAnual, 0), fmtData(v.vigenciaInicio)])}
-              vazio="Nenhum modelo cadastrado."
-            />
-          </Secao>
-          <Secao titulo="Mão de obra (por função)" descricao="Piso e custos da convenção coletiva por função — o salário de cada tipo de veículo sai daqui.">
-            <Tabela
-              colunas={["Função", "CCT / região", "Salário base", "Adicionais fixos", "Encargos", "VR/VA", "Plano de saúde", "Desde"]}
-              alinharDireita={[2, 3, 4, 5, 6]}
-              linhas={funcoes.map((f) => [f.funcao, [f.cct, f.regiao].filter(Boolean).join(" · ") || "—", reais(f.salarioBase), reais(f.adicionaisFixos), percentual(f.encargosPct), reais(f.vrVa), reais(f.planoSaude), fmtData(f.vigenciaInicio)])}
-              vazio="Nenhuma função cadastrada."
-            />
-          </Secao>
-          <Secao titulo="Pedágios">
-            <Tabela
-              colunas={["Praça", "Concessionária", "Van", "Micro", "Ônibus 2 eixos", "Ônibus 3 eixos", "Desconto TAG", "Desde"]}
-              alinharDireita={[2, 3, 4, 5, 6]}
-              linhas={pedagios.map((p) => [p.praca, p.concessionaria ?? "—", reais(p.tarifaVan), reais(p.tarifaMicro), reais(p.tarifaOnibus2), reais(p.tarifaOnibus3), percentual(p.descontoTagPct), fmtData(p.vigenciaInicio)])}
-              vazio="Nenhuma praça cadastrada."
-            />
-          </Secao>
-        </>
       )}
     </div>
   );

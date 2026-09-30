@@ -44,7 +44,7 @@ export default async function SimuladorPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/simulador/base" className={secondaryButtonClass}>
-            Base de custos
+            Custos base
           </Link>
           {podeEditar && (
             <Link href="/simulador/novo" className={primaryButtonClass}>

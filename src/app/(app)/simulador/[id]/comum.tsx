@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import type { OrigemPremissa } from "@/lib/simulador/premissas";
 import { lerNumero } from "@/lib/simulador/numeros";
 
@@ -32,6 +32,7 @@ export function CampoNumero({
   className = "",
   rotulo,
   desativado = false,
+  placeholder,
 }: {
   valor: number | null | undefined;
   aoMudar: (n: number | null) => void;
@@ -41,6 +42,7 @@ export function CampoNumero({
   className?: string;
   rotulo?: string;
   desativado?: boolean;
+  placeholder?: string;
 }) {
   const exibir = (v: number | null | undefined, agrupar = true) =>
     v === null || v === undefined || !Number.isFinite(v)
@@ -50,6 +52,18 @@ export function CampoNumero({
   // sem separador de milhar, para o que se vê ser o que se relê.
   const [rascunho, setRascunho] = useState<string | null>(null);
   const [invalido, setInvalido] = useState(false);
+  // Selecionar o texto logo depois da renderização que troca "2.000" por
+  // "2000" — no mesmo ciclo, antes da próxima tecla. Com requestAnimationFrame
+  // a seleção chegava um quadro depois e engolia o primeiro dígito de quem
+  // clica e digita rápido ("6,99" virava ",99").
+  const campoRef = useRef<HTMLInputElement>(null);
+  const selecionar = useRef(false);
+  useLayoutEffect(() => {
+    if (selecionar.current && campoRef.current) {
+      selecionar.current = false;
+      campoRef.current.select();
+    }
+  });
   // O texto vem do próprio campo, não do estado: preenchimento automático
   // (colar, autocompletar) pode chegar ao blur antes da nova renderização.
   const confirmar = (atual: string) => {
@@ -72,16 +86,15 @@ export function CampoNumero({
       inputMode="decimal"
       aria-label={rotulo}
       aria-invalid={invalido || undefined}
+      placeholder={placeholder}
       title={invalido ? "Valor não reconhecido — o anterior foi mantido." : undefined}
       disabled={desativado}
       value={rascunho ?? exibir(valor)}
-      onFocus={(e) => {
+      ref={campoRef}
+      onFocus={() => {
         setInvalido(false);
+        selecionar.current = true;
         setRascunho(exibir(valor, false));
-        // Trocar "2.000" por "2000" ao entrar desfaz a seleção; sem selecionar
-        // de novo, quem entra com Tab e digita emenda no valor antigo.
-        const el = e.currentTarget;
-        requestAnimationFrame(() => el.select());
       }}
       onChange={(e) => setRascunho(e.target.value)}
       onBlur={(e) => confirmar(e.currentTarget.value)}

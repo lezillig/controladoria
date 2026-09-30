@@ -18,6 +18,7 @@ import {
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerNumero } from "@/lib/simulador/numeros";
+import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import type { EntradaSimulacao, TipoVeiculo, UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
 
@@ -251,4 +252,55 @@ export async function importarGabarito(formData: FormData): Promise<Resultado & 
   });
   revalidatePath("/simulador/base");
   return { ok: true, resumo, avisos: leitura.avisos.slice(0, 40) };
+}
+
+// AJUSTES DA BASE DE CUSTOS PELA TELA — mesma regra de vigência do Gabarito.
+async function registrarAjusteBase(session: Awaited<ReturnType<typeof exigirPermissao>>, descricao: string) {
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SIMULADOR_BASE_AJUSTADA",
+    descricao: descricao.slice(0, 500),
+  });
+  revalidatePath("/simulador/base");
+}
+
+export async function ajustarParametroBase(chave: string, valor: number | null, texto: string | null): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const r = await ajustarParametro(session.companyId, String(chave).slice(0, 60), { valor, texto }, session.name);
+  if (r.erro) return { erro: r.erro };
+  const mudou = r.resumo!.parametros.novos + r.resumo!.parametros.alterados > 0;
+  if (mudou) await registrarAjusteBase(session, `Base de custos: parâmetro ${chave} ajustado na tela para ${texto ?? valor}.`);
+  return { ok: true, mensagem: mudou ? "Salvo. Vale para os estudos novos a partir de agora." : "Sem mudança." };
+}
+
+export async function voltarParametroAoPadrao(chave: string): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const r = await voltarAoPadrao(session.companyId, String(chave).slice(0, 60));
+  if (r.erro) return { erro: r.erro };
+  await registrarAjusteBase(session, `Base de custos: parâmetro ${chave} voltou ao padrão do simulador.`);
+  return { ok: true, mensagem: "Voltou ao padrão do simulador." };
+}
+
+export async function salvarRegistroBase(tipo: TipoTabela, campos: Record<string, unknown>, idAnterior: string | null): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  if (!(tipo in TABELAS)) return { erro: "Tabela inválida." };
+  const r = await salvarRegistro(session.companyId, tipo, campos ?? {}, idAnterior, session.name);
+  if (r.erro) return { erro: r.erro };
+  const total = r.resumo!;
+  const grupo = tipo === "veiculo" ? total.veiculos : tipo === "funcao" ? total.funcoes : total.pedagios;
+  const mudou = grupo.novos + grupo.alterados > 0;
+  if (mudou) await registrarAjusteBase(session, `Base de custos: ${tipo === "veiculo" ? "modelo da frota" : tipo === "funcao" ? "função" : "praça de pedágio"} ${grupo.novos > 0 ? "incluído" : "ajustado"} na tela.`);
+  return { ok: true, mensagem: mudou ? "Salvo." : "Sem mudança." };
+}
+
+export async function encerrarRegistroBase(tipo: TipoTabela, id: string): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  if (!(tipo in TABELAS)) return { erro: "Tabela inválida." };
+  const r = await encerrarRegistro(session.companyId, tipo, String(id));
+  if (r.erro) return { erro: r.erro };
+  await registrarAjusteBase(session, `Base de custos: ${tipo === "veiculo" ? "modelo da frota" : tipo === "funcao" ? "função" : "praça de pedágio"} retirado da base.`);
+  return { ok: true, mensagem: "Retirado da base (fica no histórico)." };
 }

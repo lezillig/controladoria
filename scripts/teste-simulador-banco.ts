@@ -122,6 +122,34 @@ async function principal() {
   conferir("tipos escolhidos ao criar, na ordem: carro (padrão, sem modelo na base) e a van da base", entradaComTipos.premissas.perfis?.map((p) => p.tipo), ["CARRO", "VAN"]);
   conferir("fretamento eventual: km da viagem é o cobrado (utilização 100%) e preço por diária", [eventual.entrada.premissas.contrato.utilizacao, eventual.entrada.unidadePreco], [1, "DIARIA"]);
 
+  console.log("\nAJUSTES DA BASE PELA TELA — vigência nova, nada sobrescrito");
+  {
+    const ed = await import("../src/lib/simulador/edicaoBase");
+    const antes = await prisma.simParametro.findFirst({ where: { companyId: EMPRESA, chave: "diesel_rs_l", vigenciaFim: null } });
+    const r1 = await ed.ajustarParametro(EMPRESA, "diesel_rs_l", { valor: 6.79, texto: null }, "teste");
+    conferir("diesel ajustado: um alterado", r1.resumo?.parametros, { novos: 0, alterados: 1, inalterados: 0 });
+    const agora = await prisma.simParametro.findFirst({ where: { companyId: EMPRESA, chave: "diesel_rs_l", vigenciaFim: null } });
+    conferir("vale o novo, com a fonte do ajuste", [Number(agora?.valor), agora?.fonte], [6.79, ed.FONTE_AJUSTE]);
+    ok("o anterior fica no histórico com a vigência fechada", Boolean(antes && (await prisma.simParametro.findUnique({ where: { id: antes.id } }))?.vigenciaFim));
+    conferir("mesmo valor não grava", (await ed.ajustarParametro(EMPRESA, "diesel_rs_l", { valor: 6.79, texto: null }, "teste")).resumo?.parametros.inalterados, 1);
+    const pct = await ed.ajustarParametro(EMPRESA, "margem_alvo", { valor: 0.1, texto: null }, "teste");
+    ok("percentual em fração é aceito", !pct.erro);
+    ok("chave desconhecida é recusada", Boolean((await ed.ajustarParametro(EMPRESA, "nao_existe", { valor: 1, texto: null }, "teste")).erro));
+    ok("negativo é recusado", Boolean((await ed.ajustarParametro(EMPRESA, "diesel_rs_l", { valor: -1, texto: null }, "teste")).erro));
+    await ed.voltarAoPadrao(EMPRESA, "diesel_rs_l");
+    const semBase = (await baseVigente(EMPRESA)).parametros.get("diesel_rs_l");
+    ok("voltar ao padrão tira o diesel da base vigente", semBase === undefined);
+    conferir("padrão do simulador para o diesel", ed.padraoDoSimulador("diesel_rs_l") !== null, true);
+    const v = await ed.salvarRegistro(EMPRESA, "veiculo", { tipo: "Carro", modelo: "Corolla", ano: 2025, valorCompra: 160000, consumoKmL: 12 }, null, "teste");
+    conferir("modelo novo da frota", v.resumo?.veiculos.novos, 1);
+    const carro = await prisma.simVeiculoModelo.findFirst({ where: { companyId: EMPRESA, modelo: "Corolla", vigenciaFim: null } });
+    await ed.salvarRegistro(EMPRESA, "veiculo", { tipo: "Carro", modelo: "Corolla Cross", ano: 2025, valorCompra: 170000 }, carro!.id, "teste");
+    conferir("renomear o modelo encerra o registro anterior", [(await prisma.simVeiculoModelo.findUnique({ where: { id: carro!.id } }))?.vigenciaFim !== null, await prisma.simVeiculoModelo.count({ where: { companyId: EMPRESA, modelo: { startsWith: "Corolla" }, vigenciaFim: null } })], [true, 1]);
+    ok("sem modelo é recusado", Boolean((await ed.salvarRegistro(EMPRESA, "veiculo", { tipo: "Van" }, null, "teste")).erro));
+    const outra = await ed.encerrarRegistro("outra-empresa", "veiculo", carro!.id);
+    ok("outra empresa não retira registro", Boolean(outra.erro));
+  }
+
   console.log("\nLANCES, RESULTADO E REALIZADO");
   await estudos.registrarLance(EMPRESA, sjp.id, { fase: "LANCE", dataHora: new Date(), precos: [{ item: "1", preco: 9.31 }, { item: "2", preco: 9.31 }], valorTotal: null, observacao: null, simulacaoId: v1.id }, "teste");
   conferir("um lance", await prisma.simLance.count({ where: { estudoId: sjp.id } }), 1);

@@ -88,7 +88,7 @@ function converter(bruto: number | string | null, tipo: TipoValor): number | str
   }
 }
 
-function normalizarChave(...partes: (string | number | boolean | null | undefined)[]): string {
+export function normalizarChave(...partes: (string | number | boolean | null | undefined)[]): string {
   return partes
     .map((p) => (p === null || p === undefined ? "" : String(p)))
     .map((p) =>

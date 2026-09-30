@@ -21,6 +21,7 @@ import {
   Target,
   TrendingUp,
   UsersRound,
+  Database,
 } from "lucide-react";
 import type { Permissao } from "@/lib/acessos";
 
@@ -34,6 +35,8 @@ type NavItem = {
   // dia em que passou a existir perfil. Esquecer a regra num item novo agora é
   // erro de compilação, não uma tela vazando em silêncio.
   permissao: Permissao;
+  // Subitem: aparece recuado, logo abaixo do item de que faz parte.
+  sub?: boolean;
 };
 
 // Ordem por fluxo de trabalho, não alfabética: quem abre o sistema de manhã vai
@@ -67,6 +70,7 @@ const NAV: NavItem[] = [
   // O simulador custeia a operação que ainda não existe — licitação, contrato
   // novo, renovação — a partir dos custos que a controladoria mede.
   { href: "/simulador", label: "Simulador de custos", icon: Calculator, permissao: "simulador" },
+  { href: "/simulador/base", label: "Custos base", icon: Database, permissao: "simulador", sub: true },
   { href: "/relatorios", label: "Relatórios diários", icon: Mail, permissao: "relatorios" },
   { href: "/sincronizacao", label: "Sincronização", icon: RefreshCw, permissao: "sincronizacao" },
   { href: "/conexoes", label: "Conexões Omie", icon: Building2, permissao: "conexoes" },
@@ -91,18 +95,23 @@ export default function Sidebar({ permissoes }: { permissoes: string[] }) {
   // que existem.
   const permitidas = new Set(permissoes);
   const itens = NAV.filter((i) => permitidas.has(i.permissao));
+  // Só o item MAIS específico que casa com a rota fica aceso: em
+  // /simulador/base acende "Custos base", não também "Simulador de custos".
+  const ativoHref = itens
+    .filter((i) => isActive(pathname, i.href))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
 
   return (
     <nav className="flex h-full flex-col gap-1 p-3">
       {itens.map((item) => {
         const Icon = item.icon;
-        const ativo = isActive(pathname, item.href);
+        const ativo = item.href === ativoHref;
         return (
           <Link
             key={item.href}
             href={item.href}
             prefetch={false}
-            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+            className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${item.sub ? "ml-6 py-1.5 text-[13px]" : ""} ${
               ativo ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
             }`}
           >
