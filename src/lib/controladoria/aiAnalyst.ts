@@ -132,7 +132,7 @@ function montarBriefing(entrada: EntradaAnalista): string {
     `margem líquida ${fmtPercent(r.margemLiquidaPercent)}; em categoria não confirmada ${fmtBRL(r.naoConfirmadoCents)}, sem categoria ${fmtBRL(r.semCategoriaCents)}`;
   linhas.push(dreLinha(entrada.dre.mesFechado, `${entrada.dre.mesFechado.rotulo} (último mês fechado)`));
   if (entrada.dre.mesCorrente) {
-    linhas.push(dreLinha(entrada.dre.mesCorrente, `${entrada.dre.mesCorrente.rotulo} (parcial; só comparável ao mês anterior até o mesmo dia)`));
+    linhas.push(dreLinha(entrada.dre.mesCorrente, `${entrada.dre.mesCorrente.rotulo} (parcial; comparado ao mês anterior fechado)`));
   }
   linhas.push("- Os números abaixo, de títulos, são volume de títulos a receber e a pagar — não são o resultado.");
   linhas.push("");

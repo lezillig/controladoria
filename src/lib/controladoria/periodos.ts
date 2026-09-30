@@ -85,14 +85,11 @@ export function rotuloMes(d: Date): string {
 export type JanelasRelatorio = {
   dia: Periodo;
   mesAtual: Periodo;
+  // O MÊS ANTERIOR e o MESMO MÊS DO ANO ANTERIOR são sempre o mês FECHADO,
+  // inteiro — decisão da diretoria (out/2026): a comparação é com o mês
+  // fechado, sem recortar até o mesmo dia. A tela diz em que dia está o mês
+  // atual ("dia 22 de 30") para quem lê pesar o mês pela metade.
   mesAnterior: Periodo;
-  // O MÊS ANTERIOR ATÉ O MESMO DIA. "Mês atual" vai do dia 1 até a referência;
-  // compará-lo com o mês anterior INTEIRO produzia, no dia 10, uma queda de
-  // dois terços que era só calendário — e era essa a variação do painel e do
-  // e-mail. É o mesmo cuidado que o acumulado do ano já tinha (year-to-date
-  // contra year-to-date), aplicado ao mês. Quando a referência é o último dia
-  // do mês, coincide com `mesAnterior`.
-  mesAnteriorMesmoDia: Periodo;
   ano: Periodo;
   anoAnterior: Periodo;
   mesmoMesAnoAnterior: Periodo;
@@ -125,14 +122,6 @@ export function montarJanelas(dataReferencia: Date): JanelasRelatorio {
   const diaDoMes = d.getDate();
   const diasNoMes = diasNoMesDe(d);
   const mesParcial = diaDoMes < diasNoMes;
-  // O mesmo dia no mês anterior, sem passar do fim dele (31 de março → 28 ou
-  // 29 de fevereiro).
-  const mesmoDiaMesAnterior = new Date(
-    mesAnteriorInicio.getFullYear(),
-    mesAnteriorInicio.getMonth(),
-    Math.min(diaDoMes, diasNoMesDe(mesAnteriorInicio))
-  );
-
   const anoAnteriorMesmoDia = mesmoDiaAnoAnterior(d);
   const mesmoMesAnoAnteriorInicio = inicioDoMes(anoAnteriorMesmoDia);
 
@@ -148,13 +137,6 @@ export function montarJanelas(dataReferencia: Date): JanelasRelatorio {
       fim: fimDoMes(mesAnteriorInicio),
       rotulo: `Mês anterior (${rotuloMes(mesAnteriorInicio)})`,
     },
-    mesAnteriorMesmoDia: {
-      inicio: mesAnteriorInicio,
-      fim: mesParcial ? fimDoDia(mesmoDiaMesAnterior) : fimDoMes(mesAnteriorInicio),
-      rotulo: mesParcial
-        ? `${rotuloMes(mesAnteriorInicio)} (até o dia ${mesmoDiaMesAnterior.getDate()})`
-        : `Mês anterior (${rotuloMes(mesAnteriorInicio)})`,
-    },
     mesParcial,
     diaDoMes,
     diasNoMes,
@@ -166,8 +148,8 @@ export function montarJanelas(dataReferencia: Date): JanelasRelatorio {
     },
     mesmoMesAnoAnterior: {
       inicio: mesmoMesAnoAnteriorInicio,
-      fim: fimDoDia(anoAnteriorMesmoDia),
-      rotulo: `${rotuloMes(mesmoMesAnoAnteriorInicio)} (mesmo período)`,
+      fim: fimDoMes(mesmoMesAnoAnteriorInicio),
+      rotulo: `${rotuloMes(mesmoMesAnoAnteriorInicio)} (mês fechado)`,
     },
   };
 }

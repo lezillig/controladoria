@@ -131,11 +131,8 @@ export default async function CustosPage({
       })
     : null;
 
-  // MÊS PARCIAL CONTRA MÊS PARCIAL. Na leitura corrente o mês vai até D-1, e
-  // a coluna "mês anterior" era o mês inteiro: no dia 10, toda variação era
-  // queda de calendário. Com uma competência fechada escolhida, os dois lados
-  // são meses inteiros e nada muda.
-  const janelas = comparativo.janelas;
+  // O mês anterior e o mesmo mês do ano anterior são sempre o mês fechado
+  // (ver periodos.ts); na leitura corrente, o mês atual vai até D-1.
   const dre = await montarDreNoBanco(escopoSql, recorteMensal.periodo, recorteMensal.periodoAnterior, classificacoes, {
     somarRetencoes: config.retencoesNasDeducoes,
     regime,
@@ -233,9 +230,7 @@ export default async function CustosPage({
           <h1 className="text-xl font-semibold text-slate-900">Custos e DRE gerencial</h1>
           <p className="mt-1 text-sm text-slate-500">
             {comparativo.janelas.mesAtual.rotulo} até {fmtData(periodo.dataReferencia)},{" "}
-            {janelas.mesParcial
-              ? `comparado ao mês anterior até o mesmo dia (${janelas.mesAnteriorMesmoDia.rotulo}) e ao mesmo mês do ano passado inteiro.`
-              : "comparado ao mês anterior inteiro."}
+            comparado ao mês anterior fechado e ao mesmo mês do ano passado fechado.{" "}
             {regime === "caixa"
               ? "Regime de CAIXA: entra o que foi pago ou recebido no mês, pela data da baixa."
               : "Regime de COMPETÊNCIA, pela data de emissão do documento."}
@@ -412,7 +407,7 @@ export default async function CustosPage({
             subgruposConhecidos={subgruposConhecidos}
             marcasPorCategoria={marcasPorCategoria}
             anoAnterior={comparativo.janelas.mesAtual.inicio.getFullYear() - 1}
-            rotuloMesAnterior={janelas.mesParcial ? `Mês anterior (até o dia ${janelas.mesAnteriorMesmoDia.fim.getDate()})` : "Mês anterior"}
+            rotuloMesAnterior="Mês anterior (fechado)"
             podeClassificar={podeClassificar}
           />
         )}

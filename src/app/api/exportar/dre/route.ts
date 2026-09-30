@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
         // O mês parcial é dito, como a tela diz: um arquivo que circula com
         // "setembro" no nome e metade de setembro dentro é lido como queda.
         (janelas.mesParcial
-          ? `Mês até ${fmtData(recorte.periodo.fim)}, comparado ao mês anterior até o mesmo dia (${recorte.periodoAnterior.rotulo}) — o mesmo recorte da tela. `
+          ? `Mês até ${fmtData(recorte.periodo.fim)}, comparado ao mês anterior fechado (${recorte.periodoAnterior.rotulo}) e ao mesmo mês do ano anterior fechado — o mesmo recorte da tela. `
           : "") +
         "Ordem das linhas conforme o art. 187 da Lei 6.404/76. " +
         "As colunas 'Omie:' são o que o cadastro de categorias da Omie informa — é contra elas que se confere. " +

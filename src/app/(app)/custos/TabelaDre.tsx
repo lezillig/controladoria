@@ -34,9 +34,7 @@ export default function TabelaDre({
   // Só o ano, para o cabeçalho da coluna. "Mesmo mês 2025" diz o que "ano
   // anterior" não diz: qual ano exatamente está do outro lado da comparação.
   anoAnterior?: number;
-  // O rótulo da coluna do mês anterior: "Mês anterior" quando é o mês inteiro,
-  // "Mês anterior (até o dia X)" quando a leitura corrente recorta os dois
-  // lados no mesmo dia.
+  // O rótulo da coluna do mês anterior — sempre o mês fechado.
   rotuloMesAnterior?: string;
   podeClassificar: boolean;
 }) {

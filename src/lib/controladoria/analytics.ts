@@ -99,14 +99,9 @@ export type ComparativoRelatorio = {
   janelas: JanelasRelatorio;
   dia: ResumoPeriodo;
   mesAtual: ResumoPeriodo;
+  // O mês anterior FECHADO — a base das variações mensais (ver periodos.ts).
   mesAnterior: ResumoPeriodo;
-  // O mês anterior recortado até o mesmo dia — a base das variações mensais
-  // (ver `JanelasRelatorio.mesAnteriorMesmoDia`). `mesAnterior` continua sendo
-  // o mês fechado inteiro, que é o que o cartão "mês anterior" mostra.
-  mesAnteriorMesmoDia: ResumoPeriodo;
-  // O texto do "contra o quê" da variação mensal, para as telas e o e-mail
-  // não escreverem "vs. mês anterior" quando a base é o mês anterior até o
-  // mesmo dia.
+  // O texto do "contra o quê" da variação mensal, igual nas telas e no e-mail.
   rotuloDaVariacaoMensal: string;
   ano: ResumoPeriodo;
   anoAnterior: ResumoPeriodo;
@@ -162,11 +157,10 @@ export async function comparativoDoEscopo(params: {
   const janelas = montarJanelas(params.dataReferencia);
   const escopo = { companyId: params.companyId, conexaoId: params.conexaoId };
 
-  const [dia, mesAtual, mesAnterior, mesAnteriorMesmoDia, ano, anoAnterior, mesmoMesAnoAnterior] = await Promise.all([
+  const [dia, mesAtual, mesAnterior, ano, anoAnterior, mesmoMesAnoAnterior] = await Promise.all([
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.dia }),
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesAtual }),
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesAnterior }),
-    resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesAnteriorMesmoDia }),
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.ano }),
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.anoAnterior }),
     resumoDoPeriodoNoBanco({ ...escopo, periodo: janelas.mesmoMesAnoAnterior }),
@@ -179,17 +173,14 @@ export async function comparativoDoEscopo(params: {
     dia,
     mesAtual,
     mesAnterior,
-    mesAnteriorMesmoDia,
-    rotuloDaVariacaoMensal: janelas.mesParcial ? "vs. mês anterior até o mesmo dia" : "vs. mês anterior",
+    rotuloDaVariacaoMensal: "vs. mês anterior fechado",
     ano,
     anoAnterior,
     mesmoMesAnoAnterior,
     variacoes: {
-      // Mês parcial contra mês parcial: no dia 10 a variação media calendário,
-      // não operação (ver periodos.ts). Em mês fechado, as duas janelas são a
-      // mesma e o número não muda.
-      receitaMesVsAnterior: variacaoPercent(mesAtual.receitaCents, mesAnteriorMesmoDia.receitaCents),
-      despesaMesVsAnterior: variacaoPercent(mesAtual.despesaCents, mesAnteriorMesmoDia.despesaCents),
+      // Contra o mês anterior fechado (ver periodos.ts).
+      receitaMesVsAnterior: variacaoPercent(mesAtual.receitaCents, mesAnterior.receitaCents),
+      despesaMesVsAnterior: variacaoPercent(mesAtual.despesaCents, mesAnterior.despesaCents),
       receitaAnoVsAnterior: semBaseAnoAnterior ? null : variacaoPercent(ano.receitaCents, anoAnterior.receitaCents),
       despesaAnoVsAnterior: semBaseAnoAnterior ? null : variacaoPercent(ano.despesaCents, anoAnterior.despesaCents),
       receitaMesVsMesmoMesAnoAnterior: semBaseAnoAnterior

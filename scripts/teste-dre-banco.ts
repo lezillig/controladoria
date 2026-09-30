@@ -345,15 +345,16 @@ async function principal() {
     const recorte = recorteMensalDoDre({ companyId: EMPRESA, conexaoId: null, dataReferencia: REFERENCIA });
     conferir("recorte da planilha: janela de treze meses", recorte.escopo.janela.desde, desdeMensal);
     conferir("recorte da planilha: mês até a referência", recorte.periodo, janelas.mesAtual);
-    conferir("recorte da planilha: anterior até o mesmo dia", recorte.periodoAnterior, janelas.mesAnteriorMesmoDia);
+    conferir("recorte da planilha: anterior é o mês fechado", recorte.periodoAnterior, janelas.mesAnterior);
     const dre = await montarDreNoBanco(recorte.escopo, recorte.periodo, recorte.periodoAnterior, classificacoes, {
       regime: "competencia",
       incluirTitulos: false,
     });
     conferir(
-      "o mês anterior da planilha enxerga o título de agosto já liquidado",
+      // Agosto FECHADO: A12 (já liquidado) e o título emitido em 28/08.
+      "o mês anterior da planilha é agosto inteiro, com o título já liquidado",
       dre.linhas.find((l) => l.chave === "CUSTO_SERVICO")?.valorAnteriorCents,
-      210_700
+      210_700 + 91_100
     );
   }
 

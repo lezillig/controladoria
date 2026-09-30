@@ -471,9 +471,9 @@ export function recorteMensalDoDre(params: { companyId: string; conexaoId: strin
       janela: { desde: new Date(dataReferencia.getFullYear() - 1, dataReferencia.getMonth(), 1), ate: null },
     } satisfies EscopoDre,
     periodo: janelas.mesAtual,
-    // MÊS PARCIAL CONTRA MÊS PARCIAL (ver periodos.ts): no dia 10, o mês
-    // anterior inteiro faria toda variação ser queda de calendário.
-    periodoAnterior: janelas.mesParcial ? janelas.mesAnteriorMesmoDia : janelas.mesAnterior,
+    // O mês anterior e o do ano anterior são sempre o mês fechado (ver
+    // periodos.ts).
+    periodoAnterior: janelas.mesAnterior,
     periodoAnoAnterior: mesmoMesAnoAnterior(janelas.mesAtual),
   };
 }
@@ -743,7 +743,7 @@ export async function dreParaRelatorio(params: {
   const [dreFechado, dreCorrente] = await Promise.all([
     montarDreNoBanco(escopo, fechado, anteriorAoFechado, classificacoes, opcoes),
     janelas.mesParcial
-      ? montarDreNoBanco(escopo, janelas.mesAtual, janelas.mesAnteriorMesmoDia, classificacoes, opcoes)
+      ? montarDreNoBanco(escopo, janelas.mesAtual, janelas.mesAnterior, classificacoes, opcoes)
       : Promise.resolve(null),
   ]);
 

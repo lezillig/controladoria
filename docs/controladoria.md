@@ -95,6 +95,15 @@ da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
   comparado com o realizado das DUAS linhas; premissa de cenário antiga sobre
   `DESPESA_SALARIOS` passa a valer só para a operação.
 
+### Comparações do mês: sempre com o mês fechado
+
+O mês atual vai até D-1; o **mês anterior** e o **mesmo mês do ano
+anterior** são sempre o mês **fechado**, inteiro — no DRE, no painel, no
+e-mail, na planilha de conferência e na análise da IA (decisão da diretoria,
+out/2026). Nada é recortado "até o mesmo dia"; a tela diz em que dia do mês
+a leitura está para quem lê pesar o mês pela metade. O acumulado do ano
+continua comparado ao do ano anterior até a mesma data.
+
 ---
 
 ## 3. Estrutura de agentes
