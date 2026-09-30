@@ -141,6 +141,40 @@ motoristas por van, que bate com o limite inferior do GEIPOT.
 - **Parcela de financiamento nunca entra no custo.** O Gabarito guarda a
   parcela para o fluxo de caixa; o veículo é pago por depreciação mais
   remuneração do capital, e somar a parcela contaria o veículo duas vezes.
+- **Horas noturnas pagam só o adicional.** As horas noturnas em horas estão
+  dentro da jornada que o salário já paga; o motor as cobrava a 1,2 × valor
+  da hora, pagando a hora-base duas vezes. Agora cada hora de relógio entre
+  22h e 5h custa `(1 + adicional) × 60 ÷ 52,5 − 1` do valor da hora (hora
+  reduzida de 52′30″, CLT art. 73): 37,1% com 20%, 42,9% com 25%. O
+  adicional é premissa (`pessoal.adicionalNoturnoPct`, 20%; vem do
+  `noturno_pct` da base quando houver). Hora noturna além da jornada é hora
+  extra. O `fatorJornadaNoturna` (rotas noturnas) ficou como estava: é um
+  multiplicador agregado de jornada estendida e noturno, e cobrir o mesmo
+  adicional pelos dois caminhos contaria duas vezes — a ajuda das duas
+  premissas avisa.
+- **Locação sem motorista tem os tributos da locação.** O item sem motorista
+  pagava ISS/ICMS e a presunção do transporte. Locação de bem móvel não tem
+  ISS (Súmula Vinculante 31) nem ICMS, e no Presumido presume 32%: IRPJ
+  4,8% e CSLL 2,88% da receita (`preco.irpjLocacao`, `preco.csllLocacao`).
+  No Real, o item segue o regime (IR sobre o lucro). PIS/COFINS continuam os
+  do estudo: um estudo misto no Real (transporte cumulativo, locação não
+  cumulativa com crédito) ainda não é separado por item.
+- **Base do IR no Lucro Real.** O custo inclui a remuneração do capital
+  próprio (custo de oportunidade, não despesa) e a contingência (provisão), e
+  o IR era calculado sobre o lucro depois deles. Agora a base é lucro antes
+  do IR + N, com N = capital próprio × meses + contingência; com capital
+  composto, só a parte própria (`(1 − fração financiada) × custo do capital
+  próprio`, também sobre as adaptações) — os juros financiados são despesa.
+  O preço que dá o lucro alvo α depois do IR sai de
+  `(P·L − C) − ir·(P·L − C + N) = α·P`:
+  `P = (C + N·ir/(1 − ir)) ÷ (L − α/(1 − ir))` — o divisor é o mesmo, o custo
+  a cobrir ganha o IR sobre N. Idem no preço mínimo (α = 0), na binômia (N
+  do fixo e do variável em cada parcela), nos cenários e no equilíbrio, que
+  passa a ser o de lucro zero depois do IR. Contingência não dedutível é o
+  lado prudente: se o risco acontecer, a despesa deduz. Os dois históricos
+  são Presumido, sem item sem motorista e sem horas noturnas: nada muda
+  neles. Versões salvas antes (motor `2026.09-v1`) com Real, locação ou
+  horas noturnas dão outro número ao reexecutar.
 
 ## 7. Especialista de IA em precificação
 

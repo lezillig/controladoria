@@ -256,9 +256,137 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
   const i = real.itens[0];
   ok("crédito = 9,25% dos custos com crédito", Math.abs(i.creditoPisCofins - i.custoComCredito * 0.0925) < 1e-6);
   ok("custos com crédito incluem combustível e depreciação", i.custoComCredito >= i.diesel + i.depreciacao);
-  perto("lucro = lucro antes do IR × (1 − 34%)", i.lucro, i.lucroAntesIr * 0.66, "total");
+  // A base do IR é o lucro antes do IR + os não dedutíveis (ver abaixo).
+  perto("lucro = lucro antes do IR − 34% × (lucro antes do IR + não dedutíveis)", i.lucro, i.lucroAntesIr - 0.34 * (i.lucroAntesIr + i.naoDedutiveis), "total");
   ok("margem líquida perto do alvo (9%) também no Real", Math.abs(i.margem! - 0.09) < 0.005, `margem ${i.margem}`);
   ok("preço muda com o regime", i.precoKm !== r0.itens[0].precoKm, `${i.precoKm} × ${r0.itens[0].precoKm}`);
+}
+
+console.log("\nREVISÃO DE PRECIFICAÇÃO — adicional noturno, locação sem motorista, base do IR no Real");
+{
+  const base = historicoSaoJoseDosPinhais().entrada;
+  const r0 = simular(base);
+  const com = (mudar: (e: typeof base) => void) => {
+    const e = structuredClone(base);
+    mudar(e);
+    return simular(e);
+  };
+
+  // Os históricos não passam por nenhuma das três correções — por isso a
+  // reprodução acima continua exata.
+  for (const h of [historicoHolambra(), historicoSaoJoseDosPinhais()]) {
+    const { premissas: p, itens } = h.entrada;
+    conferir(
+      `${h.edital.numero}: sem horas noturnas, sem item sem motorista, Presumido`,
+      [p.pessoal.horasNoturnasMes, itens.some((i) => i.comMotorista === false), p.preco.irpjCsllSobreLucroPct],
+      [0, false, 0]
+    );
+  }
+
+  console.log("\n  adicional noturno: só o adicional, com a hora reduzida");
+  // SJP item 1: 7,2 motoristas a R$ 2.950 ÷ 220 = R$ 13,4091/h. 20 h noturnas
+  // por motorista a 20%: 1,2 × 60 ÷ 52,5 − 1 = 13/35 = 0,371429 da hora →
+  // 7,2 × 13,4091 × 20 × 0,371429 = R$ 717,19 (antes: × 1,2 = R$ 2.317,09,
+  // pagando de novo a hora-base que o salário já paga).
+  const noturnas20 = com((e) => {
+    e.premissas.pessoal.horasNoturnasMes = 20;
+  });
+  perto("20 h noturnas a 20%: 7,2 × 2.950/220 × 20 × 0,371429 = 717,19", noturnas20.itens[0].salarios - r0.itens[0].salarios, 717.1948, "total");
+  // A 25% (CCT RP/Franca): 1,25 × 60 ÷ 52,5 − 1 = 3/7 → 1.930,91 × 3/7 = 827,53.
+  const noturnas25 = com((e) => {
+    e.premissas.pessoal.horasNoturnasMes = 20;
+    e.premissas.pessoal.adicionalNoturnoPct = 0.25;
+  });
+  perto("… a 25%: 7,2 × 2.950/220 × 20 × 3/7 = 827,53", noturnas25.itens[0].salarios - r0.itens[0].salarios, 827.5325, "total");
+  // Versão salva antes da premissa (sem o campo): vale a CLT, 20%.
+  const semCampo = com((e) => {
+    e.premissas.pessoal.horasNoturnasMes = 20;
+    delete e.premissas.pessoal.adicionalNoturnoPct;
+  });
+  perto("… sem a premissa (versão antiga), 20%", semCampo.itens[0].salarios, noturnas20.itens[0].salarios, "total");
+
+  console.log("\n  locação sem motorista: sem ISS/ICMS, presunção de 32% no Presumido");
+  // SJP: PIS 0,65% + COFINS 3%. Item 2 sem motorista no Presumido:
+  // 0,65% + 3% + IRPJ 4,8% + CSLL 2,88% = 11,33% (com motorista eram
+  // 0,65 + 3 + 1,35 + 1,08 + ISS 3 = 9,08%). O item 1 (35% intermunicipal)
+  // fica em 6,08% + 3% × 0,65 + 12% × 0,35 = 12,23%.
+  const locacao = com((e) => {
+    e.itens[1].comMotorista = false;
+  });
+  perto("item 2 sem motorista: 0,65% + 3% + 4,8% + 2,88% = 11,33%", locacao.itens[1].tributosPct, 0.1133, "total");
+  perto("item 1 com motorista continua em 12,23%", locacao.itens[0].tributosPct, 0.1223, "total");
+  perto("… e o lote pondera os tributos dos dois", locacao.lote!.tributosPct, (0.1223 * locacao.itens[0].faturamento + 0.1133 * locacao.itens[1].faturamento) / locacao.totais.faturamento, "total");
+  ok("… com a margem do item sem motorista perto do alvo (9%)", Math.abs(locacao.itens[1].margem! - 0.09) < 0.005, `margem ${locacao.itens[1].margem}`);
+  const locacaoPropria = com((e) => {
+    e.itens[1].comMotorista = false;
+    e.premissas.preco.irpjLocacao = 0.06;
+    e.premissas.preco.csllLocacao = 0.03;
+  });
+  perto("presunção da locação é premissa: 0,65% + 3% + 6% + 3% = 12,65%", locacaoPropria.itens[1].tributosPct, 0.1265, "total");
+  // No Real, IR/CSLL vão para o lucro: o item sem motorista paga só PIS/COFINS.
+  const locacaoReal = com((e) => {
+    e.itens[1].comMotorista = false;
+    Object.assign(e.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34 });
+  });
+  perto("no Real, sem motorista: só PIS + COFINS = 3,65%", locacaoReal.itens[1].tributosPct, 0.0365, "total");
+
+  console.log("\n  Lucro Real: capital próprio e contingência não saem da base do IR");
+  // Sem capital composto, a remuneração inteira é tratada como capital próprio.
+  conferir("capital simples: remuneração própria = remuneração inteira", r0.itens[0].remuneracaoCapitalProprio, r0.itens[0].remuneracaoCapital);
+  // Real (IR/CSLL 34% sobre o lucro, PIS/COFINS cumulativos), capital
+  // composto 80% a 18% + 20% a 12%. Item 1: 4 vans × 1,15 = 4,6 com reserva;
+  // capital próprio = 4,6 × 290.000 × 20% × 12% ÷ 12 = R$ 2.668/mês (os juros
+  // dos 80% financiados são despesa e saem da base). Contingência de 3% sobre
+  // o custo direto. N = 2.668 + 3% × custo direto.
+  const real = com((e) => {
+    Object.assign(e.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34 });
+    Object.assign(e.premissas.veiculo, { capitalComposto: true, fracaoFinanciada: 0.8, taxaFinanciamentoAa: 0.18, custoCapitalProprioAa: 0.12 });
+  });
+  const i1 = real.itens[0];
+  perto("capital próprio: 4,6 × 290.000 × 0,2 × 0,12 ÷ 12 = 2.668", i1.remuneracaoCapitalProprio, 2668, "total");
+  perto("… a remuneração inteira é 4,6 × 290.000 × 16,8% ÷ 12 = 18.676", i1.remuneracaoCapital, 18676, "total");
+  perto("não dedutíveis = 2.668 + 3% × custo direto", i1.naoDedutiveis, 2668 + 0.03 * i1.custoDireto, "total");
+  perto("IR = 34% × (lucro antes do IR + não dedutíveis)", i1.irpjCsllSobreLucro, 0.34 * (i1.lucroAntesIr + i1.naoDedutiveis), "total");
+  // Preço: P = (C + N × 0,34/0,66) ÷ km ÷ (L − 9%/0,66). Item 1: tributos
+  // 0,65 + 3 + 3 × 0,65 + 12 × 0,35 = 9,8%; financeiro 1,8% → L = 0,884;
+  // divisor = 0,884 − 0,136364 = 0,747636.
+  const divisor = 0.884 - 0.09 / 0.66;
+  perto(
+    "preço/km = (custo líquido + N × 0,34 ÷ 0,66) ÷ km ÷ 0,747636",
+    i1.precoKm,
+    arredondarParaCima((i1.custoTotal - i1.creditoPisCofins + (i1.naoDedutiveis * 0.34) / 0.66) / i1.kmUtil / divisor),
+    "preco"
+  );
+  ok("margem líquida no alvo (9%, só o arredondamento acima)", i1.margem! >= 0.09 - 1e-9 && i1.margem! < 0.0915, `margem ${i1.margem}`);
+  // Sem o IR sobre N no preço, a margem ficaria abaixo do alvo em ≈ 34% × N ÷ faturamento.
+  const precoAntigo = (i1.custoTotal - i1.creditoPisCofins) / i1.kmUtil / divisor;
+  const fatAntigo = precoAntigo * i1.kmUtil;
+  const lairAntigo = fatAntigo * 0.884 - (i1.custoTotal - i1.creditoPisCofins);
+  const margemAntiga = (lairAntigo - 0.34 * (lairAntigo + i1.naoDedutiveis)) / fatAntigo;
+  ok("… o preço pela conta antiga daria margem abaixo do alvo", margemAntiga < 0.085, `margem ${margemAntiga}`);
+  // Lote, ao preço único: mesma base.
+  const l = real.lote!;
+  const lairLote = l.faturamentoAoPrecoProposta * (1 - l.tributosPct - 0.018) - (l.custoTotal - real.itens.reduce((a, i) => a + i.creditoPisCofins, 0));
+  perto(
+    "lote: lucro ao preço único = lucro antes do IR − 34% × (lucro antes do IR + N)",
+    l.lucroAoPrecoProposta,
+    lairLote - 0.34 * (lairLote + real.itens.reduce((a, i) => a + i.naoDedutiveis, 0)),
+    "total"
+  );
+  // Cenários: no ponto de equilíbrio, o lucro DEPOIS do IR é zero.
+  const pe = real.cenarios.pontoEquilibrio!;
+  const noEquilibrio = com((e) => {
+    Object.assign(e.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34 });
+    Object.assign(e.premissas.veiculo, { capitalComposto: true, fracaoFinanciada: 0.8, taxaFinanciamentoAa: 0.18, custoCapitalProprioAa: 0.12 });
+    e.utilizacoesCenario = [pe];
+  });
+  ok("cenários: lucro depois do IR zero no ponto de equilíbrio", Math.abs(noEquilibrio.cenarios.linhas[0].lucro) < 0.01, `lucro ${noEquilibrio.cenarios.linhas[0].lucro} em u = ${pe}`);
+  const linha85 = real.cenarios.linhas.find((x) => x.utilizacao === 0.85)!;
+  // Real de passageiros: PIS/COFINS cumulativos, sem crédito — custo líquido = custo total.
+  const lair85 = linha85.faturamento * (1 - real.cenarios.tributosPct - 0.018) - linha85.custoTotal;
+  // N(u) = capital próprio × meses + contingência × custo direto(u); custo direto = custo total ÷ 1,10.
+  const n85 = real.itens.reduce((a, i) => a + i.remuneracaoCapitalProprio, 0) + (0.03 * linha85.custoTotal) / 1.1;
+  perto("cenário 85%: lucro = lucro antes do IR − 34% × (lucro antes do IR + N(u))", linha85.lucro, lair85 - 0.34 * (lair85 + n85), "total");
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

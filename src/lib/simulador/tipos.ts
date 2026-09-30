@@ -64,12 +64,19 @@ export type Premissas = {
     uniformeEpiPorFuncionario: number;
     // Preposto/supervisão local — total mensal, rateado entre os itens pelo km.
     supervisaoMes: number;
-    // Adicionais em HORAS por motorista por mês, pagos a salário ÷ divisor ×
-    // fator (1,5; 2,0; 1,2) — alternativa ao percentual de HE. Somam-se a ele.
+    // Adicionais em HORAS por motorista por mês, a salário ÷ divisor — alternativa
+    // ao percentual de HE, e somam-se a ele. As horas extras estão FORA da
+    // jornada que o salário paga: entram inteiras (× 1,5; × 2). As horas
+    // noturnas (22h–5h) estão DENTRO dela: o salário já paga a hora-base, e
+    // só entra o adicional com o efeito da hora reduzida de 52′30″ —
+    // (1 + adicional) × 60 ÷ 52,5 − 1 por hora de relógio.
     divisorHorasMes: number;
     horasExtras50Mes: number;
     horasExtras100Mes: number;
     horasNoturnasMes: number;
+    // Adicional noturno: 20% pela CLT (art. 73); há CCT com 25%. Opcional
+    // porque as versões salvas antes dele não o têm — sem ele, 20%.
+    adicionalNoturnoPct?: number;
   };
   veiculo: {
     valor: number;
@@ -152,6 +159,13 @@ export type Premissas = {
     // ficam em zero e `irpj`/`csll` levam a alíquota efetiva sobre a receita.
     irpjCsllSobreLucroPct: number;
     creditoPisCofinsPct: number;
+    // LOCAÇÃO SEM MOTORISTA no Presumido: a locação de bens móveis presume
+    // 32% (e não os 16%/12% do transporte) — IRPJ 15% × 32% = 4,8% e CSLL
+    // 9% × 32% = 2,88% da receita. Valem só nos itens sem motorista e só com
+    // `irpjCsllSobreLucroPct` zerado; no Real, o item segue `irpj`/`csll`.
+    // Opcionais como o adicional noturno: sem eles, 4,8% e 2,88%.
+    irpjLocacao?: number;
+    csllLocacao?: number;
   };
   // Perfis de veículo além do padrão (`veiculo` + `variaveis`): van, micro,
   // ônibus, carro executivo. Cada rota aponta o seu em `Rota.perfilVeiculo`.
@@ -195,7 +209,9 @@ export type Item = {
   precoMaximoKm?: number | null;
   precoReferenciaKm?: number | null;
   // Locação sem motorista: o item não carrega motorista, monitor(a) nem
-  // supervisão. Padrão: com motorista.
+  // supervisão, e é locação de bem móvel, não serviço — sem ISS (Súmula
+  // Vinculante 31) nem ICMS, e com a presunção da locação no Presumido.
+  // Padrão: com motorista.
   comMotorista?: boolean;
   // Combustível (e ARLA) por conta do contratante: sai do custo do item.
   combustivelPorContaDoCliente?: boolean;
@@ -293,6 +309,12 @@ export type ComposicaoItem = {
   faturamento: number;
   // Lucro antes de IRPJ/CSLL sobre o lucro (igual a `lucro` no Presumido).
   lucroAntesIr: number;
+  // Lucro Real: o que o custo tem e o fisco não deduz — a remuneração do
+  // capital PRÓPRIO (custo de oportunidade, não despesa; mensal, como
+  // `remuneracaoCapital`) e a contingência (provisão). `naoDedutiveis` é a
+  // soma na apuração; a base do IR é `lucroAntesIr + naoDedutiveis`.
+  remuneracaoCapitalProprio: number;
+  naoDedutiveis: number;
   irpjCsllSobreLucro: number;
   lucro: number;
   margem: number | null;

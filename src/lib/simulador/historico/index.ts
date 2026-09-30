@@ -55,7 +55,8 @@ export function leitorDeSemente(semente: Semente): LeitorDeSemente {
 
 // O que as planilhas de referência não tinham — ver os modelos de concorrentes
 // em docs/simulador_custos/DECISOES.md — entra zerado, e a conta fica a delas.
-const SEM_HORAS_EXTRAS = { divisorHorasMes: 220, horasExtras50Mes: 0, horasExtras100Mes: 0, horasNoturnasMes: 0 };
+// Sem horas noturnas, o adicional noturno não entra na conta; fica o da CLT.
+const SEM_HORAS_EXTRAS = { divisorHorasMes: 220, horasExtras50Mes: 0, horasExtras100Mes: 0, horasNoturnasMes: 0, adicionalNoturnoPct: 0.2 };
 const SEM_ADAPTACAO = {
   adaptacaoValor: 0,
   adaptacaoMesesDepreciacao: 0,

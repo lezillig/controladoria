@@ -30,7 +30,10 @@ import type {
 //   - implantação/montagem de base amortizada na vigência;
 //   - horas extras e adicional noturno em horas (salário ÷ 220 × fator);
 //   - despesas cobradas sobre o preço (adm. do contrato, encargos financeiros).
-// Todas nascem zeradas: com elas em zero, a conta é a das planilhas.
+// Todas nascem zeradas: com elas em zero, a conta é a das planilhas. E, da
+// revisão de precificação (DECISOES.md, seção 6), o que as planilhas não
+// exercitam: os tributos da locação no item sem motorista e, no Lucro Real, o
+// IR sobre o lucro fiscal (sem deduzir capital próprio nem contingência).
 //
 // Função pura. Guardar a entrada é guardar a conta inteira.
 //
@@ -40,7 +43,9 @@ import type {
 //   - pedágio: na composição entra o valor mensal da rota (plano operacional),
 //     nos cenários entra proporcional à utilização — como na aba Cenários de SJP.
 
-export const VERSAO_MOTOR = "2026.09-v1";
+// v2: adicional noturno sem a hora-base, tributos da locação sem motorista e
+// base do IR no Lucro Real (docs/simulador_custos/DECISOES.md, seção 6).
+export const VERSAO_MOTOR = "2026.09-v2";
 export const UTILIZACOES_PADRAO = [0.6, 0.7, 0.8, 0.85, 0.9, 1];
 
 // ROUNDUP(x; 2) do Excel: para cima, afastando do zero. O `toPrecision(12)`
@@ -54,9 +59,46 @@ export function arredondarParaCima(valor: number, casas = 2): number {
 
 const dividir = (a: number, b: number) => (b === 0 ? 0 : a / b);
 
-export function tributosDoItem(p: Premissas, shareIntermunicipal: number): number {
-  const federais = p.preco.pis + p.preco.cofins + p.preco.irpj + p.preco.csll;
-  return federais + p.preco.iss * (1 - shareIntermunicipal) + p.preco.icms * shareIntermunicipal;
+// Padrões das premissas que as versões salvas antes delas não têm.
+export const ADICIONAL_NOTURNO_PADRAO = 0.2;
+export const IRPJ_LOCACAO_PADRAO = 0.048; // 15% × 32% de presunção
+export const CSLL_LOCACAO_PADRAO = 0.0288; // 9% × 32%
+
+// Custo a mais de cada hora de relógio noturna que já está na jornada: o
+// salário paga a hora-base; a hora noturna reduzida (52′30″) faz a hora de
+// relógio valer 60 ÷ 52,5 horas, todas com o adicional. Com 20%:
+// 1,2 × 60 ÷ 52,5 − 1 = 0,3714 do valor da hora — e não 1,2, que pagaria a
+// hora-base duas vezes.
+export function fatorHoraNoturna(p: Premissas): number {
+  return (1 + (p.pessoal.adicionalNoturnoPct ?? ADICIONAL_NOTURNO_PADRAO)) * (60 / 52.5) - 1;
+}
+
+// Tributos sobre o faturamento de um item. O item com motorista é serviço de
+// transporte: ISS no municipal, ICMS no intermunicipal. O sem motorista é
+// locação de bem móvel: não é serviço (Súmula Vinculante 31, sem ISS) nem
+// transporte (sem ICMS), e no Presumido presume 32% para IRPJ e CSLL.
+export function tributosDoItem(p: Premissas, item: Pick<Item, "shareIntermunicipal" | "comMotorista">): number {
+  const { preco } = p;
+  if (item.comMotorista === false) {
+    const presumido = preco.irpjCsllSobreLucroPct === 0;
+    const irpj = presumido ? (preco.irpjLocacao ?? IRPJ_LOCACAO_PADRAO) : preco.irpj;
+    const csll = presumido ? (preco.csllLocacao ?? CSLL_LOCACAO_PADRAO) : preco.csll;
+    return preco.pis + preco.cofins + irpj + csll;
+  }
+  const federais = preco.pis + preco.cofins + preco.irpj + preco.csll;
+  return federais + preco.iss * (1 - item.shareIntermunicipal) + preco.icms * item.shareIntermunicipal;
+}
+
+// Quanto do IR sobre o lucro o preço precisa cobrir por real não dedutível:
+// ir ÷ (1 − ir). Zero no Presumido.
+function acrescimoIrPorNaoDedutivel(ir: number): number {
+  return dividir(ir, 1 - ir);
+}
+
+// Base do IR/CSLL sobre o lucro no Lucro Real: o lucro antes do IR somado ao
+// que o custo tem e o fisco não deduz. Sem base positiva, não há IR.
+function baseIr(lucroAntesIr: number, naoDedutiveis: number): number {
+  return Math.max(0, lucroAntesIr + naoDedutiveis);
 }
 
 export function financeiroPct(p: Premissas): number {
@@ -77,15 +119,21 @@ function diasNaApuracao(p: Premissas, r: Rota): number {
 // até a idade ao fim da vigência. No LINEAR e na SOMA_DIGITOS (Cole, GEIPOT),
 // a depreciação do contrato é a média desses anos — um veículo de 6 anos com
 // vida útil de 7 deprecia só mais um ano e depois fica em zero.
+//
+// A parte PRÓPRIA da taxa é o custo de oportunidade do capital da empresa —
+// custo econômico, mas não despesa: no Lucro Real não sai da base do IR. Os
+// juros da parte financiada são despesa e saem. Sem capital composto, a taxa
+// única é tratada como toda própria (é o caso de quem compra à vista).
 export function custoDeCapital(v: Premissas["veiculo"], vigenciaMeses: number): {
   taxaCapitalAa: number;
+  taxaCapitalProprioAa: number;
   depreciacaoAnual: number;
   valorMedio: number;
   remuneracaoAnual: number;
+  remuneracaoPropriaAnual: number;
 } {
-  const taxaCapitalAa = v.capitalComposto
-    ? v.fracaoFinanciada * v.taxaFinanciamentoAa + (1 - v.fracaoFinanciada) * v.custoCapitalProprioAa
-    : v.custoCapitalAa;
+  const taxaCapitalProprioAa = v.capitalComposto ? (1 - v.fracaoFinanciada) * v.custoCapitalProprioAa : v.custoCapitalAa;
+  const taxaCapitalAa = v.capitalComposto ? v.fracaoFinanciada * v.taxaFinanciamentoAa + taxaCapitalProprioAa : v.custoCapitalAa;
   const anosContrato = Math.max(1, Math.ceil(vigenciaMeses / 12));
   const anos = Array.from({ length: anosContrato }, (_, i) => Math.floor(v.idadeInicialAnos) + i + 1);
 
@@ -116,7 +164,14 @@ export function custoDeCapital(v: Premissas["veiculo"], vigenciaMeses: number): 
     const meios = anos.map((k, i) => Math.max(v.valor * (v.metodoDepreciacao === "PERCENTUAL" ? 0 : v.valorResidualPct), v.valor - acumuladaAntes(k) - porAno[i] / 2));
     valorMedio = meios.reduce((a, x) => a + x, 0) / meios.length;
   }
-  return { taxaCapitalAa, depreciacaoAnual, valorMedio, remuneracaoAnual: valorMedio * taxaCapitalAa };
+  return {
+    taxaCapitalAa,
+    taxaCapitalProprioAa,
+    depreciacaoAnual,
+    valorMedio,
+    remuneracaoAnual: valorMedio * taxaCapitalAa,
+    remuneracaoPropriaAnual: valorMedio * taxaCapitalProprioAa,
+  };
 }
 
 type PorRota = {
@@ -128,6 +183,7 @@ type PorRota = {
   beneficios: number;
   depreciacao: number;
   remuneracaoCapital: number;
+  remuneracaoCapitalProprio: number;
   seguro: number;
   ipvaLicenciamento: number;
   telemetria: number;
@@ -167,13 +223,15 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const pctAsfalto = 1 - pctTerra;
 
   // Mão de obra — o fator noturno incide só sobre o salário do motorista; as
-  // horas extras e noturnas em horas, por motorista, a salário ÷ divisor.
+  // horas extras e noturnas em horas, por motorista, a salário ÷ divisor. A
+  // hora extra é hora a mais, paga inteira; a noturna já está no salário, e
+  // só o adicional (com a hora reduzida) é custo novo — ver fatorHoraNoturna.
   const fatorNoturno = r.noturno ? pessoal.fatorJornadaNoturna : 1;
   // O salário do motorista é o do tipo de veículo da rota, quando há perfil.
   const salarioMotorista = perfil?.motorista.salario ?? pessoal.salarioMotorista;
   const valorHora = pessoal.divisorHorasMes > 0 ? salarioMotorista / pessoal.divisorHorasMes : 0;
   const adicionaisEmHoras =
-    valorHora * (pessoal.horasExtras50Mes * 1.5 + pessoal.horasExtras100Mes * 2 + pessoal.horasNoturnasMes * 1.2);
+    valorHora * (pessoal.horasExtras50Mes * 1.5 + pessoal.horasExtras100Mes * 2 + pessoal.horasNoturnasMes * fatorHoraNoturna(p));
   const salarios =
     motoristas * (salarioMotorista * (1 + pessoal.horaExtraPct) * fatorNoturno + adicionaisEmHoras) +
     monitoras * pessoal.salarioMonitora;
@@ -186,6 +244,9 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const cap = custoDeCapital(veiculo, contrato.vigenciaMeses);
   const depreciacao = (comReserva * cap.depreciacaoAnual) / 12;
   const remuneracaoCapital = (comReserva * cap.remuneracaoAnual) / 12;
+  // A parte própria do capital do veículo e das adaptações (estas rendem à
+  // mesma taxa, sobre o valor cheio): o que o Lucro Real não deduz.
+  const remuneracaoCapitalProprio = (comReserva * (cap.remuneracaoPropriaAnual + veiculo.adaptacaoValor * cap.taxaCapitalProprioAa)) / 12;
   const seguro = comReserva * veiculo.seguroMes;
   const ipvaLicenciamento = (comReserva * (veiculo.ipvaLicenciamentoAno + veiculo.laudoVistoriaAno)) / 12;
   const telemetria = comReserva * (veiculo.rastreadorMes + veiculo.telemetriaExtraMes + veiculo.controleEmbarqueMes);
@@ -211,6 +272,7 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
     beneficios,
     depreciacao,
     remuneracaoCapital,
+    remuneracaoCapitalProprio,
     seguro,
     ipvaLicenciamento,
     telemetria,
@@ -319,11 +381,30 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
     const creditoPisCofins = custoComCredito * p.preco.creditoPisCofinsPct;
     const custoLiquido = custoTotal - creditoPisCofins;
 
-    const tributosPct = tributosDoItem(p, item.shareIntermunicipal);
+    const tributosPct = tributosDoItem(p, item);
     const liquido = 1 - tributosPct - fin - sobrePreco;
-    // Lucro líquido alvo depois do IR/CSLL sobre o lucro: o lucro antes do IR
-    // precisa ser alvo ÷ (1 − alíquota). No Presumido a alíquota é zero.
+
+    // LUCRO REAL — A BASE DO IR. O custo inclui duas coisas que o fisco não
+    // deduz: a remuneração do capital próprio (custo de oportunidade, não
+    // despesa) e a contingência (provisão; só vira despesa se o risco
+    // acontecer — tratá-la como não dedutível é o lado prudente). A base é
+    // lucro antes do IR + N, com N = capital próprio + contingência.
+    const remuneracaoCapitalProprio = s("remuneracaoCapitalProprio");
+    const contingenciaFixa = custoFixo * p.indiretos.contingenciaPct;
+    const contingenciaVariavel = variaveis * p.indiretos.contingenciaPct;
+    const naoDedutiveisFixos = remuneracaoCapitalProprio * meses + contingenciaFixa;
+    const naoDedutiveis = naoDedutiveisFixos + contingenciaVariavel;
+
+    // O PREÇO PARA O LUCRO ALVO. Com L = receita líquida, C = custo líquido,
+    // ir = alíquota e α = lucro alvo, o lucro depois do IR ao preço P é
+    //   (P·L − C) − ir·(P·L − C + N) = α·P
+    //   ⇒ P = (C + N·ir ÷ (1 − ir)) ÷ (L − α ÷ (1 − ir)).
+    // O divisor é o de antes; o custo a cobrir ganha o IR sobre N. No
+    // Presumido (ir = 0) volta a C ÷ (L − α). No preço alvo a base é
+    // (α·P + N) ÷ (1 − ir) > 0: o IR de fato incide, como a conta supõe.
     const divisor = liquido - dividir(p.preco.lucroAlvoPct, 1 - irSobreLucro);
+    const acrescimoIr = acrescimoIrPorNaoDedutivel(irSobreLucro);
+    const custoParaPreco = custoLiquido + naoDedutiveis * acrescimoIr;
     const precoPara = (custoUnitario: number, quantidade: number) => (quantidade > 0 ? arredondarParaCima(custoUnitario / divisor, 2) : 0);
 
     const horasRotas = calc.map((c) => c.horas);
@@ -335,21 +416,27 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
     };
     const indicador = (quantidade: number) => {
       const custo = dividir(custoTotal, quantidade);
-      return { quantidade, custo, preco: precoPara(dividir(custoLiquido, quantidade), quantidade) };
+      return { quantidade, custo, preco: precoPara(dividir(custoParaPreco, quantidade), quantidade) };
     };
     const indicadores: IndicadoresUnidade = {
       km: indicador(quantidades.km),
       veiculoMes: indicador(quantidades.veiculoMes),
       diaria: indicador(quantidades.diaria),
       hora: quantidadeHoras === null ? null : indicador(quantidadeHoras),
-      // Tarifa em duas partes: o fixo (com sua parte dos indiretos) por
-      // veículo-mês, o variável (idem) por km útil.
+      // Tarifa em duas partes: o fixo (com sua parte dos indiretos e dos não
+      // dedutíveis) por veículo-mês, o variável (idem) por km útil.
       binomia: {
         fixoVeiculoMes:
           quantidades.veiculoMes > 0
-            ? arredondarParaCima((custoFixo * (1 + indiretosPct) - fixoComCredito * p.preco.creditoPisCofinsPct) / divisor / quantidades.veiculoMes, 2)
+            ? arredondarParaCima(
+                (custoFixo * (1 + indiretosPct) - fixoComCredito * p.preco.creditoPisCofinsPct + naoDedutiveisFixos * acrescimoIr) / divisor / quantidades.veiculoMes,
+                2
+              )
             : 0,
-        variavelKm: kmUtil > 0 ? arredondarParaCima((variaveis * (1 + indiretosPct) - variavelComCredito * p.preco.creditoPisCofinsPct) / divisor / kmUtil, 2) : 0,
+        variavelKm:
+          kmUtil > 0
+            ? arredondarParaCima((variaveis * (1 + indiretosPct) - variavelComCredito * p.preco.creditoPisCofinsPct + contingenciaVariavel * acrescimoIr) / divisor / kmUtil, 2)
+            : 0,
       },
     };
 
@@ -365,9 +452,11 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
       unidade === "BINOMIA" ? indicadores.binomia.variavelKm : unidade === "KM" ? indicadores.km.preco : dividir(faturamento, quantidadeUnidade);
     // O preço por km: o proposto quando a unidade é km; o equivalente, fora dela.
     const precoKm = unidade === "KM" ? indicadores.km.preco : dividir(faturamento, kmUtil);
-    const precoMinimoKm = dividir(dividir(custoLiquido, kmUtil), liquido);
+    // Lucro zero DEPOIS do IR: P·L − C = N·ir ÷ (1 − ir) — o mesmo custo a
+    // cobrir do preço alvo, com α = 0.
+    const precoMinimoKm = dividir(dividir(custoParaPreco, kmUtil), liquido);
     const lucroAntesIr = faturamento * liquido - custoLiquido;
-    const irpjCsllSobreLucro = lucroAntesIr > 0 ? lucroAntesIr * irSobreLucro : 0;
+    const irpjCsllSobreLucro = irSobreLucro > 0 ? baseIr(lucroAntesIr, naoDedutiveis) * irSobreLucro : 0;
     const lucro = lucroAntesIr - irpjCsllSobreLucro;
     const precoMaximoKm = item.precoMaximoKm ?? null;
 
@@ -422,6 +511,8 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
       precoMinimoKm,
       faturamento,
       lucroAntesIr,
+      remuneracaoCapitalProprio,
+      naoDedutiveis,
       irpjCsllSobreLucro,
       lucro,
       margem: faturamento > 0 ? lucro / faturamento : null,
@@ -478,7 +569,7 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
           ? faturamentoTotal
           : precoPropostaUnidade * quantidadeTotal;
     const lairProposta = faturamentoAoPrecoProposta * liquidoConjunto - (totais.custoTotal - soma("creditoPisCofins"));
-    const lucroAoPrecoProposta = lairProposta > 0 ? lairProposta * (1 - irSobreLucro) : lairProposta;
+    const lucroAoPrecoProposta = lairProposta - baseIr(lairProposta, soma("naoDedutiveis")) * irSobreLucro;
     lote = {
       kmUtil: totais.kmUtil,
       custoTotal: totais.custoTotal,
@@ -542,6 +633,11 @@ function calcularCenarios(
   const liquido = 1 - tributosPct - fin - p.preco.despesasSobrePrecoPct;
   const ir = p.preco.irpjCsllSobreLucroPct;
   const divisorAlvo = liquido - dividir(p.preco.lucroAlvoPct, 1 - ir);
+  // Lucro Real: não dedutíveis — o capital próprio não muda com o km; a
+  // contingência acompanha o custo direto de cada utilização.
+  const acrescimoIr = acrescimoIrPorNaoDedutivel(ir);
+  const contingenciaPct = p.indiretos.contingenciaPct;
+  const capitalProprio = composicao.reduce((a, i) => a + i.remuneracaoCapitalProprio, 0) * p.contrato.mesesCustoFixo;
   // Lucro Real: o crédito de PIS/COFINS — a parte fixa não muda com o km; a
   // variável acompanha o km rodado, como o custo que a gera.
   const credito = p.preco.creditoPisCofinsPct;
@@ -561,20 +657,23 @@ function calcularCenarios(
 
   const linhas: LinhaCenario[] = utilizacoes.map((u) => {
     const kmUtil = kmReferencia * u;
-    const custoTotal = (fixo + variavelKmRodado * kmUtil * (1 + p.contrato.kmMortoPct) + pedagio * u) * (1 + indiretosPct);
+    const custoDireto = fixo + variavelKmRodado * kmUtil * (1 + p.contrato.kmMortoPct) + pedagio * u;
+    const custoTotal = custoDireto * (1 + indiretosPct);
     const custoLiquido = custoTotal - creditoFixo - creditoPorKmRodado * kmUtil * (1 + p.contrato.kmMortoPct);
+    const naoDedutiveis = capitalProprio + custoDireto * contingenciaPct;
     const custoKm = dividir(custoTotal, kmUtil);
-    const custoLiquidoKm = dividir(custoLiquido, kmUtil);
+    // O custo que o preço cobre inclui o IR sobre os não dedutíveis — ver simular().
+    const custoParaPrecoKm = dividir(custoLiquido + naoDedutiveis * acrescimoIr, kmUtil);
     const faturamento = faturamentoFixo + faturamentoPorUtilizacao * u;
     const lucroAntesIr = faturamento * liquido - custoLiquido;
-    const lucro = lucroAntesIr > 0 ? lucroAntesIr * (1 - ir) : lucroAntesIr;
+    const lucro = lucroAntesIr - baseIr(lucroAntesIr, naoDedutiveis) * ir;
     return {
       utilizacao: u,
       kmUtil,
       custoTotal,
       custoKm,
-      precoLucroAlvoKm: kmUtil > 0 ? arredondarParaCima(custoLiquidoKm / divisorAlvo, 2) : 0,
-      precoLucroZeroKm: dividir(custoLiquidoKm, liquido),
+      precoLucroAlvoKm: kmUtil > 0 ? arredondarParaCima(custoParaPrecoKm / divisorAlvo, 2) : 0,
+      precoLucroZeroKm: dividir(custoParaPrecoKm, liquido),
       faturamento,
       lucro,
       margem: faturamento > 0 ? lucro / faturamento : null,
@@ -585,13 +684,19 @@ function calcularCenarios(
 
   // Lucro antes do IR (u) = a + b·u, com a = fatFixo·L − fixo·(1+i) + crédito
   // fixo e b = fatPorU·L − (v·K·(1+m) + ped)·(1+i) + crédito variável·K·(1+m).
-  // O equilíbrio (lucro zero, antes ou depois do IR) é u = −a/b.
+  // Não dedutíveis N(u) = n0 + n1·u, com n0 = capital próprio + fixo·cont e
+  // n1 = (v·K·(1+m) + ped)·cont. Onde a base do IR é positiva, o lucro depois
+  // do IR é (a + b·u)·(1 − ir) − ir·(n0 + n1·u) = a' + b'·u; o lucro zero
+  // cai sempre nesse trecho (lá a base é N ÷ (1 − ir) ≥ 0), e o equilíbrio é
+  // u = −a'/b'. No Presumido, a' = a e b' = b.
+  const variavelPorU = (variavelKmRodado * kmReferencia * (1 + p.contrato.kmMortoPct) + pedagio) * (1 + indiretosPct);
   const a = faturamentoFixo * liquido - fixo * (1 + indiretosPct) + creditoFixo;
-  const b =
-    faturamentoPorUtilizacao * liquido -
-    (variavelKmRodado * kmReferencia * (1 + p.contrato.kmMortoPct) + pedagio) * (1 + indiretosPct) +
-    creditoPorKmRodado * kmReferencia * (1 + p.contrato.kmMortoPct);
-  const u = b !== 0 ? -a / b : null;
+  const b = faturamentoPorUtilizacao * liquido - variavelPorU + creditoPorKmRodado * kmReferencia * (1 + p.contrato.kmMortoPct);
+  const n0 = capitalProprio + fixo * contingenciaPct;
+  const n1 = (variavelKmRodado * kmReferencia * (1 + p.contrato.kmMortoPct) + pedagio) * contingenciaPct;
+  const aLiquido = ir > 0 ? a * (1 - ir) - ir * n0 : a;
+  const bLiquido = ir > 0 ? b * (1 - ir) - ir * n1 : b;
+  const u = bLiquido !== 0 ? -aLiquido / bLiquido : null;
   const pontoEquilibrio = u !== null && u > 0 && Number.isFinite(u) ? u : null;
 
   return {
@@ -601,6 +706,6 @@ function calcularCenarios(
     financeiroPct: fin,
     linhas,
     pontoEquilibrio,
-    tipoEquilibrio: b > 0 ? "MINIMA" : "MAXIMA",
+    tipoEquilibrio: bLiquido > 0 ? "MINIMA" : "MAXIMA",
   };
 }

@@ -2,6 +2,7 @@ import type { PerfilVeiculo, Premissas, TipoVeiculo } from "./tipos";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
+import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, IRPJ_LOCACAO_PADRAO } from "./motor";
 
 // AS PREMISSAS — descrição, padrão e montagem a partir da base de custos.
 //
@@ -53,11 +54,12 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("pessoal.salarioMonitora", "Salário base — monitor(a)", "R$/mês", "moeda"),
   c("pessoal.horaExtraPct", "Horas extras médias", "% do salário", "pct"),
   c("pessoal.encargosPct", "Encargos e provisões", "% do salário", "pct"),
-  c("pessoal.fatorJornadaNoturna", "Fator de jornada noturna", "×", "numero", "Multiplica o salário do motorista nas rotas marcadas como noturnas."),
+  c("pessoal.fatorJornadaNoturna", "Fator de jornada noturna", "×", "numero", "Multiplica o salário do motorista nas rotas marcadas como noturnas — cobre jornada estendida e noturno de forma agregada. As horas noturnas em horas valem para todas as rotas: não cubra o mesmo adicional pelos dois."),
   c("pessoal.divisorHorasMes", "Divisor de horas do mês", "h", "numero", "Base do valor da hora: salário ÷ divisor (220 na jornada de 44 h)."),
   c("pessoal.horasExtras50Mes", "Horas extras a 50%", "h/mês por motorista", "numero"),
   c("pessoal.horasExtras100Mes", "Horas extras a 100%", "h/mês por motorista", "numero"),
-  c("pessoal.horasNoturnasMes", "Horas com adicional noturno (20%)", "h/mês por motorista", "numero"),
+  c("pessoal.horasNoturnasMes", "Horas noturnas na jornada (22h–5h)", "h/mês por motorista", "numero", "Horas de relógio da jornada normal entre 22h e 5h. O salário já as paga: entra só o adicional noturno, com a hora reduzida de 52′30″ — (1 + adicional) × 60 ÷ 52,5 − 1 do valor da hora (37,1% com 20%). Hora noturna ALÉM da jornada é hora extra."),
+  c("pessoal.adicionalNoturnoPct", "Adicional noturno", "% da hora", "pct", "CLT, art. 73: ao menos 20%. Há CCT com 25% (RP/Franca). Não use junto com o fator de jornada noturna para cobrir o mesmo adicional nas mesmas rotas."),
   c("pessoal.beneficiosPorFuncionario", "Benefícios (VR/VA, cesta, VT, plano, seguro)", "R$/mês por pessoa", "moeda"),
   c("pessoal.uniformeEpiPorFuncionario", "Uniforme, EPI, exames e cursos", "R$/mês por pessoa", "moeda"),
   c("pessoal.supervisaoMes", "Preposto / supervisão local", "R$/mês (total)", "moeda", "Rateado entre os itens pelo km."),
@@ -102,12 +104,14 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("preco.cofins", "COFINS", "% do faturamento", "pct"),
   c("preco.irpj", "IRPJ", "% do faturamento", "pct", "Presumido do transporte de passageiros: 15% sobre a presunção de 16% = 2,4% (+ adicional de 10% sobre o lucro presumido acima de R$ 20 mil/mês). 8% de presunção é só de cargas."),
   c("preco.csll", "CSLL", "% do faturamento", "pct", "Presumido: 9% sobre a presunção de 12% = 1,08%."),
-  c("preco.iss", "ISS (transporte municipal)", "% do faturamento municipal", "pct"),
-  c("preco.icms", "ICMS (transporte intermunicipal)", "% do faturamento intermunicipal", "pct"),
+  c("preco.iss", "ISS (transporte municipal)", "% do faturamento municipal", "pct", "Não incide nos itens sem motorista: locação de bem móvel não é serviço (Súmula Vinculante 31)."),
+  c("preco.icms", "ICMS (transporte intermunicipal)", "% do faturamento intermunicipal", "pct", "Não incide nos itens sem motorista (locação, não transporte)."),
+  c("preco.irpjLocacao", "IRPJ — locação sem motorista (Presumido)", "% do faturamento", "pct", "Locação de bens móveis presume 32%: 15% × 32% = 4,8% da receita (+ adicional de 10% acima de R$ 20 mil/mês de lucro presumido). Só nos itens sem motorista e só no Presumido; no Real, vale o IR sobre o lucro."),
+  c("preco.csllLocacao", "CSLL — locação sem motorista (Presumido)", "% do faturamento", "pct", "9% × 32% = 2,88% da receita. Só nos itens sem motorista e só no Presumido."),
   c("preco.custoCapitalGiroAm", "Custo do capital de giro", "% a.m.", "pct"),
   c("preco.prazoRecebimentoDias", "Prazo de recebimento", "dias", "numero"),
   c("preco.despesasSobrePrecoPct", "Despesas sobre o preço (adm. do contrato, comissão)", "% do preço", "pct"),
-  c("preco.irpjCsllSobreLucroPct", "IRPJ + CSLL sobre o lucro (Lucro Real)", "% do lucro", "pct", "No Lucro Real: 34% (15% + 10% adicional + 9%). No Presumido, zero — e IRPJ/CSLL entram acima como % do faturamento."),
+  c("preco.irpjCsllSobreLucroPct", "IRPJ + CSLL sobre o lucro (Lucro Real)", "% do lucro", "pct", "No Lucro Real: 34% (15% + 10% adicional + 9%), sobre o lucro fiscal — o lucro antes do IR somado à remuneração do capital próprio e à contingência, que o fisco não deduz. No Presumido, zero — e IRPJ/CSLL entram acima como % do faturamento."),
   c("preco.creditoPisCofinsPct", "Crédito de PIS/COFINS não cumulativo", "% dos custos com crédito", "pct", "Transporte de passageiros (fretamento incluído) fica no PIS/COFINS cumulativo de 3,65% SEM crédito mesmo no Lucro Real (SC Cosit 50/2026). Só a locação sem motorista no Real é não cumulativa: 9,25% com crédito sobre combustível, peças, pneus, depreciação e garagem."),
 ];
 
@@ -141,6 +145,7 @@ export const PREMISSAS_PADRAO: Premissas = {
     horasExtras50Mes: 0,
     horasExtras100Mes: 0,
     horasNoturnasMes: 0,
+    adicionalNoturnoPct: ADICIONAL_NOTURNO_PADRAO,
     beneficiosPorFuncionario: 1072,
     uniformeEpiPorFuncionario: 100,
     supervisaoMes: 0,
@@ -203,6 +208,8 @@ export const PREMISSAS_PADRAO: Premissas = {
     despesasSobrePrecoPct: 0,
     irpjCsllSobreLucroPct: 0,
     creditoPisCofinsPct: 0,
+    irpjLocacao: IRPJ_LOCACAO_PADRAO,
+    csllLocacao: CSLL_LOCACAO_PADRAO,
   },
 };
 
@@ -257,6 +264,7 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
   }
   deParam("indiretos.contingenciaPct", "contingencia_pct");
   deParam("preco.lucroAlvoPct", "margem_alvo");
+  deParam("pessoal.adicionalNoturnoPct", "noturno_pct");
   deParam("variaveis.dieselLitro", "diesel_rs_l");
   deParam("variaveis.oleoLavagemKm", "oleo_rs_km");
   deParam("preco.pis", "pis");

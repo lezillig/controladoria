@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, IRPJ_LOCACAO_PADRAO } from "./motor";
 import type { EntradaSimulacao, PerfilVeiculo, Premissas, ResultadoSimulacao } from "./tipos";
 
 // A PLANILHA EXCEL DE UMA SIMULAÇÃO — abas Regras do Edital, Premissas, Perfis
@@ -290,7 +291,9 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("divisor", "Divisor de horas do mês", p.pessoal.divisorHorasMes, "h", "Valor da hora = salário do motorista ÷ divisor (220 na jornada de 44 h).", NUM);
   premissa("he50", "Horas extras a 50%", p.pessoal.horasExtras50Mes, "h/mês por motorista", "Pagas a valor da hora × 1,5. Somam-se ao percentual de horas extras.", NUM);
   premissa("he100", "Horas extras a 100%", p.pessoal.horasExtras100Mes, "h/mês por motorista", "Pagas a valor da hora × 2.", NUM);
-  premissa("hNoturnas", "Horas com adicional noturno", p.pessoal.horasNoturnasMes, "h/mês por motorista", "Pagas a valor da hora × 1,2.", NUM);
+  premissa("hNoturnas", "Horas noturnas na jornada (22h–5h)", p.pessoal.horasNoturnasMes, "h/mês por motorista", "Horas de relógio da jornada normal, já pagas no salário: entra só o custo a mais da linha abaixo. Hora noturna além da jornada é hora extra.", NUM);
+  premissa("adNoturno", "Adicional noturno", p.pessoal.adicionalNoturnoPct ?? ADICIONAL_NOTURNO_PADRAO, "% da hora", "CLT, art. 73: ao menos 20%; há CCT com 25%.", PCT);
+  derivada("fatorHoraNoturna", "Custo a mais por hora noturna", `(1+${P.adNoturno})*60/52.5-1`, "× valor da hora", "(1 + adicional) × 60 ÷ 52,5 − 1: a hora reduzida de 52′30″ com o adicional, sem a hora-base que o salário já paga (37,1% com 20%).", PCT2);
   premissa("beneficios", "Benefícios (VA/VR, cesta, seguro de vida, VT)", p.pessoal.beneficiosPorFuncionario, "R$/mês por func.", "Motoristas e monitoras.", BRL);
   premissa("epi", "Uniforme, EPI, exames e cursos", p.pessoal.uniformeEpiPorFuncionario, "R$/mês por func.", "Motoristas e monitoras.", BRL);
   premissa("supervisao", "Preposto / supervisão local (total)", p.pessoal.supervisaoMes, "R$/mês (total)", "Rateado pelo km útil entre os itens com motorista.", BRL);
@@ -343,8 +346,10 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("cofins", "COFINS", p.preco.cofins, "% s/ fat.", "", PCT2);
   premissa("irpj", "IRPJ (Presumido, sobre a receita)", p.preco.irpj, "% s/ fat.", "No Lucro Real, zero aqui e a alíquota vai para 'IRPJ + CSLL sobre o lucro'.", PCT2);
   premissa("csll", "CSLL (Presumido, sobre a receita)", p.preco.csll, "% s/ fat.", "", PCT2);
-  premissa("iss", "ISS (transporte municipal)", p.preco.iss, "% s/ fat. municipal", "", PCT2);
-  premissa("icms", "ICMS (transporte intermunicipal)", p.preco.icms, "% s/ fat. intermunicipal", "", PCT2);
+  premissa("irpjLoc", "IRPJ — locação sem motorista (Presumido)", p.preco.irpjLocacao ?? IRPJ_LOCACAO_PADRAO, "% s/ fat.", "Locação de bens móveis presume 32%: 15% × 32% = 4,8%. Só nos itens sem motorista e só no Presumido.", PCT2);
+  premissa("csllLoc", "CSLL — locação sem motorista (Presumido)", p.preco.csllLocacao ?? CSLL_LOCACAO_PADRAO, "% s/ fat.", "9% × 32% = 2,88%. Só nos itens sem motorista e só no Presumido.", PCT2);
+  premissa("iss", "ISS (transporte municipal)", p.preco.iss, "% s/ fat. municipal", "Não incide na locação sem motorista (Súmula Vinculante 31).", PCT2);
+  premissa("icms", "ICMS (transporte intermunicipal)", p.preco.icms, "% s/ fat. intermunicipal", "Não incide na locação sem motorista.", PCT2);
   const federais = `${P.pis}+${P.cofins}+${P.irpj}+${P.csll}`;
   derivada("tribMun", "Tributos totais — faturamento municipal", `${federais}+${P.iss}`, "%", "PIS + COFINS + IRPJ + CSLL + ISS", PCT2);
   derivada("tribInter", "Tributos totais — faturamento intermunicipal", `${federais}+${P.icms}`, "%", "PIS + COFINS + IRPJ + CSLL + ICMS", PCT2);
@@ -352,21 +357,29 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("giro", "Custo do capital de giro", p.preco.custoCapitalGiroAm, "% a.m.", "", PCT2);
   derivada("fin", "Custo financeiro sobre faturamento", `${P.giro}*${P.prazo}/30`, "% s/ fat.", "Capital de giro × prazo de recebimento ÷ 30", PCT2);
   premissa("sobrePreco", "Despesas sobre o preço (adm. do contrato, comissão)", p.preco.despesasSobrePrecoPct, "% s/ preço", "Entram no divisor do preço, como os tributos.", PCT2);
-  premissa("irLucro", "IRPJ + CSLL sobre o lucro (Lucro Real)", p.preco.irpjCsllSobreLucroPct, "% do lucro", "Sobre o lucro antes do IR, só quando positivo. Zero no Presumido.", PCT2);
+  premissa("irLucro", "IRPJ + CSLL sobre o lucro (Lucro Real)", p.preco.irpjCsllSobreLucroPct, "% do lucro", "Sobre o lucro fiscal — lucro antes do IR + remuneração do capital próprio + contingência, que o fisco não deduz —, só quando positivo. Zero no Presumido.", PCT2);
   premissa("credito", "Crédito de PIS/COFINS não cumulativo (Lucro Real)", p.preco.creditoPisCofinsPct, "% dos custos com crédito", "Sobre depreciação (veículo e adaptação), manutenção fixa, garagem, combustível, ARLA, óleo, pneus e manutenção por km. Zero no Presumido.", PCT2);
+  derivada(
+    "tribLoc",
+    "Tributos totais — locação sem motorista",
+    `${P.pis}+${P.cofins}+IF(${P.irLucro}=0,${P.irpjLoc}+${P.csllLoc},${P.irpj}+${P.csll})`,
+    "%",
+    "PIS + COFINS + IRPJ e CSLL da locação no Presumido (os do regime no Real); sem ISS nem ICMS",
+    PCT2
+  );
 
   novaSecao("7. ITENS — tributos, equipe e combustível");
   itens.forEach((it) => {
-    premissa(`share:${it.codigo}`, `Parcela intermunicipal do faturamento — Item ${it.codigo}`, it.shareIntermunicipal, "%", "Parte do faturamento do item sujeita a ICMS; o resto paga ISS.", PCT);
+    escolha(`comMot:${it.codigo}`, `Com motorista? (S/N) — Item ${it.codigo}`, sn(it.comMotorista !== false), ["S", "N"], "N: locação sem motorista — o item não carrega motorista, monitora nem supervisão, e paga os tributos da locação.");
+    premissa(`share:${it.codigo}`, `Parcela intermunicipal do faturamento — Item ${it.codigo}`, it.shareIntermunicipal, "%", "Parte do faturamento do item sujeita a ICMS; o resto paga ISS. Ignorada sem motorista.", PCT);
     derivada(
       `trib:${it.codigo}`,
       `Tributos médios — Item ${it.codigo}`,
-      `${P.tribMun}*(1-${P[`share:${it.codigo}`]})+${P.tribInter}*${P[`share:${it.codigo}`]}`,
+      `IF(${P[`comMot:${it.codigo}`]}="S",${P.tribMun}*(1-${P[`share:${it.codigo}`]})+${P.tribInter}*${P[`share:${it.codigo}`]},${P.tribLoc})`,
       "%",
-      "Ponderado pela parcela intermunicipal",
+      "Com motorista: ponderado pela parcela intermunicipal. Sem motorista: os da locação",
       PCT2
     );
-    escolha(`comMot:${it.codigo}`, `Com motorista? (S/N) — Item ${it.codigo}`, sn(it.comMotorista !== false), ["S", "N"], "N: locação sem motorista — o item não carrega motorista, monitora nem supervisão.");
     escolha(`combCli:${it.codigo}`, `Combustível por conta do cliente? (S/N) — Item ${it.codigo}`, sn(it.combustivelPorContaDoCliente === true), ["S", "N"], "S: diesel e ARLA saem do custo do item.");
   });
   congelar(ws, 0, 4);
@@ -458,6 +471,13 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "manTerra", rotulo: "Manutenção — terra", unidade: "R$/km", fmt: BRL4, padrao: P.manutTerra, valor: xv("manutencaoTerraKm") },
     { rotulo: "CAPITAL E DEPRECIAÇÃO (anos de vida que o contrato ocupa)", secao: true },
     { chave: "taxa", rotulo: "Taxa de capital aplicada", unidade: "% a.a.", fmt: PCT2, formula: (c, F) => `IF(${c}${F.composto}="S",${c}${F.fracao}*${c}${F.taxaFin}+(1-${c}${F.fracao})*${c}${F.proprio},${c}${F.capAa})` },
+    {
+      chave: "taxaProp",
+      rotulo: "Taxa do capital próprio (não dedutível no Lucro Real)",
+      unidade: "% a.a.",
+      fmt: PCT2,
+      formula: (c, F) => `IF(${c}${F.composto}="S",(1-${c}${F.fracao})*${c}${F.proprio},${c}${F.capAa})`,
+    },
     { chave: "anos", rotulo: "Anos do contrato", unidade: "anos", fmt: INT, formula: () => `MAX(1,ROUNDUP(${P.vigencia}/12,0))` },
     { chave: "n", rotulo: "Vida útil considerada (inteira)", unidade: "anos", fmt: INT, formula: (c, F) => `MAX(1,ROUND(${c}${F.vida},0))` },
     { chave: "depreciavel", rotulo: "Valor depreciável (valor − residual)", unidade: "R$", fmt: BRL, formula: (c, F) => `${c}${F.valor}*(1-${c}${F.residual})` },
@@ -505,7 +525,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "mHig", rotulo: "Higienização + acessibilidade (por veíc. operacional)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.higien}+${c}${F.acess}` },
     { chave: "mAdDep", rotulo: "Adaptação — depreciação (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `IF(${c}${F.adaptMeses}=0,0,${c}${F.adaptValor}/${c}${F.adaptMeses})` },
     { chave: "mAdCap", rotulo: "Adaptação — capital (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.adaptValor}*${c}${F.taxa}/12` },
-    { chave: "mManF", rotulo: "Manutenção fixa (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.valor}*${c}${F.manFixa}` }
+    { chave: "mManF", rotulo: "Manutenção fixa (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.valor}*${c}${F.manFixa}` },
+    {
+      chave: "mRemP",
+      rotulo: "  da remuneração e das adaptações: capital próprio (por veíc. c/ reserva)",
+      unidade: "R$/mês",
+      fmt: BRL,
+      formula: (c, F) => `(${c}${F.vMedio}+${c}${F.adaptValor})*${c}${F.taxaProp}/12`,
+    }
   );
   const PF: Record<string, number> = {};
   linhasPerfil.forEach((ln, k) => {
@@ -582,6 +609,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     ["adDep", "Adaptação — depreciação (R$/mês)", 12],
     ["adCap", "Adaptação — capital (R$/mês)", 12],
     ["manF", "Manutenção fixa (R$/mês)", 12],
+    ["remP", "Capital próprio — não dedutível (R$/mês)", 12],
     ["dias", `Dias de operação no ${apuracao}`, 10],
     ["diarias", "Diárias (veículo × dia)", 10],
     ["horas", "Horas (veículo × dia × h)", 10],
@@ -643,7 +671,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     const sal = pf("sal");
     f(
       "salarios",
-      `${$("mot")}*(${sal}*(1+${P.he})*IF(${$("noturno")}="S",${P.fatorNoturno},1)+IF(${P.divisor}>0,${sal}/${P.divisor},0)*(${P.he50}*1.5+${P.he100}*2+${P.hNoturnas}*1.2))+${$("mon")}*${P.salMon}`,
+      `${$("mot")}*(${sal}*(1+${P.he})*IF(${$("noturno")}="S",${P.fatorNoturno},1)+IF(${P.divisor}>0,${sal}/${P.divisor},0)*(${P.he50}*1.5+${P.he100}*2+${P.hNoturnas}*${P.fatorHoraNoturna}))+${$("mon")}*${P.salMon}`,
       BRL
     );
     const t = $("pctTerra");
@@ -668,6 +696,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("adDep", `${vr}*${pf("mAdDep")}`, BRL);
     f("adCap", `${vr}*${pf("mAdCap")}`, BRL);
     f("manF", `${vr}*${pf("mManF")}`, BRL);
+    f("remP", `${vr}*${pf("mRemP")}`, BRL);
     const pelaDistancia = `IF(${$("kmDia")}>0,${$("kmRef")}/${$("kmDia")},0)`;
     f("dias", `IF(${P.modo}="MENSAL",IF(${$("diasMes")}="",${pelaDistancia},${$("diasMes")}),IF(${pelaDistancia}<>0,${pelaDistancia},N(${$("diasMes")})*${P.meses}))`, NUM);
     f("diarias", `${$("veic")}*${$("dias")}`, NUM);
@@ -676,7 +705,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     wr.getRow(l).height = 30;
   });
   escrever(wr, RTOT, 2, "TOTAL", { negrito: true, fundo: FUNDO_TOTAL });
-  const somaRotas: ChaveRota[] = ["kmRef", "veic", "mot", "mon", "passagens", "pedagio", "kmUtil", "kmRod", "salarios", "diesel", "arla", "oleo", "pneus", "manut", "veicRes", "dep", "rem", "seg", "ipva", "tel", "hig", "gar", "adDep", "adCap", "manF", "diarias", "horas"];
+  const somaRotas: ChaveRota[] = ["kmRef", "veic", "mot", "mon", "passagens", "pedagio", "kmUtil", "kmRod", "salarios", "diesel", "arla", "oleo", "pneus", "manut", "veicRes", "dep", "rem", "seg", "ipva", "tel", "hig", "gar", "adDep", "adCap", "manF", "remP", "diarias", "horas"];
   COLS_ROTA.forEach(([k], i) => {
     if (i === 1) return;
     if ((somaRotas as string[]).includes(k)) {
@@ -703,7 +732,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     wc,
     2,
     "Custos fixos independem do km faturado; por isso o custo/km sobe quando a utilização cai (ver Cenários). " +
-      "Preço = custo líquido do crédito ÷ quantidade ÷ (1 − tributos − financeiro − despesas sobre o preço − lucro ÷ (1 − IR sobre o lucro)), arredondado para cima em 2 casas. " +
+      "Preço = (custo líquido do crédito + não dedutíveis × IR ÷ (1 − IR)) ÷ quantidade ÷ (1 − tributos − financeiro − despesas sobre o preço − lucro ÷ (1 − IR sobre o lucro)), arredondado para cima em 2 casas. " +
       `A unidade do contrato (Premissas) decide o faturamento.${lote ? " Julgamento por LOTE: a coluna Lote dá o preço médio e o preço único da proposta." : ""}`,
     COL_MEMO,
     42
@@ -730,7 +759,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   const daContratada = (k: ChaveRota) => (c: string, i: number, R: R) => `IF(${c}${R.combCli}="S",0,${somaSe(k)(c, i, R)})`;
   const kmTotalRotas = `Rotas!$${CR.kmUtil}$${RTOT}`;
   // Preço para cobrir o custo líquido por unidade: 0 sem quantidade.
-  const precoPor = (qtd: string, c: string, R: R) => `IF(N(${c}${qtd})>0,ROUNDUP(${c}${R.cliq}/${c}${qtd}/${c}${R.div},2),0)`;
+  const precoPor = (qtd: string, c: string, R: R) => `IF(N(${c}${qtd})>0,ROUNDUP(${c}${R.cpp}/${c}${qtd}/${c}${R.div},2),0)`;
   const linhas: Linha[] = [
     { chave: "codigo", rotulo: "Código do item (chave na aba Rotas)", item: (_c, i) => itens[i].codigo, total: "vazio", tipo: "entrada", memo: "Soma as rotas cujo Item (Rotas, coluna A) é igual a este código." },
     { chave: "comMot", rotulo: "Com motorista? (S/N)", item: (_c, i) => P[`comMot:${itens[i].codigo}`], tipo: "link", total: "vazio", memo: "Premissas seção 7" },
@@ -778,6 +807,13 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "manF", rotulo: "Manutenção fixa (% do valor)", item: somaSe("manF"), total: "soma", memo: "veíc. c/ reserva × valor × % ao mês" },
     { chave: "veicm", rotulo: "Subtotal veículos (mensal)", item: (c, _i, R) => `SUM(${c}${R.dep}:${c}${R.manF})`, total: "soma", negrito: true },
     { chave: "adDep", rotulo: "  da qual: depreciação das adaptações (dá crédito)", item: somaSe("adDep"), total: "soma", memo: "parte das adaptações que entra no crédito de PIS/COFINS" },
+    {
+      chave: "remP",
+      rotulo: "  da qual: remuneração do capital próprio (não dedutível)",
+      item: somaSe("remP"),
+      total: "soma",
+      memo: "veículo e adaptações à taxa do capital próprio: custo de oportunidade, não despesa — o Lucro Real não o deduz",
+    },
     { rotulo: `D. CUSTO FIXO NO ${apuracao.toUpperCase()}`, secao: true },
     {
       chave: "impl",
@@ -802,7 +838,22 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "fcc", rotulo: "Custos fixos com crédito de PIS/COFINS", item: (c, _i, R) => `(${c}${R.dep}+${c}${R.adDep}+${c}${R.manF}+${c}${R.gar})*${P.meses}`, total: "soma", memo: "(depreciação + depreciação das adaptações + manutenção fixa + garagem) × meses" },
     { chave: "vcc", rotulo: "Custos variáveis com crédito de PIS/COFINS", item: (c, _i, R) => `${c}${R.die}+${c}${R.arla}+${c}${R.oleo}+${c}${R.pneus}+${c}${R.manut}`, total: "soma", memo: "diesel + ARLA + óleo + pneus + manutenção" },
     { chave: "cred", rotulo: "Crédito de PIS/COFINS (Lucro Real)", item: (c, _i, R) => `(${c}${R.fcc}+${c}${R.vcc})*${P.credito}`, total: "soma", memo: "custos com crédito × % do crédito" },
-    { chave: "cliq", rotulo: "Custo líquido do crédito", item: (c, _i, R) => `${c}${R.tot}-${c}${R.cred}`, total: "soma", negrito: true, memo: "o que o preço precisa cobrir" },
+    { chave: "cliq", rotulo: "Custo líquido do crédito", item: (c, _i, R) => `${c}${R.tot}-${c}${R.cred}`, total: "soma", negrito: true, memo: "custo total − crédito de PIS/COFINS" },
+    {
+      chave: "nded",
+      rotulo: "Não dedutíveis do IRPJ/CSLL (capital próprio + contingência)",
+      item: (c, _i, R) => `${c}${R.remP}*${P.meses}+${c}${R.dir}*${P.contingencia}`,
+      total: "soma",
+      memo: "capital próprio × meses + custo direto × contingência (provisão): no Lucro Real, somam-se ao lucro na base do IR",
+    },
+    {
+      chave: "cpp",
+      rotulo: "Custo a cobrir no preço",
+      item: (c, _i, R) => `${c}${R.cliq}+${c}${R.nded}*${c}${R.kir}`,
+      total: "soma",
+      negrito: true,
+      memo: "custo líquido + IR sobre os não dedutíveis (não dedutíveis × IR ÷ (1 − IR)); igual ao custo líquido no Presumido",
+    },
     { chave: "ckm", rotulo: "Custo por km útil (R$/km)", item: (c, _i, R) => `IF(${c}${R.kmfat}=0,0,${c}${R.tot}/${c}${R.kmfat})`, total: (R) => `IF(${T}${R.kmfat}=0,0,${T}${R.tot}/${T}${R.kmfat})`, fmt: BRL4, negrito: true, memo: "custo total ÷ km útil" },
     { chave: "cfix", rotulo: "  do qual: custo fixo por km", item: (c, _i, R) => `IF(${c}${R.kmfat}=0,0,${c}${R.fixo}/${c}${R.kmfat})`, total: (R) => `IF(${T}${R.kmfat}=0,0,${T}${R.fixo}/${T}${R.kmfat})`, fmt: BRL4 },
     { chave: "cvar", rotulo: "  do qual: custo variável + indiretos por km", item: (c, _i, R) => `IF(${c}${R.kmfat}=0,0,(${c}${R.var}+${c}${R.ind})/${c}${R.kmfat})`, total: (R) => `IF(${T}${R.kmfat}=0,0,(${T}${R.var}+${T}${R.ind})/${T}${R.kmfat})`, fmt: BRL4 },
@@ -815,6 +866,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "sobre", rotulo: "Despesas sobre o preço", item: () => P.sobrePreco, tipo: "link", total: "ponderado", fmt: PCT2, memo: "Premissas" },
     { chave: "luc", rotulo: "Lucro líquido alvo", item: () => P.lucro, tipo: "link", total: "ponderado", fmt: PCT, memo: "Premissas" },
     { chave: "ir", rotulo: "IRPJ + CSLL sobre o lucro (Lucro Real)", item: () => P.irLucro, tipo: "link", total: "ponderado", fmt: PCT2, memo: "Premissas" },
+    {
+      chave: "kir",
+      rotulo: "IR sobre cada real não dedutível (IR ÷ (1 − IR))",
+      item: (c, _i, R) => `IF(1-${c}${R.ir}=0,0,${c}${R.ir}/(1-${c}${R.ir}))`,
+      total: (R) => `IF(1-${T}${R.ir}=0,0,${T}${R.ir}/(1-${T}${R.ir}))`,
+      fmt: PCT2,
+      memo: "o lucro depois do IR só fica no alvo se o preço cobrir também o IR sobre o que o fisco não deduz",
+    },
     { chave: "liq", rotulo: "Receita líquida (1 − tributos − financeiro − despesas)", item: (c, _i, R) => `1-${c}${R.trb}-${c}${R.fin}-${c}${R.sobre}`, total: (R) => `1-${T}${R.trb}-${T}${R.fin}-${T}${R.sobre}`, fmt: PCT2 },
     { chave: "div", rotulo: "Divisor do preço (líquida − lucro ÷ (1 − IR))", item: (c, _i, R) => `${c}${R.liq}-IF(1-${c}${R.ir}=0,0,${c}${R.luc}/(1-${c}${R.ir}))`, total: (R) => `${T}${R.liq}-IF(1-${T}${R.ir}=0,0,${T}${R.luc}/(1-${T}${R.ir}))`, fmt: PCT2 },
     { chave: "pkm", rotulo: "PREÇO/KM CALCULADO (R$/km)", item: (c, _i, R) => precoPor(String(R.kmfat), c, R), total: (R) => `IF(${T}${R.kmfat}=0,0,${T}${R.fat}/${T}${R.kmfat})`, fmt: BRL, negrito: true, destaque: true, memo: `custo líquido/km ÷ divisor, 2 casas para cima; na coluna ${lote ? "Lote" : "Total"}: faturamento ÷ km útil` },
@@ -824,18 +883,20 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     {
       chave: "bfix",
       rotulo: "Binômia — parcela fixa por veículo-mês",
-      item: (c, _i, R) => `IF(${c}${R.qvm}>0,ROUNDUP((${c}${R.fixo}*(1+${P.adm}+${P.contingencia})-${c}${R.fcc}*${P.credito})/${c}${R.div}/${c}${R.qvm},2),0)`,
+      item: (c, _i, R) =>
+        `IF(${c}${R.qvm}>0,ROUNDUP((${c}${R.fixo}*(1+${P.adm}+${P.contingencia})-${c}${R.fcc}*${P.credito}+(${c}${R.remP}*${P.meses}+${c}${R.fixo}*${P.contingencia})*${c}${R.kir})/${c}${R.div}/${c}${R.qvm},2),0)`,
       total: "vazio",
       fmt: BRL,
-      memo: "(fixo × (1 + indiretos) − crédito do fixo) ÷ divisor ÷ veículos-mês",
+      memo: "(fixo × (1 + indiretos) − crédito do fixo + não dedutíveis do fixo × IR ÷ (1 − IR)) ÷ divisor ÷ veículos-mês",
     },
     {
       chave: "bvar",
       rotulo: "Binômia — parcela por km",
-      item: (c, _i, R) => `IF(${c}${R.kmfat}>0,ROUNDUP((${c}${R.var}*(1+${P.adm}+${P.contingencia})-${c}${R.vcc}*${P.credito})/${c}${R.div}/${c}${R.kmfat},2),0)`,
+      item: (c, _i, R) =>
+        `IF(${c}${R.kmfat}>0,ROUNDUP((${c}${R.var}*(1+${P.adm}+${P.contingencia})-${c}${R.vcc}*${P.credito}+${c}${R.var}*${P.contingencia}*${c}${R.kir})/${c}${R.div}/${c}${R.kmfat},2),0)`,
       total: "vazio",
       fmt: BRL,
-      memo: "(variável × (1 + indiretos) − crédito do variável) ÷ divisor ÷ km útil",
+      memo: "(variável × (1 + indiretos) − crédito do variável + contingência do variável × IR ÷ (1 − IR)) ÷ divisor ÷ km útil",
     },
     {
       chave: "qtdU",
@@ -870,9 +931,10 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "teto", rotulo: "Situação frente ao preço máximo", item: (c, _i, R) => `IF(N(${c}${R.pmax})=0,"sem teto",IF(${c}${R.peq}>${c}${R.pmax},"ACIMA DO TETO","dentro do teto"))`, total: "vazio", memo: lote ? "no lote vale o preço único; item isolado acima do teto só fecha subsidiado pelos outros" : "" },
     { chave: "pref", rotulo: "Preço de referência (R$/km)", item: (_c, i) => itens[i].precoReferenciaKm ?? null, tipo: "entrada", total: "vazio", fmt: BRL, memo: "estimativa do órgão / lances de referência (vazio = não há)" },
     { chave: "dref", rotulo: "Δ vs. preço de referência", item: (c, _i, R) => `IF(N(${c}${R.pref})=0,"",${c}${R.peq}/${c}${R.pref}-1)`, total: "vazio", fmt: DPCT, memo: "positivo = acima da referência" },
-    { chave: "pmin", rotulo: "Preço mínimo para lucro zero (R$/km)", item: (c, _i, R) => `IF(OR(${c}${R.kmfat}=0,${c}${R.liq}=0),0,${c}${R.cliq}/${c}${R.kmfat}/${c}${R.liq})`, total: (R) => `IF(OR(${T}${R.kmfat}=0,${T}${R.liq}=0),0,${T}${R.cliq}/${T}${R.kmfat}/${T}${R.liq})`, fmt: BRL4, memo: "piso de exequibilidade: custo líquido/km ÷ receita líquida" },
+    { chave: "pmin", rotulo: "Preço mínimo para lucro zero (R$/km)", item: (c, _i, R) => `IF(OR(${c}${R.kmfat}=0,${c}${R.liq}=0),0,${c}${R.cpp}/${c}${R.kmfat}/${c}${R.liq})`, total: (R) => `IF(OR(${T}${R.kmfat}=0,${T}${R.liq}=0),0,${T}${R.cpp}/${T}${R.kmfat}/${T}${R.liq})`, fmt: BRL4, memo: "piso de exequibilidade: custo a cobrir/km ÷ receita líquida (lucro zero depois do IR)" },
     { chave: "lair", rotulo: "Lucro antes do IRPJ/CSLL sobre o lucro", item: (c, _i, R) => `${c}${R.fat}*${c}${R.liq}-${c}${R.cliq}`, total: "soma", memo: "faturamento × receita líquida − custo líquido" },
-    { chave: "irv", rotulo: "IRPJ/CSLL sobre o lucro", item: (c, _i, R) => `IF(${c}${R.lair}>0,${c}${R.lair}*${c}${R.ir},0)`, total: "soma", memo: "só sobre lucro positivo" },
+    { chave: "bir", rotulo: "Base do IRPJ/CSLL sobre o lucro (Lucro Real)", item: (c, _i, R) => `${c}${R.lair}+${c}${R.nded}`, total: "soma", memo: "lucro antes do IR + não dedutíveis" },
+    { chave: "irv", rotulo: "IRPJ/CSLL sobre o lucro", item: (c, _i, R) => `IF(${c}${R.bir}>0,${c}${R.bir}*${c}${R.ir},0)`, total: "soma", memo: "só sobre base positiva" },
     { chave: "lucm", rotulo: `Lucro líquido no ${apuracao}`, item: (c, _i, R) => `${c}${R.lair}-${c}${R.irv}`, total: "soma", negrito: true, memo: "lucro antes do IR − IR sobre o lucro" },
     { chave: "marg", rotulo: "Margem líquida", item: (c, _i, R) => `IF(${c}${R.fat}=0,0,${c}${R.lucm}/${c}${R.fat})`, total: (R) => `IF(${T}${R.fat}=0,0,${T}${R.lucm}/${T}${R.fat})`, fmt: PCT, memo: "lucro ÷ faturamento" },
     { chave: "fata", rotulo: "Faturamento anual", item: (c, _i, R) => `${c}${R.fat}*IF(${P.modo}="MENSAL",${P.vigencia},1)`, total: "soma", memo: "MENSAL: × vigência; PERIODO: o período já é o ano letivo" },
@@ -897,7 +959,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
       memo: "preço proposto × quantidade (binômia: o faturamento calculado)",
     },
     { chave: "lairp", rotulo: "Lucro antes do IR ao preço proposto", item: (c, _i, R) => `${c}${R.fatp}*${c}${R.liq}-${c}${R.cliq}`, total: (R) => `${T}${R.fatp}*${T}${R.liq}-${T}${R.cliq}`, memo: "no total, com os tributos ponderados pelo faturamento ao preço calculado" },
-    { chave: "lucp", rotulo: `Lucro líquido no ${apuracao} ao preço proposto`, item: (c, _i, R) => `IF(${c}${R.lairp}>0,${c}${R.lairp}*(1-${c}${R.ir}),${c}${R.lairp})`, total: (R) => `IF(${T}${R.lairp}>0,${T}${R.lairp}*(1-${T}${R.ir}),${T}${R.lairp})`, negrito: true },
+    {
+      chave: "lucp",
+      rotulo: `Lucro líquido no ${apuracao} ao preço proposto`,
+      item: (c, _i, R) => `${c}${R.lairp}-IF(${c}${R.lairp}+${c}${R.nded}>0,(${c}${R.lairp}+${c}${R.nded})*${c}${R.ir},0)`,
+      total: (R) => `${T}${R.lairp}-IF(${T}${R.lairp}+${T}${R.nded}>0,(${T}${R.lairp}+${T}${R.nded})*${T}${R.ir},0)`,
+      negrito: true,
+      memo: "lucro antes do IR − IR sobre (lucro antes do IR + não dedutíveis), se positiva",
+    },
     { chave: "margp", rotulo: "Margem líquida ao preço proposto", item: (c, _i, R) => `IF(${c}${R.fatp}=0,0,${c}${R.lucp}/${c}${R.fatp})`, total: (R) => `IF(${T}${R.fatp}=0,0,${T}${R.lucp}/${T}${R.fatp})`, fmt: PCT },
   ];
 
@@ -947,12 +1016,15 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   const nU = utilizacoes.length;
   const COLS_Z = nU + 1;
   const largZ = Math.max(COLS_Z, 9);
+  // Leiaute: tabela da linha 7 à 20, equilíbrio em 22–23, nota em 25 e o
+  // bloco de parâmetros da linha Z0 em diante.
+  const Z0 = 27;
   titulo(wz, 1, "CENÁRIOS — sensibilidade do custo e do lucro à utilização do km de referência, ao preço de teste", largZ);
   nota(
     wz,
     2,
     "O custo fixo não muda com o km pago; o variável acompanha o km rodado e o pedágio acompanha a utilização. O faturamento depende da unidade: por km cai com o km; por veículo-mês, diária ou hora fica; na binômia, a parcela fixa fica e a por km cai. " +
-      "Os parâmetros (linhas 26 em diante) vêm da aba Composição de Custo.",
+      `Os parâmetros (linhas ${Z0} em diante) vêm da aba Composição de Custo.`,
     largZ,
     42
   );
@@ -970,8 +1042,10 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
 
   // Bloco de parâmetros, abaixo da tabela: cada linha é uma fórmula sobre a
   // Composição de Custo; a tabela acima usa estas células.
-  const Z0 = 26;
-  const ordemZ = ["kmRef", "fixo", "ped", "varKm", "ind", "morto", "trib", "liq", "ir", "divAlvo", "credVar", "credFixo", "credKm", "qFixa", "fatFixo", "fatU", "a", "b"];
+  const ordemZ = [
+    "kmRef", "fixo", "ped", "varKm", "ind", "morto", "trib", "liq", "ir", "divAlvo", "credVar", "credFixo", "credKm", "qFixa", "fatFixo", "fatU",
+    "capProp", "cont", "kir", "a", "b", "n0", "n1", "aL", "bL",
+  ];
   const ZP: Record<string, number> = {};
   ordemZ.forEach((k, i) => (ZP[k] = Z0 + 1 + i));
   const Z = (k: string) => `$B$${ZP[k]}`;
@@ -992,12 +1066,21 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     qFixa: ["Quantidade na unidade do contrato", CC("qtdU"), NUM],
     fatFixo: ["Faturamento fixo (não varia com a utilização)", `IF(${U}="KM",0,IF(${U}="BINOMIA",SUMPRODUCT(${CCfaixa("bfix")},${CCfaixa("qvm")}),$B$4*${Z("qFixa")}))`, BRL],
     fatU: ["Faturamento por utilização (× u)", `IF(OR(${U}="KM",${U}="BINOMIA"),$B$4*${Z("kmRef")},0)`, BRL],
+    capProp: [`Remuneração do capital próprio no ${apuracao} (não dedutível)`, `${CC("remP")}*${P.meses}`, BRL],
+    cont: ["Contingência (não dedutível)", P.contingencia, PCT2],
+    kir: ["IR sobre cada real não dedutível (IR ÷ (1 − IR))", `IF(1-${Z("ir")}=0,0,${Z("ir")}/(1-${Z("ir")}))`, PCT2],
     a: ["Lucro antes do IR com utilização zero (a)", `${Z("fatFixo")}*${Z("liq")}-${Z("fixo")}*(1+${Z("ind")})+${Z("credFixo")}`, BRL],
     b: [
       "Lucro antes do IR por unidade de utilização (b)",
       `${Z("fatU")}*${Z("liq")}-(${Z("varKm")}*${Z("kmRef")}*(1+${Z("morto")})+${Z("ped")})*(1+${Z("ind")})+${Z("credKm")}*${Z("kmRef")}*(1+${Z("morto")})`,
       BRL,
     ],
+    n0: ["Não dedutíveis com utilização zero (n0)", `${Z("capProp")}+${Z("fixo")}*${Z("cont")}`, BRL],
+    n1: ["Não dedutíveis por unidade de utilização (n1)", `(${Z("varKm")}*${Z("kmRef")}*(1+${Z("morto")})+${Z("ped")})*${Z("cont")}`, BRL],
+    // Onde a base do IR é positiva — e o lucro zero sempre cai aí —, o lucro
+    // depois do IR é (a + b·u)·(1 − ir) − ir·(n0 + n1·u).
+    aL: ["Lucro depois do IR com utilização zero (a' = a·(1 − ir) − ir·n0)", `${Z("a")}*(1-${Z("ir")})-${Z("ir")}*${Z("n0")}`, BRL],
+    bL: ["Lucro depois do IR por unidade de utilização (b' = b·(1 − ir) − ir·n1)", `${Z("b")}*(1-${Z("ir")})-${Z("ir")}*${Z("n1")}`, BRL],
   };
   secao(wz, Z0, "PARÂMETROS DOS CENÁRIOS (fórmulas sobre a Composição de Custo)", largZ);
   for (const k of ordemZ) {
@@ -1007,23 +1090,29 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   }
   const anual = `IF(${P.modo}="MENSAL",${P.vigencia},1)`;
   const mesesApuracao = `IF(${P.modo}="MENSAL",1,${P.meses})`;
-  const cenarios: [string, ((c: string) => string) | null, string][] = [
-    [`Km útil faturável no ${apuracao}`, (c) => `${Z("kmRef")}*${c}$6`, INT],
-    [`Custo total no ${apuracao} (R$)`, (c) => `(${Z("fixo")}+${Z("varKm")}*${c}7*(1+${Z("morto")})+${Z("ped")}*${c}$6)*(1+${Z("ind")})`, BRL],
-    ["Crédito de PIS/COFINS (R$)", (c) => `${Z("credFixo")}+${Z("credKm")}*${c}7*(1+${Z("morto")})`, BRL],
-    ["Custo por km útil (R$/km)", (c) => `IF(${c}7=0,0,${c}8/${c}7)`, BRL4],
-    ["Preço/km p/ lucro alvo (R$/km)", (c) => `IF(${c}7=0,0,ROUNDUP((${c}8-${c}9)/${c}7/${Z("divAlvo")},2))`, BRL],
-    ["Preço/km lucro zero (R$/km)", (c) => `IF(OR(${c}7=0,${Z("liq")}=0),0,(${c}8-${c}9)/${c}7/${Z("liq")})`, BRL4],
-    ["— Ao preço de teste (B4) —", null, ""],
-    [`Faturamento no ${apuracao} (R$)`, (c) => `${Z("fatFixo")}+${Z("fatU")}*${c}$6`, BRL],
-    [`Lucro antes do IR sobre o lucro (R$)`, (c) => `${c}14*${Z("liq")}-(${c}8-${c}9)`, BRL],
-    [`Lucro líquido no ${apuracao} (R$)`, (c) => `IF(${c}15>0,${c}15*(1-${Z("ir")}),${c}15)`, BRL],
-    ["Margem líquida", (c) => `IF(${c}14=0,0,${c}16/${c}14)`, DPCT],
-    ["Lucro líquido / ano (R$)", (c) => `${c}16*${anual}`, BRL],
-    ["Lucro / veículo / mês (R$)", (c) => `IF(${CC("veic")}*${mesesApuracao}=0,0,${c}16/(${CC("veic")}*${mesesApuracao}))`, BRL],
+  // Linhas da tabela, pela chave: as fórmulas se referem umas às outras.
+  type LinhaZ = [chave: string, rotulo: string, formula: ((c: string) => string) | null, fmt: string];
+  const L: Record<string, number> = {};
+  const cel = (k: string, c: string) => `${c}${L[k]}`;
+  const cenarios: LinhaZ[] = [
+    ["km", `Km útil faturável no ${apuracao}`, (c) => `${Z("kmRef")}*${c}$6`, INT],
+    ["custo", `Custo total no ${apuracao} (R$)`, (c) => `(${Z("fixo")}+${Z("varKm")}*${cel("km", c)}*(1+${Z("morto")})+${Z("ped")}*${c}$6)*(1+${Z("ind")})`, BRL],
+    ["cred", "Crédito de PIS/COFINS (R$)", (c) => `${Z("credFixo")}+${Z("credKm")}*${cel("km", c)}*(1+${Z("morto")})`, BRL],
+    ["nded", "Não dedutíveis do IRPJ/CSLL (R$)", (c) => `${Z("capProp")}+${cel("custo", c)}/(1+${Z("ind")})*${Z("cont")}`, BRL],
+    ["ckm", "Custo por km útil (R$/km)", (c) => `IF(${cel("km", c)}=0,0,${cel("custo", c)}/${cel("km", c)})`, BRL4],
+    ["alvo", "Preço/km p/ lucro alvo (R$/km)", (c) => `IF(${cel("km", c)}=0,0,ROUNDUP((${cel("custo", c)}-${cel("cred", c)}+${cel("nded", c)}*${Z("kir")})/${cel("km", c)}/${Z("divAlvo")},2))`, BRL],
+    ["zero", "Preço/km lucro zero (R$/km)", (c) => `IF(OR(${cel("km", c)}=0,${Z("liq")}=0),0,(${cel("custo", c)}-${cel("cred", c)}+${cel("nded", c)}*${Z("kir")})/${cel("km", c)}/${Z("liq")})`, BRL4],
+    ["sep", "— Ao preço de teste (B4) —", null, ""],
+    ["fat", `Faturamento no ${apuracao} (R$)`, (c) => `${Z("fatFixo")}+${Z("fatU")}*${c}$6`, BRL],
+    ["lair", `Lucro antes do IR sobre o lucro (R$)`, (c) => `${cel("fat", c)}*${Z("liq")}-(${cel("custo", c)}-${cel("cred", c)})`, BRL],
+    ["lucro", `Lucro líquido no ${apuracao} (R$)`, (c) => `${cel("lair", c)}-IF(${cel("lair", c)}+${cel("nded", c)}>0,(${cel("lair", c)}+${cel("nded", c)})*${Z("ir")},0)`, BRL],
+    ["marg", "Margem líquida", (c) => `IF(${cel("fat", c)}=0,0,${cel("lucro", c)}/${cel("fat", c)})`, DPCT],
+    ["ano", "Lucro líquido / ano (R$)", (c) => `${cel("lucro", c)}*${anual}`, BRL],
+    ["veic", "Lucro / veículo / mês (R$)", (c) => `IF(${CC("veic")}*${mesesApuracao}=0,0,${cel("lucro", c)}/(${CC("veic")}*${mesesApuracao}))`, BRL],
   ];
-  cenarios.forEach(([rotulo, formula, fmt], k) => {
-    const l = 7 + k;
+  cenarios.forEach(([chave], k) => (L[chave] = 7 + k));
+  cenarios.forEach(([chave, rotulo, formula, fmt]) => {
+    const l = L[chave];
     const destaque = formula === null || rotulo.startsWith("Lucro") || rotulo.startsWith("Preço");
     escrever(wz, l, 1, rotulo, { negrito: destaque });
     if (formula === null) {
@@ -1035,15 +1124,16 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
       escrever(wz, l, j + 2, fx(formula(c)), { fmt, negrito: rotulo.startsWith("Lucro líquido no") });
     });
   });
-  // Lucro antes do IR (u) = a + b·u: o equilíbrio é u = −a/b, se positivo.
-  escrever(wz, 21, 1, "Ponto de equilíbrio (utilização com lucro zero ao preço de teste)", { negrito: true });
-  escrever(wz, 21, 2, fx(`IF(${Z("b")}=0,"não empata",IF(-${Z("a")}/${Z("b")}>0,-${Z("a")}/${Z("b")},"não empata"))`), { negrito: true, fmt: PCT });
-  escrever(wz, 22, 1, "Tipo do equilíbrio", { negrito: true });
-  escrever(wz, 22, 2, fx(`IF(${Z("b")}>0,"MÍNIMA","MÁXIMA")`), { negrito: true });
-  escrever(wz, 22, 3, fx(`IF(${Z("b")}>0,"abaixo desta utilização há prejuízo","acima desta utilização há prejuízo (faturamento fixo, custo variável cresce)")`), { tamanho: 9, borda: false });
+  // Lucro depois do IR (u) = a' + b'·u: o equilíbrio é u = −a'/b', se positivo.
+  const LPE = 7 + cenarios.length + 1;
+  escrever(wz, LPE, 1, "Ponto de equilíbrio (utilização com lucro zero ao preço de teste)", { negrito: true });
+  escrever(wz, LPE, 2, fx(`IF(${Z("bL")}=0,"não empata",IF(-${Z("aL")}/${Z("bL")}>0,-${Z("aL")}/${Z("bL")},"não empata"))`), { negrito: true, fmt: PCT });
+  escrever(wz, LPE + 1, 1, "Tipo do equilíbrio", { negrito: true });
+  escrever(wz, LPE + 1, 2, fx(`IF(${Z("bL")}>0,"MÍNIMA","MÁXIMA")`), { negrito: true });
+  escrever(wz, LPE + 1, 3, fx(`IF(${Z("bL")}>0,"abaixo desta utilização há prejuízo","acima desta utilização há prejuízo (faturamento fixo, custo variável cresce)")`), { tamanho: 9, borda: false });
   nota(
     wz,
-    24,
+    LPE + 3,
     mensal
       ? "Leitura: a coluna 100% é o km máximo do edital. Com preço por km, lucro negativo nas utilizações baixas expõe o lance ao risco de ociosidade (SRP paga só o km útil)."
       : "Leitura: no escolar a utilização é normalmente 100% (km do período letivo). As colunas menores mostram o efeito de dias letivos a menos ou linhas suspensas.",

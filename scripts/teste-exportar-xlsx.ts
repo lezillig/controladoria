@@ -7,8 +7,10 @@
 //      (veículo-mês, diária, hora, binômia), perfis de veículo, item sem
 //      motorista, combustível do cliente, depreciação linear e soma dos
 //      dígitos com idade e valor médio, capital composto, adaptações,
-//      manutenção fixa, implantação, horas extras em horas, despesas sobre o
-//      preço e Lucro Real;
+//      manutenção fixa, implantação, horas extras e noturnas em horas (com o
+//      adicional noturno), despesas sobre o preço, tributos da locação sem
+//      motorista e Lucro Real (com a base do IR somando capital próprio e
+//      contingência);
 //   2. confere a estrutura: as abas na ordem, fórmulas (e não valores) nas
 //      células-chave, entradas em azul, links em verde, fonte Arial;
 //   3. RECALCULA as fórmulas com um motor de planilha independente e compara
@@ -216,6 +218,9 @@ function conferirEstrutura(nome: string, m: Mapa, entrada: EntradaSimulacao) {
   ok(`${nome}: faturamento segue a unidade de preço`, formulasCom(wc, naComp("Faturamento no"), /"BINOMIA".*"KM".*"VEICULO_MES"/));
   ok(`${nome}: crédito de PIS/COFINS é fórmula`, formulasCom(wc, naComp("Crédito de PIS/COFINS"), /Premissas!\$B\$\d+/));
   ok(`${nome}: IR sobre o lucro só quando positivo`, formulasCom(wc, naComp("IRPJ/CSLL sobre o lucro"), /^IF\(.*>0/));
+  ok(`${nome}: base do IR = lucro antes do IR + não dedutíveis`, formulasCom(wc, naComp("Base do IRPJ/CSLL"), /^[A-Z]+\d+\+[A-Z]+\d+$/));
+  ok(`${nome}: não dedutíveis = capital próprio × meses + contingência`, formulasCom(wc, naComp("Não dedutíveis"), /\*Premissas!\$B\$\d+\+.*\*Premissas!\$B\$\d+$/));
+  ok(`${nome}: preços cobrem o custo a cobrir (com o IR dos não dedutíveis)`, formulasCom(wc, naComp("Preço por veículo-mês"), new RegExp(`[A-Z]+${m.comp("Custo a cobrir no preço")}/`)));
   ok(`${nome}: custo total e total/lote são fórmulas`, formulasCom(wc, naComp("CUSTO TOTAL", [...itensCol, m.colTotal]), /./));
   ok(`${nome}: preço proposto obedece ao critério (IF LOTE)`, formulasCom(wc, naComp("Preço proposto na unidade"), /IF\(Premissas!\$B\$\d+="LOTE"/));
   ok(`${nome}: preço único por km = ROUNDUP da média ponderada`, formulasCom(wc, naComp("Preço único por km", [m.colTotal]), /^ROUNDUP\(/));
@@ -224,7 +229,12 @@ function conferirEstrutura(nome: string, m: Mapa, entrada: EntradaSimulacao) {
   const rotas = entrada.rotas.map((_, i) => 5 + i);
   const naRota = (cab: string) => rotas.map((l) => `${m.rotaCol(cab)}${l}`);
   ok(`${nome}: perfil da rota achado com MATCH na aba Perfis`, formulasCom(wr, naRota("Coluna do perfil"), /^IFERROR\(MATCH\(.*'Perfis de Veículo'!/));
-  ok(`${nome}: salários por rota com salário do perfil, noturno e horas`, formulasCom(wr, naRota("Salários"), /INDEX\('Perfis de Veículo'.*IF\([A-Z]+\d+="S".*1\.5.*\*2.*1\.2/));
+  ok(
+    `${nome}: salários por rota com salário do perfil, noturno e horas`,
+    formulasCom(wr, naRota("Salários"), /INDEX\('Perfis de Veículo'.*IF\([A-Z]+\d+="S".*1\.5\+.*\*2\+Premissas!\$B\$\d+\*Premissas!\$B\$\d+\)/)
+  );
+  ok(`${nome}: hora noturna custa só o adicional com a hora reduzida`, formulasCom(ws, [m.prem("Custo a mais por hora noturna")], /^\(1\+Premissas!\$B\$\d+\)\*60\/52\.5-1$/));
+  ok(`${nome}: capital próprio por rota vem do perfil`, formulasCom(wr, naRota("Capital próprio"), /INDEX\('Perfis de Veículo'/));
   ok(`${nome}: diesel por rota com consumo do perfil e asfalto/terra`, formulasCom(wr, naRota("Diesel"), /INDEX\('Perfis de Veículo'.*\(1-[A-Z]+\d+\)/));
   ok(`${nome}: depreciação da rota vem do perfil`, formulasCom(wr, naRota("Depreciação"), /INDEX\('Perfis de Veículo'/));
   ok(`${nome}: % terra por rota é fórmula`, formulasCom(wr, naRota("% terra"), /\/[A-Z]+\d+/));
@@ -235,6 +245,11 @@ function conferirEstrutura(nome: string, m: Mapa, entrada: EntradaSimulacao) {
   ok(
     `${nome}: tributos de cada item são fórmula da parcela intermunicipal`,
     formulasCom(ws, entrada.itens.map((it) => m.prem(`Tributos médios — Item ${it.codigo}`)), /\(1-Premissas!\$B\$\d+\)/)
+  );
+  ok(
+    `${nome}: tributos do item sem motorista são os da locação`,
+    formulasCom(ws, entrada.itens.map((it) => m.prem(`Tributos médios — Item ${it.codigo}`)), /^IF\(Premissas!\$B\$\d+="S",.*,Premissas!\$B\$\d+\)$/) &&
+      formulasCom(ws, [m.prem("Tributos totais — locação")], /IF\(Premissas!\$B\$\d+=0,/)
   );
   const padraoValor = wf.getCell(m.perfilCel("Valor do veículo", "PADRÃO"));
   ok(`${nome}: perfil padrão é link verde das Premissas`, /^Premissas!/.test(formulaDe(padraoValor) ?? "") && cor(padraoValor) === "FF008000");
@@ -487,6 +502,35 @@ const casos: Caso[] = [
     Object.assign(e.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34, creditoPisCofinsPct: 0.0925 });
     e.unidadePreco = "VEICULO_MES";
   }),
+  // As três correções da revisão de precificação, cada uma num caso.
+  variar("Holambra horas noturnas a 25% nas linhas noturnas com fator", HOL, (e) => {
+    Object.assign(e.premissas.pessoal, { horasNoturnasMes: 30, adicionalNoturnoPct: 0.25, horasExtras50Mes: 6 });
+  }),
+  variar("SJP item 2 sem motorista no Presumido (locação, lote)", SJP, (e) => {
+    e.itens[1].comMotorista = false;
+    Object.assign(e.premissas.preco, { irpjLocacao: 0.05, csllLocacao: 0.03 });
+  }),
+  variar("SJP Lucro Real, capital composto, contingência, adaptação, item sem motorista (km, lote)", SJP, (e) => {
+    Object.assign(e.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34 });
+    Object.assign(e.premissas.veiculo, { capitalComposto: true, fracaoFinanciada: 0.6, taxaFinanciamentoAa: 0.2, custoCapitalProprioAa: 0.12, adaptacaoValor: 10000, adaptacaoMesesDepreciacao: 48 });
+    e.premissas.indiretos.contingenciaPct = 0.05;
+    e.itens[1].comMotorista = false;
+  }),
+  variar("Holambra Lucro Real binômia, capital composto sobre valor médio, contingência", HOL, (e) => {
+    Object.assign(e.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34 });
+    Object.assign(e.premissas.veiculo, {
+      capitalComposto: true,
+      fracaoFinanciada: 0.5,
+      taxaFinanciamentoAa: 0.16,
+      custoCapitalProprioAa: 0.1,
+      metodoDepreciacao: "LINEAR",
+      vidaUtilAnos: 10,
+      valorResidualPct: 0.15,
+      remuneracaoSobreValorMedio: true,
+    });
+    e.premissas.indiretos.contingenciaPct = 0.04;
+    e.unidadePreco = "BINOMIA";
+  }),
 ];
 
 // ---------------------------------------------------------------- execução
@@ -515,6 +559,16 @@ const casos: Caso[] = [
     ok("adaptação e manutenção fixa com custo", algum((r) => r.itens.some((i) => i.adaptacao > 0 && i.manutencaoFixa > 0)));
     ok("implantação amortizada", algum((r) => r.itens.some((i) => i.implantacaoMes > 0)));
     ok("horas extras em horas", algum((_r, e) => e.premissas.pessoal.horasExtras50Mes > 0));
+    ok("horas noturnas com adicional diferente de 20%", algum((_r, e) => e.premissas.pessoal.horasNoturnasMes > 0 && (e.premissas.pessoal.adicionalNoturnoPct ?? 0.2) !== 0.2));
+    ok(
+      "item sem motorista no Presumido com os tributos da locação",
+      algum((r, e) => e.premissas.preco.irpjCsllSobreLucroPct === 0 && e.itens.some((i, k) => i.comMotorista === false && r.itens[k].tributosPct !== r.itens[0].tributosPct))
+    );
+    ok("item sem motorista no Lucro Real", algum((_r, e) => e.premissas.preco.irpjCsllSobreLucroPct > 0 && e.itens.some((i) => i.comMotorista === false)));
+    ok(
+      "Lucro Real com capital composto e contingência (não dedutíveis na base do IR)",
+      algum((r, e) => e.premissas.preco.irpjCsllSobreLucroPct > 0 && e.premissas.veiculo.capitalComposto && e.premissas.indiretos.contingenciaPct > 0 && r.itens.every((i) => i.naoDedutiveis > 0))
+    );
     ok("despesas sobre o preço", algum((_r, e) => e.premissas.preco.despesasSobrePrecoPct > 0));
     ok("Lucro Real com crédito e IR sobre lucro positivo", algum((r) => r.itens.some((i) => i.creditoPisCofins > 0 && i.irpjCsllSobreLucro > 0)));
     ok("Lucro Real com cenário de prejuízo (IR não incide)", algum((r, e) => e.premissas.preco.irpjCsllSobreLucroPct > 0 && r.cenarios.linhas.some((l) => l.lucro < 0)));
@@ -562,6 +616,13 @@ const casos: Caso[] = [
       e.premissas.preco.icms = 0.12;
       mudar(`Parcela intermunicipal do faturamento — Item ${e.itens[0].codigo}`, 0.5);
       mudar("ICMS", 0.12);
+      e.premissas.pessoal.horasNoturnasMes = 12;
+      mudar("Horas noturnas", 12);
+      e.premissas.pessoal.adicionalNoturnoPct = 0.25;
+      mudar("Adicional noturno", 0.25);
+      const ultimo = e.itens[e.itens.length - 1];
+      ultimo.comMotorista = false;
+      mudar(`Com motorista? (S/N) — Item ${ultimo.codigo}`, "N");
       e.precoTesteKm = 12.34;
       wb.getWorksheet("Cenários")!.getCell("B4").value = 12.34;
       if (e.premissas.perfis) {
@@ -580,6 +641,12 @@ const casos: Caso[] = [
         mudar("Unidade de preço", "VEICULO_MES");
         e.precoTesteKm = 30000;
         wb.getWorksheet("Cenários")!.getCell("B4").value = 30000;
+        // Regime: Lucro Real na planilha — a base do IR passa a contar o
+        // capital próprio dos perfis e a contingência.
+        Object.assign(e.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34 });
+        mudar("IRPJ (Presumido", 0);
+        mudar("CSLL (Presumido", 0);
+        mudar("IRPJ + CSLL sobre o lucro", 0.34);
       }
       const arquivoMudado = path.join(dir, `caso-${k}-mudado.xlsx`);
       await wb.xlsx.writeFile(arquivoMudado);

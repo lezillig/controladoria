@@ -62,6 +62,10 @@ export function Custos({ resultado, entrada }: { resultado: ResultadoSimulacao; 
       { rotulo: "Preço mínimo por km (lucro zero)", f: (i) => i.precoMinimoKm, fmt: (v) => brl(v, 4), soma: false },
       { rotulo: "Preço máximo do edital", f: (i) => i.precoMaximoKm ?? NaN, fmt: (v) => brl(v), soma: false },
       { rotulo: "Faturamento", f: (i) => i.faturamento, destaque: true },
+      // Só no Lucro Real: somam-se ao lucro antes do IR na base do IRPJ/CSLL.
+      ...(entrada.premissas.preco.irpjCsllSobreLucroPct > 0
+        ? [{ rotulo: "Não dedutíveis do IR (capital próprio + contingência)", f: (i: ComposicaoItem) => i.naoDedutiveis }]
+        : []),
       { rotulo: "IRPJ/CSLL sobre o lucro", f: (i) => i.irpjCsllSobreLucro },
       { rotulo: "Lucro líquido", f: (i) => i.lucro, destaque: true },
       { rotulo: "Margem", f: (i) => i.margem ?? NaN, fmt: (v) => pct(v), soma: false },
