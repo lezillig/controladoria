@@ -1,7 +1,7 @@
 "use client";
 
 import { ROTULO_UNIDADE, type EntradaSimulacao, type ResultadoSimulacao } from "@/lib/simulador/tipos";
-import { Cartao, brl, num, pct, td, tdN, th, thN, botao } from "../comum";
+import { Cartao, brl, num, pct, td, tdN, th, thN, botao, botaoPrimario } from "../comum";
 
 // O ORÇAMENTO — a tabela que vai para o cliente e para a diretoria.
 //
@@ -30,7 +30,19 @@ function csv(linhas: (string | number | null)[][]) {
 // Margem no CSV já em percentual ("9,06%"), como a pessoa lê na tela.
 const pctCsv = (v: number | null) => (v === null || !Number.isFinite(v) ? null : `${(v * 100).toFixed(2).replace(".", ",")}%`);
 
-export default function Proposta({ entrada, resultado, nomeArquivo }: { entrada: EntradaSimulacao; resultado: ResultadoSimulacao; nomeArquivo: string }) {
+export default function Proposta({
+  entrada,
+  resultado,
+  nomeArquivo,
+  aoExportarExcel,
+  exportando,
+}: {
+  entrada: EntradaSimulacao;
+  resultado: ResultadoSimulacao;
+  nomeArquivo: string;
+  aoExportarExcel: () => void;
+  exportando: boolean;
+}) {
   const mensal = entrada.premissas.contrato.modo === "MENSAL";
   const unidade = resultado.unidade;
   const periodo = mensal ? "mês" : "período";
@@ -83,9 +95,14 @@ export default function Proposta({ entrada, resultado, nomeArquivo }: { entrada:
       titulo="Orçamento"
       ajuda={`Preço de cada item na unidade do contrato (${ROTULO_UNIDADE[unidade]}) e o equivalente nas outras unidades. Valores do ${periodo} na utilização prevista.`}
       acao={
-        <button type="button" className={botao} onClick={exportarCsv}>
-          Baixar CSV
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className={botaoPrimario} disabled={exportando} onClick={aoExportarExcel} title="A conta inteira em fórmulas: premissas, tipos de veículo, rotas, composição, cenários e proposta">
+            {exportando ? "Gerando Excel…" : "Exportar para Excel"}
+          </button>
+          <button type="button" className={botao} onClick={exportarCsv} title="Só esta tabela, para colar em outro lugar">
+            Baixar CSV
+          </button>
+        </div>
       }
     >
       <div className="overflow-x-auto rounded-lg border border-slate-200">

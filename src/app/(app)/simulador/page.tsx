@@ -91,7 +91,7 @@ export default async function SimuladorPage() {
         ) : (
           <>
             <Tabela
-              colunas={["Estudo", "Tipo", "Situação", "Versões", "Preço (última versão)", "Margem", "Lucro/apuração", "Atualizado"]}
+              colunas={["Estudo", "Tipo", "Situação", "Versões", "Preço (última versão)", "Margem", "Lucro/apuração", "Atualizado", "Exportar"]}
               alinharDireita={[3, 4, 5, 6]}
               linhas={estudos.map((e) => {
                 const v = e.simulacoes[0];
@@ -115,6 +115,13 @@ export default async function SimuladorPage() {
                   v?.margem !== null && v?.margem !== undefined ? fmtPercent(Number(v.margem) * 100) : "—",
                   v ? fmtBRL(Math.round(Number(v.lucro) * 100)) : "—",
                   fmtData(e.atualizadoEm),
+                  v ? (
+                    <a key="x" href={`/api/simulador/${e.id}/xlsx?versao=${v.id}`} className="whitespace-nowrap text-xs font-medium text-blue-700 hover:underline" title={`Versão ${v.versao} em Excel, com a conta em fórmulas`}>
+                      Excel (v{v.versao})
+                    </a>
+                  ) : (
+                    <span key="x" className="text-xs text-slate-500" title="Salve uma versão, ou exporte o rascunho de dentro do estudo">—</span>
+                  ),
                 ];
               })}
             />

@@ -287,8 +287,8 @@ export default function EditorEstudo({
             <button type="button" className={botao} disabled={!podeDesfazer} onClick={desfazer} title="Desfazer (Ctrl+Z)">
               Desfazer
             </button>
-            <button type="button" className={botao} disabled={exportando || !resultado} onClick={exportarExcel} title={resultado ? "Baixar a planilha em fórmulas" : "Adicione rotas para exportar"}>
-              {exportando ? "Gerando…" : "Excel"}
+            <button type="button" className={botao} disabled={exportando || !resultado} onClick={exportarExcel} title={resultado ? "Baixar o estudo em Excel, com a conta em fórmulas (inclui o que ainda não foi salvo)" : "Adicione ao menos uma rota para exportar"}>
+              {exportando ? "Gerando…" : "Exportar Excel"}
             </button>
             {podeEditar && (
               <>
@@ -363,7 +363,7 @@ export default function EditorEstudo({
       {aba === "cenarios" && resultado && <Cenarios resultado={resultado} entrada={entrada} alterar={alterar} />}
       {aba === "decisao" && (painel ? <Decisao painel={painel} /> : !calculo.erro && <p className="text-sm text-slate-500">Calculando…</p>)}
       {aba === "decisao" && podeConsultarEspecialista && <PerguntarAoEspecialista nome={estudo.nome} versao={versaoBase} sujo={sujo} />}
-      {aba === "proposta" && resultado && <Proposta entrada={entrada} resultado={resultado} nomeArquivo={nomeArquivo} />}
+      {aba === "proposta" && resultado && <Proposta entrada={entrada} resultado={resultado} nomeArquivo={nomeArquivo} aoExportarExcel={exportarExcel} exportando={exportando} />}
       <div hidden={aba !== "acompanhamento"}>{acompanhamento}</div>
 
       {/* Próxima etapa: o orçamento se lê de cima para baixo e da esquerda

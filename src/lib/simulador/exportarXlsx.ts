@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, IRPJ_LOCACAO_PADRAO } from "./motor";
-import type { EntradaSimulacao, PerfilVeiculo, Premissas, ResultadoSimulacao } from "./tipos";
+import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, type EntradaSimulacao, type PerfilVeiculo, type Premissas, type ResultadoSimulacao } from "./tipos";
 
 // A PLANILHA EXCEL DE UMA SIMULAÇÃO — abas Regras do Edital, Premissas, Perfis
 // de Veículo, Rotas, Composição de Custo, Cenários e Proposta, no padrão das planilhas de
@@ -43,6 +43,17 @@ export type DadosExportacao = {
     plataforma: string | null;
   };
   licitante: { razaoSocial: string; cnpj: string; endereco?: string | null; representante?: string | null };
+  // Público (padrão): proposta de licitação, com as declarações do edital.
+  // Privado: proposta comercial, com as condições do estudo.
+  esfera?: "PUBLICO" | "PRIVADO";
+  comercial?: {
+    cliente?: string | null;
+    validadeProposta?: string | null;
+    inicioPrevisto?: string | null;
+    indiceReajuste?: string | null;
+    formaFaturamento?: string | null;
+    avisoRescisaoDias?: number | null;
+  };
   regras: { tema: string; texto: string; impacto: string; campo: string | null }[];
   entrada: EntradaSimulacao;
   resultado: ResultadoSimulacao;
@@ -200,10 +211,11 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   const [wsRegras, ws, wf, wr, wc, wz, wp] = ABAS.map((nome) => wb.addWorksheet(nome));
 
   // ============================================================ REGRAS DO EDITAL
-  titulo(wsRegras, 1, `REGRAS DO EDITAL / TR COM IMPACTO NO CUSTO E NA PARTICIPAÇÃO — ${edital.numero}`, 4);
+  const privado = d.esfera === "PRIVADO";
+  titulo(wsRegras, 1, privado ? `CONDIÇÕES DO CLIENTE COM IMPACTO NO CUSTO — ${edital.numero}` : `REGRAS DO EDITAL / TR COM IMPACTO NO CUSTO E NA PARTICIPAÇÃO — ${edital.numero}`, 4);
   cabecalho(wsRegras, 3, ["Tema", "Regra (fonte)", "Impacto no custo / risco", "Onde está na planilha"], [22, 70, 55, 26], 20);
   if (d.regras.length === 0) {
-    escrever(wsRegras, 4, 1, "Nenhuma regra do edital registrada nesta simulação.", { borda: false, tamanho: 9 });
+    escrever(wsRegras, 4, 1, privado ? "Nenhuma condição do cliente registrada nesta simulação." : "Nenhuma regra do edital registrada nesta simulação.", { borda: false, tamanho: 9 });
   }
   d.regras.forEach((rg, i) => {
     const l = 4 + i;
@@ -256,7 +268,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     secao(ws, lp++, texto, 4);
   };
 
-  novaSecao("1. DADOS DO LICITANTE");
+  novaSecao(privado ? "1. DADOS DA PROPONENTE" : "1. DADOS DO LICITANTE");
   premissa("razao", "Razão social", licitante.razaoSocial, "", "Conforme o CNPJ.");
   premissa("cnpj", "CNPJ", licitante.cnpj, "", "");
   premissa("endereco", "Endereço da sede", licitante.endereco ?? "", "", licitante.endereco ? "" : "PREENCHER — endereço completo da sede.", undefined, !licitante.endereco);
@@ -429,7 +441,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   const xv = (k: keyof Premissas["variaveis"]) => (pf: PerfilVeiculo) => pf.variaveis[k];
   const linhasPerfil: LinhaPerfil[] = [
     { rotulo: "Descrição", padrao: "Veículo padrão", valor: (pf) => pf.descricao },
-    { rotulo: "Tipo", padrao: "—", valor: (pf) => pf.tipo },
+    { rotulo: "Tipo · energia", padrao: "Diesel", valor: (pf) => `${ROTULO_TIPO_VEICULO[pf.tipo] ?? pf.tipo} · ${ROTULO_ENERGIA[pf.energia ?? "DIESEL"]}` },
     { rotulo: "MOTORISTA", secao: true },
     { chave: "sal", rotulo: "Salário base do motorista deste veículo", unidade: "R$/mês", fmt: BRL, padrao: P.salMot, valor: (pf) => pf.motorista.salario },
     { chave: "mpv", rotulo: "Motoristas por veículo (referência para as rotas)", unidade: "motoristas", fmt: NUM, padrao: "", valor: (pf) => pf.motorista.motoristasPorVeiculo },
@@ -460,8 +472,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "adaptMeses", rotulo: "Prazo de depreciação das adaptações", unidade: "meses", fmt: INT, padrao: P.adaptMeses, valor: vv("adaptacaoMesesDepreciacao") },
     { chave: "manFixa", rotulo: "Manutenção fixa", unidade: "% do valor ao mês", fmt: PCT2, padrao: P.manutFixa, valor: vv("manutencaoFixaPctMes") },
     { rotulo: "INSUMOS POR KM RODADO", secao: true },
-    { chave: "diesel", rotulo: "Combustível", unidade: "R$/litro", fmt: BRL, padrao: P.diesel, valor: xv("dieselLitro") },
-    { chave: "consAsf", rotulo: "Consumo em asfalto", unidade: "km/litro", fmt: NUM, padrao: P.consAsfalto, valor: xv("consumoAsfaltoKmL") },
+    { chave: "diesel", rotulo: "Combustível / energia", unidade: "R$ por litro (kWh no elétrico)", fmt: BRL, padrao: P.diesel, valor: xv("dieselLitro") },
+    { chave: "consAsf", rotulo: "Consumo em asfalto", unidade: "km por litro (kWh no elétrico)", fmt: NUM, padrao: P.consAsfalto, valor: xv("consumoAsfaltoKmL") },
     { chave: "consTerra", rotulo: "Consumo em terra", unidade: "km/litro", fmt: NUM, padrao: P.consTerra, valor: xv("consumoTerraKmL") },
     { chave: "arla", rotulo: "ARLA 32", unidade: "R$/km", fmt: BRL4, padrao: P.arla, valor: xv("arlaKm") },
     { chave: "oleo", rotulo: "Lubrificantes, lavagem", unidade: "R$/km", fmt: BRL4, padrao: P.oleo, valor: xv("oleoLavagemKm") },
@@ -1144,11 +1156,12 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   // ============================================================ PROPOSTA
   larguras(wp, [15, 58, 14, 14, 14, 16, 16, 18]);
   const NCP = 8;
-  titulo(wp, 1, `PROPOSTA DE PREÇOS — ${edital.numero} — ${edital.orgao} — ${edital.municipio}/${edital.uf}`, NCP);
+  const local = [edital.municipio, edital.uf].filter(Boolean).join("/");
+  titulo(wp, 1, `${privado ? "PROPOSTA COMERCIAL" : "PROPOSTA DE PREÇOS"} — ${[edital.numero, edital.orgao, local].filter(Boolean).join(" — ")}`, NCP);
   nota(wp, 2, `Objeto: ${edital.objeto}`, NCP, 40);
-  secao(wp, 4, "DADOS DO LICITANTE", NCP);
+  secao(wp, 4, privado ? "DADOS DA PROPONENTE" : "DADOS DO LICITANTE", NCP);
   const dadosLicitante: [string, string][] = [
-    ["Licitante:", `${P.razao}&"  —  CNPJ "&${P.cnpj}`],
+    [privado ? "Proponente:" : "Licitante:", `${P.razao}&"  —  CNPJ "&${P.cnpj}`],
     // `&""`: premissa vazia aparece vazia, e não como 0.
     ["Endereço:", `${P.endereco}&""`],
     ["Representante:", `${P.representante}&""`],
@@ -1161,7 +1174,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   cabecalho(
     wp,
     9,
-    ["Item", "Descrição do serviço", "Unidade", mensal ? "Quantidade (vigência)" : "Quantidade (período)", "Preço máx. (R$/km)", "Preço proposto (unidade)", "Parcela fixa binômia (R$/veíc.-mês)", "Valor total (R$)"],
+    ["Item", "Descrição do serviço", "Unidade", mensal ? "Quantidade (vigência)" : "Quantidade (período)", privado ? "Referência do cliente (R$/km)" : "Preço máx. (R$/km)", "Preço proposto (unidade)", "Parcela fixa binômia (R$/veíc.-mês)", "Valor total (R$)"],
     undefined,
     40
   );
@@ -1173,7 +1186,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     const c = colunaItem(i);
     escrever(wp, l, 1, it.codigo, { tipo: "texto", alinhar: { horizontal: "center", vertical: "top" } });
     escrever(wp, l, 2, it.descricao, { quebra: true });
-    escrever(wp, l, 3, fx(`${U}`), { tipo: "link", alinhar: TOPO });
+    // A unidade por extenso; as fórmulas continuam lendo o código em ${U}.
+    escrever(wp, l, 3, fx(`IF(${U}="KM","R$/km",IF(${U}="VEICULO_MES","R$/veículo-mês",IF(${U}="DIARIA","R$/diária",IF(${U}="HORA","R$/hora",IF(${U}="BINOMIA","R$/veíc.-mês + R$/km",${U})))))`), { tipo: "link", alinhar: TOPO });
     escrever(wp, l, 4, fx(`${CP("qtdU", c)}*${anual}`), { tipo: "link", fmt: NUM, alinhar: TOPO });
     escrever(wp, l, 5, fx(`IF(N(${CP("pmax", c)})=0,"",${CP("pmax", c)})`), { tipo: "link", fmt: BRL, alinhar: TOPO });
     escrever(wp, l, 6, fx(CP("ppropU", c)), { tipo: "link", fmt: BRL, fundo: FUNDO_PREENCHER, alinhar: TOPO });
@@ -1201,7 +1215,19 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   }
   lp2++;
   const orgaoCaixa = edital.orgao.toUpperCase();
-  const declaracoes = [
+  const c = d.comercial ?? {};
+  const dataBrasil = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "UTC" }) : null);
+  const declaracoesPrivado = [
+    `CONDIÇÃO DE PAGAMENTO: ${p.preco.prazoRecebimentoDias} dias após a emissão da nota fiscal${c.formaFaturamento ? `, com faturamento ${c.formaFaturamento.toLowerCase()}` : ""}.`,
+    `VALIDADE DA PROPOSTA: ${dataBrasil(c.validadeProposta) ? `até ${dataBrasil(c.validadeProposta)}` : "30 (trinta) dias"}.`,
+    ...(dataBrasil(c.inicioPrevisto) ? [`INÍCIO PREVISTO DA OPERAÇÃO: ${dataBrasil(c.inicioPrevisto)}.`] : []),
+    `VIGÊNCIA: ${p.contrato.vigenciaMeses} meses${c.indiceReajuste ? `, com reajuste anual pelo ${c.indiceReajuste}` : ""}.`,
+    ...(c.avisoRescisaoDias ? [`RESCISÃO: aviso prévio de ${c.avisoRescisaoDias} dias, por qualquer das partes.`] : []),
+    ...(lote ? ["PREÇO ÚNICO: o preço proposto é o preço médio dos itens ponderado pela quantidade, arredondado para cima em 2 casas."] : []),
+    "Estão incluídos nos preços todos os custos da operação descrita — motoristas e encargos, veículos, combustível, manutenção, seguros, tributos e administração.",
+    "Serviços fora do escopo descrito (km ou horas além do previsto, viagens adicionais) serão orçados à parte.",
+  ];
+  const declaracoesPublico = [
     `CONDIÇÃO DE PAGAMENTO: ${p.preco.prazoRecebimentoDias} dias, após a liquidação e aceite pelos gestores do contrato, conforme o edital.`,
     "VALIDADE DA PROPOSTA: 60 (SESSENTA) DIAS.",
     "Os valores que ultrapassarem 02 (duas) casas decimais após a vírgula serão desconsiderados para fins de apuração do preço final.",
@@ -1215,6 +1241,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     `DECLARAMOS QUE nenhum direito a indenização ou a reembolso de quaisquer despesas nos será devido, caso nossa proposta não seja aceita pelo(a) ${orgaoCaixa}.`,
     "DECLARAMOS QUE CONCORDAMOS integralmente com as condições estipuladas na presente licitação e, que caso vencedores, nos submeteremos ao cumprimento de seus termos.",
   ];
+  const declaracoes = privado ? declaracoesPrivado : declaracoesPublico;
   for (const t of declaracoes) {
     nota(wp, lp2, t, NCP, t.length < 120 ? 15 : 42);
     lp2++;
