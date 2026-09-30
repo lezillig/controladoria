@@ -19,7 +19,7 @@ import {
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerNumero } from "@/lib/simulador/numeros";
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
-import type { EntradaSimulacao, TipoVeiculo, UnidadePreco } from "@/lib/simulador/tipos";
+import { TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
 
 // AÇÕES DO SIMULADOR. Toda gravação exige "gerir-simulador" e deixa rastro na
@@ -49,11 +49,13 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   const unidade = (texto(formData, "unidadePreco") ?? "KM") as UnidadePreco;
   if (!UNIDADES.includes(unidade)) return { erro: "Unidade de preço inválida." };
   const dataSessao = texto(formData, "dataSessao");
-  const TIPOS_VEICULO: TipoVeiculo[] = ["CARRO", "VAN", "MICRO", "ONIBUS"];
+  const publico = texto(formData, "esfera") === "PUBLICO";
+  const validade = texto(formData, "validadeProposta");
+  const inicio = texto(formData, "inicioPrevisto");
   const tiposVeiculo = [...new Set(formData.getAll("tiposVeiculo").map(String))].filter((t): t is TipoVeiculo => (TIPOS_VEICULO as string[]).includes(t));
   // Número digitado por extenso ("doze") ou fora de faixa não vira padrão
   // calado: volta como erro para a pessoa corrigir.
-  for (const [campo, rotulo, max] of [["vigenciaMeses", "Vigência", 240], ["prazoPagamentoDias", "Prazo de pagamento", 365], ["valorTotalMaximo", "Valor total máximo", 1e12]] as const) {
+  for (const [campo, rotulo, max] of [["vigenciaMeses", "Vigência", 240], ["prazoPagamentoDias", "Prazo de pagamento", 365], ["valorTotalMaximo", "Valor total máximo", 1e12], ["avisoRescisaoDias", "Aviso para rescisão", 365]] as const) {
     const bruto = texto(formData, campo);
     const n = numero(formData, campo);
     if (bruto !== null && (n === null || n < 0 || n > max)) return { erro: `${rotulo}: informe um número válido.` };
@@ -72,14 +74,22 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
       unidadePreco: unidade,
       vigenciaMeses: numero(formData, "vigenciaMeses"),
       prazoPagamentoDias: numero(formData, "prazoPagamentoDias"),
-      orgao: texto(formData, "orgao", 200),
-      numeroEdital: texto(formData, "numeroEdital", 80),
-      modalidade: texto(formData, "modalidade", 80),
-      plataforma: texto(formData, "plataforma", 120),
-      dataSessao: dataSessao ? new Date(`${dataSessao}T12:00:00`) : null,
-      srp: formData.get("srp") === "on",
-      valorTotalMaximo: numero(formData, "valorTotalMaximo"),
+      orgao: publico ? (texto(formData, "orgao", 200) ?? texto(formData, "cliente", 200)) : null,
+      numeroEdital: publico ? texto(formData, "numeroEdital", 80) : null,
+      modalidade: publico ? texto(formData, "modalidade", 80) : null,
+      plataforma: publico ? texto(formData, "plataforma", 120) : null,
+      dataSessao: publico && dataSessao ? new Date(`${dataSessao}T12:00:00`) : null,
+      srp: publico && formData.get("srp") === "on",
+      valorTotalMaximo: publico ? numero(formData, "valorTotalMaximo") : null,
       tiposVeiculo,
+      esfera: publico ? "PUBLICO" : "PRIVADO",
+      clienteDocumento: publico ? null : (texto(formData, "clienteDocumento", 20)?.replace(/[^\d./-]/g, "") || null),
+      contatoCliente: publico ? null : texto(formData, "contatoCliente", 160),
+      validadeProposta: !publico && validade ? new Date(`${validade}T12:00:00`) : null,
+      inicioPrevisto: inicio ? new Date(`${inicio}T12:00:00`) : null,
+      indiceReajuste: texto(formData, "indiceReajuste", 80),
+      formaFaturamento: publico ? null : texto(formData, "formaFaturamento", 40),
+      avisoRescisaoDias: publico ? null : numero(formData, "avisoRescisaoDias"),
     },
     session.name
   );

@@ -15,9 +15,10 @@ import type { RealizadoMes } from "./calibracao";
 // da versão, e a versão fica congelada. Reexecutar é chamar simular() com o
 // snapshot — o resultado tem de ser o gravado, e `reexecutar` confere.
 
-export const TIPOS_ESTUDO = ["LICITACAO", "CONTRATO_PRIVADO", "RENOVACAO", "ORCAMENTO_INTERNO", "OUTRO"] as const;
+export const TIPOS_ESTUDO = ["LICITACAO", "CONTRATACAO_DIRETA", "CONTRATO_PRIVADO", "RENOVACAO", "ORCAMENTO_INTERNO", "OUTRO"] as const;
 export const ROTULO_TIPO_ESTUDO: Record<(typeof TIPOS_ESTUDO)[number], string> = {
   LICITACAO: "Licitação",
+  CONTRATACAO_DIRETA: "Contratação direta (dispensa / inexigibilidade)",
   CONTRATO_PRIVADO: "Contrato privado",
   RENOVACAO: "Renovação de contrato",
   ORCAMENTO_INTERNO: "Orçamento interno",
@@ -68,6 +69,14 @@ export type DadosEstudo = {
   valorTotalMaximo?: number | null;
   // Na ordem escolhida; o primeiro é o tipo das rotas novas.
   tiposVeiculo?: TipoVeiculo[];
+  esfera?: "PUBLICO" | "PRIVADO";
+  clienteDocumento?: string | null;
+  contatoCliente?: string | null;
+  validadeProposta?: Date | null;
+  inicioPrevisto?: Date | null;
+  indiceReajuste?: string | null;
+  formaFaturamento?: string | null;
+  avisoRescisaoDias?: number | null;
 };
 
 export async function criarEstudo(companyId: string, dados: DadosEstudo, autor: string | null): Promise<string> {
@@ -79,6 +88,14 @@ export async function criarEstudo(companyId: string, dados: DadosEstudo, autor: 
       cliente: dados.cliente ?? null,
       tipoServico: dados.tipoServico,
       tiposVeiculo: dados.tiposVeiculo ?? [],
+      esfera: dados.esfera ?? (dados.tipo === "LICITACAO" || dados.tipo === "CONTRATACAO_DIRETA" ? "PUBLICO" : "PRIVADO"),
+      clienteDocumento: dados.clienteDocumento ?? null,
+      contatoCliente: dados.contatoCliente ?? null,
+      validadeProposta: dados.validadeProposta ?? null,
+      inicioPrevisto: dados.inicioPrevisto ?? null,
+      indiceReajuste: dados.indiceReajuste ?? null,
+      formaFaturamento: dados.formaFaturamento ?? null,
+      avisoRescisaoDias: dados.avisoRescisaoDias ?? null,
       uf: dados.uf ?? null,
       municipio: dados.municipio ?? null,
       descricao: dados.descricao ?? null,
@@ -224,7 +241,7 @@ export async function entradaInicial(
   const baseCarregada = base === undefined ? await baseVigente(companyId) : base;
   const vazia = baseCarregada && baseCarregada.parametros.size === 0 && baseCarregada.veiculos.length === 0 && baseCarregada.funcoes.length === 0;
   const { premissas, origem } = premissasDaBase(vazia ? null : baseCarregada, {
-    clientePublico: estudo.tipo === "LICITACAO",
+    clientePublico: estudo.esfera === "PUBLICO",
     escolar: estudo.tipoServico === "ESCOLAR",
     baseLocal: false,
     veiculoId: baseCarregada?.veiculos[0]?.id ?? null,
@@ -426,6 +443,7 @@ export async function importarHistorico(companyId: string, autor: string | null)
       companyId,
       {
         tipo: "LICITACAO",
+        esfera: "PUBLICO",
         nome: `${h.edital.municipio}/${h.edital.uf} — ${h.edital.numero}`,
         cliente: h.edital.orgao,
         tipoServico: h.edital.tipoServico,

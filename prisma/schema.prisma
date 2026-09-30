@@ -1855,6 +1855,18 @@ model SimEstudo {
   // Tipos de veículo que o estudo usa (CARRO | VAN | MICRO | ONIBUS), na ordem
   // escolhida; o primeiro é o das rotas novas. Vazio = todos os da base.
   tiposVeiculo        String[]  @default([])
+  // PUBLICO (licitação, contratação direta, renovação de contrato público) ou
+  // PRIVADO (proposta comercial). Decide o formulário e o prazo de
+  // recebimento padrão da base.
+  esfera              String    @default("PRIVADO")
+  // Só privado: dados da proposta comercial. Documento é o CNPJ da empresa
+  // cliente (nunca CPF de pessoa).
+  clienteDocumento    String?
+  contatoCliente      String?
+  validadeProposta    DateTime?
+  inicioPrevisto      DateTime?
+  formaFaturamento    String?
+  avisoRescisaoDias   Int?
   valorTotalMaximo    Decimal?  @db.Decimal(18, 6)
   prorrogavelAte      String?
   garantiaPct         Decimal?  @db.Decimal(18, 6)

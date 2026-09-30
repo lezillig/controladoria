@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { exigirPermissao } from "../../_dados";
-import { larguraFormulario } from "@/lib/ui";
+import { larguraPainel } from "@/lib/ui";
 import NovoEstudoForm from "./NovoEstudoForm";
 
 export default async function NovoEstudoPage() {
   await exigirPermissao("gerir-simulador");
   return (
-    <div className={`${larguraFormulario} space-y-6`}>
+    <div className={`${larguraPainel} space-y-6`}>
       <div>
         <Link href="/simulador" className="text-xs font-medium text-blue-700 hover:underline">
           ← Simulador

@@ -176,14 +176,84 @@ export type Premissas = {
 // obra: o motorista de ônibus (CNH D, outra faixa da convenção) não ganha o
 // mesmo que o de carro (CNH B), e a quantidade de motoristas por veículo muda
 // com a jornada que o tipo costuma cumprir.
-export type TipoVeiculo = "CARRO" | "VAN" | "MICRO" | "ONIBUS";
+// A CATEGORIA é o veículo-base (define CNH, consumo e manutenção de
+// referência, e é por ela que os custos reais são medidos). O TIPO acrescenta
+// a variante: adaptado para acessibilidade (elevador ou rampa, ancoragem de
+// cadeira de rodas, menos lugares) ou unidade móvel (veículo implementado como
+// consultório, posto de atendimento ou laboratório — não leva passageiros).
+export type CategoriaVeiculo = "CARRO" | "VAN" | "MICRO" | "ONIBUS";
+export type VarianteVeiculo = "PADRAO" | "ADAPTADO" | "UNIDADE_MOVEL";
+export type TipoVeiculo =
+  | CategoriaVeiculo
+  | "CARRO_ADAPTADO"
+  | "VAN_ADAPTADA"
+  | "MICRO_ADAPTADO"
+  | "ONIBUS_ADAPTADO"
+  | "VAN_UNIDADE_MOVEL"
+  | "MICRO_UNIDADE_MOVEL"
+  | "ONIBUS_UNIDADE_MOVEL";
+
+export const TIPOS_VEICULO: TipoVeiculo[] = [
+  "CARRO",
+  "VAN",
+  "MICRO",
+  "ONIBUS",
+  "CARRO_ADAPTADO",
+  "VAN_ADAPTADA",
+  "MICRO_ADAPTADO",
+  "ONIBUS_ADAPTADO",
+  "VAN_UNIDADE_MOVEL",
+  "MICRO_UNIDADE_MOVEL",
+  "ONIBUS_UNIDADE_MOVEL",
+];
 
 export const ROTULO_TIPO_VEICULO: Record<TipoVeiculo, string> = {
   CARRO: "Carro",
   VAN: "Van",
   MICRO: "Micro-ônibus",
   ONIBUS: "Ônibus",
+  CARRO_ADAPTADO: "Carro adaptado",
+  VAN_ADAPTADA: "Van adaptada",
+  MICRO_ADAPTADO: "Micro adaptado",
+  ONIBUS_ADAPTADO: "Ônibus adaptado",
+  VAN_UNIDADE_MOVEL: "Van unidade móvel",
+  MICRO_UNIDADE_MOVEL: "Micro unidade móvel",
+  ONIBUS_UNIDADE_MOVEL: "Ônibus unidade móvel",
 };
+
+export const CATEGORIA_DO_TIPO: Record<TipoVeiculo, CategoriaVeiculo> = {
+  CARRO: "CARRO",
+  VAN: "VAN",
+  MICRO: "MICRO",
+  ONIBUS: "ONIBUS",
+  CARRO_ADAPTADO: "CARRO",
+  VAN_ADAPTADA: "VAN",
+  MICRO_ADAPTADO: "MICRO",
+  ONIBUS_ADAPTADO: "ONIBUS",
+  VAN_UNIDADE_MOVEL: "VAN",
+  MICRO_UNIDADE_MOVEL: "MICRO",
+  ONIBUS_UNIDADE_MOVEL: "ONIBUS",
+};
+
+export const VARIANTE_DO_TIPO: Record<TipoVeiculo, VarianteVeiculo> = {
+  CARRO: "PADRAO",
+  VAN: "PADRAO",
+  MICRO: "PADRAO",
+  ONIBUS: "PADRAO",
+  CARRO_ADAPTADO: "ADAPTADO",
+  VAN_ADAPTADA: "ADAPTADO",
+  MICRO_ADAPTADO: "ADAPTADO",
+  ONIBUS_ADAPTADO: "ADAPTADO",
+  VAN_UNIDADE_MOVEL: "UNIDADE_MOVEL",
+  MICRO_UNIDADE_MOVEL: "UNIDADE_MOVEL",
+  ONIBUS_UNIDADE_MOVEL: "UNIDADE_MOVEL",
+};
+
+// O tipo de uma categoria com uma variante (Van + adaptado = Van adaptada).
+// Carro não tem unidade móvel: fica o carro.
+export function tipoDe(categoria: CategoriaVeiculo, variante: VarianteVeiculo): TipoVeiculo {
+  return TIPOS_VEICULO.find((t) => CATEGORIA_DO_TIPO[t] === categoria && VARIANTE_DO_TIPO[t] === variante) ?? categoria;
+}
 
 export type PerfilVeiculo = {
   codigo: string;

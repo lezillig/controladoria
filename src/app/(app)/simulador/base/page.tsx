@@ -4,7 +4,7 @@ import { paraNumero } from "@/lib/simulador/baseDeCustos";
 import { CATALOGO_PARAMETROS } from "@/lib/simulador/catalogo";
 import { camposEditaveis, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
-import { ROTULO_TIPO_VEICULO } from "@/lib/simulador/tipos";
+import { ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
 import { Secao } from "../../_componentes";
@@ -83,6 +83,7 @@ export default async function BaseDeCustosPage() {
         tipo: ROTULO_TIPO_VEICULO[p.tipo],
         modelo: p.descricao,
         lotacao: p.lotacao ?? null,
+        acessivel: VARIANTE_DO_TIPO[p.tipo] === "ADAPTADO" ? true : null,
         valorCompra: v.valor,
         consumoKmL: va.consumoAsfaltoKmL,
         manutencaoKm: va.manutencaoAsfaltoKm,
@@ -94,7 +95,9 @@ export default async function BaseDeCustosPage() {
       },
     };
   });
-  const sugestoesFuncao = PERFIS_PADRAO.map((p) => ({
+  // Salário por CATEGORIA (a van adaptada paga o motorista de van, salvo
+  // função própria cadastrada).
+  const sugestoesFuncao = PERFIS_PADRAO.filter((p) => VARIANTE_DO_TIPO[p.tipo] === "PADRAO").map((p) => ({
     rotulo: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`,
     campos: { funcao: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`, salarioBase: p.motorista.salario, encargosPct: PREMISSAS_PADRAO.pessoal.encargosPct },
   }));

@@ -222,6 +222,25 @@ alcança os tipos de veículo), custos reais, histórico de disputas e base de
 custos. A aba Decisão leva ao especialista com perguntas prontas sobre o
 estudo aberto. Ele lê só versões salvas.
 
+## 7.0 Público ou privado, e os tipos de veículo
+
+O estudo nasce com a **esfera**: público (licitação, contratação direta,
+renovação — pede edital, modalidade, sessão, preço máximo, reajuste do
+edital, SRP) ou privado (proposta comercial — CNPJ da empresa cliente,
+responsável, validade da proposta, início previsto, reajuste, faturamento,
+aviso de rescisão). A esfera também escolhe o prazo de recebimento padrão
+da base (prefeituras ou empresas).
+
+Tipos de veículo: as quatro **categorias** (carro, van, micro, ônibus) e as
+variantes **adaptada** (elevador ou rampa, ancoragem de cadeira de rodas,
+menos lugares; o equipamento entra como adaptação depreciada na vigência, e
+a manutenção dele por mês) e **unidade móvel** (veículo implementado como
+consultório ou posto de atendimento; a implementação entra como adaptação,
+não leva passageiros, CNH C acima de 3,5 t). Os valores padrão das variantes
+são estimativas, ajustáveis em Custos base. Os custos reais são medidos por
+categoria e valem para as variantes dela; o salário do motorista vem da
+função do mesmo tipo ou, sem ela, da categoria.
+
 ## 7.1 Custos base editáveis
 
 A tela **Custos base** (submenu do simulador) mostra cada parâmetro do

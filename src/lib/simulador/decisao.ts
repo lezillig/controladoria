@@ -1,6 +1,6 @@
 import { simular } from "./motor";
 import { escreverCaminho, lerCaminho, type MapaOrigem } from "./premissas";
-import type { EntradaSimulacao, Premissas, ResultadoSimulacao, UnidadePreco } from "./tipos";
+import { CATEGORIA_DO_TIPO, type EntradaSimulacao, type Premissas, type ResultadoSimulacao, type UnidadePreco } from "./tipos";
 
 // O PAINEL DE DECISÃO — o que a simulação diz a quem decide o lance.
 //
@@ -200,7 +200,7 @@ export function montarPainel(
   // 8% a.a. pelo método percentual o veículo não se paga no contrato.
   const depreciacaoBaixa = [
     ...(entrada.premissas.perfis ?? []).filter(
-      (x) => (x.tipo === "VAN" || x.tipo === "MICRO") && (x.veiculo.metodoDepreciacao ?? entrada.premissas.veiculo.metodoDepreciacao) === "PERCENTUAL" && x.veiculo.depreciacaoAa < 0.08
+      (x) => (CATEGORIA_DO_TIPO[x.tipo] === "VAN" || CATEGORIA_DO_TIPO[x.tipo] === "MICRO") && (x.veiculo.metodoDepreciacao ?? entrada.premissas.veiculo.metodoDepreciacao) === "PERCENTUAL" && x.veiculo.depreciacaoAa < 0.08
     ),
   ];
   const v = entrada.premissas.veiculo;

@@ -1,5 +1,5 @@
 import { CAMPOS_PREMISSAS, escreverCaminho, type MapaOrigem } from "./premissas";
-import type { PerfilVeiculo, Premissas } from "./tipos";
+import { CATEGORIA_DO_TIPO, type PerfilVeiculo, type Premissas } from "./tipos";
 
 // A PARTE DOS CUSTOS REAIS QUE RODA NO NAVEGADOR — o tipo do indicador e a
 // aplicação dele às premissas. A coleta (custosReais.ts) consulta o banco e
@@ -67,10 +67,15 @@ export function aplicarIndicadores(
     }
     const fonte = `custo real — ${ind.rotulo} (${ind.periodo}; confiança ${ROTULO_CONFIANCA[ind.confianca]})`;
 
-    const doPerfil = /^perfil:([A-Z]+):((veiculo|variaveis)\.(\w+))$/.exec(caminho);
+    const doPerfil = /^perfil:([A-Z_]+):((veiculo|variaveis)\.(\w+))$/.exec(caminho);
     if (doPerfil) {
       const [, tipo, campo, grupo, chave] = doPerfil;
-      const alvos = novosPerfis.filter((p) => p.tipo === tipo);
+      // O indicador da categoria (medido em todas as vans) vale para as
+      // variantes dela (van adaptada, van unidade móvel), salvo se a pessoa
+      // escolheu também um indicador próprio da variante.
+      const alvos = novosPerfis.filter(
+        (p) => p.tipo === tipo || (CATEGORIA_DO_TIPO[p.tipo] === tipo && !caminhosEscolhidos.includes(`perfil:${p.tipo}:${campo}`))
+      );
       const grupoDe = (p: PerfilVeiculo) => p[grupo as "veiculo" | "variaveis"] as Record<string, unknown>;
       if (alvos.length === 0 || !numericos.has(campo) || typeof grupoDe(alvos[0])[chave] !== "number") {
         ignorados.push(caminho);

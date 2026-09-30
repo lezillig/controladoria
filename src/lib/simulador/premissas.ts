@@ -1,4 +1,4 @@
-import type { PerfilVeiculo, Premissas, TipoVeiculo } from "./tipos";
+import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
@@ -405,7 +405,7 @@ function perfil(
   };
 }
 
-export const PERFIS_PADRAO: PerfilVeiculo[] = [
+const PERFIS_BASE: PerfilVeiculo[] = [] = [
   perfil("CARRO", "CARRO", "Carro executivo (sedã/SUV)", 4, "B", 2400, 1.2,
     { valor: 140000, seguroMes: 350, ipvaLicenciamentoAno: 5200, laudoVistoriaAno: 300, rastreadorMes: 80 },
     { dieselLitro: 6.3, consumoAsfaltoKmL: 11, consumoTerraKmL: 9, arlaKm: 0, pneusAsfaltoKm: 0.05, pneusTerraKm: 0.07, manutencaoAsfaltoKm: 0.18, manutencaoTerraKm: 0.25 }),
@@ -416,17 +416,68 @@ export const PERFIS_PADRAO: PerfilVeiculo[] = [
   perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", 3200, 1.2,
     { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90 },
     { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),
+]
+
+// ADAPTADOS (acessibilidade): o veículo da categoria com elevador ou rampa,
+// ancoragem de cadeira de rodas e cinto de 4 pontos (NBR 14022), depreciados
+// na vigência como adaptação; manutenção e certificação do equipamento por
+// mês; menos lugares, porque cada cadeira ocupa o espaço de 3 a 4 bancos.
+// UNIDADES MÓVEIS: o veículo implementado como consultório, posto de
+// atendimento ou laboratório. A implementação (carroceria, climatização,
+// gerador, mobiliário) entra como adaptação; limpeza técnica e manutenção dos
+// sistemas por mês. Não leva passageiros; acima de 3,5 t a CNH é C.
+// Todos ESTIMATIVAS de mercado (set/2026) — ajuste em Custos base.
+function variante(
+  categoria: CategoriaVeiculo,
+  tipo: TipoVeiculo,
+  descricao: string,
+  lotacao: number | null,
+  cnh: string,
+  v: Partial<Premissas["veiculo"]>,
+  x: Partial<Premissas["variaveis"]> = {}
+): PerfilVeiculo {
+  const base = PERFIS_BASE.find((p) => p.tipo === categoria)!;
+  return {
+    ...structuredClone(base),
+    codigo: tipo,
+    tipo,
+    descricao,
+    lotacao,
+    categoriaCnh: cnh,
+    veiculo: { ...base.veiculo, adaptacaoMesesDepreciacao: 60, ...v },
+    variaveis: { ...base.variaveis, ...x },
+  };
+}
+
+export const PERFIS_PADRAO: PerfilVeiculo[] = [
+  ...PERFIS_BASE,
+  variante("CARRO", "CARRO_ADAPTADO", "Carro adaptado (rampa, 1 cadeira de rodas)", 3, "B", { valor: 150000, adaptacaoValor: 40000, acessibilidadeMes: 150 }),
+  variante("VAN", "VAN_ADAPTADA", "Van adaptada (elevador, 2 cadeiras de rodas)", 12, "D", { adaptacaoValor: 60000, acessibilidadeMes: 300 }),
+  variante("MICRO", "MICRO_ADAPTADO", "Micro-ônibus adaptado (elevador)", 24, "D", { adaptacaoValor: 70000, acessibilidadeMes: 350 }),
+  variante("ONIBUS", "ONIBUS_ADAPTADO", "Ônibus adaptado (elevador)", 44, "D", { adaptacaoValor: 80000, acessibilidadeMes: 400 }),
+  variante("VAN", "VAN_UNIDADE_MOVEL", "Van unidade móvel (consultório/atendimento)", null, "B", { adaptacaoValor: 180000, higienizacaoMes: 450, manutencaoFixaPctMes: 0.002 }, { consumoAsfaltoKmL: 7.5 }),
+  variante("MICRO", "MICRO_UNIDADE_MOVEL", "Micro-ônibus unidade móvel (consultório/atendimento)", null, "C", { adaptacaoValor: 300000, higienizacaoMes: 600, manutencaoFixaPctMes: 0.002 }, { consumoAsfaltoKmL: 4.2 }),
+  variante("ONIBUS", "ONIBUS_UNIDADE_MOVEL", "Ônibus unidade móvel (consultório/atendimento)", null, "C", { adaptacaoValor: 500000, higienizacaoMes: 800, manutencaoFixaPctMes: 0.002 }, { consumoAsfaltoKmL: 2.6 }),
 ];
 
-// A que tipo de veículo uma linha da base (aba 1, tipo; aba 2, função) se
-// refere, pelo texto. Null quando não dá para dizer.
 export function tipoDoTexto(texto: string | null | undefined): TipoVeiculo | null {
   const t = (texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-  if (/micro/.test(t)) return "MICRO";
-  if (/onibus|rodoviario|urbano/.test(t)) return "ONIBUS";
-  if (/\bvan\b|minivan|sprinter|master|ducato/.test(t)) return "VAN";
-  if (/carro|executivo|leve|sedan|suv/.test(t)) return "CARRO";
-  return null;
+  const categoria: CategoriaVeiculo | null = /micro/.test(t)
+    ? "MICRO"
+    : /onibus|rodoviario|urbano/.test(t)
+      ? "ONIBUS"
+      : /\bvan\b|minivan|sprinter|master|ducato/.test(t)
+        ? "VAN"
+        : /carro|executivo|leve|sedan|suv/.test(t)
+          ? "CARRO"
+          : null;
+  if (!categoria) return null;
+  const varianteDoTexto: VarianteVeiculo = /unid(ade)?\.? ?movel|clinica movel|consultorio movel/.test(t)
+    ? "UNIDADE_MOVEL"
+    : /adaptad|acessivel|\bpcd\b|elevador|cadeirante/.test(t)
+      ? "ADAPTADO"
+      : "PADRAO";
+  return tipoDe(categoria, varianteDoTexto);
 }
 
 // PERFIS A PARTIR DA BASE: um perfil por modelo de veículo cadastrado (aba 1),
@@ -440,7 +491,15 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
   return base.veiculos.map((v, i) => {
     const tipo = tipoDoTexto(String(v.tipo ?? "")) ?? "VAN";
     const padrao = PERFIS_PADRAO.find((p) => p.tipo === tipo)!;
-    const funcao = base.funcoes.find((f) => /motorista/i.test(String(f.funcao ?? "")) && tipoDoTexto(String(f.funcao)) === tipo);
+    // Salário: a função do mesmo tipo ("Motorista de van adaptada"); sem ela,
+    // a da mesma categoria ("Motorista de van").
+    const motoristas = base.funcoes.filter((f) => /motorista/i.test(String(f.funcao ?? "")));
+    const funcao =
+      motoristas.find((f) => tipoDoTexto(String(f.funcao)) === tipo) ??
+      motoristas.find((f) => {
+        const t = tipoDoTexto(String(f.funcao));
+        return t !== null && CATEGORIA_DO_TIPO[t] === CATEGORIA_DO_TIPO[tipo];
+      });
     const salario = funcao && typeof funcao.salarioBase === "number" ? funcao.salarioBase + (n(funcao, "adicionaisFixos") ?? 0) : padrao.motorista.salario;
     const vidaVenda = n(v, "idadeVenda");
     const revenda = n(v, "revendaPctFipe");
@@ -454,7 +513,7 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
       tipo,
       descricao: `${v.tipo ?? ""} ${v.modelo ?? ""}`.trim(),
       lotacao: n(v, "lotacao"),
-      categoriaCnh: tipo === "CARRO" ? "B" : "D",
+      categoriaCnh: padrao.categoriaCnh ?? (tipo === "CARRO" ? "B" : "D"),
       motorista: { salario, motoristasPorVeiculo: motoristasPorVeiculo ?? padrao.motorista.motoristasPorVeiculo },
       veiculo: {
         ...padrao.veiculo,

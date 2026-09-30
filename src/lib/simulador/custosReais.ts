@@ -15,7 +15,7 @@ import {
   lerUsosDeVeiculo,
   lerVeiculos,
 } from "@/lib/gestao/leitura";
-import { ROTULO_TIPO_VEICULO, type TipoVeiculo } from "./tipos";
+import { CATEGORIA_DO_TIPO, ROTULO_TIPO_VEICULO, type CategoriaVeiculo } from "./tipos";
 import { tipoDoTexto } from "./premissas";
 
 // OS CUSTOS REAIS DA EMPRESA, TRADUZIDOS EM PREMISSAS DO SIMULADOR.
@@ -246,10 +246,15 @@ function listaDeNomes(nomes: string[], max = 4): string {
   return unicos.length <= max ? unicos.join(", ") : `${unicos.slice(0, max).join(", ")} e mais ${unicos.length - max}`;
 }
 
-function tipoDoVeiculo(v: VeiculoReal | undefined): TipoVeiculo | null {
+// Mede-se pela CATEGORIA (carro, van, micro, ônibus): a van adaptada e a van
+// comum rodam e consomem igual, e separar encolheria a amostra. O indicador
+// da categoria vale para as variantes dela ao aplicar (aplicarReais.ts).
+function tipoDoVeiculo(v: VeiculoReal | undefined): CategoriaVeiculo | null {
   if (!v) return null;
-  return tipoDoTexto(v.tipo) ?? tipoDoTexto(v.modelo);
+  const t = tipoDoTexto(v.tipo) ?? tipoDoTexto(v.modelo);
+  return t ? CATEGORIA_DO_TIPO[t] : null;
 }
+const CATEGORIAS: CategoriaVeiculo[] = ["CARRO", "VAN", "MICRO", "ONIBUS"];
 
 // Veículo que ainda gera seguro e IPVA: tudo o que não foi baixado. O veículo
 // parado na oficina continua segurado e licenciado.
@@ -326,7 +331,7 @@ function mesesCobertos(dados: DadosReais): number[] {
 // Combustível e km — o extrato do cartão de frota
 // ---------------------------------------------------------------------------
 
-type RegistroDeConsumo = { a: AbastecimentoReal; tipo: TipoVeiculo | null; kmPorLitro: number };
+type RegistroDeConsumo = { a: AbastecimentoReal; tipo: CategoriaVeiculo | null; kmPorLitro: number };
 
 type LeituraDoCartao = {
   // Registros de combustível (sem ARLA) com km e litros plausíveis.
@@ -524,7 +529,7 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
 
     // Por tipo de veículo: o que os veículos DAQUELE tipo pagaram, qualquer
     // que seja o combustível — é o número que vai no perfil do tipo.
-    for (const tipo of Object.keys(ROTULO_TIPO_VEICULO) as TipoVeiculo[]) {
+    for (const tipo of CATEGORIAS) {
       const doTipo = noPreco.filter((a) => a.vehicleId && tipoDoVeiculo(veiculos.get(a.vehicleId)) === tipo);
       if (doTipo.filter(plausivel).length < MINIMO_DE_REGISTROS) continue;
       precoDe(doTipo, `perfil:${tipo}:variaveis.dieselLitro`, `Combustível pago — ${ROTULO_TIPO_VEICULO[tipo]}`, `veículos do tipo ${ROTULO_TIPO_VEICULO[tipo].toLowerCase()}`);
@@ -550,7 +555,7 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
       lacunas.push(`${fmtNumero(cartao.semVeiculo)} abastecimento(s) de placa fora do cadastro de veículos ficaram fora do consumo e do km da frota.`);
     }
 
-    for (const tipo of Object.keys(ROTULO_TIPO_VEICULO) as TipoVeiculo[]) {
+    for (const tipo of CATEGORIAS) {
       const doTipo = cartao.validos.filter((r) => r.tipo === tipo);
       if (doTipo.length === 0) continue;
       let mantidos = doTipo;
