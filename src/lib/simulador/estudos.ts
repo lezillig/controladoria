@@ -272,6 +272,7 @@ export function validarEntrada(entrada: EntradaSimulacao): string | null {
   const problemas = problemasNasPremissas(entrada.premissas);
   if (problemas.length > 0) return problemas[0];
   if (entrada.itens.length === 0) return "O estudo precisa de ao menos um item.";
+  if (entrada.rotas.length === 0) return "O estudo precisa de ao menos uma rota: sem km, veículo e motorista não há custo a salvar.";
   const codigos = new Set(entrada.itens.map((i) => i.codigo));
   if (codigos.size !== entrada.itens.length) return "Há itens com o mesmo código.";
   const semItem = entrada.rotas.find((r) => !codigos.has(r.item));

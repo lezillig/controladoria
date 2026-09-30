@@ -41,7 +41,7 @@ export default function ImportarGabaritoForm() {
             <li key={k} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
               <span className="font-medium">{ROTULO[k] ?? k}</span>
               <span className="block text-xs text-slate-500">
-                {v.novos} novo(s) · {v.alterados} alterado(s) · {v.inalterados} igual(is)
+                {v.novos} {v.novos === 1 ? "novo" : "novos"} · {v.alterados} {v.alterados === 1 ? "alterado" : "alterados"} · {v.inalterados} {v.inalterados === 1 ? "igual" : "iguais"}
               </span>
             </li>
           ))}
@@ -49,7 +49,7 @@ export default function ImportarGabaritoForm() {
       )}
       {retorno?.avisos && retorno.avisos.length > 0 && (
         <details className="text-sm text-amber-800">
-          <summary className="cursor-pointer">{retorno.avisos.length} aviso(s) da leitura</summary>
+          <summary className="cursor-pointer">{retorno.avisos.length === 1 ? "1 aviso" : `${retorno.avisos.length} avisos`} da leitura</summary>
           <ul className="mt-1 list-disc pl-5 text-xs">
             {retorno.avisos.map((a) => (
               <li key={a}>{a}</li>

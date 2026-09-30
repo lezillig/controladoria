@@ -87,5 +87,5 @@ export async function exportarEstudo(
   };
   const conteudo = await gerarPlanilhaSimulacao(dados);
   const sufixo = versao > 0 ? `v${versao}` : "rascunho";
-  return { nome: `Simulacao_${nomeSeguro(estudo.numeroEdital ?? estudo.nome)}_${sufixo}.xlsx`, conteudo };
+  return { nome: `Orcamento_${nomeSeguro(estudo.numeroEdital ?? estudo.nome)}_${sufixo}.xlsx`, conteudo };
 }

@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import type { OrigemPremissa } from "@/lib/simulador/premissas";
+import { lerNumero } from "@/lib/simulador/numeros";
 
 // PEÇAS DO EDITOR DO ESTUDO — formatação, campo numérico e selos.
 //
@@ -20,12 +21,7 @@ export const pct = (v: number | null | undefined, casas = 1) =>
 export const num = (v: number | null | undefined, casas = 0) =>
   v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas });
 
-export function lerNumero(texto: string): number | null {
-  const s = texto.trim().replace(/\s|R\$|%/g, "");
-  if (s === "") return null;
-  const n = Number(s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s);
-  return Number.isFinite(n) ? n : null;
-}
+export { lerNumero };
 
 export function CampoNumero({
   valor,
@@ -46,17 +42,26 @@ export function CampoNumero({
   rotulo?: string;
   desativado?: boolean;
 }) {
-  const exibir = (v: number | null | undefined) =>
-    v === null || v === undefined || !Number.isFinite(v) ? "" : (percentual ? v * 100 : v).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: casas });
-  // Fora de edição o campo mostra o valor; em edição, o rascunho digitado.
+  const exibir = (v: number | null | undefined, agrupar = true) =>
+    v === null || v === undefined || !Number.isFinite(v)
+      ? ""
+      : (percentual ? v * 100 : v).toLocaleString("pt-BR", { minimumFractionDigits: 0, maximumFractionDigits: casas, useGrouping: agrupar });
+  // Fora de edição o campo mostra o valor; em edição, o rascunho digitado —
+  // sem separador de milhar, para o que se vê ser o que se relê.
   const [rascunho, setRascunho] = useState<string | null>(null);
-  const confirmar = () => {
-    const texto = rascunho;
+  const [invalido, setInvalido] = useState(false);
+  // O texto vem do próprio campo, não do estado: preenchimento automático
+  // (colar, autocompletar) pode chegar ao blur antes da nova renderização.
+  const confirmar = (atual: string) => {
+    const texto = rascunho === null ? null : atual;
     setRascunho(null);
-    if (texto === null) return;
+    // Passar pelo campo sem digitar não grava nada.
+    if (texto === null || texto === exibir(valor, false)) return;
     const n = lerNumero(texto);
     if (n === null) {
-      if (vazioPermitido && valor !== null) aoMudar(null);
+      if (texto.trim() === "" && vazioPermitido) {
+        if (valor !== null) aoMudar(null);
+      } else setInvalido(true);
       return;
     }
     const v = percentual ? n / 100 : n;
@@ -66,15 +71,30 @@ export function CampoNumero({
     <input
       inputMode="decimal"
       aria-label={rotulo}
+      aria-invalid={invalido || undefined}
+      title={invalido ? "Valor não reconhecido — o anterior foi mantido." : undefined}
       disabled={desativado}
       value={rascunho ?? exibir(valor)}
-      onFocus={() => setRascunho(exibir(valor))}
+      onFocus={(e) => {
+        setInvalido(false);
+        setRascunho(exibir(valor, false));
+        // Trocar "2.000" por "2000" ao entrar desfaz a seleção; sem selecionar
+        // de novo, quem entra com Tab e digita emenda no valor antigo.
+        const el = e.currentTarget;
+        requestAnimationFrame(() => el.select());
+      }}
       onChange={(e) => setRascunho(e.target.value)}
-      onBlur={confirmar}
+      onBlur={(e) => confirmar(e.currentTarget.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        // Esc desiste da edição: volta ao valor e sai do campo sem gravar.
+        if (e.key === "Escape") {
+          setRascunho(exibir(valor, false));
+          const alvo = e.target as HTMLInputElement;
+          requestAnimationFrame(() => alvo.blur());
+        }
       }}
-      className={`w-full rounded-md border border-slate-300 px-2 py-1 text-right font-mono text-[13px] tabular-nums focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 ${className}`}
+      className={`w-full rounded-md border border-slate-300 px-2 py-1 text-right font-mono text-[13px] tabular-nums focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50 aria-[invalid=true]:border-red-400 aria-[invalid=true]:bg-red-50 ${className}`}
     />
   );
 }

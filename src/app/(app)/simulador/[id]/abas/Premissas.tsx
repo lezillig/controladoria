@@ -17,7 +17,7 @@ export type AlterarComOrigem = (mudar: (e: EntradaSimulacao) => void, premissasA
 const REGIMES: Record<string, { rotulo: string; valores: Record<string, number>; ajuda: string }> = {
   PRESUMIDO: {
     rotulo: "Presumido",
-    valores: { pis: 0.0065, cofins: 0.03, irpj: 0.024, csll: 0.0108, irpjCsllSobreLucroPct: 0, creditoPisCofinsPct: 0 },
+    valores: { pis: 0.0065, cofins: 0.03, irpj: 0.04, csll: 0.0108, irpjCsllSobreLucroPct: 0, creditoPisCofinsPct: 0 },
     ajuda: "Transporte de passageiros: PIS 0,65% e COFINS 3% cumulativos; IRPJ 15% × 16% = 2,4% e CSLL 9% × 12% = 1,08% da receita.",
   },
   REAL: {
@@ -125,7 +125,7 @@ export default function Premissas({
                 const r = aplicarIndicadores(entrada.premissas, entrada.premissas.perfis ?? [], indicadores, [...escolhidos], origem);
                 alterar((e) => void (e.premissas = { ...r.premissas, perfis: r.perfis }), [], r.origem);
                 setMensagem(
-                  `${r.aplicados.length} premissa(s) com custo real${r.ignorados.length ? `; ${r.ignorados.length} sem perfil correspondente no estudo — adicione o tipo de veículo na aba Veículos` : ""}.`
+                  `${r.aplicados.length === 1 ? "1 premissa" : `${r.aplicados.length} premissas`} com custo real${r.ignorados.length ? `; ${r.ignorados.length} sem perfil correspondente no estudo — adicione o tipo de veículo na aba Veículos` : ""}.`
                 );
                 setEscolhidos(new Set());
               }}
@@ -207,7 +207,7 @@ export default function Premissas({
 
       <Cartao
         titulo="Regime tributário"
-        ajuda="No Presumido, IRPJ e CSLL entram como fração do faturamento (transporte de passageiros presume 16%, não os 8% de cargas). No Real, incidem sobre o lucro; o PIS/COFINS de transporte de passageiros continua cumulativo e sem crédito, e só a locação sem motorista tem crédito. Os presets são pontos de partida; confirme o enquadramento com a contabilidade."
+        ajuda="No Presumido, IRPJ e CSLL entram como fração do faturamento: transporte de passageiros presume 16% (não os 8% de cargas), e o IRPJ leva o adicional de 10% — 4% da receita na margem. No Real, incidem sobre o lucro; o PIS/COFINS de transporte de passageiros continua cumulativo e sem crédito, e só a locação sem motorista tem crédito. Os presets são pontos de partida; confirme o enquadramento com a contabilidade."
         acao={
           podeEditar && (
             <div className="flex gap-2">

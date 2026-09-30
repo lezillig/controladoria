@@ -150,9 +150,32 @@ export default function EditorEstudo({
     return () => window.removeEventListener("beforeunload", aviso);
   }, [sujo]);
 
+  // Links internos (menu, "Todos os estudos") navegam sem recarregar a página,
+  // e o `beforeunload` não os vê: com alteração não salva, pergunta antes.
+  useEffect(() => {
+    if (!sujo) return;
+    const clique = (ev: MouseEvent) => {
+      if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey) return;
+      const a = (ev.target as HTMLElement | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || a.target === "_blank" || a.hasAttribute("download")) return;
+      const destino = new URL(a.href, window.location.href);
+      if (destino.origin !== window.location.origin || destino.pathname.startsWith("/api/")) return;
+      if (destino.pathname === window.location.pathname && destino.search === window.location.search) return;
+      if (!window.confirm("Há alterações não salvas neste estudo. Sair e perder as alterações?")) {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }
+    };
+    document.addEventListener("click", clique, true);
+    return () => document.removeEventListener("click", clique, true);
+  }, [sujo]);
+
   const calculo = useMemo((): { resultado: ResultadoSimulacao; erro: null } | { resultado: null; erro: string } => {
     try {
       if (entrada.itens.length === 0) return { resultado: null, erro: "Cadastre ao menos um item na aba Operação." };
+      // Sem rota não há km, veículo nem motorista: a conta daria zeros com
+      // cara de resultado (e um veredicto). Melhor dizer o que falta.
+      if (entrada.rotas.length === 0) return { resultado: null, erro: "Adicione ao menos uma rota na aba Operação: custos, cenários, decisão e orçamento aparecem a partir dela." };
       return { resultado: simular(entrada), erro: null };
     } catch (e) {
       return { resultado: null, erro: e instanceof Error ? e.message : "Não foi possível calcular." };
@@ -166,7 +189,7 @@ export default function EditorEstudo({
   const origemAdiada = useDeferredValue(origem);
   const painel = useMemo(() => {
     try {
-      if (entradaAdiada.itens.length === 0) return null;
+      if (entradaAdiada.itens.length === 0 || entradaAdiada.rotas.length === 0) return null;
       return montarPainel(entradaAdiada, simular(entradaAdiada), { margemMinima, margemAlvo, origem: origemAdiada });
     } catch {
       return null;
@@ -178,14 +201,14 @@ export default function EditorEstudo({
   const semRotas = entrada.itens.filter((i) => !entrada.rotas.some((r) => r.item === i.codigo)).length;
 
   const abas: { id: Aba; rotulo: string; selo?: ReactNode }[] = [
-    { id: "operacao", rotulo: "1. Operação", selo: semRotas + rotasSemVeiculo > 0 ? <Selo cor="amber">{semRotas + rotasSemVeiculo} pendência(s)</Selo> : <Selo cor="slate">{entrada.rotas.length} rotas</Selo> },
-    { id: "veiculos", rotulo: "2. Veículos", selo: <Selo cor="slate">{(entrada.premissas.perfis ?? []).length} tipos</Selo> },
+    { id: "operacao", rotulo: "1. Operação", selo: semRotas + rotasSemVeiculo > 0 ? <Selo cor="amber">{semRotas + rotasSemVeiculo === 1 ? "1 pendência" : `${semRotas + rotasSemVeiculo} pendências`}</Selo> : <Selo cor="slate">{entrada.rotas.length === 1 ? "1 rota" : `${entrada.rotas.length} rotas`}</Selo> },
+    { id: "veiculos", rotulo: "2. Veículos", selo: <Selo cor="slate">{(entrada.premissas.perfis ?? []).length === 1 ? "1 tipo" : `${(entrada.premissas.perfis ?? []).length} tipos`}</Selo> },
     { id: "premissas", rotulo: "3. Premissas", selo: estimadas > 0 ? <Selo cor="amber">{estimadas} estimadas</Selo> : undefined },
     { id: "custos", rotulo: "4. Custos" },
     { id: "cenarios", rotulo: "5. Cenários" },
     { id: "decisao", rotulo: "6. Decisão", selo: painel ? <SeloVeredicto veredicto={painel.veredicto} /> : undefined },
     { id: "proposta", rotulo: "7. Orçamento" },
-    { id: "acompanhamento", rotulo: "8. Versões e resultado" },
+    { id: "acompanhamento", rotulo: "8. Versões" },
   ];
 
   const salvar = () =>
@@ -246,57 +269,73 @@ export default function EditorEstudo({
 
   return (
     <div className="space-y-4">
-      {/* Resumo fixo: a conta inteira em uma linha, sempre à vista. */}
-      <div className="z-20 -mx-4 -mt-4 md:sticky md:top-0 border-b border-slate-200 bg-white/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      {/* Resumo fixo: a conta inteira e as etapas, sempre à vista. No
+          celular, só preço, margem e veredicto — o resto cabe nas abas. */}
+      <div className="sticky top-0 z-20 -mx-4 -mt-4 border-b border-slate-200 bg-white/95 px-4 pt-3 backdrop-blur sm:-mx-6 sm:-mt-6 sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold text-slate-900">{estudo.nome}</h1>
-            <p className="truncate text-xs text-slate-500">
+            <h1 className="line-clamp-2 text-base font-semibold text-slate-900 sm:truncate sm:text-lg">{estudo.nome}</h1>
+            <p className="hidden truncate text-xs text-slate-500 sm:block">
               {estudo.subtitulo} · {estudo.statusRotulo}
               {versaoBase ? ` · a partir da v${versaoBase}` : " · nova simulação"}
-              {sujo && <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-800">alterações não salvas</span>}
             </p>
+            {sujo && <span className="mt-0.5 inline-block rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-800">alterações não salvas</span>}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button type="button" className={botao} disabled={!podeDesfazer} onClick={desfazer} title="Desfazer (Ctrl+Z)">
               Desfazer
             </button>
-            <button type="button" className={botao} disabled={exportando || !resultado} onClick={exportarExcel}>
+            <button type="button" className={botao} disabled={exportando || !resultado} onClick={exportarExcel} title={resultado ? "Baixar a planilha em fórmulas" : "Adicione rotas para exportar"}>
               {exportando ? "Gerando…" : "Excel"}
             </button>
             {podeEditar && (
               <>
-                <select className={selecao} value={statusVersao} onChange={(e) => setStatusVersao(e.target.value)} title="Como a versão fica marcada">
+                <select className={`${selecao} hidden sm:block`} aria-label="Situação da versão" value={statusVersao} onChange={(e) => setStatusVersao(e.target.value)} title="Como a versão fica marcada">
                   <option value="RASCUNHO">Rascunho</option>
                   <option value="APROVADA">Aprovada</option>
                   <option value="LANCADA">Lançada</option>
                 </select>
                 <input
-                  className="w-44 rounded-md border border-slate-300 px-2 py-1 text-[13px]"
+                  className="hidden w-44 rounded-md border border-slate-300 px-2 py-1 text-[13px] lg:block"
+                  aria-label="Observação da versão"
                   placeholder="Observação da versão"
                   value={observacoes}
                   maxLength={1000}
                   onChange={(e) => setObservacoes(e.target.value)}
                 />
-                <button type="button" className={botaoPrimario} disabled={salvando || !resultado} onClick={salvar}>
+                <button type="button" className={resultado ? botaoPrimario : botao} disabled={salvando || !resultado} onClick={salvar} title={resultado ? undefined : "Adicione rotas para salvar"}>
                   {salvando ? "Salvando…" : "Salvar versão"}
                 </button>
               </>
             )}
           </div>
         </div>
-        <dl className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-6">
+        <dl className="mt-2 grid grid-cols-3 gap-x-4 gap-y-1 text-sm sm:grid-cols-3 sm:gap-x-6 lg:grid-cols-6">
           <Numero rotulo={`Preço (${ROTULO_UNIDADE[entrada.unidadePreco ?? "KM"]})`} valor={brl(precoPrincipal, entrada.unidadePreco === "KM" || !entrada.unidadePreco ? 4 : 2)} destaque />
-          <Numero rotulo={`Faturamento (${mensal ? "mês" : "período"})`} valor={brl(faturamento, 0)} />
-          <Numero rotulo="Custo total" valor={brl(resultado?.totais.custoTotal ?? null, 0)} />
-          <Numero rotulo="Lucro líquido" valor={brl(lucro, 0)} negativo={(lucro ?? 0) < 0} />
+          <Numero className="hidden sm:block" rotulo={`Faturamento (${mensal ? "mês" : "período"})`} valor={brl(faturamento, 0)} />
+          <Numero className="hidden sm:block" rotulo="Custo total" valor={brl(resultado?.totais.custoTotal ?? null, 0)} />
+          <Numero className="hidden sm:block" rotulo="Lucro líquido" valor={brl(lucro, 0)} negativo={(lucro ?? 0) < 0} />
           <Numero rotulo="Margem" valor={pct(margem)} negativo={(margem ?? 0) < 0} />
-          <div>
-            <dt className="text-[11px] uppercase tracking-wide text-slate-500">Veredicto</dt>
-            <dd className="mt-0.5">{painel ? <SeloVeredicto veredicto={painel.veredicto} /> : <span className="text-slate-400">—</span>}</dd>
+          <div className="min-w-0">
+            <dt className="truncate text-[11px] uppercase tracking-wide text-slate-500">Veredicto</dt>
+            <dd className="mt-0.5">{painel ? <SeloVeredicto veredicto={painel.veredicto} /> : <span className="text-slate-500">—</span>}</dd>
           </div>
         </dl>
         {mensagem && <p className={`mt-2 text-sm ${mensagem.erro ? "text-red-700" : "text-emerald-700"}`}>{mensagem.erro ?? mensagem.ok}</p>}
+        <nav className="-mx-1 mt-2 flex gap-1 overflow-x-auto pb-2 [mask-image:linear-gradient(to_right,black_92%,transparent)] sm:[mask-image:none] lg:flex-wrap" aria-label="Etapas do orçamento">
+          {abas.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              onClick={() => setAba(a.id)}
+              className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium ${aba === a.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
+              aria-current={aba === a.id ? "page" : undefined}
+            >
+              {a.rotulo}
+              {a.selo}
+            </button>
+          ))}
+        </nav>
       </div>
 
       {versaoAntiga && (
@@ -306,23 +345,13 @@ export default function EditorEstudo({
       )}
       {!podeEditar && <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">Modo leitura: você pode simular à vontade, mas não salvar versões.</div>}
 
-      <nav className="-mx-1 flex gap-1 overflow-x-auto pb-1" aria-label="Etapas do orçamento">
-        {abas.map((a) => (
-          <button
-            key={a.id}
-            type="button"
-            onClick={() => setAba(a.id)}
-            className={`flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium ${aba === a.id ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"}`}
-            aria-current={aba === a.id ? "page" : undefined}
-          >
-            {a.rotulo}
-            {a.selo}
-          </button>
-        ))}
-      </nav>
-
       {calculo.erro && aba !== "operacao" && aba !== "premissas" && aba !== "veiculos" && aba !== "acompanhamento" && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{calculo.erro}</div>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {calculo.erro}{" "}
+          <button type="button" className="font-medium text-blue-700 underline" onClick={() => setAba("operacao")}>
+            Ir para a Operação
+          </button>
+        </div>
       )}
 
       {aba === "operacao" && <Operacao entrada={entrada} alterar={alterar} podeEditar />}
@@ -334,13 +363,36 @@ export default function EditorEstudo({
       {aba === "decisao" && podeConsultarEspecialista && <PerguntarAoEspecialista nome={estudo.nome} versao={versaoBase} sujo={sujo} />}
       {aba === "proposta" && resultado && <Proposta entrada={entrada} resultado={resultado} nomeArquivo={nomeArquivo} />}
       <div hidden={aba !== "acompanhamento"}>{acompanhamento}</div>
+
+      {/* Próxima etapa: o orçamento se lê de cima para baixo e da esquerda
+          para a direita; no fim de cada aba, o caminho continua. */}
+      {(() => {
+        const k = abas.findIndex((a) => a.id === aba);
+        const proxima = abas[k + 1];
+        if (!proxima) return null;
+        return (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className={botao}
+              onClick={() => {
+                setAba(proxima.id);
+                window.scrollTo({ top: 0 });
+                document.querySelector("main")?.scrollTo({ top: 0 });
+              }}
+            >
+              Próxima etapa: {proxima.rotulo.replace(/^\d+\. /, "")} →
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
 
-function Numero({ rotulo, valor, destaque, negativo }: { rotulo: string; valor: string; destaque?: boolean; negativo?: boolean }) {
+function Numero({ rotulo, valor, destaque, negativo, className = "" }: { rotulo: string; valor: string; destaque?: boolean; negativo?: boolean; className?: string }) {
   return (
-    <div className="min-w-0">
+    <div className={`min-w-0 ${className}`}>
       <dt className="truncate text-[11px] uppercase tracking-wide text-slate-500">{rotulo}</dt>
       <dd className={`mt-0.5 truncate font-mono tabular-nums ${destaque ? "text-base font-semibold text-blue-800" : "text-slate-900"} ${negativo ? "text-red-700" : ""}`}>{valor}</dd>
     </div>

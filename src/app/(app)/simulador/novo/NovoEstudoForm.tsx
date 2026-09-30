@@ -41,12 +41,12 @@ export default function NovoEstudoForm() {
     >
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <label className={labelClass}>Nome do estudo</label>
-          <input name="nome" required maxLength={120} className={inputClass} placeholder="Ex.: Fretamento fábrica Jundiaí — 12 vans" />
+          <label htmlFor="novo-nome" className={labelClass}>Nome do estudo</label>
+          <input id="novo-nome" name="nome" required maxLength={120} className={inputClass} placeholder="Ex.: Fretamento fábrica Jundiaí — 12 vans" />
         </div>
         <div>
-          <label className={labelClass}>Tipo</label>
-          <select name="tipo" value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputClass}>
+          <label htmlFor="novo-tipo" className={labelClass}>Tipo</label>
+          <select id="novo-tipo" name="tipo" value={tipo} onChange={(e) => setTipo(e.target.value)} className={inputClass}>
             <option value="LICITACAO">Licitação</option>
             <option value="CONTRATO_PRIVADO">Contrato privado</option>
             <option value="RENOVACAO">Renovação de contrato</option>
@@ -55,8 +55,8 @@ export default function NovoEstudoForm() {
           </select>
         </div>
         <div>
-          <label className={labelClass}>Serviço</label>
-          <select name="tipoServico" value={tipoServico} onChange={(e) => setTipoServico(e.target.value)} className={inputClass}>
+          <label htmlFor="novo-tipoServico" className={labelClass}>Serviço</label>
+          <select id="novo-tipoServico" name="tipoServico" value={tipoServico} onChange={(e) => setTipoServico(e.target.value)} className={inputClass}>
             <option value="FRETAMENTO">Fretamento contínuo</option>
             <option value="ESCOLAR">Transporte escolar</option>
             <option value="SAUDE">Transporte de pacientes / saúde</option>
@@ -66,24 +66,24 @@ export default function NovoEstudoForm() {
           </select>
         </div>
         <div className="sm:col-span-2">
-          <label className={labelClass}>{licitacao ? "Órgão / cliente" : "Cliente"}</label>
-          <input name="cliente" maxLength={160} className={inputClass} />
+          <label htmlFor="novo-cliente" className={labelClass}>{licitacao ? "Órgão / cliente" : "Cliente"}</label>
+          <input id="novo-cliente" name="cliente" maxLength={160} className={inputClass} />
         </div>
         <div>
-          <label className={labelClass}>Município</label>
-          <input name="municipio" maxLength={120} className={inputClass} />
+          <label htmlFor="novo-municipio" className={labelClass}>Município</label>
+          <input id="novo-municipio" name="municipio" maxLength={120} className={inputClass} />
         </div>
         <div>
-          <label className={labelClass}>UF</label>
-          <input name="uf" maxLength={2} className={inputClass} placeholder="SP" />
+          <label htmlFor="novo-uf" className={labelClass}>UF</label>
+          <input id="novo-uf" name="uf" maxLength={2} className={inputClass} placeholder="SP" />
         </div>
         <div>
-          <label className={labelClass}>Vigência (meses)</label>
-          <input name="vigenciaMeses" inputMode="numeric" className={inputClass} defaultValue={12} />
+          <label htmlFor="novo-vigenciaMeses" className={labelClass}>Vigência (meses)</label>
+          <input id="novo-vigenciaMeses" name="vigenciaMeses" inputMode="numeric" className={inputClass} defaultValue={12} />
         </div>
         <div>
-          <label className={labelClass}>Prazo de pagamento (dias)</label>
-          <input name="prazoPagamentoDias" inputMode="numeric" className={inputClass} placeholder={licitacao ? "30" : "30"} />
+          <label htmlFor="novo-prazoPagamentoDias" className={labelClass}>Prazo de pagamento (dias)</label>
+          <input id="novo-prazoPagamentoDias" name="prazoPagamentoDias" inputMode="numeric" className={inputClass} placeholder={licitacao ? "30" : "30"} />
         </div>
       </div>
 
@@ -101,8 +101,8 @@ export default function NovoEstudoForm() {
       </fieldset>
 
       <div>
-        <label className={labelClass}>Julgamento / preço</label>
-        <select name="criterio" className={inputClass} defaultValue="ITEM">
+        <label htmlFor="novo-criterio" className={labelClass}>Julgamento / preço</label>
+        <select id="novo-criterio" name="criterio" className={inputClass} defaultValue="ITEM">
           <option value="ITEM">Um preço por item</option>
           <option value="LOTE">Preço único do lote (média ponderada dos itens)</option>
         </select>
@@ -112,28 +112,28 @@ export default function NovoEstudoForm() {
         <div className="grid grid-cols-1 gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 sm:grid-cols-2">
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 sm:col-span-2">Dados da licitação</p>
           <div>
-            <label className={labelClass}>Número do edital</label>
-            <input name="numeroEdital" maxLength={80} className={inputClass} placeholder="PE 036/2026" />
+            <label htmlFor="novo-numeroEdital" className={labelClass}>Número do edital</label>
+            <input id="novo-numeroEdital" name="numeroEdital" maxLength={80} className={inputClass} placeholder="PE 036/2026" />
           </div>
           <div>
-            <label className={labelClass}>Órgão</label>
-            <input name="orgao" maxLength={200} className={inputClass} />
+            <label htmlFor="novo-orgao" className={labelClass}>Órgão</label>
+            <input id="novo-orgao" name="orgao" maxLength={200} className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>Modalidade</label>
-            <input name="modalidade" maxLength={80} className={inputClass} placeholder="Pregão eletrônico" />
+            <label htmlFor="novo-modalidade" className={labelClass}>Modalidade</label>
+            <input id="novo-modalidade" name="modalidade" maxLength={80} className={inputClass} placeholder="Pregão eletrônico" />
           </div>
           <div>
-            <label className={labelClass}>Plataforma</label>
-            <input name="plataforma" maxLength={120} className={inputClass} placeholder="Comprasgov, BLL, Licitações-e…" />
+            <label htmlFor="novo-plataforma" className={labelClass}>Plataforma</label>
+            <input id="novo-plataforma" name="plataforma" maxLength={120} className={inputClass} placeholder="Comprasgov, BLL, Licitações-e…" />
           </div>
           <div>
-            <label className={labelClass}>Data da sessão</label>
-            <input type="date" name="dataSessao" className={inputClass} />
+            <label htmlFor="novo-dataSessao" className={labelClass}>Data da sessão</label>
+            <input type="date" id="novo-dataSessao" name="dataSessao" className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>Valor total máximo (R$)</label>
-            <input name="valorTotalMaximo" inputMode="decimal" className={inputClass} />
+            <label htmlFor="novo-valorTotalMaximo" className={labelClass}>Valor total máximo (R$)</label>
+            <input id="novo-valorTotalMaximo" name="valorTotalMaximo" inputMode="decimal" className={inputClass} />
           </div>
           <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
             <input type="checkbox" name="srp" /> Registro de preços (SRP) — paga só o que for demandado
@@ -142,8 +142,8 @@ export default function NovoEstudoForm() {
       )}
 
       <div>
-        <label className={labelClass}>Descrição / objeto</label>
-        <textarea name="descricao" maxLength={2000} className={`${inputClass} min-h-[70px]`} />
+        <label htmlFor="novo-descricao" className={labelClass}>Descrição / objeto</label>
+        <textarea id="novo-descricao" name="descricao" maxLength={2000} className={`${inputClass} min-h-[70px]`} />
       </div>
 
       {erro && <p className="text-sm text-red-700">{erro}</p>}

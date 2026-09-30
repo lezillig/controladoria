@@ -235,7 +235,8 @@ console.log("\nMÃO DE OBRA");
 console.log("\nADMINISTRAÇÃO E CARGA TRIBUTÁRIA");
 {
   const adm = achar(ind, "indiretos.administracaoPct");
-  perto("administração = (50+200+30+50) ÷ 4.400 = 7,5%", adm?.valor, 330 / 4400);
+  perto("administração = (50+200+30+50) ÷ custo direto 2.670 ≈ 12,4% (sobre a receita seria 7,5%)", adm?.valor, 330 / 2670);
+  conferir("administração: unidade é o custo direto, onde o motor a aplica", adm?.unidade, "% do custo direto");
   ok("administração: converte para o custo direto no aviso", !!adm?.avisos.some((a) => a.includes("CUSTO DIRETO")));
   ok("administração: avisa categoria não confirmada", !!adm?.avisos.some((a) => a.includes("apenas proposta")));
   conferir("administração: não confirmado pequeno não rebaixa", adm?.confianca, "ALTA");

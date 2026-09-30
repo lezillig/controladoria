@@ -73,6 +73,10 @@ const SENSIVEIS: { caminho: string; rotulo: string; sentido: 1 | -1 }[] = [
 const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pctTexto = (v: number, casas = 1) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
 
+// Primeira letra minúscula para compor uma frase, sem estragar siglas
+// ("IRPJ na base…" continua IRPJ; "Item 2 acima…" vira "item 2 acima…").
+const minuscula = (t: string) => (/^[A-ZÀ-Ý][a-zà-ÿ]/.test(t) ? t[0].toLowerCase() + t.slice(1) : t);
+
 function comPremissa(entrada: EntradaSimulacao, mudar: (p: Premissas) => void): EntradaSimulacao {
   const premissas = structuredClone(entrada.premissas);
   mudar(premissas);
@@ -132,7 +136,11 @@ export function montarPainel(
   for (const s of SENSIVEIS) {
     const atual = lerCaminho(entrada.premissas, s.caminho);
     if (typeof atual !== "number" || atual === 0) continue;
-    const fator = 1 + 0.1 * s.sentido;
+    // Utilização: no preço por km, pior é rodar MENOS (o fixo fica sem
+    // receita); no preço fixo por veículo, diária ou hora, pior é rodar MAIS
+    // (o km a mais é custo sem receita).
+    const sentido = s.caminho === "contrato.utilizacao" && (unidade === "VEICULO_MES" || unidade === "DIARIA" || unidade === "HORA") ? 1 : s.sentido;
+    const fator = 1 + 0.1 * sentido;
     const mudada = lucroAoPreco(comPremissa(entrada, (p) => piorar(p, s.caminho, fator)));
     sensibilidade.push({
       caminho: s.caminho,
@@ -195,6 +203,13 @@ export function montarPainel(
       (x) => (x.tipo === "VAN" || x.tipo === "MICRO") && (x.veiculo.metodoDepreciacao ?? entrada.premissas.veiculo.metodoDepreciacao) === "PERCENTUAL" && x.veiculo.depreciacaoAa < 0.08
     ),
   ];
+  const v = entrada.premissas.veiculo;
+  if (entrada.rotas.some((r) => !r.perfilVeiculo) && v.metodoDepreciacao === "PERCENTUAL" && v.depreciacaoAa < 0.08)
+    alertas.push({
+      nivel: "ATENCAO",
+      titulo: "Depreciação baixa no veículo padrão",
+      detalhe: `O veículo padrão (rotas sem tipo) deprecia ${pctTexto(v.depreciacaoAa)} a.a.: menos de 8% a.a. não repõe van nem micro, e é o limite de baixo para ônibus. Confira a vida útil.`,
+    });
   if (depreciacaoBaixa.length > 0)
     alertas.push({
       nivel: "ATENCAO",
@@ -219,19 +234,39 @@ export function montarPainel(
       titulo: "Contrato atravessa a reforma tributária",
       detalhe: "A partir de 2027 a CBS substitui PIS/COFINS e é cobrada por fora do preço; de 2029 a 2032 ISS e ICMS caem com a entrada do IBS. Os tributos desta simulação são os de hoje: preveja cláusula de reequilíbrio pela mudança tributária (LC 214/2025).",
     });
+  // IMPOSTO EM DOBRO: IRPJ/CSLL na receita (Presumido) E sobre o lucro
+  // (Real) ao mesmo tempo; crédito de PIS/COFINS com alíquota cumulativa.
+  if (pr.irpjCsllSobreLucroPct > 0 && pr.irpj + pr.csll > 0)
+    alertas.push({
+      nivel: "CRITICO",
+      titulo: "IRPJ/CSLL contados duas vezes",
+      detalhe: `Há IRPJ/CSLL sobre a receita (${pctTexto(pr.irpj + pr.csll, 2)}, Presumido) e sobre o lucro (${pctTexto(pr.irpjCsllSobreLucroPct, 0)}, Real) ao mesmo tempo. Escolha um regime.`,
+    });
+  if (pr.creditoPisCofinsPct > 0 && pr.pis + pr.cofins < 0.09)
+    alertas.push({
+      nivel: "CRITICO",
+      titulo: "Crédito de PIS/COFINS no regime cumulativo",
+      detalhe: `PIS/COFINS de ${pctTexto(pr.pis + pr.cofins, 2)} é cumulativo e não gera crédito; crédito de ${pctTexto(pr.creditoPisCofinsPct, 2)} só existe no não cumulativo (9,25%, locação sem motorista).`,
+    });
+  if (pr.irpjCsllSobreLucroPct === 0 && pr.irpj >= 0.024 - 1e-9 && pr.irpj < 0.04 - 1e-9)
+    alertas.push({
+      nivel: "INFO",
+      titulo: "IRPJ sem o adicional",
+      detalhe: `IRPJ de ${pctTexto(pr.irpj, 2)} da receita não inclui o adicional de 10% sobre o lucro presumido acima de R$ 20 mil/mês; na margem, uma empresa desse porte paga 4%. Confirme com a contabilidade, inclusive o aumento de presunção para receita acima de R$ 5 milhões/ano.`,
+    });
   if (!regrasDaBase) alertas.push({ nivel: "INFO", titulo: "Margem mínima padrão", detalhe: "A base de custos não tem as regras da Azul; margem mínima considerada = metade do alvo." });
   const pior = sensibilidade[0];
   if (pior && lucroBase !== 0 && Math.abs(pior.efeitoLucro) > Math.abs(lucroBase) * 0.5)
-    alertas.push({ nivel: "ATENCAO", titulo: `Resultado frágil a ${pior.rotulo.toLowerCase()}`, detalhe: `10% pior leva metade ou mais do lucro.` });
+    alertas.push({ nivel: "ATENCAO", titulo: `Resultado frágil à variação de ${minuscula(pior.rotulo)}`, detalhe: `10% pior leva metade ou mais do lucro.` });
 
   const criticos = alertas.filter((a) => a.nivel === "CRITICO").length;
   const atencao = alertas.filter((a) => a.nivel === "ATENCAO").length;
   const veredicto: Veredicto = criticos > 0 ? "NAO_LANCAR" : atencao > 0 ? "LANCAR_COM_RESSALVA" : "LANCAR";
   const resumo =
     veredicto === "NAO_LANCAR"
-      ? "Não lançar como está: " + alertas.filter((a) => a.nivel === "CRITICO").map((a) => a.titulo.toLowerCase()).join("; ") + "."
+      ? "Não lançar como está: " + alertas.filter((a) => a.nivel === "CRITICO").map((a) => minuscula(a.titulo)).join("; ") + "."
       : veredicto === "LANCAR_COM_RESSALVA"
-        ? "Lançar com ressalva: " + alertas.filter((a) => a.nivel === "ATENCAO").map((a) => a.titulo.toLowerCase()).join("; ") + "."
+        ? "Lançar com ressalva: " + alertas.filter((a) => a.nivel === "ATENCAO").map((a) => minuscula(a.titulo)).join("; ") + "."
         : "Lançar: margem acima da mínima, sem item acima do teto e com folga de utilização.";
 
   return {

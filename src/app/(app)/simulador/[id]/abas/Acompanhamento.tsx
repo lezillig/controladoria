@@ -298,7 +298,7 @@ export default function Acompanhamento({
               <input name="competencia" type="month" required className={campo} />
             </label>
             {[
-              ["kmRealizado", "Km realizado"],
+              ["kmRealizado", "Km faturado"],
               ["faturamento", "Faturamento"],
               ["custoFolha", "Folha"],
               ["custoCombustivel", "Combustível"],
@@ -334,7 +334,7 @@ export default function Acompanhamento({
                 <p className="font-mono">{num(calibracao.kmPrevistoMes)}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Km realizado (média)</p>
+                <p className="text-xs text-slate-500">Km faturado (média)</p>
                 <p className="font-mono">{num(calibracao.kmRealizadoMedio)}</p>
               </div>
               <div>

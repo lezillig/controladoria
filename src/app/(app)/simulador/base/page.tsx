@@ -63,7 +63,7 @@ export default async function BaseDeCustosPage() {
           <h1 className="mt-2 text-xl font-semibold text-slate-900">Base de custos</h1>
           <p className="mt-1 max-w-[80ch] text-sm text-slate-500">
             Os valores que os estudos novos usam como premissa. Nada é sobrescrito: quando um valor muda, o anterior fica guardado com a
-            vigência encerrada{historico > 0 ? ` (${historico} parâmetro(s) no histórico)` : ""}, e cada estudo salvo lembra a base do dia.
+            vigência encerrada{historico > 0 ? ` (${historico} ${historico === 1 ? "parâmetro" : "parâmetros"} no histórico)` : ""}, e cada estudo salvo lembra a base do dia.
           </p>
         </div>
         <a href="/api/simulador/gabarito" className={secondaryButtonClass}>
@@ -80,7 +80,7 @@ export default async function BaseDeCustosPage() {
       {vazia ? (
         <AvisoVazio
           titulo="A base de custos está vazia"
-          descricao="Enquanto isso, os estudos usam os valores padrão do simulador, marcados como “estimados” em cada premissa. Importe o Gabarito para trocar os padrões pelos custos da Azul."
+          descricao="Enquanto isso, os estudos usam os valores padrão do simulador, marcados como “estimativa” em cada premissa. Importe o Gabarito para trocar os padrões pelos custos da Azul."
         />
       ) : (
         <>

@@ -78,7 +78,8 @@ export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: En
                         type="button"
                         className={`${botao} px-2 py-0.5 text-[11px]`}
                         disabled={emUso(p.codigo) > 0}
-                        title={emUso(p.codigo) > 0 ? `Usado em ${emUso(p.codigo)} rota(s)` : "Remover tipo"}
+                        title={emUso(p.codigo) > 0 ? `Usado em ${emUso(p.codigo) === 1 ? "1 rota" : `${emUso(p.codigo)} rotas`}` : "Remover tipo"}
+                        aria-label={`Remover o tipo ${p.descricao}`}
                         onClick={() => alterar((e) => void e.premissas.perfis!.splice(k, 1))}
                       >
                         ✕
@@ -101,7 +102,7 @@ export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: En
             </tr>
             <tr className="bg-slate-50/60">
               <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium">Motoristas por veículo</td>
-              <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-400">—</td>
+              <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-500">—</td>
               {perfis.map((p, k) => (
                 <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5">
                   <CampoNumero valor={p.motorista.motoristasPorVeiculo} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && mudarPerfil(k, (x) => void (x.motorista.motoristasPorVeiculo = v))} />
@@ -110,7 +111,7 @@ export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: En
             </tr>
             <tr className="bg-slate-50/60">
               <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium">Lotação / CNH</td>
-              <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-400">—</td>
+              <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-500">—</td>
               {perfis.map((p) => (
                 <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5 text-right text-xs text-slate-600">
                   {p.lotacao ?? "—"} lugares · CNH {p.categoriaCnh ?? "—"}
@@ -120,7 +121,7 @@ export default function Veiculos({ entrada, alterar, podeEditar }: { entrada: En
             {CAMPOS_VEICULO.map((c) => (
               <tr key={c.caminho}>
                 <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5">
-                  {c.rotulo} <span className="text-[11px] text-slate-400">({c.unidade})</span>
+                  {c.rotulo} <span className="text-[11px] text-slate-500">({c.unidade})</span>
                 </td>
                 <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums text-slate-600">
                   {c.tipo === "pct" ? `${(valorDo(null, c.caminho) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : valorDo(null, c.caminho).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}

@@ -28,6 +28,16 @@ function garantirPerfil(e: EntradaSimulacao, codigo: string | null) {
   return copia;
 }
 
+const ROTULO_CAMPO_ROTA: Record<string, string> = {
+  kmReferencia: "Km de referência",
+  kmDia: "Km por dia",
+  kmTerraDia: "Km de terra por dia",
+  diasMes: "Dias por mês",
+  veiculos: "Veículos",
+  motoristas: "Motoristas",
+  monitoras: "Monitores",
+};
+
 export default function Operacao({ entrada, alterar, podeEditar }: { entrada: EntradaSimulacao; alterar: Alterar; podeEditar: boolean }) {
   const c = entrada.premissas.contrato;
   const unidade = entrada.unidadePreco ?? "KM";
@@ -35,6 +45,15 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
     ...(entrada.premissas.perfis ?? []),
     ...PERFIS_PADRAO.filter((p) => !(entrada.premissas.perfis ?? []).some((x) => x.codigo === p.codigo)),
   ];
+  const adicionarRota = () =>
+    alterar((e) => {
+      const ultima = e.rotas.at(-1);
+      e.rotas.push(
+        ultima
+          ? { ...structuredClone(ultima), nome: "Nova rota" }
+          : { item: e.itens[0].codigo, nome: "Nova rota", kmReferencia: e.premissas.contrato.modo === "MENSAL" ? 2000 : 20000, kmDia: 100, kmTerraDia: 0, diasMes: 22, veiculos: 1, motoristas: 1.2, monitoras: 0, noturno: false, passagensPedagioMes: 0, tarifaPedagio: 0, perfilVeiculo: null }
+      );
+    });
   const rotasDoItem = (codigo: string) => entrada.rotas.filter((r) => r.item === codigo).length;
   const totais = entrada.rotas.reduce((a, r) => ({ km: a.km + r.kmReferencia, v: a.v + r.veiculos, m: a.m + r.motoristas }), { km: 0, v: 0, m: 0 });
   const mudarItem = (k: number, campo: keyof Item, valor: unknown) => alterar((e) => void ((e.itens[k] as unknown as Record<string, unknown>)[campo as string] = valor));
@@ -182,7 +201,7 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
             <tbody>
               {entrada.itens.map((i, k) => {
                 const n = rotasDoItem(i.codigo);
-                const bloqueio = entrada.itens.length === 1 ? "O estudo precisa de ao menos um item" : n > 0 ? `Mova ou remova as ${n} rota(s) deste item antes` : "";
+                const bloqueio = entrada.itens.length === 1 ? "O estudo precisa de ao menos um item" : n > 0 ? n === 1 ? "Mova ou remova a rota deste item antes" : `Mova ou remova as ${n} rotas deste item antes` : "";
                 return (
                   <tr key={`${i.codigo}-${k}`}>
                     <td className={td}>{i.codigo}</td>
@@ -225,36 +244,28 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
         ajuda="O tipo de veículo muda o custo do veículo, o consumo e o salário do motorista (CNH e faixa da convenção). Ao trocar o tipo ou os veículos, os motoristas são sugeridos pelo padrão do tipo — e podem ser ajustados."
         acao={
           podeEditar && (
-            <button
-              type="button"
-              className={botao}
-              onClick={() =>
-                alterar((e) => {
-                  const ultima = e.rotas.at(-1);
-                  e.rotas.push(
-                    ultima
-                      ? { ...structuredClone(ultima), nome: "Nova rota" }
-                      : { item: e.itens[0].codigo, nome: "Nova rota", kmReferencia: c.modo === "MENSAL" ? 2000 : 20000, kmDia: 100, kmTerraDia: 0, diasMes: 22, veiculos: 1, motoristas: 1.2, monitoras: 0, noturno: false, passagensPedagioMes: 0, tarifaPedagio: 0, perfilVeiculo: null }
-                  );
-                })
-              }
-            >
+            <button type="button" className={botao} onClick={adicionarRota}>
               Adicionar rota
             </button>
           )
         }
       >
         {entrada.rotas.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">
-            Nenhuma rota ainda. Adicione a primeira: o km, os veículos e os motoristas dela são o que o simulador custeia.
-          </p>
+          <div className="rounded-lg border border-dashed border-blue-300 bg-blue-50/40 px-4 py-6 text-center text-sm text-slate-600">
+            <p>Nenhuma rota ainda. O km, os veículos e os motoristas de cada rota são o que o simulador custeia — sem rota, não há conta.</p>
+            {podeEditar && (
+              <button type="button" className="mt-3 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800" onClick={adicionarRota}>
+                Adicionar a primeira rota
+              </button>
+            )}
+          </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-slate-200">
             <table className="w-full text-[13px]">
               <thead>
                 <tr>
+                  <th className={`${th} sticky left-0 z-10`}>Rota</th>
                   <th className={th}>Item</th>
-                  <th className={th}>Rota</th>
                   <th className={th}>Tipo de veículo</th>
                   <th className={thN}>{c.modo === "MENSAL" ? "km/mês máx." : "km do período"}</th>
                   <th className={thN}>km/dia</th>
@@ -272,9 +283,19 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
               </thead>
               <tbody>
                 {entrada.rotas.map((r, k) => (
-                  <tr key={k}>
+                  <tr key={k} className={r.veiculos <= 0 ? "bg-amber-50" : undefined}>
+                    <td className={`${td} sticky left-0 z-10 ${r.veiculos <= 0 ? "bg-amber-50" : "bg-white"}`}>
+                      <input
+                        aria-label={`Nome da rota ${k + 1}`}
+                        className="w-full min-w-[180px] rounded-md border border-slate-300 px-2 py-1 text-[13px]"
+                        disabled={!podeEditar}
+                        value={r.nome}
+                        onChange={(ev) => mudarRota(k, "nome", ev.target.value)}
+                      />
+                      {r.veiculos <= 0 && <span className="mt-0.5 block text-[11px] font-medium text-amber-800">Informe os veículos desta rota</span>}
+                    </td>
                     <td className={td}>
-                      <select className={selecao} disabled={!podeEditar} value={r.item} onChange={(ev) => mudarRota(k, "item", ev.target.value)}>
+                      <select aria-label={`Item da rota ${r.nome}`} className={selecao} disabled={!podeEditar} value={r.item} onChange={(ev) => mudarRota(k, "item", ev.target.value)}>
                         {entrada.itens.map((i) => (
                           <option key={i.codigo} value={i.codigo}>
                             {i.codigo}
@@ -283,10 +304,7 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
                       </select>
                     </td>
                     <td className={td}>
-                      <input className="w-full min-w-[200px] rounded-md border border-slate-300 px-2 py-1 text-[13px]" disabled={!podeEditar} value={r.nome} onChange={(ev) => mudarRota(k, "nome", ev.target.value)} />
-                    </td>
-                    <td className={td}>
-                      <select className={selecao} disabled={!podeEditar} value={r.perfilVeiculo ?? ""} onChange={(ev) => mudarRota(k, "perfilVeiculo", ev.target.value || null)}>
+                      <select aria-label={`Tipo de veículo da rota ${r.nome}`} className={selecao} disabled={!podeEditar} value={r.perfilVeiculo ?? ""} onChange={(ev) => mudarRota(k, "perfilVeiculo", ev.target.value || null)}>
                         <option value="">Padrão do estudo</option>
                         {perfisDisponiveis.map((p) => (
                           <option key={p.codigo} value={p.codigo}>
@@ -311,22 +329,23 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
                           valor={r[campo] as number | null}
                           casas={casas}
                           vazioPermitido={campo === "diasMes"}
+                          rotulo={`${ROTULO_CAMPO_ROTA[campo as string] ?? campo} — ${r.nome}`}
                           desativado={!podeEditar}
                           aoMudar={(v) => (v === null && campo !== "diasMes") || (v !== null && v < 0) ? undefined : mudarRota(k, campo, v)}
                         />
                       </td>
                     ))}
                     <td className={td}>
-                      <input type="checkbox" disabled={!podeEditar} checked={r.noturno} onChange={(ev) => mudarRota(k, "noturno", ev.target.checked)} />
+                      <input type="checkbox" aria-label={`Rota noturna — ${r.nome}`} disabled={!podeEditar} checked={r.noturno} onChange={(ev) => mudarRota(k, "noturno", ev.target.checked)} />
                     </td>
                     <td className={`${tdN} w-20`}>
-                      <CampoNumero valor={r.horasDia ?? null} casas={1} vazioPermitido desativado={!podeEditar} aoMudar={(v) => mudarRota(k, "horasDia", v && v > 0 ? v : null)} />
+                      <CampoNumero rotulo={`Horas por dia — ${r.nome}`} valor={r.horasDia ?? null} casas={1} vazioPermitido desativado={!podeEditar} aoMudar={(v) => mudarRota(k, "horasDia", v && v > 0 ? v : null)} />
                     </td>
                     <td className={`${tdN} w-24`}>
-                      <CampoNumero valor={r.passagensPedagioMes} casas={1} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && mudarRota(k, "passagensPedagioMes", v)} />
+                      <CampoNumero rotulo={`Pedágios por mês — ${r.nome}`} valor={r.passagensPedagioMes} casas={1} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && mudarRota(k, "passagensPedagioMes", v)} />
                     </td>
                     <td className={`${tdN} w-24`}>
-                      <CampoNumero valor={r.tarifaPedagio} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && mudarRota(k, "tarifaPedagio", v)} />
+                      <CampoNumero rotulo={`Tarifa de pedágio — ${r.nome}`} valor={r.tarifaPedagio} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && mudarRota(k, "tarifaPedagio", v)} />
                     </td>
                     <td className={`${td} whitespace-nowrap`}>
                       {podeEditar && (

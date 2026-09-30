@@ -782,28 +782,32 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
     let confiancaDre = confiancaPorMeses(mesesComReceita.length);
     if (parteNaoConfirmada > LIMITE_NAO_CONFIRMADO) confiancaDre = rebaixar(confiancaDre);
 
-    if (receitaLiquida > 0) {
-      const adm = soma(LINHAS_DE_ADMINISTRACAO.map(totalLinha));
-      const custoDireto = soma(LINHAS_DE_CUSTO_DIRETO.map(totalLinha));
+    // A ADMINISTRAÇÃO vai como % do CUSTO DIRETO, que é onde o motor a aplica
+    // (indiretos = custo direto × administração). Oferecer a razão sobre a
+    // receita e deixar o motor aplicá-la sobre o custo subestimava o indireto:
+    // 7% da receita é ~10% do custo direto numa operação com margem normal.
+    const adm = soma(LINHAS_DE_ADMINISTRACAO.map(totalLinha));
+    const custoDireto = soma(LINHAS_DE_CUSTO_DIRETO.map(totalLinha));
+    if (receitaLiquida > 0 && custoDireto > 0) {
       const partes = LINHAS_DE_ADMINISTRACAO.map((c) => `${LINHAS_DRE.find((l) => l.chave === c)?.rotulo.replace("(-) ", "") ?? c} ${deCents(totalLinha(c))}`).join(" + ");
       const avisos = [
         ...avisosDoDre,
-        custoDireto > 0
-          ? `O simulador aplica a administração sobre o CUSTO DIRETO, não sobre a receita. Sobre o custo direto do DRE (custo do serviço + veículos + pessoas = ${deCents(custoDireto)}) ela seria ${pct(adm / custoDireto)}.`
-          : "O simulador aplica a administração sobre o custo direto, não sobre a receita; o DRE não tem custo direto para a conversão.",
+        `Sobre a receita líquida (${deCents(receitaLiquida)}) a administração é ${pct(adm / receitaLiquida)}; o simulador a aplica sobre o CUSTO DIRETO, por isso o número oferecido é a razão sobre o custo direto do DRE.`,
         "A folha do escritório está em Despesas com pessoas, junto com a da operação, e não entra aqui: a administração real tende a ser maior que este número.",
       ];
       indicadores.push({
         caminho: "indiretos.administracaoPct",
         rotulo: "Administração central real",
-        valor: adm / receitaLiquida,
-        unidade: "% da receita líquida",
-        base: `(${partes}) = ${deCents(adm)} ÷ receita líquida de ${deCents(receitaLiquida)}.`,
+        valor: adm / custoDireto,
+        unidade: "% do custo direto",
+        base: `(${partes}) = ${deCents(adm)} ÷ custo direto de ${deCents(custoDireto)} (custo do serviço + veículos + pessoas).`,
         periodo: periodoReceita,
         amostra: mesesComReceita.length,
         confianca: confiancaDre,
         avisos,
       });
+    } else if (receitaLiquida > 0) {
+      lacunas.push("Administração central: o DRE não tem custo direto (custo do serviço, veículos, pessoas) para a razão que o simulador usa.");
     }
 
     if (receitaBruta > 0 && deducoes > 0) {

@@ -11,6 +11,7 @@ import { simular } from "../src/lib/simulador/motor";
 import { montarPainel } from "../src/lib/simulador/decisao";
 import { calibrar } from "../src/lib/simulador/calibracao";
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "../src/lib/simulador/premissas";
+import type { EntradaSimulacao } from "../src/lib/simulador/tipos";
 
 let falhas = 0;
 function ok(nome: string, passou: boolean, detalhe = "") {
@@ -121,6 +122,31 @@ console.log("\nALERTAS DA PESQUISA — depreciação, ARLA, reforma tributária"
   e3.premissas.variaveis.arlaKm = e3.premissas.variaveis.dieselLitro / e3.premissas.variaveis.consumoAsfaltoKmL;
   ok("ARLA do tamanho do diesel é apontada", titulos(montarPainel(e3, simular(e3), { inicioContrato: new Date(2026, 0, 1) })).includes("ARLA acima do usual"));
   ok("o padrão do simulador deprecia 15% a.a.", Math.abs(PREMISSAS_PADRAO.veiculo.depreciacaoAa - 0.15) < 1e-12);
+}
+
+console.log("\nREGIME TRIBUTÁRIO — imposto em dobro e adicional do IRPJ");
+{
+  const e = structuredClone(historicoSaoJoseDosPinhais().entrada);
+  const titulos = (x: EntradaSimulacao) => montarPainel(x, simular(x), { inicioContrato: new Date(2026, 0, 1) }).alertas.map((a) => `${a.nivel}:${a.titulo}`);
+  const dobro = structuredClone(e);
+  dobro.premissas.preco.irpjCsllSobreLucroPct = 0.34;
+  ok("IRPJ/CSLL na receita e no lucro é crítico", titulos(dobro).includes("CRITICO:IRPJ/CSLL contados duas vezes"));
+  const credito = structuredClone(e);
+  credito.premissas.preco.creditoPisCofinsPct = 0.0925;
+  ok("crédito com PIS/COFINS cumulativo é crítico", titulos(credito).includes("CRITICO:Crédito de PIS/COFINS no regime cumulativo"));
+  const semAdicional = structuredClone(e);
+  semAdicional.premissas.preco.irpj = 0.024;
+  ok("IRPJ de 2,4% avisa o adicional", titulos(semAdicional).includes("INFO:IRPJ sem o adicional"));
+  ok("o padrão do simulador já tem o adicional (4%)", Math.abs(PREMISSAS_PADRAO.preco.irpj - 0.04) < 1e-12);
+}
+
+console.log("\nSENSIBILIDADE — o sentido da utilização depende da unidade");
+{
+  const e = structuredClone(historicoSaoJoseDosPinhais().entrada);
+  const efeito = (x: EntradaSimulacao) => montarPainel(x, simular(x)).sensibilidade.find((s) => s.caminho === "contrato.utilizacao")?.efeitoLucro ?? 0;
+  ok("por km, menos utilização piora o lucro", efeito(e) < 0, String(efeito(e)));
+  const vm = { ...e, criterio: "ITEM" as const, unidadePreco: "VEICULO_MES" as const };
+  ok("por veículo-mês, mais utilização (mais km) piora o lucro", efeito(vm) < 0, String(efeito(vm)));
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

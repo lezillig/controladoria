@@ -18,6 +18,7 @@ import {
   TIPOS_SERVICO,
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
+import { lerNumero } from "@/lib/simulador/numeros";
 import type { EntradaSimulacao, UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
 
@@ -33,9 +34,7 @@ const texto = (f: FormData, k: string, max = 300) => {
 };
 const numero = (f: FormData, k: string) => {
   const v = texto(f, k);
-  if (v === null) return null;
-  const n = Number(v.replace(/\./g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : null;
+  return v === null ? null : lerNumero(v);
 };
 const UNIDADES: UnidadePreco[] = ["KM", "VEICULO_MES", "DIARIA", "HORA", "BINOMIA"];
 
@@ -50,6 +49,13 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   const unidade = (texto(formData, "unidadePreco") ?? "KM") as UnidadePreco;
   if (!UNIDADES.includes(unidade)) return { erro: "Unidade de preço inválida." };
   const dataSessao = texto(formData, "dataSessao");
+  // Número digitado por extenso ("doze") ou fora de faixa não vira padrão
+  // calado: volta como erro para a pessoa corrigir.
+  for (const [campo, rotulo, max] of [["vigenciaMeses", "Vigência", 240], ["prazoPagamentoDias", "Prazo de pagamento", 365], ["valorTotalMaximo", "Valor total máximo", 1e12]] as const) {
+    const bruto = texto(formData, campo);
+    const n = numero(formData, campo);
+    if (bruto !== null && (n === null || n < 0 || n > max)) return { erro: `${rotulo}: informe um número válido.` };
+  }
   const id = await criarEstudoNoBanco(
     session.companyId,
     {

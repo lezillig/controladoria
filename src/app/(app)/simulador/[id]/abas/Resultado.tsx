@@ -120,7 +120,7 @@ export function Custos({ resultado, entrada }: { resultado: ResultadoSimulacao; 
                   <td className={tdN}>{brl(i.indicadores.km.preco)}</td>
                   <td className={tdN}>{brl(i.indicadores.veiculoMes.preco)}</td>
                   <td className={tdN}>{brl(i.indicadores.diaria.preco)}</td>
-                  <td className={tdN}>{i.indicadores.hora ? brl(i.indicadores.hora.preco) : <span className="font-sans text-xs text-slate-400">informe horas/dia</span>}</td>
+                  <td className={tdN}>{i.indicadores.hora ? brl(i.indicadores.hora.preco) : <span className="font-sans text-xs text-slate-500">informe horas/dia</span>}</td>
                   <td className={tdN}>{brl(i.indicadores.binomia.fixoVeiculoMes)}</td>
                   <td className={tdN}>{brl(i.indicadores.binomia.variavelKm)}</td>
                 </tr>
@@ -279,8 +279,19 @@ function ReguaLance({ faixa }: { faixa: PainelDecisao["faixa"] }) {
   );
   const lo = Math.min(...pts.map((p) => p[1])), hi = Math.max(...pts.map((p) => p[1]));
   const W = 640, M = 70, x = (v: number) => M + ((v - lo) / (hi - lo || 1)) * (W - 2 * M);
+  // No celular o SVG encolhe e os rótulos ficam ilegíveis: lá, a mesma faixa
+  // vai como lista, e o desenho fica só para telas maiores.
   return (
-    <svg viewBox={`0 0 ${W} 110`} width="100%" role="img" aria-label="Faixa de lance" className="max-w-3xl">
+    <>
+    <ul className="space-y-1 text-sm sm:hidden">
+      {pts.map(([t, v]) => (
+        <li key={t} className="flex justify-between gap-3">
+          <span className="text-slate-600">{t}</span>
+          <span className="font-mono tabular-nums">{brl(v)}</span>
+        </li>
+      ))}
+    </ul>
+    <svg viewBox={`0 0 ${W} 110`} width="100%" role="img" aria-label={`Faixa de lance: ${pts.map(([t, v]) => `${t} ${brl(v)}`).join(", ")}`} className="hidden max-w-3xl sm:block">
       <line x1={M} x2={W - M} y1={52} y2={52} stroke="#cbd5e1" strokeWidth={2} />
       <rect x={x(faixa.margemMinima)} y={46} width={Math.max(2, x(faixa.alvo) - x(faixa.margemMinima))} height={12} rx={4} fill="#1d4ed8" opacity={0.3} />
       {pts.map(([t, v], i) => (
@@ -295,6 +306,7 @@ function ReguaLance({ faixa }: { faixa: PainelDecisao["faixa"] }) {
         </g>
       ))}
     </svg>
+    </>
   );
 }
 

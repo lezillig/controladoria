@@ -58,7 +58,7 @@ export default async function SimuladorPage() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Kpi rotulo="Em estudo" valor={String(emEstudo)} />
         <Kpi rotulo="Propostas enviadas" valor={String(enviados)} />
-        <Kpi rotulo="Taxa de sucesso" valor={decididos.length > 0 ? fmtPercent((ganhos / decididos.length) * 100, 0) : "—"} apoio={`${ganhos} de ${decididos.length} decidido(s)`} />
+        <Kpi rotulo="Taxa de sucesso" valor={decididos.length > 0 ? fmtPercent((ganhos / decididos.length) * 100, 0) : "—"} apoio={decididos.length === 0 ? "nenhum estudo decidido ainda" : `${ganhos} de ${decididos.length} ${decididos.length === 1 ? "decidido" : "decididos"}`} />
         <Kpi
           rotulo="Base de custos"
           valor={totalBase > 0 ? `${totalBase} parâmetros` : "vazia"}
@@ -106,7 +106,7 @@ export default async function SimuladorPage() {
                   </Link>,
                   <span key="t" className="text-xs text-slate-600">
                     {ROTULO_TIPO_ESTUDO[e.tipo as keyof typeof ROTULO_TIPO_ESTUDO] ?? e.tipo}
-                    <span className="block text-slate-400">{ROTULO_TIPO_SERVICO[e.tipoServico as keyof typeof ROTULO_TIPO_SERVICO] ?? e.tipoServico}</span>
+                    <span className="block text-slate-500">{ROTULO_TIPO_SERVICO[e.tipoServico as keyof typeof ROTULO_TIPO_SERVICO] ?? e.tipoServico}</span>
                   </span>,
                   <span key="s" className="text-xs font-medium text-slate-700">
                     {ROTULO_STATUS_ESTUDO[e.status as keyof typeof ROTULO_STATUS_ESTUDO] ?? e.status}

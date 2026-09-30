@@ -23,9 +23,12 @@ function baixar(nome: string, conteudo: string, tipo: string) {
 // abrir com acentos.
 function csv(linhas: (string | number | null)[][]) {
   const cel = (v: string | number | null) =>
-    v === null ? "" : typeof v === "number" ? (Number.isFinite(v) ? String(Math.round(v * 1e6) / 1e6).replace(".", ",") : "") : /[";\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    v === null ? "" : typeof v === "number" ? (Number.isFinite(v) ? String(Math.round(v * 1e4) / 1e4).replace(".", ",") : "") : /[";\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
   return "﻿" + linhas.map((l) => l.map(cel).join(";")).join("\r\n");
 }
+
+// Margem no CSV já em percentual ("9,06%"), como a pessoa lê na tela.
+const pctCsv = (v: number | null) => (v === null || !Number.isFinite(v) ? null : `${(v * 100).toFixed(2).replace(".", ",")}%`);
 
 export default function Proposta({ entrada, resultado, nomeArquivo }: { entrada: EntradaSimulacao; resultado: ResultadoSimulacao; nomeArquivo: string }) {
   const mensal = entrada.premissas.contrato.modo === "MENSAL";
@@ -61,7 +64,7 @@ export default function Proposta({ entrada, resultado, nomeArquivo }: { entrada:
       i.faturamento,
       i.custoTotal,
       i.lucro,
-      i.margem,
+      pctCsv(i.margem),
       i.indicadores.km.preco,
       i.indicadores.veiculoMes.preco,
       i.indicadores.diaria.preco,
@@ -71,7 +74,7 @@ export default function Proposta({ entrada, resultado, nomeArquivo }: { entrada:
       i.veiculos,
       i.motoristas,
     ]);
-    const total = ["TOTAL", "", "", null, null, resultado.totais.faturamento, resultado.totais.custoTotal, resultado.totais.lucro, resultado.totais.margem, null, null, null, null, null, null, resultado.totais.veiculos, resultado.totais.motoristas];
+    const total = ["TOTAL", "", "", null, null, resultado.totais.faturamento, resultado.totais.custoTotal, resultado.totais.lucro, pctCsv(resultado.totais.margem), null, null, null, null, null, null, resultado.totais.veiculos, resultado.totais.motoristas];
     baixar(`${nomeArquivo}.csv`, csv([cab, ...linhas, total]), "text/csv;charset=utf-8");
   };
 

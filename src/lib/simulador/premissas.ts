@@ -1,4 +1,5 @@
 import type { PerfilVeiculo, Premissas, TipoVeiculo } from "./tipos";
+import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 
@@ -130,7 +131,11 @@ export const PREMISSAS_PADRAO: Premissas = {
     salarioMotorista: 3450,
     salarioMonitora: 1900,
     horaExtraPct: 0.14,
-    encargosPct: 0.68,
+    // Os grupos A a D da calculadora (maoDeObra.ts) no modo em que as férias
+    // ficam no fator de utilização — o 1,2 motorista por veículo dos tipos
+    // padrão já cobre folgas e férias. Os 68% antigos somavam as férias de
+    // novo (~5,5 p.p. em dobro).
+    encargosPct: Number(calcularEncargos(ENCARGOS_PADRAO).total.toFixed(4)),
     fatorJornadaNoturna: 1,
     divisorHorasMes: 220,
     horasExtras50Mes: 0,
@@ -185,9 +190,11 @@ export const PREMISSAS_PADRAO: Premissas = {
     pis: 0.0065,
     cofins: 0.03,
     // Lucro Presumido do TRANSPORTE DE PASSAGEIROS: presunção de 16% para o
-    // IRPJ (8% é só de cargas) e 12% para a CSLL — 2,4% + 1,08% da receita,
-    // antes do adicional. Ver docs/simulador_custos/PESQUISA.md, seção 5.
-    irpj: 0.024,
+    // IRPJ (8% é só de cargas) e 12% para a CSLL. O IRPJ inclui o ADICIONAL
+    // de 10% (lucro presumido acima de R$ 20 mil/mês, receita acima de
+    // ~R$ 125 mil/mês — toda empresa que disputa estes contratos): 16% × 25%
+    // = 4% da receita na margem. CSLL: 12% × 9% = 1,08%. Ver PESQUISA.md, 5.
+    irpj: 0.04,
     csll: 0.0108,
     iss: 0.05,
     icms: 0.12,
@@ -259,6 +266,9 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
   deParam("preco.iss", "iss_sp");
   deParam("preco.icms", "icms_sp");
   deParam("preco.custoCapitalGiroAm", "capital_giro_am");
+  // Garantia contratual (art. 96 da Lei 14.133): custo proporcional ao valor
+  // do contrato, então entra como despesa sobre o preço.
+  deParam("preco.despesasSobrePrecoPct", "seguro_garantia_pct");
   deParam("preco.prazoRecebimentoDias", escolhas.clientePublico ? "prazo_prefeituras" : "prazo_empresas");
   if (escolhas.baseLocal) deParam("pessoal.supervisaoMes", "preposto_mes");
 
@@ -268,7 +278,15 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
   const faturamento = numeroDe("faturamento_medio");
   if (faturamento && faturamento > 0 && indiretos.some((v) => v !== null)) {
     const total = indiretos.reduce<number>((a, v) => a + (v ?? 0), 0);
-    definir("indiretos.administracaoPct", total / faturamento, fonteDe("faturamento_medio"), "indiretos da aba 4 ÷ faturamento médio");
+    // O rateio sai sobre o FATURAMENTO, mas o motor aplica a administração
+    // sobre o CUSTO DIRETO. Com preço P = D·(1 + x)/d (d = divisor do preço:
+    // 1 − lucro − tributos − giro − despesas), querer x·D = a·P dá
+    // x = a/(d − a). Sem a conversão, 7% da receita virava 7% do custo.
+    const a = total / faturamento;
+    const pr = premissas.preco;
+    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
+    const x = d > a ? a / (d - a) : a;
+    definir("indiretos.administracaoPct", x, fonteDe("faturamento_medio"), `indiretos da aba 4 ÷ faturamento médio = ${(a * 100).toFixed(2)}% da receita, convertido para ${(x * 100).toFixed(2)}% do custo direto`);
   } else deParam("indiretos.administracaoPct", "adm_pct");
 
   // ARLA: "R$ 4,20; 4,5%" → R$/l × % do diesel ÷ km/l, quando há consumo.
@@ -387,7 +405,7 @@ export const PERFIS_PADRAO: PerfilVeiculo[] = [
   perfil("MICRO", "MICRO", "Micro-ônibus 25–33 lugares", 30, "D", 3150, 1.2,
     { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95 },
     { consumoAsfaltoKmL: 4.7, consumoTerraKmL: 3.9, arlaKm: 0.05, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0 }),
-  perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares", 50, "D", 3200, 1.2,
+  perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", 3200, 1.2,
     { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90 },
     { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),
 ];

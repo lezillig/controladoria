@@ -104,7 +104,15 @@ async function principal() {
   conferir("prazo de órgão público", premissas.preco.prazoRecebimentoDias, 55);
   conferir("preposto local", premissas.pessoal.supervisaoMes, 9500);
   // (95.000 + 9.000 + 7.500 + 32.000 + 0 + 6.000) ÷ 3.200.000
-  ok("administração = indiretos reais ÷ faturamento", Math.abs(premissas.indiretos.administracaoPct - 149500 / 3200000) < 1e-9, `${premissas.indiretos.administracaoPct}`);
+  {
+    // Indiretos ÷ faturamento é % da RECEITA; o motor aplica sobre o custo
+    // direto, então a leitura converte: x = a/(d − a), d = divisor do preço.
+    const a = 149500 / 3200000;
+    const pr = premissas.preco;
+    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
+    ok("administração = indiretos reais ÷ faturamento, convertida para o custo direto", Math.abs(premissas.indiretos.administracaoPct - a / (d - a)) < 1e-9, `${premissas.indiretos.administracaoPct}`);
+    ok("administração convertida é maior que a razão sobre a receita", premissas.indiretos.administracaoPct > a);
+  }
   ok("ARLA = 4,20 × 4,5% ÷ 8,7 km/l", Math.abs(premissas.variaveis.arlaKm - (4.2 * 0.045) / 8.7) < 1e-9, `${premissas.variaveis.arlaKm}`);
   conferir("reserva: a do veículo (10%)", premissas.contrato.reservaTecnicaPct, 0.1);
   conferir("consumo em terra não está na base: padrão", origem["variaveis.consumoTerraKmL"].origem, "PADRAO");
