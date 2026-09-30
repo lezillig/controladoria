@@ -1,11 +1,13 @@
-// PLANILHA DE EXEMPLO — `npx tsx scripts/exemplo-planilha.ts <saída.xlsx>`.
+// PLANILHA DE EXEMPLO — `npx tsx scripts/exemplo-planilha.ts <saída.xlsx> [KM|VEICULO_MES|BINOMIA|DIARIA|HORA|EVENTUAL]`.
 // Um estudo inventado (4 itens de van executiva, dados simulados) passado pela
 // mesma exportação da tela, para mostrar o modelo do que o estudo exporta.
 import { writeFileSync } from "node:fs";
 import { gerarPlanilhaSimulacao } from "../src/lib/simulador/exportarXlsx";
 import { simular } from "../src/lib/simulador/motor";
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "../src/lib/simulador/premissas";
-import type { EntradaSimulacao, Rota } from "../src/lib/simulador/tipos";
+import type { EntradaSimulacao, Rota, UnidadePreco } from "../src/lib/simulador/tipos";
+
+const criterio = (process.argv[3] ?? "VEICULO_MES").toUpperCase();
 
 const van = structuredClone(PERFIS_PADRAO.find((p) => p.tipo === "VAN")!);
 van.codigo = "VAN-EXEC";
@@ -50,10 +52,27 @@ const entrada: EntradaSimulacao = {
   ],
 };
 entrada.premissas.contrato.vigenciaMeses = 24;
+if (criterio !== "EVENTUAL") entrada.unidadePreco = criterio as UnidadePreco;
+
+// VIAGEM EVENTUAL: um ônibus executivo São Paulo–Santos, 2 dias, preço por
+// diária; o custo fixo do mês se paga pelos dias vendidos (8 por mês).
+if (criterio === "EVENTUAL") {
+  const onibus = structuredClone(PERFIS_PADRAO.find((p) => p.tipo === "ONIBUS")!);
+  onibus.codigo = "ONIBUS-EXEC";
+  onibus.descricao = "Ônibus executivo 46 lugares";
+  entrada.premissas.perfis = [onibus];
+  entrada.premissas.contrato.utilizacao = 1;
+  entrada.premissas.contrato.vigenciaMeses = 1;
+  entrada.unidadePreco = "DIARIA";
+  entrada.itens = [{ codigo: "1", descricao: "Viagem São Paulo–Santos (evento), ida e volta, 2 diárias", shareIntermunicipal: 1 }];
+  entrada.rotas = [
+    { item: "1", nome: "SP–Santos–SP, 8 diárias vendidas no mês", kmReferencia: 8 * 180, kmDia: 180, kmTerraDia: 0, diasMes: 8, veiculos: 1, motoristas: 1.2, monitoras: 0, noturno: false, passagensPedagioMes: 8, tarifaPedagio: 81.2, horasDia: 12, perfilVeiculo: onibus.codigo },
+  ];
+}
 
 (async () => {
   const buffer = await gerarPlanilhaSimulacao({
-    edital: { numero: "Vans executivas — EXEMPLO", orgao: "Cliente exemplo (dados simulados)", municipio: "São Paulo", uf: "SP", objeto: "Fretamento contínuo de vans executivas — EXEMPLO COM DADOS SIMULADOS", dataSessao: null, plataforma: null },
+    edital: { numero: criterio === "EVENTUAL" ? "Viagem eventual — EXEMPLO" : "Vans executivas — EXEMPLO", orgao: "Cliente exemplo (dados simulados)", municipio: "São Paulo", uf: "SP", objeto: "Fretamento contínuo de vans executivas — EXEMPLO COM DADOS SIMULADOS", dataSessao: null, plataforma: null },
     licitante: { razaoSocial: "Empresa proponente (exemplo)", cnpj: "" },
     esfera: "PRIVADO",
     comercial: { validadeProposta: "2026-10-31T00:00:00.000Z", inicioPrevisto: "2026-11-03T00:00:00.000Z", indiceReajuste: "IPCA", formaFaturamento: "Mensal", avisoRescisaoDias: 60 },
@@ -65,5 +84,5 @@ entrada.premissas.contrato.vigenciaMeses = 24;
   });
   writeFileSync(process.argv[2] ?? "exemplo.xlsx", buffer);
   const r = simular(entrada);
-  console.log(r.itens.map((i) => `${i.item}: ${i.precoUnidade.toFixed(2)} R$/veículo-mês, margem ${((i.margem ?? 0) * 100).toFixed(1)}%`).join("\n"));
+  console.log(r.itens.map((i) => `${i.item}: ${i.precoUnidade.toFixed(2)} (${r.unidade}), margem ${((i.margem ?? 0) * 100).toFixed(1)}%`).join("\n"));
 })();
