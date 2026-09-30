@@ -1,3 +1,4 @@
+import { BENEFICIOS_MOTORISTA_TRANSFRETUR, CONVENCOES, ODONTO_FAMILIAR_TRANSFRETUR, PLANO_MEDICO_TRANSFRETUR, VR_TRANSFRETUR_DIA } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import { fatorHoraNoturna } from "./motor";
 import type { ComposicaoItem, EntradaSimulacao, Premissas } from "./tipos";
@@ -134,6 +135,25 @@ function parcelasDosEncargos(p: Premissas, salarios: number): Componente[] | und
   }));
 }
 
+// DE ONDE VÊM OS BENEFÍCIOS — quando o valor por pessoa é o da convenção
+// TRANSFRETUR (circular 013-A/2026), abre por benefício; senão, só o total.
+function parcelasDosBeneficios(p: Premissas, pessoasMes: number): Componente[] | undefined {
+  const b = BENEFICIOS_MOTORISTA_TRANSFRETUR;
+  const daConvencao = b.vrVa + b.cesta + b.plrMes + b.planoSaude;
+  if (Math.abs(p.pessoal.beneficiosPorFuncionario - daConvencao) > 0.005) return undefined;
+  const cct = CONVENCOES.TRANSFRETUR.nome;
+  const linha = (rotulo: string, porPessoa: number, memo: string): Componente => ({ rotulo, valor: porPessoa * pessoasMes, memo: `${brl(porPessoa)} por pessoa · ${memo}` });
+  const parcelas = [
+    linha("Vale-refeição", b.vrVa, `${brl(VR_TRANSFRETUR_DIA)} × ${qtd(b.vrVa / VR_TRANSFRETUR_DIA)} dias trabalhados (${cct})`),
+    linha("Cesta básica", b.cesta, cct),
+    linha("PLR", b.plrMes, `${brl(b.plrMes * 12)} por ano ÷ 12 (${cct})`),
+    linha("Plano médico e odontológico", b.planoSaude, `médico ${brl(PLANO_MEDICO_TRANSFRETUR)} + odontológico familiar ${brl(ODONTO_FAMILIAR_TRANSFRETUR)} (${cct})`),
+  ];
+  if (p.pessoal.uniformeEpiPorFuncionario)
+    parcelas.push(linha("Uniforme, EPI, exames e cursos", p.pessoal.uniformeEpiPorFuncionario, "padrão do simulador, não vem da convenção"));
+  return parcelas;
+}
+
 // Separa um ou mais itens (somados). Sem itens, tudo zero. Com a entrada, os
 // salários e os encargos saem abertos em parcelas.
 export function separarMaoDeObraEVeiculo(
@@ -207,6 +227,7 @@ export function separarMaoDeObraEVeiculo(
       {
         ...mensal("Benefícios, uniforme e exames", (i) => i.beneficios),
         memo: `${qtd(pessoas)} pessoa${pessoas === 1 ? "" : "s"} × (${brl(p.pessoal.beneficiosPorFuncionario)} de benefícios + ${brl(p.pessoal.uniformeEpiPorFuncionario)} de uniforme, EPI e exames)`,
+        sub: parcelasDosBeneficios(p, pessoas * meses),
       },
       { ...mensal("Supervisão local", (i) => i.supervisao), memo: `${brl(p.pessoal.supervisaoMes)} por mês no contrato, rateado pelo km` },
     ],

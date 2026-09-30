@@ -86,6 +86,7 @@ console.log("\nUM MOTORISTA DE VAN (o estudo do print)");
   perto("encargos = 62,45% dos salários", enc.valor, 2126.36);
   ok("encargos abertos nos grupos A a D", enc.sub?.map((x) => x.rotulo[0]).join("") === "ABCD");
   perto("benefícios da convenção: 1 × (1.753,26 + 100)", ben.valor, 1853.26);
+  ok("benefícios abertos: VR, cesta, PLR, plano, uniforme", ben.sub?.map((x) => x.rotulo.split(" ")[0]).join(",") === "Vale-refeição,Cesta,PLR,Plano,Uniforme,");
   parcelasFecham("van", s);
 }
 

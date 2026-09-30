@@ -213,6 +213,7 @@ export default async function BaseDeCustosPage() {
           campos={camposEditaveis("funcao")}
           registros={paraTela("funcao", funcoes as unknown as Linha[])}
           sugestoes={sugestoesFuncao}
+          completarPelaSugestao
           podeEditar={podeEditar}
           vazio="Nenhuma função na base: os estudos usam o salário padrão de cada tipo de veículo."
         />

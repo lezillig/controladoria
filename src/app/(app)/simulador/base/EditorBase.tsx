@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { ajustarParametroBase, encerrarRegistroBase, salvarRegistroBase, voltarParametroAoPadrao, type Resultado } from "../actions";
 import { CampoNumero, botao } from "../[id]/comum";
+import { sugestaoDaFuncao } from "@/lib/simulador/convencoes";
 
 // A BASE DE CUSTOS, EDITÁVEL.
 //
@@ -247,18 +248,26 @@ export function ParametrosBase({ parametros, podeEditar }: { parametros: Paramet
   );
 }
 
+type Sugestao = { rotulo: string; campos: RegistroTela["campos"] };
+const sugestaoDaLinha = (id: unknown, sugestoes: Sugestao[], campo: string) => sugestaoDaFuncao(id, sugestoes, campo);
+
+const vazioNaLinha = (v: unknown) => v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+
 function LinhaRegistro({
   tipo,
   campos,
   registro,
   podeEditar,
   aoDescartar,
+  completarCom,
 }: {
   tipo: TipoTabelaTela;
   campos: CampoTela[];
   registro: RegistroTela;
   podeEditar: boolean;
   aoDescartar?: () => void;
+  // As convenções: a da linha preenche o que nela está vazio.
+  completarCom?: Sugestao[];
 }) {
   const [valores, setValores] = useState(registro.campos);
   // GRAVA SOZINHO AO SAIR DA LINHA, não a cada tecla: cada gravação abre uma
@@ -279,6 +288,19 @@ function LinhaRegistro({
     const identificacao = atuais[campos[0]?.campo ?? ""];
     if (registro.id === null && (identificacao === null || identificacao === undefined || String(identificacao).trim() === "")) return;
     rodar(() => salvarRegistroBase(tipo, atuais, registro.id), registro.id === null ? aoDescartar : undefined);
+  };
+  // O que a convenção da função preencheria: só os campos vazios da linha.
+  const identificador = campos[0]?.campo ?? "";
+  const convencao = completarCom ? sugestaoDaLinha(valores[identificador], completarCom, identificador) : null;
+  const rotuloDe = (k: string) => campos.find((c) => c.campo === k)?.rotulo ?? k;
+  const faltando = convencao
+    ? Object.entries(convencao.campos).filter(([k, v]) => k !== identificador && campos.some((c) => c.campo === k) && vazioNaLinha(valores[k]) && !vazioNaLinha(v))
+    : [];
+  const completar = () => {
+    if (!faltando.length) return;
+    valoresRef.current = { ...valoresRef.current, ...Object.fromEntries(faltando) };
+    setValores(valoresRef.current);
+    rodar(() => salvarRegistroBase(tipo, valoresRef.current, registro.id), registro.id === null ? aoDescartar : undefined);
   };
   return (
     <tr
@@ -320,6 +342,16 @@ function LinhaRegistro({
         {podeEditar && (
           <div className="flex items-center gap-1">
             {pendente && <span className="text-slate-500">salvando…</span>}
+            {convencao && faltando.length > 0 && !pendente && (
+              <button
+                type="button"
+                className={`${botao} px-2 py-1 text-xs`}
+                title={`Preenche o que está vazio nesta linha com ${convencao.rotulo}: ${faltando.map(([k]) => rotuloDe(k)).join(", ")}. O que já foi digitado fica.`}
+                onClick={completar}
+              >
+                Completar pela convenção
+              </button>
+            )}
             {registro.id === null ? (
               <button type="button" className={`${botao} px-2 py-1 text-xs`} onClick={aoDescartar}>
                 Descartar
@@ -343,12 +375,15 @@ export function TabelaRegistrosBase({
   campos,
   registros,
   sugestoes,
+  completarPelaSugestao,
   podeEditar,
   vazio,
 }: {
   tipo: TipoTabelaTela;
   campos: CampoTela[];
   registros: RegistroTela[];
+  // Com ele, cada linha ganha "Completar pela convenção" a partir das sugestões.
+  completarPelaSugestao?: boolean;
   // Linhas prontas para trazer à base (os padrões do simulador), quando a
   // tabela está vazia.
   sugestoes?: { rotulo: string; campos: RegistroTela["campos"] }[];
@@ -379,7 +414,7 @@ export function TabelaRegistrosBase({
             </thead>
             <tbody>
               {registros.map((r) => (
-                <LinhaRegistro key={`${r.id}:${r.desde}`} tipo={tipo} campos={campos} registro={r} podeEditar={podeEditar} />
+                <LinhaRegistro key={`${r.id}:${r.desde}`} tipo={tipo} campos={campos} registro={r} podeEditar={podeEditar} completarCom={completarPelaSugestao ? sugestoes : undefined} />
               ))}
               {novos.map((n) => (
                 <LinhaRegistro
@@ -388,6 +423,7 @@ export function TabelaRegistrosBase({
                   campos={campos}
                   registro={{ id: null, campos: n.campos, desde: null, fonte: null }}
                   podeEditar={podeEditar}
+                  completarCom={completarPelaSugestao ? sugestoes : undefined}
                   aoDescartar={() => setNovos((a) => a.filter((x) => x.chave !== n.chave))}
                 />
               ))}

@@ -46,6 +46,8 @@ export const PISO_TRANSFRETUR_NIVEL_A = 3733.44;
 export const PISO_TRANSFRETUR_NIVEL_B = 2986.75;
 export const PISO_SINDRASP_AUXILIAR_ADM = 1957.83;
 export const VR_TRANSFRETUR_DIA = 42;
+export const PLANO_MEDICO_TRANSFRETUR = 283.76;
+export const ODONTO_FAMILIAR_TRANSFRETUR = 50;
 
 // Os benefícios mensais do motorista pela circular 013-A (iguais nos dois
 // níveis). O vale-refeição da circular conta 26 dias trabalhados.
@@ -53,7 +55,7 @@ export const BENEFICIOS_MOTORISTA_TRANSFRETUR = {
   plrMes: 137.5,
   cesta: 190,
   vrVa: 1092,
-  planoSaude: 283.76 + 50,
+  planoSaude: PLANO_MEDICO_TRANSFRETUR + ODONTO_FAMILIAR_TRANSFRETUR,
 };
 
 // PRÊMIO DO FRETAMENTO EVENTUAL (CCT, cláusula 9ª): sobre o valor da nota da
@@ -110,4 +112,27 @@ export function funcaoAdministrativa(): { convencao: Convencao; campos: Record<s
         "Piso R$ 1.921,24 de mai/26 a out/26, R$ 1.957,83 desde 01/11/2026. PLR 40% do salário (até R$ 1.605/ano). VR R$ 42 por dia (22 dias). Odontológico familiar pago pela empresa (R$ 50); plano médico familiar: 60% de até R$ 472,94 por adesão.",
     },
   };
+}
+
+const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+// A sugestão (convenção) que corresponde à linha, pelo nome da função: igual,
+// ou pela palavra do tipo — micro antes de ônibus, porque "micro-ônibus"
+// contém os dois.
+export function sugestaoDaFuncao<S extends { campos: Record<string, unknown> }>(identificacao: unknown, sugestoes: S[], campo: string): S | null {
+  if (typeof identificacao !== "string" || !identificacao.trim()) return null;
+  const nome = semAcento(identificacao);
+  const igual = sugestoes.find((s) => typeof s.campos[campo] === "string" && semAcento(s.campos[campo] as string) === nome);
+  if (igual) return igual;
+  const chaves: [string, (f: string) => boolean][] = [
+    ["micro", (f) => f.includes("micro")],
+    ["onibus", (f) => f.includes("onibus") && !f.includes("micro")],
+    ["van", (f) => f.includes("van")],
+    ["carro", (f) => f.includes("carro")],
+    ["adm", (f) => f.includes("administrativo")],
+    ["auxiliar", (f) => f.includes("administrativo")],
+  ];
+  const chave = chaves.find(([k]) => nome.includes(k));
+  if (!chave) return null;
+  return sugestoes.find((s) => typeof s.campos[campo] === "string" && chave[1](semAcento(s.campos[campo] as string))) ?? null;
 }

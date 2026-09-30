@@ -1,6 +1,7 @@
 // CALCULADORAS DE MÃO DE OBRA — `npm run teste:mao-de-obra`.
 // Encargos por grupos contra a referência GEIPOT e fator de utilização
 // contra os exemplos da pesquisa (docs/simulador_custos/PESQUISA.md, 3.4–3.5).
+import { sugestaoDaFuncao } from "../src/lib/simulador/convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO, fatorDeUtilizacao, FU_PADRAO, PRESETS_ENCARGOS } from "../src/lib/simulador/maoDeObra";
 
 let falhas = 0;
@@ -33,6 +34,16 @@ ok("posto 12 h em 12x36 ≈ 2,2 motoristas", perto(doze.fuFinal, 2.2, 0.1), Stri
 const comHE = fatorDeUtilizacao({ ...FU_PADRAO, horasPorDia: 11, somarAcrescimos: false });
 ok("11 h/dia: 1 motorista inteiro + 22 h extras", comHE.motoristasInteiros === 1 && perto(comHE.horasExtrasPorMotorista, 22, 1e-9), JSON.stringify(comHE));
 ok("sem acréscimos, FU final = FU sem hora extra", perto(comHE.fuFinal, comHE.fuSemHoraExtra, 1e-12));
+
+console.log("\nCONVENÇÃO DA FUNÇÃO (completar a linha da base)");
+const sug = ["Motorista de carro", "Motorista de van", "Motorista de micro-ônibus", "Motorista de ônibus", "Auxiliar administrativo"].map((funcao) => ({ rotulo: funcao, campos: { funcao } }));
+const da = (f: string) => sugestaoDaFuncao(f, sug, "funcao")?.rotulo ?? null;
+ok("nome igual, sem acento e caixa", da("MOTORISTA DE ONIBUS") === "Motorista de ônibus");
+ok("pela palavra: van", da("Motorista Van 15 lugares") === "Motorista de van");
+ok("micro antes de ônibus", da("Motorista micro-ônibus") === "Motorista de micro-ônibus");
+ok("ônibus não pega micro", da("Motorista ônibus rodoviário") === "Motorista de ônibus");
+ok("administrativo", da("Aux. adm") === "Auxiliar administrativo");
+ok("sem correspondência: nada", da("Mecânico") === null && da("") === null);
 
 console.log(falhas === 0 ? "\nTudo certo.\n" : `\n${falhas} FALHA(S).\n`);
 process.exit(falhas === 0 ? 0 : 1);
