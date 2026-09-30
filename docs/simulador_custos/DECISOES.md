@@ -313,6 +313,17 @@ Omie que o compõem; o estudo novo calcula a administração com eles, e a
 origem da premissa diz "DRE consolidado". Digitar um valor na base continua
 valendo acima do DRE.
 
+### Composição da administração central em Excel
+
+Na base de custos, "baixar a composição em Excel" (`/api/simulador/indiretos`)
+gera a planilha com os mesmos números com que o estudo novo abre: aba Resumo
+(cada custo de estrutura em R$/mês, faturamento médio, % da receita e a
+conversão para % do custo direto em fórmulas, com lucro, tributos e giro
+editáveis) e aba Categorias por mês (cada categoria do Omie nos doze meses
+fechados, a contabilidade pelos pagamentos à JL/Joel, a oficina pelo centro de
+custo, média só dos meses com receita). `scripts/teste-indiretos-xlsx.ts`
+recalcula no LibreOffice e confere com `indiretosDoDre`.
+
 ## 7.1.1 Capital e depreciação nas regras da Azul Mob
 
 As regras da Azul Mob na base ganham a remuneração do capital próprio, a

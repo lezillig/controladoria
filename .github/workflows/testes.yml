@@ -50,8 +50,8 @@ jobs:
         run: |
           set -e
           falhas=0
-          # Simulador: a exportação Excel (teste:exportar-xlsx) fica de fora — ela
-          # recalcula a planilha com LibreOffice ou a biblioteca `formulas`.
+          # Simulador: as exportações Excel (teste:exportar-xlsx, teste:indiretos-xlsx) ficam de fora — elas
+          # recalculam a planilha com LibreOffice ou a biblioteca `formulas`.
           for t in cte acessos antifraude dre engine historico padroes sql limpeza alerta previsao calibragem frota desvios pessoal contratos receita mapeamento fiscal datas simulador gabarito decisao custos-reais mao-de-obra numeros energia pedagio itens separacao horario mes-em-formacao especialistas simulador-banco; do
             echo "::group::teste:$t"
             if ! npm run -s "teste:$t"; then

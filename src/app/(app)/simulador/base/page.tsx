@@ -193,6 +193,13 @@ export default async function BaseDeCustosPage() {
       </details>
 
       <Secao titulo="Parâmetros" descricao="Diesel, tributos, prazos, jornada, administração e margens. “Estimativa” é o padrão do simulador enquanto a empresa não informa o seu número.">
+        <p className="mb-3 text-sm text-slate-600">
+          De onde sai a administração central (folha corporativa, contabilidade, sistemas, sede, oficina, despesas gerais) e o % que o estudo aplica:{" "}
+          <a href="/api/simulador/indiretos" className="font-medium text-blue-700 hover:underline">
+            baixar a composição em Excel
+          </a>{" "}
+          — cada categoria do Omie mês a mês e a conta em fórmulas.
+        </p>
         <ParametrosBase parametros={telaParametros} podeEditar={podeEditar} />
       </Secao>
 
