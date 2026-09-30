@@ -99,6 +99,47 @@ console.log("\n2. O que não pode fechar sozinho");
 {
   conferir("nenhum agente ok, nada fecha", podeFecharSozinho(achado(), NENHUMA, []), false);
 }
+{
+  // O CASO DE FEVEREIRO. Título vencido em 15/12 e pago com juros em 10/01:
+  // CP-JUROS nasce em janeiro datado pela baixa (10/01). Em fevereiro a janela
+  // passa a começar em 01/01, o contexto só traz títulos por vencimento ou
+  // emissão na janela (ou em aberto) — o título quitado de dezembro sai, a
+  // regra não o reavalia, e o achado "dentro da janela" fechava como
+  // OBSOLETO. Os juros continuam pagos.
+  const janelaDeFevereiro = { desde: new Date(2026, 0, 1) };
+  const juros = achado({
+    chave: "CP-JUROS|AZUL:123",
+    regra: "CP-JUROS",
+    tipo: "EVENTO",
+    dataReferencia: new Date(2026, 0, 10),
+    entidadeTipo: "OmieTitulo",
+    entidadeId: "titulo-dezembro",
+  });
+  const semOTitulo = { titulosNoContexto: new Set(["outro-titulo"]), gestaoDisponivel: true };
+  const comOTitulo = { titulosNoContexto: new Set(["titulo-dezembro"]), gestaoDisponivel: true };
+  conferir("evento de título fora do contexto NÃO fecha (não foi relido)", podeFecharSozinho(juros, NENHUMA, TODOS_OK, janelaDeFevereiro, semOTitulo), false);
+  conferir("o mesmo evento, com o título relido e não reemitido, fecha", podeFecharSozinho(juros, NENHUMA, TODOS_OK, janelaDeFevereiro, comOTitulo), true);
+  // ESTADO de título fora do contexto é o título que deixou de estar em
+  // aberto (o contexto traz todo aberto) — a condição sumiu, fecha.
+  conferir(
+    "estado de título fora do contexto continua fechando",
+    podeFecharSozinho(achado({ entidadeTipo: "OmieTitulo", entidadeId: "titulo-dezembro" }), NENHUMA, TODOS_OK, janelaDeFevereiro, semOTitulo),
+    true
+  );
+}
+{
+  // GESTÃO FORA. Frota e pessoal rodam "sem erro" sobre listas vazias; o
+  // silêncio é falta de dado, não problema resolvido.
+  const semGestao = { titulosNoContexto: new Set<string>(), gestaoDisponivel: false };
+  const comGestao = { titulosNoContexto: new Set<string>(), gestaoDisponivel: true };
+  const agentes = [...TODOS_OK, "frota", "pessoal", "antifraude"];
+  const fantasma = achado({ chave: "PE-FANTASMA|m1", regra: "PE-FANTASMA", agente: "pessoal" });
+  const funcionario = achado({ chave: "FR-FORNECEDOR-FUNCIONARIO|AZUL|x", regra: "FR-FORNECEDOR-FUNCIONARIO", agente: "antifraude" });
+  conferir("pessoal com a gestão fora não fecha", podeFecharSozinho(fantasma, NENHUMA, agentes, undefined, semGestao), false);
+  conferir("cruzamento com a folha em outro agente também não", podeFecharSozinho(funcionario, NENHUMA, agentes, undefined, semGestao), false);
+  conferir("com a gestão de volta, fecha como sempre", podeFecharSozinho(fantasma, NENHUMA, agentes, undefined, comGestao), true);
+  conferir("regra só da Omie fecha mesmo com a gestão fora", podeFecharSozinho(achado(), NENHUMA, agentes, undefined, semGestao), true);
+}
 
 // ------------------------------------------------- 3. tratativa humana
 console.log("\n3. Tratativa humana é intocável");

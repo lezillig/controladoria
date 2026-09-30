@@ -91,7 +91,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
       // Agente e tipo vêm da LINHA, não da execução corrente. Ver o comentário
       // do fechamento automático mais abaixo: era daqui que vinha o defeito.
       agente: true, tipo: true,
-      entidadeId: true, entidadeRef: true,
+      entidadeTipo: true, entidadeId: true, entidadeRef: true,
       resolvidoEm: true,
       // Data do fato: decide se um EVENTO que sumiu estava dentro da janela
       // reavaliada (fecha) ou fora dela (fica). Ver podeFecharSozinho.
@@ -186,8 +186,14 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
   // dele não é prova de que o problema acabou — é ausência de informação, e
   // fechar por ausência de informação é pior que não fechar.
   const janela = { desde: ctx.janelaDesde, ate: ctx.janelaAte ?? undefined };
+  // O que esta rodada de fato releu: os títulos do contexto e se a gestão
+  // respondeu. Ver os itens 3 e 5 de podeFecharSozinho.
+  const base = {
+    titulosNoContexto: new Set(ctx.titulos.map((t) => t.id)),
+    gestaoDisponivel: ctx.gestao?.disponivel !== false,
+  };
   const fechaveis = anteriores.filter(
-    (a) => !(opcoes.retroativa && a.tipo === "ESTADO") && podeFecharSozinho(a, chavesEmitidas, agentesOk, janela)
+    (a) => !(opcoes.retroativa && a.tipo === "ESTADO") && podeFecharSozinho(a, chavesEmitidas, agentesOk, janela, base)
   );
 
   let fechadosAutomaticamente = 0;
@@ -528,13 +534,36 @@ export async function reabrirSeNecessario(companyId: string, chave: string): Pro
 // sumia sozinho no 46º dia, sem ninguém ter olhado.
 const REGRAS_SEM_FECHAMENTO_AUTOMATICO = new Set(["FR-CONTA-ALTERADA", "FR-CONTA-ALTERADA-REPETIDA"]);
 
+// O que só existe com a gestão de motoristas lida: os agentes de frota e de
+// pessoal inteiros, e as regras de outros agentes que cruzam com a folha ou
+// com o cartão de frota. Sem a gestão, todos devolvem vazio SEM erro — e o
+// motor lia esse vazio como "a condição sumiu".
+const AGENTES_DA_GESTAO = new Set(["frota", "pessoal"]);
+const REGRAS_DA_GESTAO = new Set(["FR-FORNECEDOR-FUNCIONARIO", "FR-SOCIO-FUNCIONARIO", "CU-COMBUSTIVEL"]);
+
+export function dependeDaGestao(achado: { agente: string; regra?: string }): boolean {
+  return AGENTES_DA_GESTAO.has(achado.agente) || (achado.regra !== undefined && REGRAS_DA_GESTAO.has(achado.regra));
+}
+
 export function podeFecharSozinho(
-  achado: { status: string; chave: string; tipo: string; agente: string; regra?: string; dataReferencia?: Date | null },
+  achado: {
+    status: string;
+    chave: string;
+    tipo: string;
+    agente: string;
+    regra?: string;
+    dataReferencia?: Date | null;
+    entidadeTipo?: string | null;
+    entidadeId?: string | null;
+  },
   chavesEmitidas: Set<string>,
   agentesOk: string[],
   // Janela que os agentes acabaram de reavaliar. Sem ela, vale a regra
   // estrita: EVENTO nunca fecha sozinho. `ate` aberto significa "até hoje".
-  janela?: { desde: Date; ate?: Date }
+  janela?: { desde: Date; ate?: Date },
+  // O que a rodada efetivamente leu. Sem isto (chamada antiga), vale o
+  // comportamento anterior: não se sabe o que faltou.
+  base?: { titulosNoContexto?: Set<string>; gestaoDisponivel?: boolean }
 ): boolean {
   // 1. Tratado por gente não volta a ser mexido por máquina. RESOLVIDO e
   //    IGNORADO carregam justificativa registrada; sobrescrevê-los apagaria o
@@ -579,11 +608,35 @@ export function podeFecharSozinho(
     if (!data) return false;
     if (data < janela.desde) return false;
     if (janela.ate && data > janela.ate) return false;
+    //    A DATA DO FATO NA JANELA NÃO BASTA QUANDO O TÍTULO NÃO FOI LIDO. O
+    //    contexto carrega títulos por VENCIMENTO ou EMISSÃO na janela; CP-JUROS,
+    //    CP-PAGO-ACIMA e companhia datam o fato pela BAIXA. Título vencido em
+    //    dezembro e pago com juros em 10/01 fica fora do contexto no ciclo de
+    //    fevereiro (janela desde 01/01), a regra não o reavalia — e o achado,
+    //    datado em janeiro, "caía na janela" e fechava como OBSOLETO. Sem o
+    //    título relido, não houve reavaliação.
+    if (
+      base?.titulosNoContexto &&
+      achado.entidadeTipo === "OmieTitulo" &&
+      achado.entidadeId &&
+      !base.titulosNoContexto.has(achado.entidadeId)
+    ) {
+      return false;
+    }
   }
 
   // 4. O agente dono precisa ter rodado sem erro. Agente que quebrou emite
   //    silêncio, e silêncio não é prova de que o problema acabou. Fechar por
   //    ausência de informação é pior que não fechar: some da lista sem nunca
   //    ter sido resolvido.
+  //
+  //    O mesmo vale para o agente que rodou sem erro SOBRE DADO QUE NÃO VEIO:
+  //    com a gestão fora, frota, pessoal e os cruzamentos com a folha rodam
+  //    sobre listas vazias. O supervisor escreve que ficaram suspensos;
+  //    suspenso não é resolvido — fechar aqui tirava da fila, num dia de banco
+  //    da gestão fora, todo indício de combustível e de pagamento a desligado,
+  //    e o dia seguinte os reabria como ABERTO, apagando o "em análise" de
+  //    quem já os olhava.
+  if (base?.gestaoDisponivel === false && dependeDaGestao(achado)) return false;
   return agentesOk.includes(achado.agente);
 }
