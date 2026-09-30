@@ -95,6 +95,10 @@ da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
   comparado com o realizado das DUAS linhas; premissa de cenário antiga sobre
   `DESPESA_SALARIOS` passa a valer só para a operação.
 
+A tela de Custos abre a linha corporativa por **centro de custo** (o
+departamento da Omie de cada título; título rateado conta inteiro no
+primeiro departamento), no mesmo recorte da demonstração.
+
 ### Comparações do mês: sempre com o mês fechado
 
 O mês atual vai até D-1; o **mês anterior**, o **mesmo mês do ano

@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "@/lib/controladoria/competencia";
-import { CATEGORIA_SQL, filtroConexaoTitulo } from "@/lib/controladoria/escopoSql";
+import { Prisma } from "@prisma/client";
+import { CATEGORIA_SQL, ehCorporativoSql, filtroConexaoTitulo } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import type { BaseValor, BaseVigente } from "./baseDeCustos";
@@ -23,6 +24,11 @@ import type { DreDosMeses } from "./custosReais";
 // ocupavam na linha do DRE onde estão classificados sai dessa linha — o resto
 // das despesas administrativas vai para "despesas gerais". A soma dos
 // indiretos continua a mesma do DRE: nada conta duas vezes, nada some.
+
+//
+// OFICINA PRÓPRIA é um CENTRO DE CUSTO: a folha da empresa corporativa
+// lançada no departamento da Omie cujo nome tem "oficina". Sai da folha
+// administrativa, que fica com o resto da linha corporativa.
 
 export const CHAVE_FORNECEDOR_CONTABILIDADE = "contabilidade_fornecedor";
 export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business";
@@ -67,7 +73,11 @@ const LINHAS_COM_FORNECEDOR: Record<string, string[]> = {
 
 // Média dos meses COM RECEITA: mês antes do início da base (sem título
 // nenhum) não pode puxar a média para baixo.
-export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornecedor | null): Map<string, IndiretoDoDre> {
+// A folha da oficina por mês (centavos, alinhados com `DreDosMeses.meses`) e
+// o nome dos centros de custo que a formam.
+export type FolhaDaOficina = { centros: string[]; porMes: number[] };
+
+export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornecedor | null, oficina?: FolhaDaOficina | null): Map<string, IndiretoDoDre> {
   const resultado = new Map<string, IndiretoDoDre>();
   const receita = dre.linhasDre.RECEITA_BRUTA ?? [];
   const meses = dre.meses.map((_, i) => i).filter((i) => (receita[i] ?? 0) > 0);
@@ -98,9 +108,20 @@ export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornec
     });
   }
 
+  const oficinaCents = oficina ? mediaCents(oficina.porMes) : 0;
+  if (oficina && oficinaCents > 0.5) {
+    resultado.set("oficina", {
+      valor: Math.round(oficinaCents) / 100,
+      fonte: `centro de custo ${oficina.centros.join(", ")} — ${fonte.replace(/^DRE consolidado — /, "")}`,
+      composicao: [],
+      linhas: [`Despesas com pessoas — corporativo, centro de custo ${oficina.centros.join(", ")}`],
+    });
+  }
+
   for (const [chave, linhas] of Object.entries(mapa)) {
     if (linhas.length === 0) continue;
-    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []) - (comFornecedor ? fornecedorNaLinha(l) : 0), 0);
+    const semOficina = chave === "folha_adm" ? oficinaCents : 0;
+    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []) - (comFornecedor ? fornecedorNaLinha(l) : 0), 0) - semOficina;
     if (!(cents > 0.5)) continue;
     // Na composição, a categoria do fornecedor aparece sem a parte dele.
     const composicao = dre.categorias
@@ -110,7 +131,7 @@ export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornec
       .sort((a, b) => b.valorMes - a.valorMes);
     resultado.set(chave, {
       valor: Math.round(cents) / 100,
-      fonte,
+      fonte: semOficina > 0.5 ? `${fonte}, sem a oficina` : fonte,
       composicao,
       linhas: linhas.map((l) => LINHAS_DRE.find((x) => x.chave === l)?.rotulo.replace(/^\(-\) |^= /, "") ?? l),
     });
@@ -168,6 +189,41 @@ export async function pagamentosDoFornecedor(companyId: string, nome: string, da
   return { nome: nome.trim(), porCategoria };
 }
 
+type LinhaOficina = { centro: string; mes: string; cents: bigint };
+
+// A folha da empresa corporativa nos centros de custo de oficina, por mês, no
+// recorte do DRE (competência, visão do grupo, doze meses fechados) e nas
+// categorias que o DRE pôs na linha corporativa.
+export async function folhaDaOficina(companyId: string, dataReferencia: Date, dre: DreDosMeses): Promise<FolhaDaOficina | null> {
+  const categorias = [...new Set(dre.categorias.filter((c) => c.linha === "DESPESA_SALARIOS_CORPORATIVO").map((c) => c.codigo.replace(/@corporativo$/, "")))];
+  if (categorias.length === 0 || dre.meses.length === 0) return null;
+  const fechado = ultimoMesFechado(dataReferencia);
+  const [ano, mes] = dre.meses[0].split("-").map(Number);
+  const linhas = await prisma.$queryRaw<LinhaOficina[]>`
+    SELECT d.descricao AS centro,
+           to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+           COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
+      FROM ${tabela("OmieTitulo")} t
+      JOIN ${tabela("OmieDepartamento")} d ON d."conexaoId" = t."conexaoId" AND d.codigo = t."departamentoCodigo"
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND d.descricao ILIKE '%oficina%'
+       AND ${ehCorporativoSql(companyId)}
+       AND ${CATEGORIA_SQL} IN (${Prisma.join(categorias)})
+       AND ${competenciaSql("t")} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
+       AND ${competenciaSql("t")} <= ${fechado.fim}
+       ${filtroConexaoTitulo(null, companyId)}
+     GROUP BY 1, 2
+  `;
+  if (linhas.length === 0) return null;
+  const porMes = new Array<number>(dre.meses.length).fill(0);
+  for (const l of linhas) {
+    const i = dre.meses.indexOf(l.mes);
+    if (i >= 0) porMes[i] += Math.abs(Number(l.cents));
+  }
+  return { centros: [...new Set(linhas.map((l) => l.centro))].sort(), porMes };
+}
+
 // O nome do fornecedor da contabilidade: o da base, ou o padrão.
 export function fornecedorDaContabilidade(base: BaseVigente | null): string {
   const texto = base?.parametros.get(CHAVE_FORNECEDOR_CONTABILIDADE)?.texto;
@@ -176,8 +232,11 @@ export function fornecedorDaContabilidade(base: BaseVigente | null): string {
 
 // Tudo junto, para as telas: o DRE dos doze meses e o fornecedor.
 export async function indiretosDaEmpresa(companyId: string, dataReferencia: Date, base: BaseVigente | null, dre: DreDosMeses): Promise<Map<string, IndiretoDoDre>> {
-  const fornecedor = await pagamentosDoFornecedor(companyId, fornecedorDaContabilidade(base), dataReferencia, dre.meses);
-  return indiretosDoDre(dre, fornecedor);
+  const [fornecedor, oficina] = await Promise.all([
+    pagamentosDoFornecedor(companyId, fornecedorDaContabilidade(base), dataReferencia, dre.meses),
+    folhaDaOficina(companyId, dataReferencia, dre),
+  ]);
+  return indiretosDoDre(dre, fornecedor, oficina);
 }
 
 // A base com os indiretos do DRE onde ela não tem valor. Não grava nada: é a

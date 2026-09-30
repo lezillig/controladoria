@@ -390,6 +390,13 @@ console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");
   conferir("padrão do nome: cada palavra pelo início", padraoDoNome("JL Bussiness"), "%JL%BUS%");
   conferir("acentos e caixa não importam", padraoDoNome("  Jl Contábil  "), "%JL%CON%");
   conferir("nome vazio desliga o fornecedor", padraoDoNome("  "), null);
+  // A OFICINA é um centro de custo da folha corporativa: sai da folha
+  // administrativa, e o total não muda.
+  const comOficina = indiretosDoDre(d, null, { centros: ["Oficina"], porMes: doze(200_000).map((v, i) => (i < 2 ? 0 : v)) });
+  perto("oficina própria = folha do centro de custo Oficina", comOficina.get("oficina")?.valor, 2_000);
+  perto("folha administrativa sem a oficina", comOficina.get("folha_adm")?.valor, 6_000);
+  ok("a fonte da folha diz que tirou a oficina", /sem a oficina$/.test(comOficina.get("folha_adm")?.fonte ?? ""), comOficina.get("folha_adm")?.fonte);
+  perto("com a oficina, o total dos indiretos é o mesmo", soma(comOficina), soma(ind));
   conferir("DRE sem receita não traz nada", indiretosDoDre({ ...d, linhasDre: { ...d.linhasDre, RECEITA_BRUTA: doze(0) } }).size, 0);
 }
 

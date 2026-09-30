@@ -267,7 +267,12 @@ doze meses fechados com receita: folha administrativa = pessoas —
 corporativo; contabilidade e jurídico = despesas administrativas; sistemas =
 informática; sede = estrutura; despesas gerais = comerciais + outras
 despesas operacionais; faturamento médio = receita bruta. Oficina própria
-não tem linha no DRE. A tela mostra o valor, o período e as categorias da
+não tem linha no DRE: é a folha da empresa corporativa lançada no centro
+de custo (departamento da Omie) cujo nome tem "oficina", e sai da folha
+administrativa. Contabilidade e jurídico são os pagamentos ao escritório
+contratado (parâmetro da base, padrão JL Business), e o que sobra das
+despesas administrativas vai para despesas gerais — a soma dos indiretos
+continua a do DRE. A tela mostra o valor, o período e as categorias da
 Omie que o compõem; o estudo novo calcula a administração com eles, e a
 origem da premissa diz "DRE consolidado". Digitar um valor na base continua
 valendo acima do DRE.

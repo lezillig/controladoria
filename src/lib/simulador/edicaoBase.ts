@@ -31,7 +31,7 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   contabilidade_fornecedor: { como: "Os pagamentos a este fornecedor no Omie são o valor de Contabilidade, jurídico (padrão: JL Business)" },
   sistemas: { como: "Rateio da administração central", unidade: "R$/mês" },
   sede_garagem_sp: { como: "Rateio da administração central", unidade: "R$/mês" },
-  oficina: { como: "Rateio da administração central", unidade: "R$/mês" },
+  oficina: { como: "Rateio da administração central (padrão: folha do centro de custo Oficina da Omie)", unidade: "R$/mês" },
   gerais: { como: "Rateio da administração central", unidade: "R$/mês" },
   faturamento_medio: { como: "Divisor do rateio da administração central", unidade: "R$/mês" },
   adm_pct: { caminho: "indiretos.administracaoPct", como: "Administração central, quando não há rateio pelos indiretos" },

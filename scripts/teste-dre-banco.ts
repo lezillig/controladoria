@@ -483,6 +483,48 @@ async function principal() {
       conferir("custos reais: a categoria da MCZ fica na linha corporativa", d5.map((c) => [c.linha, c.porMesCents[agosto]]), [["DESPESA_SALARIOS_CORPORATIVO", 55_500]]);
     }
 
+    // A LINHA CORPORATIVA POR CENTRO DE CUSTO: P2 (setembro) no departamento
+    // Oficina da MCZ, P3 (agosto) sem departamento. A soma bate com a linha, e
+    // a folha da Azul não entra.
+    {
+      const { pessoasCorporativoPorCentroDeCusto } = await import("../src/lib/controladoria/dreNoBanco");
+      await prisma.omieDepartamento.create({ data: { companyId: EMPRESA, conexaoId: cx2.id, conexaoApelido: "MC", codigo: "OF", descricao: "Oficina" } });
+      await prisma.omieTitulo.update({ where: { id: idDe("P2") }, data: { departamentoCodigo: "OF" } });
+      const escopoGrupo = { companyId: EMPRESA, conexaoId: null, janela: { desde: desdeMensal, ate: null } };
+      const centros = await pessoasCorporativoPorCentroDeCusto(escopoGrupo, janelas.mesAtual, janelas.mesAnterior, ["D5"], "competencia");
+      conferir(
+        "centro de custo: oficina no mês, sem centro no anterior",
+        centros.map((c) => [c.descricao, c.atualCents, c.anteriorCents]),
+        [["Oficina", 60_700, 0], ["Sem centro de custo", 0, 55_500]]
+      );
+      const grupo = await montarDreNoBanco(escopoGrupo, janelas.mesAtual, janelas.mesAnterior, classificacoes, { regime: "competencia" });
+      const corp = grupo.linhas.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO")!;
+      conferir(
+        "centro de custo: a soma é a linha corporativa",
+        [centros.reduce((a, c) => a + c.atualCents, 0), centros.reduce((a, c) => a + c.anteriorCents, 0)],
+        [corp.valorCents, corp.valorAnteriorCents]
+      );
+      conferir(
+        "centro de custo: a Azul não entra",
+        (await pessoasCorporativoPorCentroDeCusto({ ...escopoGrupo, conexaoId: cx1.id }, janelas.mesAtual, janelas.mesAnterior, ["D5"], "competencia")).length,
+        0
+      );
+      const caixa = await pessoasCorporativoPorCentroDeCusto(escopoGrupo, janelas.mesAtual, janelas.mesAnterior, ["D5"], "caixa");
+      const corpCaixa = (await montarDreNoBanco(escopoGrupo, janelas.mesAtual, janelas.mesAnterior, classificacoes, { regime: "caixa" })).linhas.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO")!;
+      conferir("centro de custo no caixa: a soma é a linha corporativa", caixa.reduce((a, c) => a + c.atualCents, 0), corpCaixa.valorCents);
+      // O simulador: a oficina nos doze meses FECHADOS — P2 é de setembro
+      // (fora); com P3 (agosto) na oficina, agosto entra.
+      const { folhaDaOficina } = await import("../src/lib/simulador/indiretosDoDre");
+      const { carregarDreDosMeses } = await import("../src/lib/simulador/custosReais");
+      const doze = await carregarDreDosMeses(EMPRESA, null, REFERENCIA);
+      conferir("oficina no simulador: setembro ainda não fechou", await folhaDaOficina(EMPRESA, REFERENCIA, doze), null);
+      await prisma.omieTitulo.update({ where: { id: idDe("P3") }, data: { departamentoCodigo: "OF" } });
+      const oficina = await folhaDaOficina(EMPRESA, REFERENCIA, doze);
+      conferir("oficina no simulador: agosto na oficina", [oficina?.centros, oficina?.porMes[11], oficina?.porMes.slice(0, 11).every((v) => v === 0)], [["Oficina"], 55_500, true]);
+      await prisma.omieTitulo.update({ where: { id: idDe("P3") }, data: { departamentoCodigo: null } });
+      await prisma.omieTitulo.update({ where: { id: idDe("P2") }, data: { departamentoCodigo: null } });
+    }
+
     // O resultado não muda com a separação: as duas linhas somam o que a
     // antiga somava, e o EBIT desconta as duas.
     const grupo = await montarDreNoBanco(

@@ -1,3 +1,4 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "./competencia";
@@ -751,4 +752,75 @@ export async function dreParaRelatorio(params: {
     mesFechado: resumirDre(dreFechado, fechado.rotulo),
     mesCorrente: dreCorrente ? resumirDre(dreCorrente, janelas.mesAtual.rotulo) : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Pessoas da empresa corporativa, por centro de custo
+// ---------------------------------------------------------------------------
+
+// A LINHA "Despesas com pessoas — corporativo" ABERTA PELO CENTRO DE CUSTO
+// (departamento da Omie) de cada título: oficina, financeiro, diretoria… O
+// mesmo recorte da demonstração — regime, empresa, janela, eliminação entre
+// as empresas — e as mesmas categorias da linha (as que a tela já colocou
+// nela). O departamento é o primeiro da distribuição do título: título
+// rateado entre centros de custo fica inteiro no primeiro.
+export type CentroDeCustoDaLinha = { codigo: string | null; descricao: string; atualCents: number; anteriorCents: number };
+
+type LinhaCentro = { codigo: string | null; descricao: string | null; atual: bigint; anterior: bigint };
+
+export async function pessoasCorporativoPorCentroDeCusto(
+  escopo: EscopoDre,
+  periodo: Periodo,
+  periodoAnterior: Periodo,
+  categorias: string[],
+  regime: "competencia" | "caixa"
+): Promise<CentroDeCustoDaLinha[]> {
+  if (categorias.length === 0) return [];
+  const desde = periodoAnterior.inicio < periodo.inicio ? periodoAnterior.inicio : periodo.inicio;
+  const ate = periodoAnterior.fim > periodo.fim ? periodoAnterior.fim : periodo.fim;
+  const departamento = Prisma.sql`
+    LEFT JOIN ${tabela("OmieDepartamento")} d
+           ON d."conexaoId" = t."conexaoId" AND d.codigo = t."departamentoCodigo"`;
+  const linhas =
+    regime === "caixa"
+      ? await prisma.$queryRaw<LinhaCentro[]>`
+          SELECT t."departamentoCodigo" AS codigo, MAX(d.descricao) AS descricao,
+                 COALESCE(SUM(b."valorCents") FILTER (WHERE b."dataBaixa" >= ${periodo.inicio} AND b."dataBaixa" <= ${periodo.fim}), 0)::bigint AS atual,
+                 COALESCE(SUM(b."valorCents") FILTER (WHERE b."dataBaixa" >= ${periodoAnterior.inicio} AND b."dataBaixa" <= ${periodoAnterior.fim}), 0)::bigint AS anterior
+            FROM ${tabela("OmieBaixa")} b
+            JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
+            ${departamento}
+           WHERE b."companyId" = ${escopo.companyId}
+             AND b."dataBaixa" >= ${desde}
+             AND b."dataBaixa" <= ${ate}
+             AND t.cancelado = false
+             AND ${ehCorporativoSql(escopo.companyId)}
+             AND ${CATEGORIA} IN (${Prisma.join(categorias)})
+             ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1`
+      : await prisma.$queryRaw<LinhaCentro[]>`
+          SELECT t."departamentoCodigo" AS codigo, MAX(d.descricao) AS descricao,
+                 COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${competenciaSql("t")} >= ${periodo.inicio} AND ${competenciaSql("t")} <= ${periodo.fim}), 0)::bigint AS atual,
+                 COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${competenciaSql("t")} >= ${periodoAnterior.inicio} AND ${competenciaSql("t")} <= ${periodoAnterior.fim}), 0)::bigint AS anterior
+            FROM ${tabela("OmieTitulo")} t
+            ${departamento}
+           WHERE t."companyId" = ${escopo.companyId}
+             AND t.cancelado = false
+             AND ${competenciaSql("t")} >= ${desde}
+             AND ${competenciaSql("t")} <= ${ate}
+             AND ${ehCorporativoSql(escopo.companyId)}
+             AND ${CATEGORIA} IN (${Prisma.join(categorias)})
+             ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1`;
+  return linhas
+    .map((l) => ({
+      codigo: l.codigo,
+      descricao: l.descricao ?? (l.codigo ? `Centro de custo ${l.codigo}` : "Sem centro de custo"),
+      atualCents: Math.abs(Number(l.atual)),
+      anteriorCents: Math.abs(Number(l.anterior)),
+    }))
+    .filter((l) => l.atualCents !== 0 || l.anteriorCents !== 0)
+    .sort((a, b) => b.atualCents - a.atualCents || b.anteriorCents - a.anteriorCents);
 }

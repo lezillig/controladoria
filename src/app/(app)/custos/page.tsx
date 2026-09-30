@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
 import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
-import { intercompanyEliminado, montarDreNoBanco, montarDreAnualNoBanco, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
+import { intercompanyEliminado, montarDreNoBanco, montarDreAnualNoBanco, pessoasCorporativoPorCentroDeCusto, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
 import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
@@ -138,6 +138,20 @@ export default async function CustosPage({
     regime,
     periodoAnoAnterior: anual ? undefined : recorteMensal.periodoAnoAnterior,
   });
+
+  // A FOLHA DA EMPRESA CORPORATIVA ABERTA POR CENTRO DE CUSTO (departamento
+  // da Omie): as mesmas categorias da linha, no mesmo recorte. Só no mês.
+  const linhaCorporativa = anual ? undefined : dre.linhas.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO");
+  const centrosDeCusto =
+    linhaCorporativa && linhaCorporativa.itens.length > 0
+      ? await pessoasCorporativoPorCentroDeCusto(
+          escopoSql,
+          recorteMensal.periodo,
+          recorteMensal.periodoAnterior,
+          linhaCorporativa.itens.map((i) => i.categoriaCodigo),
+          regime
+        )
+      : [];
 
   // LINHA VAZIA NÃO É MOSTRADA, e subtotal repetido tampouco.
   //
@@ -524,6 +538,34 @@ export default async function CustosPage({
           estrutura legal: serve para decidir no dia 5, não para assinar balanço. O DRE oficial é o da contabilidade.
         </p>
       </Secao>
+
+      {linhaCorporativa && centrosDeCusto.length > 0 && (
+        <Secao
+          titulo="Despesas com pessoas — corporativo, por centro de custo"
+          descricao="A folha da empresa corporativa aberta pelo centro de custo (departamento) de cada título na Omie, no mesmo recorte da demonstração. Título rateado entre centros de custo conta inteiro no primeiro."
+        >
+          <Tabela
+            colunas={["Centro de custo", comparativo.janelas.mesAtual.rotulo, "Mês anterior (fechado)", "% da linha"]}
+            alinharDireita={[1, 2, 3]}
+            linhas={[
+              ...centrosDeCusto.map((c) => [
+                c.descricao,
+                <span key="a" className="tabular-nums">{fmtBRL(c.atualCents)}</span>,
+                <span key="b" className="tabular-nums">{fmtBRL(c.anteriorCents)}</span>,
+                <span key="c" className="tabular-nums">
+                  {fmtPercent(linhaCorporativa.valorCents !== 0 ? (c.atualCents / Math.abs(linhaCorporativa.valorCents)) * 100 : null)}
+                </span>,
+              ]),
+              [
+                <strong key="t">Total da linha</strong>,
+                <strong key="a" className="tabular-nums">{fmtBRL(Math.abs(linhaCorporativa.valorCents))}</strong>,
+                <strong key="b" className="tabular-nums">{fmtBRL(Math.abs(linhaCorporativa.valorAnteriorCents))}</strong>,
+                "",
+              ],
+            ]}
+          />
+        </Secao>
+      )}
 
       {/* DEPOIS do DRE, e não antes: recomendar corte antes de mostrar o
           resultado é dar resposta a quem ainda não viu a pergunta. Quem abre
