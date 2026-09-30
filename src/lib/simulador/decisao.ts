@@ -70,6 +70,9 @@ const SENSIVEIS: { caminho: string; rotulo: string; sentido: 1 | -1 }[] = [
   { caminho: "contrato.utilizacao", rotulo: "Utilização do km", sentido: -1 },
 ];
 
+const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const pctTexto = (v: number, casas = 1) => `${(v * 100).toLocaleString("pt-BR", { minimumFractionDigits: casas, maximumFractionDigits: casas })}%`;
+
 function comPremissa(entrada: EntradaSimulacao, mudar: (p: Premissas) => void): EntradaSimulacao {
   const premissas = structuredClone(entrada.premissas);
   mudar(premissas);
@@ -153,25 +156,25 @@ export function montarPainel(
   const principaisEstimadas = estimadas.filter(([c]) => pesoSensivel.has(c)).map(([c]) => SENSIVEIS.find((s) => s.caminho === c)?.rotulo ?? c);
 
   // ALERTAS
-  if (margem !== null && margem < 0) alertas.push({ nivel: "CRITICO", titulo: "Prejuízo no preço proposto", detalhe: `Margem de ${(margem * 100).toFixed(1)}% na utilização prevista.` });
+  if (margem !== null && margem < 0) alertas.push({ nivel: "CRITICO", titulo: "Prejuízo no preço proposto", detalhe: `Margem de ${pctTexto(margem)} na utilização prevista.` });
   else if (margem !== null && margem < minima)
-    alertas.push({ nivel: "CRITICO", titulo: "Margem abaixo da mínima", detalhe: `${(margem * 100).toFixed(1)}% contra a mínima de ${(minima * 100).toFixed(1)}%.` });
+    alertas.push({ nivel: "CRITICO", titulo: "Margem abaixo da mínima", detalhe: `${pctTexto(margem)} contra a mínima de ${pctTexto(minima)}.` });
   for (const i of resultado.itens.filter((x) => x.acimaDoTeto))
     alertas.push({
       nivel: resultado.lote ? "ATENCAO" : "CRITICO",
       titulo: `Item ${i.item} acima do preço máximo`,
-      detalhe: `R$ ${i.precoKm.toFixed(2)}/km isolado contra teto de R$ ${(i.precoMaximoKm ?? 0).toFixed(2)}/km${resultado.lote ? " — o lote compensa, mas o item sozinho seria desclassificado" : ""}.`,
+      detalhe: `${reais(i.precoKm)}/km isolado contra teto de ${reais(i.precoMaximoKm ?? 0)}/km${resultado.lote ? " — o lote compensa, mas o item sozinho seria desclassificado" : ""}.`,
     });
   if (teto !== null && precoMinima > teto)
-    alertas.push({ nivel: "CRITICO", titulo: "Teto abaixo do preço de margem mínima", detalhe: `Para a margem mínima seria preciso R$ ${precoMinima.toFixed(2)}; o teto é R$ ${teto.toFixed(2)}.` });
+    alertas.push({ nivel: "CRITICO", titulo: "Teto abaixo do preço de margem mínima", detalhe: `Para a margem mínima seria preciso ${reais(precoMinima)}; o teto é ${reais(teto)}.` });
   if (folgaUtilizacao !== null && folgaUtilizacao < 0.1)
     alertas.push({
       nivel: folgaUtilizacao < 0 ? "CRITICO" : "ATENCAO",
       titulo: "Pouca folga de utilização",
-      detalhe: `O equilíbrio está em ${((eq ?? 0) * 100).toFixed(0)}% do km; a utilização prevista é ${(u * 100).toFixed(0)}%. Uma queda de ${Math.max(0, folgaUtilizacao * 100).toFixed(0)} pontos zera o lucro.`,
+      detalhe: `O equilíbrio está em ${pctTexto(eq ?? 0, 0)} do km; a utilização prevista é ${pctTexto(u, 0)}. Uma queda de ${Math.max(0, Math.round(folgaUtilizacao * 100))} pontos zera o lucro.`,
     });
   if (resultado.cenarios.tipoEquilibrio === "MAXIMA" && eq !== null && eq < 1.2)
-    alertas.push({ nivel: "ATENCAO", titulo: "Km acima do previsto vira prejuízo", detalhe: `Com preço fixo por ${unidade === "HORA" ? "hora" : unidade === "DIARIA" ? "diária" : "veículo"}, acima de ${(eq * 100).toFixed(0)}% do km de referência o lucro some. Prever franquia de km e km excedente.` });
+    alertas.push({ nivel: "ATENCAO", titulo: "Km acima do previsto vira prejuízo", detalhe: `Com preço fixo por ${unidade === "HORA" ? "hora" : unidade === "DIARIA" ? "diária" : "veículo"}, acima de ${pctTexto(eq, 0)} do km de referência o lucro some. Prever franquia de km e km excedente.` });
   if (principaisEstimadas.length > 0)
     alertas.push({
       nivel: "ATENCAO",

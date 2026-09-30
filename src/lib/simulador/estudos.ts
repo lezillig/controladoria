@@ -2,7 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { simular, VERSAO_MOTOR } from "./motor";
 import { baseVigente, paraNumero, type BaseVigente } from "./baseDeCustos";
-import { perfisDaBase, premissasDaBase, type MapaOrigem } from "./premissas";
+import { perfisDaBase, premissasDaBase, problemasNasPremissas, type MapaOrigem } from "./premissas";
 import { simulacoesHistoricas, FONTE_HISTORICO } from "./historico";
 import type { CriterioJulgamento, EntradaSimulacao, Item, Premissas, ResultadoSimulacao, Rota, UnidadePreco } from "./tipos";
 import type { RealizadoMes } from "./calibracao";
@@ -257,7 +257,20 @@ export function regrasDeMargem(base: BaseVigente | null): { margemMinima: number
   };
 }
 
+// A entrada chega do navegador: tudo que vai para o motor é conferido aqui —
+// tamanho, números finitos, referências entre itens, rotas e perfis.
+function numerosFinitos(obj: unknown): boolean {
+  if (typeof obj === "number") return Number.isFinite(obj);
+  if (obj === null || typeof obj !== "object") return true;
+  return Object.values(obj as Record<string, unknown>).every(numerosFinitos);
+}
+
 function validarEntrada(entrada: EntradaSimulacao): string | null {
+  if (!entrada || !Array.isArray(entrada.itens) || !Array.isArray(entrada.rotas) || !entrada.premissas) return "Simulação incompleta.";
+  if (entrada.itens.length > 100 || entrada.rotas.length > 1000 || (entrada.premissas.perfis?.length ?? 0) > 40) return "Simulação grande demais (máx. 100 itens, 1.000 rotas, 40 perfis).";
+  if (!numerosFinitos(entrada)) return "Há um número inválido nas premissas, itens ou rotas.";
+  const problemas = problemasNasPremissas(entrada.premissas);
+  if (problemas.length > 0) return problemas[0];
   if (entrada.itens.length === 0) return "O estudo precisa de ao menos um item.";
   const codigos = new Set(entrada.itens.map((i) => i.codigo));
   if (codigos.size !== entrada.itens.length) return "Há itens com o mesmo código.";

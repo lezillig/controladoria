@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import {
   Banknote,
   Building2,
+  Calculator,
   CalendarRange,
   Compass,
   FileCheck,
@@ -63,6 +64,9 @@ const NAV: NavItem[] = [
   // Depois do BSC: as metas medem o presente, os cenários dizem para onde a
   // empresa vai com as premissas que a pessoa declarar.
   { href: "/cenarios", label: "Cenários e orçamento", icon: Compass, permissao: "cenarios" },
+  // O simulador custeia a operação que ainda não existe — licitação, contrato
+  // novo, renovação — a partir dos custos que a controladoria mede.
+  { href: "/simulador", label: "Simulador de custos", icon: Calculator, permissao: "simulador" },
   { href: "/relatorios", label: "Relatórios diários", icon: Mail, permissao: "relatorios" },
   { href: "/sincronizacao", label: "Sincronização", icon: RefreshCw, permissao: "sincronizacao" },
   { href: "/conexoes", label: "Conexões Omie", icon: Building2, permissao: "conexoes" },
