@@ -12,6 +12,12 @@ export type ConexaoEmEdicao = {
   cnpj: string;
   credencialRef: string;
   papelNoGrupo: string;
+  endereco: string;
+  cidade: string;
+  representanteNome: string;
+  representanteRg: string;
+  representanteCpf: string;
+  representanteCargo: string;
 };
 
 export default function ConexaoForm({ conexao }: { conexao?: ConexaoEmEdicao }) {
@@ -101,6 +107,41 @@ export default function ConexaoForm({ conexao }: { conexao?: ConexaoEmEdicao }) 
           <p className="mt-1 text-xs text-slate-500">Em branco, usa o apelido.</p>
         </div>
       </div>
+
+      {/* DADOS PARA PROPOSTAS: vão ao cabeçalho e à assinatura do orçamento
+          exportado pelo simulador. */}
+      <fieldset className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
+        <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Dados para propostas</legend>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className={labelClass}>Endereço da sede</label>
+            <input name="endereco" defaultValue={conexao?.endereco} placeholder="Rua, número, bairro, CEP, cidade/UF" className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Cidade (local da proposta)</label>
+            <input name="cidade" defaultValue={conexao?.cidade} placeholder="São Paulo" className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Representante legal — nome</label>
+            <input name="representanteNome" defaultValue={conexao?.representanteNome} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>RG</label>
+            <input name="representanteRg" defaultValue={conexao?.representanteRg} className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>CPF</label>
+            <input name="representanteCpf" defaultValue={conexao?.representanteCpf} placeholder="000.000.000-00" className={inputClass} />
+          </div>
+          <div>
+            <label className={labelClass}>Cargo</label>
+            <input name="representanteCargo" defaultValue={conexao?.representanteCargo} placeholder="Sócio-administrador" className={inputClass} />
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Saem no orçamento exportado (dados da proponente e assinatura). O local e a data da proposta são esta cidade e o dia em que a planilha é gerada.
+        </p>
+      </fieldset>
 
       <div className="rounded-lg bg-white p-3 ring-1 ring-slate-200">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">

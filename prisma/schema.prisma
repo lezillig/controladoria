@@ -214,6 +214,14 @@ model OmieConexao {
   // os demais domínios pequenos deste schema; valores fora dos dois são lidos
   // como OPERACAO.
   papelNoGrupo  String   @default("OPERACAO")
+  // DADOS PARA PROPOSTAS: o cabeçalho e a assinatura do orçamento exportado.
+  // A cidade dá o "local" de "local e data".
+  endereco           String?
+  cidade             String?
+  representanteNome  String?
+  representanteRg    String?
+  representanteCpf   String?
+  representanteCargo String?
   criadoEm      DateTime @default(now())
   atualizadoEm  DateTime @updatedAt
 

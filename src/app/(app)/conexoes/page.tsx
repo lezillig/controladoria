@@ -136,6 +136,12 @@ export default async function ConexoesPage() {
                             cnpj: c.cnpj ?? "",
                             credencialRef: c.credencialRef,
                             papelNoGrupo: c.papelNoGrupo,
+                            endereco: c.endereco ?? "",
+                            cidade: c.cidade ?? "",
+                            representanteNome: c.representanteNome ?? "",
+                            representanteRg: c.representanteRg ?? "",
+                            representanteCpf: c.representanteCpf ?? "",
+                            representanteCargo: c.representanteCargo ?? "",
                           }}
                         />
                         <form action={alternarConexao}>

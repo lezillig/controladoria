@@ -72,7 +72,20 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
     if (!propria) return { erro: "Conexão não encontrada." };
   }
 
-  const dados = { nome, apelido, cnpj: cnpjBruto || null, credencialRef, papelNoGrupo };
+  // Dados para propostas: texto livre, vazio vira nulo.
+  const texto = (campo: string) => String(formData.get(campo) ?? "").trim() || null;
+  const cpf = texto("representanteCpf");
+  if (cpf && cpf.replace(/\D/g, "").length !== 11) return { erro: "CPF do representante deve ter 11 dígitos." };
+  const proposta = {
+    endereco: texto("endereco"),
+    cidade: texto("cidade"),
+    representanteNome: texto("representanteNome"),
+    representanteRg: texto("representanteRg"),
+    representanteCpf: cpf,
+    representanteCargo: texto("representanteCargo"),
+  };
+
+  const dados = { nome, apelido, cnpj: cnpjBruto || null, credencialRef, papelNoGrupo, ...proposta };
 
   const conexao = id
     ? await prisma.omieConexao.update({ where: { id }, data: dados })
@@ -89,7 +102,8 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
     entidadeTipo: "OmieConexao",
     entidadeId: conexao.id,
     descricao: `Conexão ${apelido} (${nome}) ${id ? "alterada" : "cadastrada"}, credencial ${credencialRef}, papel no grupo ${papelNoGrupo === "CORPORATIVO" ? "corporativo" : "operação"}.`,
-    depois: dados,
+    // RG e CPF do representante ficam fora da trilha: dado pessoal.
+    depois: { ...dados, representanteRg: proposta.representanteRg ? "(informado)" : null, representanteCpf: proposta.representanteCpf ? "(informado)" : null },
   });
 
   revalidatePath("/conexoes");

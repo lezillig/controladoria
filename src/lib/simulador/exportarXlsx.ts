@@ -42,7 +42,9 @@ export type DadosExportacao = {
     dataSessao: string | null;
     plataforma: string | null;
   };
-  licitante: { razaoSocial: string; cnpj: string; endereco?: string | null; representante?: string | null };
+  // localData: "cidade, dia de mês de ano" do dia da geração; localInformado
+  // diz se a cidade veio do cadastro (sem ela, só a data).
+  licitante: { razaoSocial: string; cnpj: string; endereco?: string | null; representante?: string | null; localData?: string | null; localInformado?: boolean };
   // Público (padrão): proposta de licitação, com as declarações do edital.
   // Privado: proposta comercial, com as condições do estudo.
   esfera?: "PUBLICO" | "PRIVADO";
@@ -281,7 +283,15 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     undefined,
     !licitante.representante
   );
-  premissa("localData", "Local e data da proposta", "", "", "PREENCHER (ex.: São Paulo, 28 de setembro de 2026).", undefined, true);
+  premissa(
+    "localData",
+    "Local e data da proposta",
+    licitante.localData ?? "",
+    "",
+    licitante.localInformado ? "Data do dia em que a planilha foi gerada." : "PREENCHER a cidade — informe-a em Conexões → Dados para propostas.",
+    undefined,
+    !licitante.localInformado
+  );
 
   novaSecao("2. PARÂMETROS DO CONTRATO");
   escolha("modo", "Modo de apuração (MENSAL ou PERIODO)", p.contrato.modo, ["MENSAL", "PERIODO"], "MENSAL: contrato por demanda (SRP, fretamento contínuo) — km de referência = km/mês máximo do edital, apuração mensal. PERIODO: escolar — km de referência = km do período letivo (km/dia × dias) e o custo fixo conta por 'meses de custo fixo'.");

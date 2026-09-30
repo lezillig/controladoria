@@ -35,6 +35,43 @@ function formatarCnpj(c: string | null | undefined) {
   return d.length === 14 ? `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` : (c ?? "");
 }
 
+// "São Paulo, 4 de outubro de 2026" — no fuso de Brasília, que é o dia em
+// que a proposta foi gerada para quem a assina.
+export function localEData(cidade: string | null | undefined, quando: Date): string {
+  const data = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Sao_Paulo" }).format(quando);
+  return cidade?.trim() ? `${cidade.trim()}, ${data}` : data;
+}
+
+// Os dados da proponente para o cabeçalho e a assinatura da proposta, do
+// cadastro da empresa (Conexões → Dados para propostas).
+export function dadosDoLicitante(
+  c: {
+    nome: string;
+    cnpj: string | null;
+    endereco?: string | null;
+    cidade?: string | null;
+    representanteNome?: string | null;
+    representanteRg?: string | null;
+    representanteCpf?: string | null;
+    representanteCargo?: string | null;
+  } | null,
+  geradoEm: Date
+): DadosExportacao["licitante"] {
+  const representante = c?.representanteNome?.trim()
+    ? [c.representanteNome.trim(), c.representanteRg && `RG ${c.representanteRg}`, c.representanteCpf && `CPF ${c.representanteCpf}`, c.representanteCargo]
+        .filter(Boolean)
+        .join(" / ")
+    : null;
+  return {
+    razaoSocial: c?.nome ?? "",
+    cnpj: formatarCnpj(c?.cnpj),
+    endereco: c?.endereco?.trim() || null,
+    representante,
+    localData: localEData(c?.cidade, geradoEm),
+    localInformado: Boolean(c?.cidade?.trim()),
+  };
+}
+
 export async function exportarEstudo(
   companyId: string,
   estudoId: string,
@@ -60,11 +97,15 @@ export async function exportarEstudo(
   }
   const resultado = simular(entrada);
 
-  const conexao = await prisma.omieConexao.findFirst({
+  // A empresa da OPERAÇÃO assina a proposta (a Azul); a corporativa só se
+  // for a única com CNPJ.
+  const conexoes = await prisma.omieConexao.findMany({
     where: { companyId, ativa: true, cnpj: { not: null } },
     orderBy: { nome: "asc" },
-    select: { nome: true, cnpj: true },
+    select: { nome: true, cnpj: true, papelNoGrupo: true, endereco: true, cidade: true, representanteNome: true, representanteRg: true, representanteCpf: true, representanteCargo: true },
   });
+  const conexao = conexoes.find((c) => c.papelNoGrupo !== "CORPORATIVO") ?? conexoes[0] ?? null;
+  const geradoEm = new Date();
 
   const dados: DadosExportacao = {
     edital: {
@@ -78,7 +119,7 @@ export async function exportarEstudo(
       dataSessao: estudo.dataSessao ? estudo.dataSessao.toISOString().slice(0, 10) : null,
       plataforma: estudo.plataforma,
     },
-    licitante: { razaoSocial: conexao?.nome ?? "", cnpj: formatarCnpj(conexao?.cnpj) },
+    licitante: dadosDoLicitante(conexao, geradoEm),
     esfera: estudo.esfera === "PRIVADO" ? "PRIVADO" : "PUBLICO",
     comercial: {
       cliente: estudo.cliente,
@@ -92,7 +133,7 @@ export async function exportarEstudo(
     entrada,
     resultado,
     versao,
-    geradoEm: new Date(),
+    geradoEm,
   };
   const conteudo = await gerarPlanilhaSimulacao(dados);
   const sufixo = versao > 0 ? `v${versao}` : "rascunho";

@@ -314,6 +314,36 @@ async function principal() {
   ok("outra empresa não exporta o estudo", "erro" in deOutra);
   conferir("exportar não cria versão", await prisma.simSimulacao.count({ where: { estudoId: sjp.id } }), versoesAntes);
 
+  console.log("\nPROPOSTA — dados da proponente do cadastro da empresa");
+  await prisma.omieConexao.deleteMany({ where: { credencialRef: { in: ["TESTEPROPMCZ", "TESTEPROPAZUL"] } } });
+  await prisma.omieConexao.create({ data: { companyId: EMPRESA, nome: "AAA Corporativa", apelido: "TPMCZ", cnpj: "11111111000111", credencialRef: "TESTEPROPMCZ", papelNoGrupo: "CORPORATIVO" } });
+  await prisma.omieConexao.create({
+    data: {
+      companyId: EMPRESA, nome: "Azul Teste Transportes", apelido: "TPAZUL", cnpj: "22222222000122", credencialRef: "TESTEPROPAZUL", papelNoGrupo: "OPERACAO",
+      endereco: "Rua Teste, 100 — São Paulo/SP", cidade: "São Paulo", representanteNome: "Fulano de Tal", representanteRg: "12.345.678-9", representanteCpf: "123.456.789-09", representanteCargo: "Sócio-administrador",
+    },
+  });
+  const comDados = await exportarEstudo(EMPRESA, sjp.id, { simulacaoId: v1.id });
+  if ("erro" in comDados) ok("exporta com os dados da proponente", false, comDados.erro);
+  else {
+    const wbp = new ExcelJS.Workbook();
+    await wbp.xlsx.load(comDados.conteudo as unknown as ArrayBuffer);
+    const ws = wbp.getWorksheet("Premissas")!;
+    const linha = (rotulo: string) => {
+      let v: unknown = null;
+      ws.eachRow((row) => {
+        if (String(row.getCell(1).value ?? "").startsWith(rotulo)) v = row.getCell(2).value;
+      });
+      return v;
+    };
+    conferir("a empresa da operação assina, não a corporativa", linha("Razão social"), "Azul Teste Transportes");
+    conferir("endereço da sede do cadastro", linha("Endereço da sede"), "Rua Teste, 100 — São Paulo/SP");
+    conferir("representante: nome / RG / CPF / cargo", linha("Representante legal"), "Fulano de Tal / RG 12.345.678-9 / CPF 123.456.789-09 / Sócio-administrador");
+    const hoje = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "long", year: "numeric", timeZone: "America/Sao_Paulo" }).format(new Date());
+    conferir("local e data: cidade e o dia da geração", linha("Local e data"), `São Paulo, ${hoje}`);
+  }
+  await prisma.omieConexao.deleteMany({ where: { credencialRef: { in: ["TESTEPROPMCZ", "TESTEPROPAZUL"] } } });
+
   await limpar();
   await prisma.$disconnect();
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
