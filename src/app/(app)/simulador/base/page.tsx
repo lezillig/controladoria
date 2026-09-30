@@ -4,7 +4,8 @@ import { paraNumero } from "@/lib/simulador/baseDeCustos";
 import { CATALOGO_PARAMETROS } from "@/lib/simulador/catalogo";
 import { camposEditaveis, CONCEITO_DA_REGRA, padraoDoSimulador, USO_DA_BASE, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
-import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
+import { CATEGORIA_DO_TIPO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
+import { funcaoPelaConvencao } from "@/lib/simulador/convencoes";
 import { energiaDoPerfil } from "@/lib/simulador/energia";
 import { carregarDreDosMeses } from "@/lib/simulador/custosReais";
 import { CHAVE_FORNECEDOR_CONTABILIDADE, FORNECEDOR_CONTABILIDADE_PADRAO, folhaDaOficina, indiretosDoDre, pagamentosDoFornecedor, type IndiretoDoDre } from "@/lib/simulador/indiretosDoDre";
@@ -116,10 +117,15 @@ export default async function BaseDeCustosPage() {
   });
   // Salário por CATEGORIA (a van adaptada paga o motorista de van, salvo
   // função própria cadastrada).
-  const sugestoesFuncao = PERFIS_PADRAO.filter((p) => VARIANTE_DO_TIPO[p.tipo] === "PADRAO").map((p) => ({
-    rotulo: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`,
-    campos: { funcao: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`, salarioBase: p.motorista.salario, encargosPct: PREMISSAS_PADRAO.pessoal.encargosPct },
-  }));
+  // Cada sugestão já vem com o sindicato do tipo de veículo: TRANSFRETUR para
+  // van, micro e ônibus; SINDILOCADESP para carro (ver convencoes.ts).
+  const sugestoesFuncao = PERFIS_PADRAO.filter((p) => VARIANTE_DO_TIPO[p.tipo] === "PADRAO").map((p) => {
+    const { convencao, campos } = funcaoPelaConvencao(CATEGORIA_DO_TIPO[p.tipo], p.motorista.salario);
+    return {
+      rotulo: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()} · ${convencao.chave}`,
+      campos: { funcao: `Motorista de ${ROTULO_TIPO_VEICULO[p.tipo].toLowerCase()}`, encargosPct: PREMISSAS_PADRAO.pessoal.encargosPct, ...campos },
+    };
+  });
 
   return (
     <div className={`${larguraPainel} space-y-6`}>

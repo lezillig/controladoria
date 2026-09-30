@@ -140,7 +140,7 @@ function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boole
             disabled={!podeEditar}
             aria-label={p.rotulo}
             value={(rascunho as string | null) ?? ""}
-            placeholder={p.chave === "arla" ? "ex.: R$ 4,20; 4,5%" : p.chave === "reserva_tecnica" ? "ex.: 10%; 10%; 12%" : p.chave === "contabilidade_fornecedor" ? "padrão: JL Business" : ""}
+            placeholder={p.chave === "arla" ? "ex.: R$ 4,20; 4,5%" : p.chave === "reserva_tecnica" ? "ex.: 10%; 10%; 12%" : p.chave === "contabilidade_fornecedor" ? "padrão: JL Business; Joel" : ""}
             onChange={(e) => setRascunho(e.target.value)}
           />
         ) : (
@@ -189,7 +189,7 @@ function LinhaParametro({ p, podeEditar }: { p: ParametroTela; podeEditar: boole
           </>
         ) : p.chave === "contabilidade_fornecedor" ? (
           <span className="text-slate-500">
-            padrão: <strong>JL Business</strong>
+            padrão: <strong>JL Business; Joel</strong> (contabilidade e jurídico)
           </span>
         ) : (
           <span className="text-slate-500">não preenchido</span>

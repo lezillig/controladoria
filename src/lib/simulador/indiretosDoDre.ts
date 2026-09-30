@@ -31,7 +31,9 @@ import type { DreDosMeses } from "./custosReais";
 // administrativa, que fica com o resto da linha corporativa.
 
 export const CHAVE_FORNECEDOR_CONTABILIDADE = "contabilidade_fornecedor";
-export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business";
+// Contabilidade (JL Business) e jurídico (Joel): um ou mais nomes, separados
+// por ";". O valor é a soma dos pagamentos a todos.
+export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business; Joel";
 
 export const LINHAS_DOS_INDIRETOS: Record<string, string[]> = {
   folha_adm: ["DESPESA_SALARIOS_CORPORATIVO"],
@@ -60,7 +62,13 @@ const rotuloMes = (chave: string) => {
 
 // Os pagamentos ao fornecedor, por categoria e mês (centavos, alinhados com
 // `DreDosMeses.meses`).
-export type PagamentosDoFornecedor = { nome: string; porCategoria: Map<string, number[]> };
+export type PagamentosDoFornecedor = {
+  nome: string;
+  // Todos os fornecedores somados, por categoria (para tirar da linha do DRE).
+  porCategoria: Map<string, number[]>;
+  // Cada fornecedor, por mês (para a composição).
+  porNome?: Map<string, number[]>;
+};
 
 // Com o fornecedor: contabilidade = o que se pagou a ele; as linhas onde ele
 // está classificado perdem essa parte; as despesas administrativas que sobram
@@ -100,8 +108,10 @@ export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornec
     resultado.set("contabilidade", {
       valor: Math.round(totalFornecedor) / 100,
       fonte: `${fornecedor.nome} — pagamentos no Omie, ${fonte.replace(/^DRE consolidado — /, "")}`,
-      composicao: [...doFornecedor]
-        .map(([codigo, v]) => ({ descricao: linhaDaCategoria.get(codigo)?.descricao ?? `Categoria ${codigo}`, valorMes: Math.round(v) / 100 }))
+      composicao: (fornecedor.porNome && fornecedor.porNome.size > 0
+        ? [...fornecedor.porNome].map(([nome, porMes]) => ({ descricao: nome, valorMes: Math.round(mediaCents(porMes)) / 100 }))
+        : [...doFornecedor].map(([codigo, v]) => ({ descricao: linhaDaCategoria.get(codigo)?.descricao ?? `Categoria ${codigo}`, valorMes: Math.round(v) / 100 }))
+      )
         .filter((c) => c.valorMes > 0)
         .sort((a, b) => b.valorMes - a.valorMes),
       linhas: [`Pagamentos a ${fornecedor.nome}`],
@@ -139,28 +149,57 @@ export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornec
   return resultado;
 }
 
-// O NOME NO OMIE: cada palavra do nome cadastrado pelo início (três letras),
-// sem caixa — "JL Business" acha "JL BUSSINESS LTDA" e "Jl Business
-// Contabilidade". Vazio = sem fornecedor (contabilidade pela linha do DRE).
+// O NOME NO OMIE, sem caixa nem acento. Com várias palavras, cada uma pelo
+// início (três letras) — "JL Business" acha "JL BUSSINESS LTDA". Com uma só,
+// a palavra inteira — "Joel" não pode virar "JOE". Vazio = sem fornecedor
+// (contabilidade pela linha do DRE).
 export function padraoDoNome(nome: string): string | null {
-  const partes = nome
+  const palavras = nome
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
     .split(/[^A-Z0-9]+/)
-    .filter(Boolean)
-    .map((p) => p.slice(0, 3));
-  return partes.length === 0 ? null : `%${partes.join("%")}%`;
+    .filter(Boolean);
+  if (palavras.length === 0) return null;
+  const partes = palavras.length === 1 ? palavras : palavras.map((p) => p.slice(0, 3));
+  return `%${partes.join("%")}%`;
 }
+
+// "JL Business; Joel" → ["JL Business", "Joel"].
+export const nomesDosFornecedores = (texto: string) =>
+  texto
+    .split(/[;\n]/)
+    .map((n) => n.trim())
+    .filter(Boolean);
 
 type LinhaFornecedor = { categoria: string; mes: string; cents: bigint };
 
 // Os pagamentos ao fornecedor nos doze meses fechados, na visão do grupo (sem
 // as operações entre as empresas), por categoria e mês de competência — o
 // mesmo recorte do DRE.
-export async function pagamentosDoFornecedor(companyId: string, nome: string, dataReferencia: Date, meses: string[]): Promise<PagamentosDoFornecedor | null> {
-  const padrao = padraoDoNome(nome);
-  if (!padrao || meses.length === 0) return null;
+export async function pagamentosDoFornecedor(companyId: string, nomes: string, dataReferencia: Date, meses: string[]): Promise<PagamentosDoFornecedor | null> {
+  const lista = nomesDosFornecedores(nomes).filter((n) => padraoDoNome(n) !== null);
+  if (lista.length === 0 || meses.length === 0) return null;
+  const porCategoria = new Map<string, number[]>();
+  const porNome = new Map<string, number[]>();
+  for (const nome of lista) {
+    const um = await pagamentosDeUmFornecedor(companyId, nome, dataReferencia, meses);
+    const total = new Array<number>(meses.length).fill(0);
+    for (const [categoria, v] of um) {
+      const acumulado = porCategoria.get(categoria) ?? new Array<number>(meses.length).fill(0);
+      v.forEach((x, i) => {
+        acumulado[i] += x;
+        total[i] += x;
+      });
+      porCategoria.set(categoria, acumulado);
+    }
+    porNome.set(nome, total);
+  }
+  return { nome: lista.join(" e "), porCategoria, porNome };
+}
+
+async function pagamentosDeUmFornecedor(companyId: string, nome: string, dataReferencia: Date, meses: string[]): Promise<Map<string, number[]>> {
+  const padrao = padraoDoNome(nome)!;
   const fechado = ultimoMesFechado(dataReferencia);
   const [ano, mes] = meses[0].split("-").map(Number);
   const inicio = new Date(ano, mes - 1, 1, 0, 0, 0, 0);
@@ -186,7 +225,7 @@ export async function pagamentosDoFornecedor(companyId: string, nome: string, da
     v[i] += Number(l.cents);
     porCategoria.set(l.categoria, v);
   }
-  return { nome: nome.trim(), porCategoria };
+  return porCategoria;
 }
 
 type LinhaOficina = { centro: string; mes: string; cents: bigint };

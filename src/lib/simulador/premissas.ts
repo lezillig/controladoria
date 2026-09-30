@@ -1,4 +1,5 @@
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
+import { PISO_TRANSFRETUR_NIVEL_A } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
@@ -479,7 +480,9 @@ const PERFIS_BASE: PerfilVeiculo[] = [
   perfil("MICRO", "MICRO", "Micro-ônibus 25–33 lugares", 30, "D", 3150, 1.2,
     { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95 },
     { consumoAsfaltoKmL: 4.7, consumoTerraKmL: 3.9, arlaKm: 0.05, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0 }),
-  perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", 3200, 1.2,
+  // Salário: piso do Nível A da TRANSFRETUR-SP × SINDIFRETUR desde 01/01/2026
+  // (ver convencoes.ts).
+  perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", PISO_TRANSFRETUR_NIVEL_A, 1.2,
     { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90 },
     { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),
 ]

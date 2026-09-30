@@ -10,7 +10,7 @@
 // REAL sem tocar no resto.
 //
 // Sem banco.
-import { baseComIndiretosDoDre, indiretosDoDre, padraoDoNome } from "../src/lib/simulador/indiretosDoDre";
+import { baseComIndiretosDoDre, indiretosDoDre, nomesDosFornecedores, padraoDoNome } from "../src/lib/simulador/indiretosDoDre";
 import {
   aplicarIndicadores,
   analisarCustosReais,
@@ -390,6 +390,15 @@ console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");
   conferir("padrão do nome: cada palavra pelo início", padraoDoNome("JL Bussiness"), "%JL%BUS%");
   conferir("acentos e caixa não importam", padraoDoNome("  Jl Contábil  "), "%JL%CON%");
   conferir("nome vazio desliga o fornecedor", padraoDoNome("  "), null);
+  conferir("uma palavra só vai inteira", padraoDoNome("Joel"), "%JOEL%");
+  conferir("vários fornecedores por ponto e vírgula", nomesDosFornecedores("JL Business; Joel ;"), ["JL Business", "Joel"]);
+  const doisFornecedores = indiretosDoDre(d, {
+    nome: "JL Business e Joel",
+    porCategoria: new Map([["4.02", doze(40_000).map((v, i) => (i < 2 ? 0 : v))]]),
+    porNome: new Map([["JL Business", doze(30_000).map((v, i) => (i < 2 ? 0 : v))], ["Joel", doze(10_000).map((v, i) => (i < 2 ? 0 : v))]]),
+  });
+  perto("contabilidade e jurídico somam os dois fornecedores", doisFornecedores.get("contabilidade")?.valor, 400);
+  conferir("a composição mostra cada fornecedor", doisFornecedores.get("contabilidade")?.composicao, [{ descricao: "JL Business", valorMes: 300 }, { descricao: "Joel", valorMes: 100 }]);
   // A OFICINA é um centro de custo da folha corporativa: sai da folha
   // administrativa, e o total não muda.
   const comOficina = indiretosDoDre(d, null, { centros: ["Oficina"], porMes: doze(200_000).map((v, i) => (i < 2 ? 0 : v)) });
