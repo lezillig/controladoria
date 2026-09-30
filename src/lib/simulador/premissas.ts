@@ -99,15 +99,15 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("preco.lucroAlvoPct", "Lucro líquido alvo", "% do preço", "pct"),
   c("preco.pis", "PIS", "% do faturamento", "pct"),
   c("preco.cofins", "COFINS", "% do faturamento", "pct"),
-  c("preco.irpj", "IRPJ", "% do faturamento", "pct"),
-  c("preco.csll", "CSLL", "% do faturamento", "pct"),
+  c("preco.irpj", "IRPJ", "% do faturamento", "pct", "Presumido do transporte de passageiros: 15% sobre a presunção de 16% = 2,4% (+ adicional de 10% sobre o lucro presumido acima de R$ 20 mil/mês). 8% de presunção é só de cargas."),
+  c("preco.csll", "CSLL", "% do faturamento", "pct", "Presumido: 9% sobre a presunção de 12% = 1,08%."),
   c("preco.iss", "ISS (transporte municipal)", "% do faturamento municipal", "pct"),
   c("preco.icms", "ICMS (transporte intermunicipal)", "% do faturamento intermunicipal", "pct"),
   c("preco.custoCapitalGiroAm", "Custo do capital de giro", "% a.m.", "pct"),
   c("preco.prazoRecebimentoDias", "Prazo de recebimento", "dias", "numero"),
   c("preco.despesasSobrePrecoPct", "Despesas sobre o preço (adm. do contrato, comissão)", "% do preço", "pct"),
   c("preco.irpjCsllSobreLucroPct", "IRPJ + CSLL sobre o lucro (Lucro Real)", "% do lucro", "pct", "No Lucro Real: 34% (15% + 10% adicional + 9%). No Presumido, zero — e IRPJ/CSLL entram acima como % do faturamento."),
-  c("preco.creditoPisCofinsPct", "Crédito de PIS/COFINS não cumulativo", "% dos custos com crédito", "pct", "No Lucro Real: 9,25% sobre combustível, ARLA, óleo, pneus, manutenção, depreciação e garagem. Confirmar o enquadramento com a contabilidade."),
+  c("preco.creditoPisCofinsPct", "Crédito de PIS/COFINS não cumulativo", "% dos custos com crédito", "pct", "Transporte de passageiros (fretamento incluído) fica no PIS/COFINS cumulativo de 3,65% SEM crédito mesmo no Lucro Real (SC Cosit 50/2026). Só a locação sem motorista no Real é não cumulativa: 9,25% com crédito sobre combustível, peças, pneus, depreciação e garagem."),
 ];
 
 export function lerCaminho(p: Premissas, caminho: string): unknown {
@@ -183,7 +183,10 @@ export const PREMISSAS_PADRAO: Premissas = {
     lucroAlvoPct: 0.12,
     pis: 0.0065,
     cofins: 0.03,
-    irpj: 0.012,
+    // Lucro Presumido do TRANSPORTE DE PASSAGEIROS: presunção de 16% para o
+    // IRPJ (8% é só de cargas) e 12% para a CSLL — 2,4% + 1,08% da receita,
+    // antes do adicional. Ver docs/simulador_custos/PESQUISA.md, seção 5.
+    irpj: 0.024,
     csll: 0.0108,
     iss: 0.05,
     icms: 0.12,

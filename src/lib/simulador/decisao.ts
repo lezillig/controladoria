@@ -181,6 +181,13 @@ export function montarPainel(
       titulo: "Premissas decisivas ainda estimadas",
       detalhe: `${principaisEstimadas.join(", ")} estão entre as que mais mexem no resultado e não vêm de dado da empresa. Conferir antes de lançar.`,
     });
+  const pr = entrada.premissas.preco;
+  if (pr.irpjCsllSobreLucroPct === 0 && pr.irpj > 0 && pr.irpj < 0.024 - 1e-9)
+    alertas.push({
+      nivel: "ATENCAO",
+      titulo: "IRPJ na base presumida de cargas",
+      detalhe: `IRPJ de ${pctTexto(pr.irpj, 2)} da receita corresponde à presunção de 8%, que é de transporte de cargas. Transporte de passageiros presume 16%: 2,4% da receita (+ adicional). O preço está subestimado em cerca de ${pctTexto(0.024 - pr.irpj, 2)} da receita.`,
+    });
   if (!regrasDaBase) alertas.push({ nivel: "INFO", titulo: "Margem mínima padrão", detalhe: "A base de custos não tem as regras da Azul; margem mínima considerada = metade do alvo." });
   const pior = sensibilidade[0];
   if (pior && lucroBase !== 0 && Math.abs(pior.efeitoLucro) > Math.abs(lucroBase) * 0.5)

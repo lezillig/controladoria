@@ -265,7 +265,7 @@ function numerosFinitos(obj: unknown): boolean {
   return Object.values(obj as Record<string, unknown>).every(numerosFinitos);
 }
 
-function validarEntrada(entrada: EntradaSimulacao): string | null {
+export function validarEntrada(entrada: EntradaSimulacao): string | null {
   if (!entrada || !Array.isArray(entrada.itens) || !Array.isArray(entrada.rotas) || !entrada.premissas) return "Simulação incompleta.";
   if (entrada.itens.length > 100 || entrada.rotas.length > 1000 || (entrada.premissas.perfis?.length ?? 0) > 40) return "Simulação grande demais (máx. 100 itens, 1.000 rotas, 40 perfis).";
   if (!numerosFinitos(entrada)) return "Há um número inválido nas premissas, itens ou rotas.";

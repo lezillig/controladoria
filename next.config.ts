@@ -49,6 +49,11 @@ const nextConfig: NextConfig = {
     COMMIT_DO_BUILD: process.env.VERCEL_GIT_COMMIT_SHA ?? "",
     MENSAGEM_DO_BUILD: (process.env.VERCEL_GIT_COMMIT_MESSAGE ?? "").split("\n")[0].slice(0, 120),
   },
+  // O Gabarito em branco do simulador é servido por /api/simulador/gabarito
+  // (com sessão); o arquivo mora em docs/ e precisa ir junto no deploy.
+  outputFileTracingIncludes: {
+    "/api/simulador/gabarito": ["./docs/simulador_custos_handoff/planilhas_referencia/Gabarito_Dados_Simulador_Custos_AzulMob.xlsx"],
+  },
   experimental: {
     // Extrato real de combustivel (RFCV) pode passar de 2MB (8mil+ linhas);
     // o limite padrao de Server Actions e 1MB.

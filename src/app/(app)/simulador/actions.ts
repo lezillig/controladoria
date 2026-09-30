@@ -25,7 +25,7 @@ import { exigirPermissao } from "../_dados";
 // trilha; a leitura (tela) exige "simulador". A empresa vem sempre da sessão —
 // nenhum formulário escolhe de que empresa grava.
 
-export type Resultado = { erro?: string; ok?: boolean; id?: string; mensagem?: string };
+export type Resultado = { erro?: string; ok?: boolean; id?: string; mensagem?: string; versao?: number };
 
 const texto = (f: FormData, k: string, max = 300) => {
   const v = String(f.get(k) ?? "").trim();
@@ -129,7 +129,7 @@ export async function salvarVersao(estudoId: string, entrada: EntradaSimulacao, 
   });
   revalidatePath(`/simulador/${estudoId}`);
   revalidatePath("/simulador");
-  return { ok: true, id: r.id, mensagem: `Versão ${r.versao} salva.` };
+  return { ok: true, id: r.id, versao: r.versao, mensagem: `Versão ${r.versao} salva.` };
 }
 
 export async function registrarLance(estudoId: string, formData: FormData): Promise<Resultado> {

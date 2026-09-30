@@ -1001,13 +1001,17 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
       const d = disponibilidadeGestao();
       if (!d.disponivel) {
         gestaoDisponivel = false;
-        avisos.push(d.erro ?? `Não foi possível ler ${rotulo} do sistema de gestão.`);
+        // A mensagem do banco fica no log do servidor, não na tela: ela traz
+        // nome de banco, de tabela e trecho de consulta.
+        if (d.erro) console.warn(`[simulador] custos reais: ${d.erro}`);
+        avisos.push(`Não foi possível ler ${rotulo} do sistema de gestão agora (fora do ar ou sem acesso).`);
         return [];
       }
       return linhas;
     } catch (e) {
       gestaoDisponivel = false;
-      avisos.push(`Não foi possível ler ${rotulo} do sistema de gestão: ${e instanceof Error ? e.message.slice(0, 200) : "erro desconhecido"}`);
+      console.warn(`[simulador] custos reais: falha ao ler ${rotulo}`, e instanceof Error ? e.message.slice(0, 200) : e);
+      avisos.push(`Não foi possível ler ${rotulo} do sistema de gestão agora (fora do ar ou sem acesso).`);
       return [];
     }
   }
