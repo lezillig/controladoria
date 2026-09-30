@@ -44,6 +44,26 @@ export default function PerfilForm({ perfil }: { perfil?: PerfilEmEdicao }) {
   const [processando, iniciar] = useTransition();
   const router = useRouter();
 
+  // Ao ABRIR um perfil existente, o formulário recomeça do que está gravado.
+  //
+  // O estado acima nasce das props uma vez só, e o componente sobrevive ao
+  // `router.refresh()`. Caso real: A é o padrão; alguém marca B como padrão e
+  // o servidor desmarca A — mas o formulário de A continuava com a caixa
+  // "padrão" marcada. Abrir A para ajustar um nome e salvar devolvia o padrão
+  // para A em silêncio, mudando o acesso de todo mundo sem perfil próprio.
+  // Também descarta a edição abandonada com "Cancelar", que de outro modo
+  // reaparecia como se fosse o valor gravado.
+  const abrir = () => {
+    if (perfil) {
+      setNome(perfil.nome);
+      setDescricao(perfil.descricao);
+      setPadrao(perfil.padrao);
+      setMarcadas(new Set(perfil.permissoes));
+      setErro(null);
+    }
+    setAberto(true);
+  };
+
   const alternar = (chave: string) =>
     setMarcadas((atual) => {
       const proximo = new Set(atual);
@@ -106,7 +126,7 @@ export default function PerfilForm({ perfil }: { perfil?: PerfilEmEdicao }) {
     return (
       <button
         type="button"
-        onClick={() => setAberto(true)}
+        onClick={abrir}
         className="flex w-full items-center gap-3 rounded-lg border border-slate-200 px-4 py-3 text-left hover:bg-slate-50"
       >
         <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />

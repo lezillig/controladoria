@@ -5,8 +5,9 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { prismaGestao } from "@/lib/gestao/cliente";
-import { PERMISSOES } from "@/lib/acessos";
+import { PERMISSOES, perderiaGestaoDeUsuarios } from "@/lib/acessos";
 import { registrarEvento } from "@/lib/controladoria/trilha";
+import { redigir } from "@/lib/controladoria/falhas";
 import { exigirPermissao } from "../_dados";
 
 // USUÁRIOS E PERFIS.
@@ -39,6 +40,10 @@ const TAMANHO_MINIMO_SENHA = 8;
 // gravaria um papel que nenhum dos dois sistemas sabe interpretar, e o usuário
 // ficaria criado sem conseguir entrar em lugar nenhum.
 const PAPEIS_VALIDOS = ["ADMIN", "GESTOR", "CONTROLADORIA", "FOLHA", "MOTORISTA"];
+
+const ERRO_TRAVA_PROPRIA =
+  "Esta mudança tiraria de você a permissão de gerir usuários, e ninguém sem ela consegue desfazê-la por aqui. " +
+  "Inclua “Criar usuários e definir perfis” no perfil, ou peça a outra pessoa com essa permissão para fazer a mudança.";
 
 export async function criarUsuario(formData: FormData): Promise<ResultadoUsuario> {
   const session = await exigirPermissao("gerir-usuarios");
@@ -100,7 +105,9 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoUsuario
           "docs/papel-leitura-gestao.sql, na seção de escrita.",
       };
     }
-    return { erro: `Não consegui criar o usuário: ${texto.slice(0, 200)}` };
+    // Redigido: erro de banco pode trazer host e credencial da conexão, e este
+    // texto vai para a tela.
+    return { erro: `Não consegui criar o usuário: ${redigir(texto).slice(0, 200)}` };
   }
 
   if (perfilId) {
@@ -149,6 +156,16 @@ export async function atribuirPerfil(formData: FormData): Promise<ResultadoUsuar
   if (perfilId) {
     const perfil = await prisma.perfilAcesso.findFirst({ where: { id: perfilId, companyId: session.companyId }, select: { id: true } });
     if (!perfil) return { erro: "Perfil não encontrado." };
+  }
+
+  // Trocar o PRÓPRIO perfil por um sem "gerir usuários" (ou removê-lo e cair
+  // num padrão/papel sem ela) tranca a pessoa fora desta tela na hora.
+  if (userId === session.userId) {
+    const depois = await prisma.perfilAcesso.findFirst({
+      where: perfilId ? { id: perfilId, companyId: session.companyId } : { companyId: session.companyId, padrao: true },
+      select: { nome: true, permissoes: true },
+    });
+    if (perderiaGestaoDeUsuarios(session.role, depois)) return { erro: ERRO_TRAVA_PROPRIA };
   }
 
   const anterior = await prisma.usuarioPerfil.findUnique({
@@ -216,6 +233,20 @@ export async function salvarPerfil(formData: FormData): Promise<ResultadoUsuario
     : null;
   if (id && !anterior) return { erro: "Perfil não encontrado." };
 
+  // O perfil que passaria a valer para QUEM ESTÁ SALVANDO, se esta mudança o
+  // alcança: o próprio perfil atribuído sendo editado, ou — sem perfil
+  // próprio — este perfil virando o padrão, ou deixando de ser o padrão (aí
+  // valem as regras do papel). Ver `perderiaGestaoDeUsuarios`.
+  const minhaAtribuicao = await prisma.usuarioPerfil.findUnique({
+    where: { companyId_userId: { companyId: session.companyId, userId: session.userId } },
+    select: { perfilId: true },
+  });
+  const alcancaQuemSalva = minhaAtribuicao ? Boolean(id) && minhaAtribuicao.perfilId === id : padrao || Boolean(anterior?.padrao);
+  if (alcancaQuemSalva) {
+    const perfilDepois = minhaAtribuicao || padrao ? { nome, permissoes } : null;
+    if (perderiaGestaoDeUsuarios(session.role, perfilDepois)) return { erro: ERRO_TRAVA_PROPRIA };
+  }
+
   const dados = { nome, descricao, permissoes, padrao };
   const salvo = id
     ? await prisma.perfilAcesso.update({ where: { id }, data: dados })
@@ -253,9 +284,20 @@ export async function excluirPerfil(formData: FormData): Promise<ResultadoUsuari
 
   const perfil = await prisma.perfilAcesso.findFirst({
     where: { id, companyId: session.companyId },
-    select: { nome: true, _count: { select: { usuarios: true } } },
+    select: { nome: true, padrao: true, _count: { select: { usuarios: true } } },
   });
   if (!perfil) return { erro: "Perfil não encontrado." };
+
+  // Excluir o PADRÃO devolve às regras do papel quem não tem perfil próprio —
+  // inclusive quem está excluindo. GESTOR com "gerir usuários" só pelo padrão
+  // se trancaria fora desta tela.
+  if (perfil.padrao) {
+    const minhaAtribuicao = await prisma.usuarioPerfil.findUnique({
+      where: { companyId_userId: { companyId: session.companyId, userId: session.userId } },
+      select: { perfilId: true },
+    });
+    if (!minhaAtribuicao && perderiaGestaoDeUsuarios(session.role, null)) return { erro: ERRO_TRAVA_PROPRIA };
+  }
 
   // Excluir com gente dentro devolveria essas pessoas às regras de papel sem
   // aviso — mudança de acesso em silêncio, que é o que esta tela existe para

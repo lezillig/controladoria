@@ -41,7 +41,16 @@ export default function AppShell({
               className="absolute inset-0 bg-black/30"
               onClick={() => setOpen(false)}
             />
-            <aside className="absolute left-0 top-0 h-full w-64 bg-white shadow-xl">
+            {/* Fecha ao escolher um item. O layout sobrevive à navegação (e
+                este estado junto), então a gaveta continuava aberta por cima
+                da tela nova no celular, e cada troca de tela exigia fechá-la
+                à mão. */}
+            <aside
+              className="absolute left-0 top-0 h-full w-64 bg-white shadow-xl"
+              onClick={(e) => {
+                if ((e.target as HTMLElement).closest("a")) setOpen(false);
+              }}
+            >
               <Sidebar permissoes={permissoes} />
             </aside>
           </div>

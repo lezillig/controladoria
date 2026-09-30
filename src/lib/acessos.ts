@@ -105,6 +105,43 @@ export function resolverAcesso(
   return { permissoes: new Set(permissoesDoPapel(role)), origem: "papel", perfilNome: null };
 }
 
+// A PRIMEIRA TELA QUE A PESSOA ALCANÇA, na ordem do catálogo — para onde
+// mandar quem caiu em /sem-acesso tendo alguma tela liberada. A rota de cada
+// tela é a própria chave (o Painel é "/"), a mesma convenção do menu lateral;
+// as duas telas de configuração abrem por permissão de ação.
+const ROTA_POR_ACAO: Partial<Record<Permissao, string>> = {
+  "gerir-modelo": "/configuracao",
+  "gerir-usuarios": "/usuarios",
+};
+
+export function rotaInicial(permissoes: Set<string>): { href: string; rotulo: string } | null {
+  for (const p of PERMISSOES) {
+    if (!permissoes.has(p.chave)) continue;
+    if (p.grupo === "Telas") return { href: p.chave === "painel" ? "/" : `/${p.chave}`, rotulo: p.rotulo };
+  }
+  for (const p of PERMISSOES) {
+    const rota = ROTA_POR_ACAO[p.chave];
+    if (rota && permissoes.has(p.chave)) return { href: rota, rotulo: p.rotulo };
+  }
+  return null;
+}
+
+// QUEM MEXE EM ACESSO NÃO PODE TIRAR DE SI O PODER DE MEXER.
+//
+// Recebe o perfil que passaria a valer para a própria pessoa depois da
+// mudança (o atribuído a ela, ou o padrão da empresa, ou `null` para as
+// regras do papel). O caso real que motiva: o ADMIN, sem perfil próprio,
+// cria o perfil sugerido "Diretoria" e marca "padrão da empresa". O padrão
+// passa a valer para ele — e para todo ADMIN sem perfil próprio —, e a
+// Diretoria não tem "gerir usuários". Ninguém mais consegue abrir esta tela
+// para desfazer, e a saída passa a ser um UPDATE direto no banco.
+export function perderiaGestaoDeUsuarios(
+  role: string,
+  perfilDepois: { nome: string; permissoes: string[] } | null
+): boolean {
+  return !resolverAcesso(role, perfilDepois).permissoes.has("gerir-usuarios");
+}
+
 export function pode(acesso: AcessoResolvido, permissao: Permissao): boolean {
   return acesso.permissoes.has(permissao);
 }
