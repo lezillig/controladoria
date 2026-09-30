@@ -27,6 +27,8 @@ import {
   Variacao,
 } from "./_componentes";
 import Filtros from "./Filtros";
+import MesEmFormacaoPainel from "./MesEmFormacao";
+import { montarMesEmFormacao } from "@/lib/controladoria/mesEmFormacao";
 import { larguraPainel } from "@/lib/ui";
 
 // DASHBOARD FINANCEIRO — a tela de abertura do módulo.
@@ -46,6 +48,11 @@ export default async function ControladoriaPage({
   const competencias = competenciasDisponiveis(ctx.config.dataInicioBase);
 
   const panorama = await montarPanorama(ctx);
+  // O mês se formando: a leitura falhar não derruba o painel.
+  const mesEmFormacao = await montarMesEmFormacao(ctx).catch((e) => {
+    console.warn("[painel] mês em formação indisponível", e instanceof Error ? e.message.slice(0, 200) : e);
+    return null;
+  });
   const c = panorama.comparativo;
   const qualidade = avaliarQualidadeDaBase(ctx);
   const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);
@@ -442,6 +449,8 @@ export default async function ControladoriaPage({
           </p>
         </div>
       )}
+
+      {mesEmFormacao && <MesEmFormacaoPainel dados={mesEmFormacao} />}
 
       <Secao
         titulo="Precisa de decisão"

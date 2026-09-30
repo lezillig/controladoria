@@ -1,4 +1,5 @@
 import type { AuditFinding } from "@prisma/client";
+import { ROTULO_FAIXA, rotuloDoMes, type MesEmFormacao } from "./mesEmFormacao";
 import { fmtBRL, fmtBRLCompacto, fmtData, fmtNumero, fmtPercent, fmtVariacao } from "./format";
 import type { PanoramaFinanceiro } from "./analytics";
 import type { IndicadorMedido } from "./bsc";
@@ -76,6 +77,9 @@ export type DadosRelatorio = {
   qualidadeDaBase: QualidadeDaBase;
   conformidade: PanoramaConformidade;
   urlSistema: string | null;
+  // O mês se formando (ver mesEmFormacao.ts). Opcional: a leitura falhar não
+  // derruba o relatório.
+  mesEmFormacao?: MesEmFormacao | null;
 };
 
 // Escapa texto vindo do banco (nome de fornecedor, descricao de achado) antes
@@ -261,6 +265,60 @@ export function montarAssunto(dados: DadosRelatorio): string {
   );
 }
 
+// O MÊS SE FORMANDO no e-mail: previsão, prontidão do fechamento, o alerta
+// de margem e quem cobrar hoje (até dez clientes; o resto está no painel).
+function secaoMesEmFormacao(m: MesEmFormacao): string {
+  const pct = (v: number | null, casas = 0) => (v === null ? "—" : fmtPercent(v * 100, casas));
+  const cartoes: string[] = [];
+  if (m.previsao) {
+    cartoes.push(
+      cartaoKpi(
+        `Previsão de fechamento de ${m.previsao.mes}`,
+        fmtBRL(m.previsao.resultadoCents),
+        `Margem ${pct(m.previsao.margem, 1)} · dia ${m.previsao.diaDoMes} de ${m.previsao.diasNoMes}${m.previsao.resultadoMedioCents !== null ? ` · média de 3 meses ${fmtBRLCompacto(m.previsao.resultadoMedioCents)}` : ""}`,
+        m.previsao.resultadoCents >= 0 ? "#15803d" : "#b91c1c"
+      )
+    );
+  }
+  const faltando = m.fechamento.itens.filter((i) => i.pronto !== null && i.pronto < 1);
+  cartoes.push(
+    cartaoKpi(
+      `${m.fechamento.momento === "FECHANDO" ? "Fechamento" : "Pronto para fechar"} · ${m.fechamento.periodo.rotulo}`,
+      pct(m.fechamento.pronto),
+      faltando.length > 0 ? faltando.map((i) => `${i.rotulo.toLowerCase()} ${pct(i.pronto)}`).join(" · ") : "tudo pronto"
+    )
+  );
+  const cobrar = m.cobranca.filter((x) => x.faixa !== "VENCE_EM_BREVE");
+  cartoes.push(
+    cartaoKpi(
+      "Cobrar hoje",
+      fmtBRL(cobrar.reduce((a, x) => a + x.totalCents, 0)),
+      `${cobrar.length} ${cobrar.length === 1 ? "cliente" : "clientes"} com vencimento de ontem até 30 dias`,
+      cobrar.length > 0 ? "#b45309" : "#15803d"
+    )
+  );
+  const alerta = m.margem
+    ? `<div style="margin:8px 0;padding:10px 12px;border:1px solid #fcd34d;background:#fffbeb;border-radius:8px;font:500 13px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#78350f;">
+        <strong>Vendeu mais e ganhou menos em ${esc(rotuloDoMes(m.margem.mes))}:</strong> receita líquida de ${fmtBRL(m.margem.receitaCents)}
+        (média de ${fmtBRL(Math.round(m.margem.receitaMediaCents))}), margem de ${pct(m.margem.margem, 1)} contra ${pct(m.margem.margemMedia, 1)}.
+        ${m.margem.culpados.length > 0 ? `Pesou mais: ${m.margem.culpados.map((c) => `${esc(c.rotulo)} de ${pct(c.pctAntes, 1)} para ${pct(c.pctAgora, 1)} da receita`).join("; ")}.` : ""}
+      </div>`
+    : "";
+  const tabelaCobranca =
+    cobrar.length > 0
+      ? tabela(
+          ["Cliente", "Situação", "Em aberto", "Contato"],
+          cobrar.slice(0, 10).map((x) => [esc(x.cliente), esc(ROTULO_FAIXA[x.faixa]), fmtBRL(x.totalCents), esc(x.email ?? "—")]),
+          [2]
+        )
+      : "";
+  return secao(
+    "O mês se formando",
+    `${alerta}${gradeDeCartoes(cartoes)}${tabelaCobranca}`,
+    "Para onde o mês caminha, o que falta para fechar e quem cobrar hoje."
+  );
+}
+
 export function montarHtml(dados: DadosRelatorio): string {
   const { panorama, achados, bsc, narrativa, qualidadeDaBase } = dados;
   const c = panorama.comparativo;
@@ -362,6 +420,9 @@ export function montarHtml(dados: DadosRelatorio): string {
       `Movimento de ${fmtData(dados.dataReferencia)}: títulos a receber ${fmtBRL(c.dia.receitaCents)} · a pagar ${fmtBRL(c.dia.despesaCents)}. O resultado é o do DRE gerencial de Custos e DRE, pelo mesmo cálculo.`
     )
   );
+
+  // ---- O mês se formando ----
+  if (dados.mesEmFormacao) partes.push(secaoMesEmFormacao(dados.mesEmFormacao));
 
   // ---- Achados prioritários ----
   if (criticos.length > 0) {
@@ -668,6 +729,20 @@ export function montarTexto(dados: DadosRelatorio): string {
   linhas.push(`Títulos a receber do mês: ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal})`);
   linhas.push(`Títulos a pagar do mês: ${fmtBRL(c.mesAtual.despesaCents)} (${fmtVariacao(c.variacoes.despesaMesVsAnterior)})`);
   linhas.push("");
+  if (dados.mesEmFormacao) {
+    const m = dados.mesEmFormacao;
+    linhas.push("O MÊS SE FORMANDO");
+    if (m.previsao) linhas.push(`Previsão de fechamento de ${m.previsao.mes}: ${fmtBRL(m.previsao.resultadoCents)} (margem ${m.previsao.margem === null ? "—" : fmtPercent(m.previsao.margem * 100)})`);
+    linhas.push(`Pronto para fechar (${m.fechamento.periodo.rotulo}): ${m.fechamento.pronto === null ? "—" : fmtPercent(m.fechamento.pronto * 100, 0)}`);
+    for (const i of m.fechamento.itens) if (i.pronto !== null && i.pronto < 1) linhas.push(`  - ${i.rotulo}: ${fmtPercent(i.pronto * 100, 0)} — ${i.falta}`);
+    if (m.margem) linhas.push(`ALERTA: vendeu mais e ganhou menos em ${rotuloDoMes(m.margem.mes)} — margem ${fmtPercent(m.margem.margem * 100)} contra ${fmtPercent(m.margem.margemMedia * 100)} na média`);
+    const cobrar = m.cobranca.filter((x) => x.faixa !== "VENCE_EM_BREVE");
+    if (cobrar.length > 0) {
+      linhas.push(`Cobrar hoje (${cobrar.length} clientes):`);
+      for (const x of cobrar.slice(0, 10)) linhas.push(`  - ${x.cliente}: ${fmtBRL(x.totalCents)} — ${ROTULO_FAIXA[x.faixa].toLowerCase()}${x.email ? ` · ${x.email}` : ""}`);
+    }
+    linhas.push("");
+  }
 
   linhas.push("ACUMULADO DO ANO");
   linhas.push(`Receita: ${fmtBRL(c.ano.receitaCents)} (${fmtVariacao(c.variacoes.receitaAnoVsAnterior)} vs. ano anterior)`);

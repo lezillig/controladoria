@@ -588,6 +588,37 @@ async function principal() {
     }
   }
 
+  // ------------------------------------------------ o mês se formando
+  // A montagem inteira roda no banco (sem erro de SQL) e a classificação do
+  // mês em curso bate com o DRE da tela no mesmo recorte.
+  {
+    const { montarMesEmFormacao } = await import("../src/lib/controladoria/mesEmFormacao");
+    const { classificacoesDoDre } = await import("../src/lib/controladoria/projecaoNoBanco");
+    const gravadas = await classificacoesDoDre(EMPRESA);
+    for (const conexaoId of [null, cx1.id]) {
+      const alvo = conexaoId === null ? "grupo" : "Azul";
+      const ctx = await carregarContexto(EMPRESA, REFERENCIA, conexaoId ?? undefined, { desde: desdeMensal });
+      const mes = await montarMesEmFormacao(ctx);
+      const dreDaTela = await montarDreNoBanco(
+        { companyId: EMPRESA, conexaoId, janela: { desde: desdeMensal, ate: null } },
+        mes.fechamento.periodo,
+        janelas.mesAnterior,
+        gravadas,
+        { regime: "competencia", somarRetencoes: true }
+      );
+      const itens = dreDaTela.linhas.filter((l) => l.tipo === "GRUPO").flatMap((l) => l.itens).filter((i) => i.categoriaCodigo !== "RETENCAO_NA_FONTE");
+      const movimento = itens.reduce((a, i) => a + Math.abs(i.valorCents), 0) + Math.abs(dreDaTela.semCategoriaCents);
+      const naoConfirmado = itens.filter((i) => !i.confirmada).reduce((a, i) => a + Math.abs(i.valorCents), 0) + Math.abs(dreDaTela.semCategoriaCents);
+      const esperado = movimento > 0 ? 1 - naoConfirmado / movimento : null;
+      conferir(`mês em formação: base sem classificação confirmada dá 0% — ${alvo}`, esperado, gravadas.size === 0 ? 0 : esperado);
+      const classificacao = mes.fechamento.itens.find((i) => i.chave === "CLASSIFICACAO")!.pronto;
+      conferir(`mês em formação: setembro em curso — ${alvo}`, [mes.fechamento.periodo.rotulo, mes.fechamento.momento], ["set/26", "EM_CURSO"]);
+      conferir(`mês em formação: classificação bate com o DRE da tela — ${alvo}`, classificacao === null ? null : Math.round(classificacao * 1e6), esperado === null ? null : Math.round(esperado * 1e6));
+      conferir(`mês em formação: previsão de setembro montada — ${alvo}`, mes.previsao?.mes ?? null, "set/26");
+      conferir(`mês em formação: cobrança sem título de outra empresa do grupo — ${alvo}`, mes.cobranca.every((c) => !/MCZ|Azul/i.test(c.cliente)), true);
+    }
+  }
+
   await limpar();
 }
 

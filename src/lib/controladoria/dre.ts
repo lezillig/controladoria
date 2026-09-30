@@ -738,6 +738,35 @@ export function montarDre(
   return montarDreDeInsumos(insumosDoContexto(ctx, periodo, periodoAnterior, opcoes), classificacoes, opcoes);
 }
 
+// OS SUBTOTAIS a partir das linhas-grupo (valores em módulo, como a
+// demonstração as mostra). Exportado para quem monta um DRE que não passou por
+// aqui — a previsão de fechamento do mês soma linhas projetadas e precisa dos
+// mesmos subtotais, pela mesma conta.
+export function subtotaisDoDre(g: (chave: string) => number): Record<string, number> {
+    const receitaLiquida = g("RECEITA_BRUTA") - g("DEDUCOES");
+    const lucroBruto = receitaLiquida - g("CUSTO_SERVICO");
+    const ebit =
+      lucroBruto -
+      g("DESPESA_VEICULOS") -
+      g("DESPESA_SALARIOS") -
+      g(LINHA_PESSOAS_CORPORATIVO) -
+      g("DESPESA_SOCIOS") -
+      g("DESPESA_ESTRUTURA") -
+      g("DESPESA_INFORMATICA") -
+      g("DESPESA_COMERCIAL") -
+      g("DESPESA_ADMINISTRATIVA") -
+      g("DESPESA_GERAL") +
+      g("OUTRAS_RECEITAS");
+    const lair = ebit + g("RECEITA_FINANCEIRA") - g("DESPESA_FINANCEIRA");
+    return {
+      RECEITA_LIQUIDA: receitaLiquida,
+      LUCRO_BRUTO: lucroBruto,
+      EBIT: ebit,
+      LAIR: lair,
+      RESULTADO_LIQUIDO: lair - g("FINANCIAMENTO_INVESTIMENTO") - g("TRIBUTO_SOBRE_LUCRO"),
+    } as Record<string, number>;
+}
+
 export function montarDreDeInsumos(
   insumos: InsumosDre,
   classificacoes: Map<string, Classificacao>,
@@ -883,31 +912,7 @@ export function montarDreDeInsumos(
     );
   };
 
-  const calc = (campo: "valorCents" | "valorAnteriorCents" | "valorAnoAnteriorCents") => {
-    const g = (c: string) => totalDe(c, campo);
-    const receitaLiquida = g("RECEITA_BRUTA") - g("DEDUCOES");
-    const lucroBruto = receitaLiquida - g("CUSTO_SERVICO");
-    const ebit =
-      lucroBruto -
-      g("DESPESA_VEICULOS") -
-      g("DESPESA_SALARIOS") -
-      g(LINHA_PESSOAS_CORPORATIVO) -
-      g("DESPESA_SOCIOS") -
-      g("DESPESA_ESTRUTURA") -
-      g("DESPESA_INFORMATICA") -
-      g("DESPESA_COMERCIAL") -
-      g("DESPESA_ADMINISTRATIVA") -
-      g("DESPESA_GERAL") +
-      g("OUTRAS_RECEITAS");
-    const lair = ebit + g("RECEITA_FINANCEIRA") - g("DESPESA_FINANCEIRA");
-    return {
-      RECEITA_LIQUIDA: receitaLiquida,
-      LUCRO_BRUTO: lucroBruto,
-      EBIT: ebit,
-      LAIR: lair,
-      RESULTADO_LIQUIDO: lair - g("FINANCIAMENTO_INVESTIMENTO") - g("TRIBUTO_SOBRE_LUCRO"),
-    } as Record<string, number>;
-  };
+  const calc = (campo: "valorCents" | "valorAnteriorCents" | "valorAnoAnteriorCents") => subtotaisDoDre((c) => totalDe(c, campo));
 
   // A RETENÇÃO ENTRA COMO ITEM PRÓPRIO, e não somada ao total da linha em
   // silêncio. Nomeada, ela aparece no drill-down das deduções ao lado dos

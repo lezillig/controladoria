@@ -99,6 +99,23 @@ A tela de Custos abre a linha corporativa por **centro de custo** (o
 departamento da Omie de cada título; título rateado conta inteiro no
 primeiro departamento), no mesmo recorte da demonstração.
 
+### O mês se formando (painel e relatório diário)
+
+Ver o resultado enquanto ainda dá para agir (`mesEmFormacao.ts`):
+- **Previsão de fechamento** do mês em curso: cada linha do DRE fecha no
+  maior entre o já lançado com competência no mês e a média dos três últimos
+  meses fechados; os subtotais saem pela conta do DRE (`subtotaisDoDre`).
+- **Pronto para fechar**: categorias classificadas (pelas categorias de cada
+  linha), extrato conciliado, receita com nota ou CT-e e CT-e autorizado com
+  título a receber, em % — do mês anterior até o dia 10, do próprio mês
+  depois disso.
+- **Vendeu mais e ganhou menos**: receita líquida do último mês fechado no
+  nível da média dos três anteriores (≥ 98%) e margem líquida 2 p.p. ou mais
+  abaixo; diz as linhas que mais cresceram sobre a receita.
+- **Cobrança do dia**: títulos a receber por cliente — vence nos próximos 3
+  dias, hoje, ontem, 2 a 7 e 8 a 30 dias de atraso — com o e-mail da Omie
+  (telefone não é sincronizado). Sem operação entre as empresas do grupo.
+
 ### Comparações do mês: sempre com o mês fechado
 
 O mês atual vai até D-1; o **mês anterior**, o **mesmo mês do ano

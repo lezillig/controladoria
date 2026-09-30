@@ -1,4 +1,5 @@
 import type { OmieConexao, Prisma } from "@prisma/client";
+import { montarMesEmFormacao } from "./mesEmFormacao";
 import { prisma } from "@/lib/prisma";
 import { urlDoSistema } from "@/lib/appUrl";
 import { buscarEmpresa } from "@/lib/gestao/leitura";
@@ -105,6 +106,10 @@ export async function gerarEEnviarRelatorio(
     qualidadeDaBase,
     conformidade,
     urlSistema: urlDoSistema(),
+    mesEmFormacao: await montarMesEmFormacao(ctx).catch((e) => {
+      console.warn("[relatorio] mês em formação indisponível", e instanceof Error ? e.message.slice(0, 200) : e);
+      return null;
+    }),
   };
 
   const assunto = montarAssunto(dados);
