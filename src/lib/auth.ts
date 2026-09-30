@@ -2,7 +2,7 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { conferirAcessoDoUsuario } from "@/lib/gestao/leitura";
+import { conferirAcessoDoUsuario, type AcessoAtual } from "@/lib/gestao/leitura";
 
 // Cookie próprio: os dois sistemas são aplicações distintas, e uma sessão
 // compartilhada faria o logout de um derrubar o outro (e, pior, um problema de
@@ -71,16 +71,9 @@ export async function verifySession(
 // `getSession` várias vezes e todas compartilham o mesmo resultado.
 const conferirAcesso = cache(async (userId: string) => conferirAcessoDoUsuario(userId));
 
-export async function getSession(): Promise<SessionPayload | null> {
-  const store = await cookies();
-  const token = store.get(SESSION_COOKIE)?.value;
-  if (!token) return null;
-
-  const sessao = await verifySession(token);
-  if (!sessao) return null;
-
-  const acesso = await conferirAcesso(sessao.userId);
-
+// A DECISÃO, separada da consulta para ser testável sem banco
+// (`npm run teste:acessos`).
+export function sessaoVigente(sessao: SessionPayload, acesso: AcessoAtual): SessionPayload | null {
   // Banco fora do ar não expulsa ninguém. É uma escolha consciente entre dois
   // riscos: manter por alguns minutos um acesso que talvez já tenha sido
   // revogado, ou trancar todo mundo para fora do sistema financeiro sempre que
@@ -89,7 +82,42 @@ export async function getSession(): Promise<SessionPayload | null> {
   if (acesso.situacao === "indisponivel") return sessao;
   if (acesso.situacao === "revogado") return null;
 
+  // A EMPRESA também é reconferida, pelo mesmo motivo do papel. Todo filtro do
+  // sistema usa o `companyId` da sessão; conferir só o papel deixava quem foi
+  // transferido de empresa na gestão enxergando o caixa da empresa ANTIGA até
+  // o token vencer. Empresa diferente derruba a sessão em vez de trocá-la em
+  // silêncio: o novo login emite o token certo, e perfil e trilha passam a
+  // valer para a empresa nova sem mistura.
+  if (acesso.companyId !== sessao.companyId) return null;
+
   return { ...sessao, role: acesso.role };
+}
+
+export async function getSession(): Promise<SessionPayload | null> {
+  const store = await cookies();
+  const token = store.get(SESSION_COOKIE)?.value;
+  if (!token) return null;
+
+  const sessao = await verifySession(token);
+  if (!sessao) return null;
+
+  return sessaoVigente(sessao, await conferirAcesso(sessao.userId));
+}
+
+// REQUISIÇÃO DISPARADA POR OUTRO SITE — para as rotas que mudam estado sem
+// depender da sessão (o logout). As rotas protegidas por sessão já estão
+// cobertas pelo cookie `SameSite=Lax`, que não viaja em POST vindo de outro
+// site; o logout não precisa de sessão para agir, então qualquer página da
+// internet conseguia derrubar a sessão de quem a visitasse com um formulário
+// invisível.
+//
+// Recusa só o que o navegador AFIRMA ser de outro site (`Sec-Fetch-Site`).
+// Comparar Origin com Host seria mais amplo, mas quebraria o próprio logout
+// atrás de um proxy que reescreva o Host — e um botão de sair que não sai é
+// pior que o ataque que ele evitaria. Sem o cabeçalho (curl, navegador antigo)
+// deixa passar: quem não é navegador não tem cookie de vítima para usar.
+export function requisicaoDeOutroSite(cabecalhos: Headers): boolean {
+  return cabecalhos.get("sec-fetch-site") === "cross-site";
 }
 
 export async function requireSession(): Promise<SessionPayload> {

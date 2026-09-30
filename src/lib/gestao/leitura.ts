@@ -1,4 +1,5 @@
 import { prismaGestao } from "./cliente";
+import { redigir } from "@/lib/controladoria/falhas";
 
 // LEITURA DO SISTEMA DE GESTÃO (schema `public`) — SOMENTE LEITURA.
 //
@@ -159,7 +160,9 @@ async function ler<T>(consulta: () => Promise<T[]>, rotulo: string): Promise<T[]
     ultimaDisponibilidade = { disponivel: true, erro: null };
     return linhas;
   } catch (e) {
-    const mensagem = e instanceof Error ? e.message : "erro desconhecido";
+    // Redigida na origem: este texto vai para a tela de sincronização e para
+    // o supervisor, e erro de conexão pode carregar host e credencial.
+    const mensagem = redigir(e instanceof Error ? e.message : "erro desconhecido");
     ultimaDisponibilidade = {
       disponivel: false,
       erro: `Não foi possível ler ${rotulo} do sistema de gestão: ${mensagem.slice(0, 200)}`,
@@ -363,12 +366,18 @@ export async function buscarUsuarioPorEmail(email: string): Promise<ResultadoBus
 // uma queda de banco expulsar a empresa inteira do sistema, e `null` para
 // "revogado" faria um erro de leitura manter o demitido dentro. Os dois são
 // inaceitáveis, por motivos diferentes.
-export type AcessoAtual = { situacao: "ativo"; role: string } | { situacao: "revogado" } | { situacao: "indisponivel" };
+//
+// `companyId` volta junto porque a EMPRESA também é reconferida (ver
+// `sessaoVigente` em auth.ts): o token carrega a empresa do momento do login.
+export type AcessoAtual =
+  | { situacao: "ativo"; role: string; companyId: string }
+  | { situacao: "revogado" }
+  | { situacao: "indisponivel" };
 
 export async function conferirAcessoDoUsuario(userId: string): Promise<AcessoAtual> {
   try {
-    const linhas = await prismaGestao.$queryRaw<{ role: string; active: boolean }[]>`
-      SELECT role::text AS role, active
+    const linhas = await prismaGestao.$queryRaw<{ role: string; active: boolean; companyId: string }[]>`
+      SELECT role::text AS role, active, "companyId"
       FROM public."User"
       WHERE id = ${userId}
       LIMIT 1
@@ -377,7 +386,7 @@ export async function conferirAcessoDoUsuario(userId: string): Promise<AcessoAtu
     // Usuário apagado do cadastro também é acesso revogado — a consulta não
     // encontrar a linha é uma resposta, não uma falha.
     if (!usuario || !usuario.active) return { situacao: "revogado" };
-    return { situacao: "ativo", role: usuario.role };
+    return { situacao: "ativo", role: usuario.role, companyId: usuario.companyId };
   } catch {
     return { situacao: "indisponivel" };
   }
@@ -418,8 +427,9 @@ export async function listarPessoas(companyId: string): Promise<ResultadoPessoas
   } catch (e) {
     // Lista vazia aqui mentiria: "nenhum usuário cadastrado" numa tela de
     // permissões faria alguém concluir que ninguém tem acesso, quando o que
-    // houve foi o banco da gestão não responder.
-    return { situacao: "indisponivel", erro: e instanceof Error ? e.message : "erro desconhecido" };
+    // houve foi o banco da gestão não responder. Redigido: a tela de usuários
+    // exibe este texto.
+    return { situacao: "indisponivel", erro: redigir(e instanceof Error ? e.message : "erro desconhecido") };
   }
 }
 
