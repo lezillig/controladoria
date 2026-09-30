@@ -137,6 +137,7 @@ export async function carregarContexto(
     contratos,
     ctes,
     receita,
+    movimentoAntesDoCorte,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -259,6 +260,17 @@ export async function carregarContexto(
     // pelos CNPJs presentes acontece abaixo. Sem a tabela (migração ainda não
     // aplicada), vem vazia: as regras se calam, a auditoria roda.
     prisma.parceiroReceita.findMany().catch(() => []),
+    // O EXTRATO ANTERIOR AO CORTE, só somado por conta. Movimento antigo não
+    // interessa aos agentes linha a linha, mas interessa ao SALDO: saldo é
+    // saldo inicial + todo o extrato, e sem esta parcela o saldo do painel
+    // "zerava" o que se moveu antes de 1º de janeiro — divergindo do extrato
+    // do detalhamento, que soma sem corte. Agregado, e não linhas: são poucas
+    // contas, e é o volume das linhas que o corte existe para evitar.
+    prisma.omieMovimento.groupBy({
+      by: ["conexaoId", "contaCorrenteCodigo"],
+      where: { ...escopo, data: { lt: corteRecente } },
+      _sum: { valorCents: true },
+    }),
   ]);
 
   // Só os CNPJs que este contexto conhece — os agentes não têm o que fazer
@@ -275,6 +287,9 @@ export async function carregarContexto(
     titulos,
     baixas,
     movimentos,
+    movimentoAntesDaJanelaCents: new Map(
+      movimentoAntesDoCorte.map((g) => [`${g.conexaoId}:${g.contaCorrenteCodigo}`, g._sum.valorCents ?? 0])
+    ),
     notas,
     parceiros,
     categorias,

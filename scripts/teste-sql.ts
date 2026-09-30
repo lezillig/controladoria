@@ -524,6 +524,47 @@ async function principal() {
     await prisma.omieConexao.delete({ where: { id: cx2.id } });
   }
 
+  // ------------------------------------------------ saldo em caixa
+  // O CARTÃO "SALDO EM CAIXA" E O EXTRATO QUE ELE ABRE TÊM QUE DAR O MESMO.
+  //
+  // O contexto das telas carrega movimento só a partir de 1º de janeiro (o
+  // corte da janela), e o saldo do painel era saldo inicial + ESSE movimento:
+  // tudo o que se moveu até dezembro sumia do caixa. O detalhamento da conta
+  // soma o extrato inteiro até a referência — e os dois números divergiam na
+  // mesma tela. Aqui: R$ 1.000 de saldo inicial, R$ 500 em dezembro do ano
+  // anterior, R$ 200 em março. O saldo é R$ 1.700 nos dois lugares.
+  console.log("\nSaldo em caixa: cartão = extrato do detalhamento");
+  {
+    const { carregarContexto, janelaDeAuditoria } = await import("../src/lib/controladoria/contexto");
+    const { saldoAtualCents, saldoPorContaCents } = await import("../src/lib/controladoria/agents/conciliacao");
+    const { detalharConta } = await import("../src/lib/controladoria/detalhamento");
+
+    const cx3 = await prisma.omieConexao.create({
+      data: { companyId: EMPRESA, nome: "Caixa LTDA", apelido: "CX", credencialRef: "CX-SALDO" },
+    });
+    await prisma.omieContaCorrente.create({
+      data: { companyId: EMPRESA, conexaoId: cx3.id, conexaoApelido: "CX", codigo: "C1", descricao: "Conta 1", saldoInicialCents: 100_000 },
+    });
+    const mov = (codigo: string, data: Date, valorCents: number) => ({
+      companyId: EMPRESA, conexaoId: cx3.id, conexaoApelido: "CX", contaCorrenteCodigo: "C1",
+      codigoLancamento: codigo, data, valorCents,
+    });
+    await prisma.omieMovimento.createMany({
+      data: [mov("M1", new Date(2025, 11, 10), 50_000), mov("M2", new Date(2026, 2, 10), 20_000)],
+    });
+
+    const referencia = new Date(2026, 8, 22);
+    const ctx = await carregarContexto(EMPRESA, referencia, cx3.id, { desde: janelaDeAuditoria(referencia) });
+    const extrato = await detalharConta({ companyId: EMPRESA, conexaoId: cx3.id, contaCorrenteCodigo: "C1", ate: referencia });
+
+    conferir("o movimento de dezembro fica fora das linhas do contexto", ctx.movimentos.length, 1);
+    conferir("saldo do cartão = saldo inicial + extrato inteiro", saldoAtualCents(ctx), 170_000);
+    conferir("saldo do cartão = o que o detalhamento soma", saldoAtualCents(ctx), extrato.saldoInicialCents + extrato.totalCents);
+    conferir("a abertura por conta soma o cartão", saldoPorContaCents(ctx).map((l) => l.saldoCents), [170_000]);
+
+    await prisma.omieConexao.delete({ where: { id: cx3.id } });
+  }
+
   await limpar();
 }
 

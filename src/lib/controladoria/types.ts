@@ -82,6 +82,14 @@ export type ContextoAuditoria = {
   titulos: OmieTitulo[];
   baixas: OmieBaixa[];
   movimentos: OmieMovimento[];
+  // O MOVIMENTO QUE FICOU ANTES DA JANELA, somado por conta
+  // (`conexaoId:codigo`). `movimentos` acima começa no corte recente (1º de
+  // janeiro nas telas), e o saldo da conta é saldo inicial + TODO o extrato:
+  // sem esta parcela o "Saldo em caixa" do painel perdia tudo o que se moveu
+  // até dezembro e não batia com o extrato que o próprio cartão abre no
+  // detalhamento (que soma sem corte). Opcional porque só o saldo o usa, e os
+  // contextos montados à mão nos testes não precisam declarar.
+  movimentoAntesDaJanelaCents?: Map<string, number>;
   notas: OmieNota[];
   parceiros: OmieParceiro[];
   categorias: OmieCategoria[];

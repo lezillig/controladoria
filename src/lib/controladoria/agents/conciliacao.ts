@@ -419,7 +419,10 @@ function saldoAbaixoDoMinimo(ctx: ContextoAuditoria): AchadoNovo[] {
 export function saldoPorContaCents(
   ctx: ContextoAuditoria
 ): { chave: string; conta: string; empresa: string; inativa: boolean; saldoCents: number }[] {
-  const movimentado = new Map<string, number>();
+  // Começa pelo extrato anterior à janela (ver `movimentoAntesDaJanelaCents`):
+  // é o mesmo "saldo inicial + todo o movimento até a referência" que o
+  // detalhamento da conta soma, e o cartão tem que bater com a lista que abre.
+  const movimentado = new Map<string, number>(ctx.movimentoAntesDaJanelaCents ?? []);
   for (const m of ctx.movimentos) {
     if (m.data > ctx.dataReferencia) continue;
     const chave = `${m.conexaoId}:${m.contaCorrenteCodigo}`;
@@ -459,7 +462,11 @@ export function saldoAtualCents(ctx: ContextoAuditoria): number {
     ctx.movimentos.filter((m) => m.data <= ctx.dataReferencia),
     (m) => m.valorCents
   );
-  return inicial + movimentado;
+  // O extrato de antes do corte da janela conta: sem ele, o saldo "zerava" a
+  // cada 1º de janeiro o que se moveu no ano anterior.
+  let antesDaJanela = 0;
+  for (const v of ctx.movimentoAntesDaJanelaCents?.values() ?? []) antesDaJanela += v;
+  return inicial + movimentado + antesDaJanela;
 }
 
 // CB-TRANSFERENCIA-INTERGRUPO — dinheiro que passou de uma empresa para a outra
