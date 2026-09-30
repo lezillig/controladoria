@@ -16,6 +16,19 @@ import { CalculadoraFU } from "./Calculadoras";
 // rotas que não escolheram tipo.
 
 const CAMPOS_VEICULO = CAMPOS_PREMISSAS.filter((c) => (c.grupo === "veiculo" || c.grupo === "variaveis") && c.tipo !== "bool" && c.tipo !== "metodoDepreciacao");
+const CAMPOS_VEICULO_FIXO = CAMPOS_VEICULO.filter((c) => c.grupo === "veiculo");
+const CAMPOS_VEICULO_VARIAVEL = CAMPOS_VEICULO.filter((c) => c.grupo === "variaveis");
+
+// Mão de obra e veículo em blocos separados na mesma tabela.
+function Secao({ titulo, colunas }: { titulo: string; colunas: number }) {
+  return (
+    <tr>
+      <td colSpan={colunas} className="border-b border-slate-200 bg-slate-100 px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+        {titulo}
+      </td>
+    </tr>
+  );
+}
 
 export default function Veiculos({
   entrada,
@@ -107,6 +120,7 @@ export default function Veiculos({
             </tr>
           </thead>
           <tbody>
+            <Secao titulo="Mão de obra — motorista" colunas={perfis.length + 2} />
             <tr className="bg-slate-50/60">
               <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium">Salário do motorista (R$/mês)</td>
               <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums">{entrada.premissas.pessoal.salarioMotorista.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</td>
@@ -125,6 +139,7 @@ export default function Veiculos({
                 </td>
               ))}
             </tr>
+            <Secao titulo="Veículo" colunas={perfis.length + 2} />
             <tr className="bg-slate-50/60">
               <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium">Energia</td>
               <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-500">Diesel</td>
@@ -197,39 +212,45 @@ export default function Veiculos({
                 </td>
               ))}
             </tr>
-            {CAMPOS_VEICULO.map((c) => (
-              <tr key={c.caminho}>
-                <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5">
-                  {c.rotulo} <span className="text-[11px] text-slate-500">({c.unidade})</span>
-                </td>
-                <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums text-slate-600">
-                  {c.tipo === "pct" ? `${(valorDo(null, c.caminho) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : valorDo(null, c.caminho).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
-                </td>
-                {perfis.map((p, k) => (
-                  <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5">
-                    {(c.caminho === "variaveis.dieselLitro" || c.caminho.startsWith("variaveis.consumo")) && (
-                      <span className="mb-0.5 block text-right text-[10px] text-slate-500">
-                        {c.caminho === "variaveis.dieselLitro" ? `R$/${UNIDADE_ENERGIA[energiaDoPerfil(p)]}` : `km/${UNIDADE_ENERGIA[energiaDoPerfil(p)]}`}
-                      </span>
-                    )}
-                    <CampoNumero
-                      valor={valorDo(p, c.caminho)}
-                      percentual={c.tipo === "pct"}
-                      casas={4}
-                      desativado={!podeEditar}
-                      rotulo={`${c.rotulo} — ${p.descricao}`}
-                      aoMudar={(v) =>
-                        v !== null &&
-                        mudarPerfil(k, (x) => {
-                          const [grupo, campo] = c.caminho.split(".");
-                          ((grupo === "veiculo" ? x.veiculo : x.variaveis) as Record<string, unknown>)[campo] = v;
-                        })
-                      }
-                    />
+            {([
+              ["Veículo — custo fixo mensal (capital, seguro, IPVA, garagem…)", CAMPOS_VEICULO_FIXO],
+              ["Veículo — custo por km (energia, pneus, manutenção)", CAMPOS_VEICULO_VARIAVEL],
+            ] as const).map(([titulo, campos]) => [
+              <Secao key={titulo} titulo={titulo} colunas={perfis.length + 2} />,
+              campos.map((c) => (
+                <tr key={c.caminho}>
+                  <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5">
+                    {c.rotulo} <span className="text-[11px] text-slate-500">({c.unidade})</span>
                   </td>
-                ))}
-              </tr>
-            ))}
+                  <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums text-slate-600">
+                    {c.tipo === "pct" ? `${(valorDo(null, c.caminho) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : valorDo(null, c.caminho).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
+                  </td>
+                  {perfis.map((p, k) => (
+                    <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5">
+                      {(c.caminho === "variaveis.dieselLitro" || c.caminho.startsWith("variaveis.consumo")) && (
+                        <span className="mb-0.5 block text-right text-[10px] text-slate-500">
+                          {c.caminho === "variaveis.dieselLitro" ? `R$/${UNIDADE_ENERGIA[energiaDoPerfil(p)]}` : `km/${UNIDADE_ENERGIA[energiaDoPerfil(p)]}`}
+                        </span>
+                      )}
+                      <CampoNumero
+                        valor={valorDo(p, c.caminho)}
+                        percentual={c.tipo === "pct"}
+                        casas={4}
+                        desativado={!podeEditar}
+                        rotulo={`${c.rotulo} — ${p.descricao}`}
+                        aoMudar={(v) =>
+                          v !== null &&
+                          mudarPerfil(k, (x) => {
+                            const [grupo, campo] = c.caminho.split(".");
+                            ((grupo === "veiculo" ? x.veiculo : x.variaveis) as Record<string, unknown>)[campo] = v;
+                          })
+                        }
+                      />
+                    </td>
+                  ))}
+                </tr>
+              )),
+            ])}
           </tbody>
         </table>
       </div>

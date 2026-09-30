@@ -169,8 +169,13 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
               <option value="PERIODO">Período (escolar: km do ano letivo)</option>
             </select>
           </label>
-          <label className="w-56 space-y-1 text-xs text-slate-500">
-            <span className="block">Utilização do km: {pct(c.utilizacao, 0)}</span>
+          <label
+            className="w-56 space-y-1 text-xs text-slate-500"
+            title="Quanto do km de referência (o máximo do edital ou do contrato) se espera rodar e faturar de fato. O custo fixo — motorista e veículo — não cai com o km: com utilização menor, ele se divide por menos km e o preço por km sobe. 100% quando o km é garantido."
+          >
+            <span className="block">
+              Utilização do km: {pct(c.utilizacao, 0)} <span className="cursor-help text-slate-400">ⓘ</span>
+            </span>
             <input
               type="range"
               min={0.3}
