@@ -28,6 +28,7 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   mot_fretamento_2p: { como: "Motoristas por veículo dos tipos de veículo (padrão 1,2)", unidade: "motoristas/veículo" },
   folha_adm: { como: "Rateio da administração central (soma dos indiretos ÷ faturamento médio)", unidade: "R$/mês" },
   contabilidade: { como: "Rateio da administração central", unidade: "R$/mês" },
+  contabilidade_fornecedor: { como: "Os pagamentos a este fornecedor no Omie são o valor de Contabilidade, jurídico (padrão: JL Business)" },
   sistemas: { como: "Rateio da administração central", unidade: "R$/mês" },
   sede_garagem_sp: { como: "Rateio da administração central", unidade: "R$/mês" },
   oficina: { como: "Rateio da administração central", unidade: "R$/mês" },

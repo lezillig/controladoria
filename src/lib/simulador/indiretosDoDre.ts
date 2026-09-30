@@ -1,4 +1,9 @@
+import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
+import { competenciaSql } from "@/lib/controladoria/competencia";
+import { CATEGORIA_SQL, filtroConexaoTitulo } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
+import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import type { BaseValor, BaseVigente } from "./baseDeCustos";
 import type { DreDosMeses } from "./custosReais";
 
@@ -11,9 +16,20 @@ import type { DreDosMeses } from "./custosReais";
 //
 // Oficina própria não tem linha no DRE (a manutenção está em Despesas com
 // veículos, que é custo direto) e fica como está.
+//
+// CONTABILIDADE E JURÍDICO são um FORNECEDOR, não uma linha: o que se paga ao
+// escritório contratado (parâmetro `contabilidade_fornecedor`, padrão JL
+// Business). Com pagamentos a ele na janela, o valor é o deles, e o que eles
+// ocupavam na linha do DRE onde estão classificados sai dessa linha — o resto
+// das despesas administrativas vai para "despesas gerais". A soma dos
+// indiretos continua a mesma do DRE: nada conta duas vezes, nada some.
+
+export const CHAVE_FORNECEDOR_CONTABILIDADE = "contabilidade_fornecedor";
+export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business";
 
 export const LINHAS_DOS_INDIRETOS: Record<string, string[]> = {
   folha_adm: ["DESPESA_SALARIOS_CORPORATIVO"],
+  // Sem pagamento ao fornecedor na janela, a linha inteira (ver acima).
   contabilidade: ["DESPESA_ADMINISTRATIVA"],
   sistemas: ["DESPESA_INFORMATICA"],
   sede_garagem_sp: ["DESPESA_ESTRUTURA"],
@@ -36,9 +52,22 @@ const rotuloMes = (chave: string) => {
   return `${MESES[Number(mes) - 1]}/${ano.slice(2)}`;
 };
 
+// Os pagamentos ao fornecedor, por categoria e mês (centavos, alinhados com
+// `DreDosMeses.meses`).
+export type PagamentosDoFornecedor = { nome: string; porCategoria: Map<string, number[]> };
+
+// Com o fornecedor: contabilidade = o que se pagou a ele; as linhas onde ele
+// está classificado perdem essa parte; as despesas administrativas que sobram
+// vão para "gerais".
+const LINHAS_COM_FORNECEDOR: Record<string, string[]> = {
+  ...LINHAS_DOS_INDIRETOS,
+  contabilidade: [],
+  gerais: ["DESPESA_ADMINISTRATIVA", "DESPESA_COMERCIAL", "DESPESA_GERAL"],
+};
+
 // Média dos meses COM RECEITA: mês antes do início da base (sem título
 // nenhum) não pode puxar a média para baixo.
-export function indiretosDoDre(dre: DreDosMeses): Map<string, IndiretoDoDre> {
+export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornecedor | null): Map<string, IndiretoDoDre> {
   const resultado = new Map<string, IndiretoDoDre>();
   const receita = dre.linhasDre.RECEITA_BRUTA ?? [];
   const meses = dre.meses.map((_, i) => i).filter((i) => (receita[i] ?? 0) > 0);
@@ -48,12 +77,35 @@ export function indiretosDoDre(dre: DreDosMeses): Map<string, IndiretoDoDre> {
   const fonte = `DRE consolidado — média de ${meses.length} ${meses.length === 1 ? "mês fechado" : "meses fechados"} (${periodo})`;
   const mediaCents = (valores: number[]) => meses.reduce((a, i) => a + Math.abs(valores[i] ?? 0), 0) / meses.length;
 
-  for (const [chave, linhas] of Object.entries(LINHAS_DOS_INDIRETOS)) {
-    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []), 0);
-    if (!(cents > 0)) continue;
+  // O fornecedor por categoria (média) e por linha do DRE.
+  const doFornecedor = new Map<string, number>();
+  for (const [codigo, porMes] of fornecedor?.porCategoria ?? []) doFornecedor.set(codigo, mediaCents(porMes));
+  const totalFornecedor = [...doFornecedor.values()].reduce((a, v) => a + v, 0);
+  const comFornecedor = fornecedor != null && totalFornecedor > 0;
+  const linhaDaCategoria = new Map(dre.categorias.filter((c) => !c.codigo.includes("@")).map((c) => [c.codigo, c]));
+  const fornecedorNaLinha = (linha: string) => [...doFornecedor].reduce((a, [codigo, v]) => a + (linhaDaCategoria.get(codigo)?.linha === linha ? v : 0), 0);
+  const mapa = comFornecedor ? LINHAS_COM_FORNECEDOR : LINHAS_DOS_INDIRETOS;
+
+  if (comFornecedor) {
+    resultado.set("contabilidade", {
+      valor: Math.round(totalFornecedor) / 100,
+      fonte: `${fornecedor.nome} — pagamentos no Omie, ${fonte.replace(/^DRE consolidado — /, "")}`,
+      composicao: [...doFornecedor]
+        .map(([codigo, v]) => ({ descricao: linhaDaCategoria.get(codigo)?.descricao ?? `Categoria ${codigo}`, valorMes: Math.round(v) / 100 }))
+        .filter((c) => c.valorMes > 0)
+        .sort((a, b) => b.valorMes - a.valorMes),
+      linhas: [`Pagamentos a ${fornecedor.nome}`],
+    });
+  }
+
+  for (const [chave, linhas] of Object.entries(mapa)) {
+    if (linhas.length === 0) continue;
+    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []) - (comFornecedor ? fornecedorNaLinha(l) : 0), 0);
+    if (!(cents > 0.5)) continue;
+    // Na composição, a categoria do fornecedor aparece sem a parte dele.
     const composicao = dre.categorias
       .filter((c) => linhas.includes(c.linha))
-      .map((c) => ({ descricao: c.descricao, valorMes: Math.round(mediaCents(c.porMesCents)) / 100 }))
+      .map((c) => ({ descricao: c.descricao, valorMes: Math.round(mediaCents(c.porMesCents) - (comFornecedor && !c.codigo.includes("@") ? (doFornecedor.get(c.codigo) ?? 0) : 0)) / 100 }))
       .filter((c) => c.valorMes > 0)
       .sort((a, b) => b.valorMes - a.valorMes);
     resultado.set(chave, {
@@ -64,6 +116,68 @@ export function indiretosDoDre(dre: DreDosMeses): Map<string, IndiretoDoDre> {
     });
   }
   return resultado;
+}
+
+// O NOME NO OMIE: cada palavra do nome cadastrado pelo início (três letras),
+// sem caixa — "JL Business" acha "JL BUSSINESS LTDA" e "Jl Business
+// Contabilidade". Vazio = sem fornecedor (contabilidade pela linha do DRE).
+export function padraoDoNome(nome: string): string | null {
+  const partes = nome
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean)
+    .map((p) => p.slice(0, 3));
+  return partes.length === 0 ? null : `%${partes.join("%")}%`;
+}
+
+type LinhaFornecedor = { categoria: string; mes: string; cents: bigint };
+
+// Os pagamentos ao fornecedor nos doze meses fechados, na visão do grupo (sem
+// as operações entre as empresas), por categoria e mês de competência — o
+// mesmo recorte do DRE.
+export async function pagamentosDoFornecedor(companyId: string, nome: string, dataReferencia: Date, meses: string[]): Promise<PagamentosDoFornecedor | null> {
+  const padrao = padraoDoNome(nome);
+  if (!padrao || meses.length === 0) return null;
+  const fechado = ultimoMesFechado(dataReferencia);
+  const [ano, mes] = meses[0].split("-").map(Number);
+  const inicio = new Date(ano, mes - 1, 1, 0, 0, 0, 0);
+  const linhas = await prisma.$queryRaw<LinhaFornecedor[]>`
+    SELECT ${CATEGORIA_SQL} AS categoria,
+           to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+           COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
+      FROM ${tabela("OmieTitulo")} t
+     WHERE t."companyId" = ${companyId}
+       AND t.natureza = 'PAGAR'
+       AND t.cancelado = false
+       AND translate(upper(COALESCE(t."parceiroNome", '')), 'ÁÀÂÃÉÊÍÓÔÕÚÇ', 'AAAAEEIOOOUC') LIKE ${padrao}
+       AND ${competenciaSql("t")} >= ${inicio}
+       AND ${competenciaSql("t")} <= ${fechado.fim}
+       ${filtroConexaoTitulo(null, companyId)}
+     GROUP BY 1, 2
+  `;
+  const porCategoria = new Map<string, number[]>();
+  for (const l of linhas) {
+    const i = meses.indexOf(l.mes);
+    if (i < 0) continue;
+    const v = porCategoria.get(l.categoria) ?? new Array<number>(meses.length).fill(0);
+    v[i] += Number(l.cents);
+    porCategoria.set(l.categoria, v);
+  }
+  return { nome: nome.trim(), porCategoria };
+}
+
+// O nome do fornecedor da contabilidade: o da base, ou o padrão.
+export function fornecedorDaContabilidade(base: BaseVigente | null): string {
+  const texto = base?.parametros.get(CHAVE_FORNECEDOR_CONTABILIDADE)?.texto;
+  return texto === undefined || texto === null ? FORNECEDOR_CONTABILIDADE_PADRAO : texto.trim();
+}
+
+// Tudo junto, para as telas: o DRE dos doze meses e o fornecedor.
+export async function indiretosDaEmpresa(companyId: string, dataReferencia: Date, base: BaseVigente | null, dre: DreDosMeses): Promise<Map<string, IndiretoDoDre>> {
+  const fornecedor = await pagamentosDoFornecedor(companyId, fornecedorDaContabilidade(base), dataReferencia, dre.meses);
+  return indiretosDoDre(dre, fornecedor);
 }
 
 // A base com os indiretos do DRE onde ela não tem valor. Não grava nada: é a

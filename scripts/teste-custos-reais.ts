@@ -10,7 +10,7 @@
 // REAL sem tocar no resto.
 //
 // Sem banco.
-import { baseComIndiretosDoDre, indiretosDoDre } from "../src/lib/simulador/indiretosDoDre";
+import { baseComIndiretosDoDre, indiretosDoDre, padraoDoNome } from "../src/lib/simulador/indiretosDoDre";
 import {
   aplicarIndicadores,
   analisarCustosReais,
@@ -376,6 +376,20 @@ console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");
   const total = 8_000 + 500 + 300 + 2_000 + 700;
   ok("a administração do estudo sai do rateio real", premissas.indiretos.administracaoPct > (total / 50_000) * 0.99, `${premissas.indiretos.administracaoPct}`);
   ok("e diz que veio do DRE", /DRE consolidado/.test(origem["indiretos.administracaoPct"]?.fonte ?? ""), origem["indiretos.administracaoPct"]?.fonte);
+  // O ESCRITÓRIO CONTRATADO: pagamentos a ele são a contabilidade, e saem da
+  // linha onde estão classificados; o resto das administrativas vai para
+  // "gerais". O total dos indiretos não muda.
+  const soma = (m: Map<string, { valor: number }>) => [...m].filter(([k]) => k !== "faturamento_medio").reduce((a, [, v]) => a + v.valor, 0);
+  const jl = { nome: "JL Business", porCategoria: new Map([["4.02", doze(30_000).map((v, i) => (i < 2 ? 0 : v))]]) };
+  const comJl = indiretosDoDre(d, jl);
+  perto("contabilidade = pagamentos à JL Business", comJl.get("contabilidade")?.valor, 300);
+  ok("a fonte diz o fornecedor", /^JL Business — pagamentos no Omie/.test(comJl.get("contabilidade")?.fonte ?? ""), comJl.get("contabilidade")?.fonte);
+  perto("gerais = comerciais + outras + administrativas sem a JL", comJl.get("gerais")?.valor, 200 + 500 + (500 - 300));
+  perto("o total dos indiretos é o mesmo do DRE", soma(comJl), soma(ind));
+  conferir("sem pagamento na janela, a linha do DRE", indiretosDoDre(d, { nome: "JL Business", porCategoria: new Map() }).get("contabilidade")?.valor, 500);
+  conferir("padrão do nome: cada palavra pelo início", padraoDoNome("JL Bussiness"), "%JL%BUS%");
+  conferir("acentos e caixa não importam", padraoDoNome("  Jl Contábil  "), "%JL%CON%");
+  conferir("nome vazio desliga o fornecedor", padraoDoNome("  "), null);
   conferir("DRE sem receita não traz nada", indiretosDoDre({ ...d, linhasDre: { ...d.linhasDre, RECEITA_BRUTA: doze(0) } }).size, 0);
 }
 

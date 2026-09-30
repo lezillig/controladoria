@@ -7,7 +7,7 @@ import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
 import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
 import { energiaDoPerfil } from "@/lib/simulador/energia";
 import { carregarDreDosMeses } from "@/lib/simulador/custosReais";
-import { indiretosDoDre, type IndiretoDoDre } from "@/lib/simulador/indiretosDoDre";
+import { CHAVE_FORNECEDOR_CONTABILIDADE, FORNECEDOR_CONTABILIDADE_PADRAO, indiretosDoDre, pagamentosDoFornecedor, type IndiretoDoDre } from "@/lib/simulador/indiretosDoDre";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
@@ -58,7 +58,10 @@ export default async function BaseDeCustosPage() {
   // base não tem digitado (ver indiretosDoDre.ts). Sem o DRE, a tela segue.
   let doDre = new Map<string, IndiretoDoDre>();
   try {
-    doDre = indiretosDoDre(await carregarDreDosMeses(session.companyId, null, dataReferenciaPadrao()));
+    const referencia = dataReferenciaPadrao();
+    const dre = await carregarDreDosMeses(session.companyId, null, referencia);
+    const nome = parametros.find((p) => p.chave === CHAVE_FORNECEDOR_CONTABILIDADE)?.texto?.trim() ?? FORNECEDOR_CONTABILIDADE_PADRAO;
+    doDre = indiretosDoDre(dre, await pagamentosDoFornecedor(session.companyId, nome, referencia, dre.meses));
   } catch (e) {
     console.warn("[simulador] base: DRE indisponível para os indiretos", e instanceof Error ? e.message.slice(0, 200) : e);
   }

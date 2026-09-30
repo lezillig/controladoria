@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { baseComIndiretosDoDre, indiretosDoDre } from "@/lib/simulador/indiretosDoDre";
+import { baseComIndiretosDoDre, indiretosDaEmpresa, indiretosDoDre, type IndiretoDoDre } from "@/lib/simulador/indiretosDoDre";
 import { notFound } from "next/navigation";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { baseVigente, paraNumero } from "@/lib/simulador/baseDeCustos";
@@ -60,7 +60,16 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
 
   // Os indiretos que a base não tem vêm do DRE consolidado (ver
   // indiretosDoDre.ts): é com eles que o estudo novo calcula a administração.
-  const base = baseComIndiretosDoDre(await baseVigente(session.companyId), dados ? indiretosDoDre(dados) : new Map());
+  const baseGravada = await baseVigente(session.companyId);
+  let doDre = new Map<string, IndiretoDoDre>();
+  if (dados) {
+    try {
+      doDre = await indiretosDaEmpresa(session.companyId, dataReferenciaPadrao(), baseGravada, dados);
+    } catch {
+      doDre = indiretosDoDre(dados);
+    }
+  }
+  const base = baseComIndiretosDoDre(baseGravada, doDre);
   const inicial = await entradaInicial(session.companyId, carregado, versaoPedida, base);
   const { margemMinima, margemAlvo } = regrasDeMargem(base);
 
