@@ -85,7 +85,7 @@ export type SimulacaoHistorica = {
     plataforma: string | null;
     dataSessao: string; // AAAA-MM-DD
     objeto: string;
-    tipoServico: "ESCOLAR" | "FRETAMENTO" | "SAUDE" | "LOCACAO_CM" | "LOCACAO_SM";
+    tipoServico: "ESCOLAR" | "FRETAMENTO" | "FRETAMENTO_EVENTUAL" | "SAUDE" | "LOCACAO_CM" | "LOCACAO_SM";
     unidadePreco: "KM";
     vigenciaMeses: number;
     srp: boolean;

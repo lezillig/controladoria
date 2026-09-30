@@ -1832,7 +1832,7 @@ model SimEstudo {
   tipo                String    @default("LICITACAO")
   nome                String
   cliente             String?
-  // ESCOLAR | FRETAMENTO | SAUDE | LOCACAO_CM | LOCACAO_SM | OUTRO
+  // FRETAMENTO | FRETAMENTO_EVENTUAL | ESCOLAR | SAUDE | LOCACAO_CM | LOCACAO_SM | OUTRO
   tipoServico         String
   uf                  String?
   municipio           String?

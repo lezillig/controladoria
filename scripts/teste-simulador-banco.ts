@@ -115,6 +115,9 @@ async function principal() {
   conferir("vigência do estudo", ini.entrada.premissas.contrato.vigenciaMeses, 24);
   conferir("unidade do estudo", ini.entrada.unidadePreco, "BINOMIA");
   conferir("margens da base", estudos.regrasDeMargem(base), { margemMinima: 0.07, margemAlvo: 0.12 });
+  const eventualId = await estudos.criarEstudo(EMPRESA, { tipo: "ORCAMENTO_INTERNO", nome: "Excursão", cliente: "Clube Y", tipoServico: "FRETAMENTO_EVENTUAL", criterioJulgamento: "ITEM", unidadePreco: "DIARIA", vigenciaMeses: 1 }, "teste");
+  const eventual = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, eventualId))!);
+  conferir("fretamento eventual: km da viagem é o cobrado (utilização 100%) e preço por diária", [eventual.entrada.premissas.contrato.utilizacao, eventual.entrada.unidadePreco], [1, "DIARIA"]);
 
   console.log("\nLANCES, RESULTADO E REALIZADO");
   await estudos.registrarLance(EMPRESA, sjp.id, { fase: "LANCE", dataHora: new Date(), precos: [{ item: "1", preco: 9.31 }, { item: "2", preco: 9.31 }], valorTotal: null, observacao: null, simulacaoId: v1.id }, "teste");

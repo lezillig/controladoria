@@ -56,8 +56,14 @@ export default function NovoEstudoForm() {
         </div>
         <div>
           <label htmlFor="novo-tipoServico" className={labelClass}>Serviço</label>
-          <select id="novo-tipoServico" name="tipoServico" value={tipoServico} onChange={(e) => setTipoServico(e.target.value)} className={inputClass}>
+          <select id="novo-tipoServico" name="tipoServico" value={tipoServico} onChange={(e) => {
+              setTipoServico(e.target.value);
+              // Eventual se vende por diária (ou por viagem, em km); sugere a
+              // diária se a pessoa ainda não escolheu outra unidade.
+              if (e.target.value === "FRETAMENTO_EVENTUAL" && unidade === "KM") setUnidade("DIARIA");
+            }} className={inputClass}>
             <option value="FRETAMENTO">Fretamento contínuo</option>
+            <option value="FRETAMENTO_EVENTUAL">Fretamento eventual (viagens, eventos, turismo)</option>
             <option value="ESCOLAR">Transporte escolar</option>
             <option value="SAUDE">Transporte de pacientes / saúde</option>
             <option value="LOCACAO_CM">Locação com motorista</option>

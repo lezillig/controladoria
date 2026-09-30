@@ -23,9 +23,10 @@ export const ROTULO_TIPO_ESTUDO: Record<(typeof TIPOS_ESTUDO)[number], string> =
   ORCAMENTO_INTERNO: "Orçamento interno",
   OUTRO: "Outro",
 };
-export const TIPOS_SERVICO = ["FRETAMENTO", "ESCOLAR", "SAUDE", "LOCACAO_CM", "LOCACAO_SM", "OUTRO"] as const;
+export const TIPOS_SERVICO = ["FRETAMENTO", "FRETAMENTO_EVENTUAL", "ESCOLAR", "SAUDE", "LOCACAO_CM", "LOCACAO_SM", "OUTRO"] as const;
 export const ROTULO_TIPO_SERVICO: Record<(typeof TIPOS_SERVICO)[number], string> = {
   FRETAMENTO: "Fretamento contínuo",
+  FRETAMENTO_EVENTUAL: "Fretamento eventual (viagens, eventos, turismo)",
   ESCOLAR: "Transporte escolar",
   SAUDE: "Transporte de pacientes / saúde",
   LOCACAO_CM: "Locação com motorista",
@@ -232,6 +233,11 @@ export async function entradaInicial(
     premissas.contrato.utilizacao = 1;
     if (origem["contrato.mesesCustoFixo"]?.origem !== "BASE") premissas.contrato.mesesCustoFixo = 12;
   }
+  // Fretamento eventual: o km orçado é o da viagem, e é o que se roda e se
+  // cobra — não há demanda que possa cair. O custo fixo do veículo se paga
+  // pelos dias vendidos no mês (os dias/mês da rota), por isso a diária é a
+  // unidade natural.
+  if (estudo.tipoServico === "FRETAMENTO_EVENTUAL") premissas.contrato.utilizacao = 1;
   if (estudo.vigenciaMeses) premissas.contrato.vigenciaMeses = estudo.vigenciaMeses;
   if (estudo.prazoPagamentoDias) premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
   premissas.perfis = perfisDaBase(vazia ? null : baseCarregada);
