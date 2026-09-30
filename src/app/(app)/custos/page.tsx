@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
 import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
-import { montarDreNoBanco, montarDreAnualNoBanco, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
+import { intercompanyEliminado, montarDreNoBanco, montarDreAnualNoBanco, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
 import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
@@ -180,9 +180,20 @@ export default async function CustosPage({
     .filter((l) => l.tipo === "GRUPO" && l.chave !== "RECEITA_BRUTA" && l.chave !== "RECEITA_FINANCEIRA")
     .reduce((a, l) => a + l.valorCents, 0);
 
-  const [fornecedores, estrategia] = await Promise.all([
+  // O QUE A VISÃO DO GRUPO ELIMINOU — operação entre as empresas (ver
+  // escopoSql.ts). Mesmo recorte e mesmo critério das somas do DRE, no período
+  // que a tabela mostra: o mês, ou os meses do ano na visão anual.
+  const periodoEliminado = dreAnual
+    ? {
+        inicio: new Date(anoDaTela, 0, 1),
+        fim: new Date(anoDaTela, dreAnual.meses.length, 0, 23, 59, 59, 999),
+        rotulo: String(anoDaTela),
+      }
+    : recorteMensal.periodo;
+  const [fornecedores, estrategia, eliminado] = await Promise.all([
     rankingNoBanco(escopoSql, comparativo.janelas.mesAtual, "PAGAR", 15),
     analisarEstrategiaNoBanco(escopoSql, periodo.dataReferencia),
+    intercompanyEliminado(escopoSql, periodoEliminado, regime),
   ]);
 
   const filtros = new URLSearchParams();
@@ -331,6 +342,18 @@ export default async function CustosPage({
           }
         />
       </div>
+
+      {/* A ELIMINAÇÃO É DITA, com os números. Receita do grupo que "cai" de
+          um mês para o outro sem explicação é o que faz alguém desconfiar da
+          tela; aqui a pessoa vê quanto saiu e por quê. Só na visão do grupo. */}
+      {!escopo.conexaoId && (eliminado.receitaCents !== 0 || eliminado.despesaCents !== 0) && (
+        <p className="rounded-lg bg-slate-50 px-4 py-2 text-xs text-slate-600">
+          <strong>Operações entre empresas do grupo eliminadas:</strong> {fmtBRL(Math.abs(eliminado.receitaCents))} de
+          receita, {fmtBRL(Math.abs(eliminado.despesaCents))} de despesa ({fmtNumero(eliminado.titulos)} título(s) cujo
+          parceiro tem a raiz de CNPJ de uma empresa do grupo). Na visão de uma empresa só elas continuam, porque para
+          aquela empresa são receita e despesa de verdade.
+        </p>
+      )}
 
       {(dre.naoConfirmadoCents > 0 || dre.semCategoriaCents > 0) && (
         <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">

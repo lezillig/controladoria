@@ -1,6 +1,7 @@
 import type { OmieContrato } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { montarDreAnualNoBanco } from "./dreNoBanco";
+import { ehIntercompany, raizesDoGrupo } from "./intercompany";
 import type { ChaveDre } from "./dre";
 import { LINHAS_DRE } from "./dre";
 import {
@@ -78,9 +79,25 @@ export async function baseHistoricaNoBanco(escopo: EscopoProjecao, dataReferenci
 }
 
 export async function contratosDoEscopo(escopo: EscopoProjecao): Promise<OmieContrato[]> {
-  return prisma.omieContrato.findMany({
+  const contratos = await prisma.omieContrato.findMany({
     where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
   });
+  if (escopo.conexaoId) return contratos;
+  // NA VISÃO DO GRUPO, contrato de uma empresa com a outra não é receita
+  // contratada do grupo — mesma eliminação do DRE de onde a projeção parte
+  // (ver escopoSql.ts). O contrato não traz o documento; ele vem do cadastro
+  // de parceiros da mesma conexão.
+  const [conexoes, parceiros] = await Promise.all([
+    prisma.omieConexao.findMany({ where: { companyId: escopo.companyId }, select: { cnpj: true } }),
+    prisma.omieParceiro.findMany({
+      where: { companyId: escopo.companyId, documento: { not: null } },
+      select: { conexaoId: true, codigoOmie: true, documento: true },
+    }),
+  ]);
+  const raizes = raizesDoGrupo(conexoes);
+  if (raizes.length === 0) return contratos;
+  const documento = new Map(parceiros.map((p) => [`${p.conexaoId}:${p.codigoOmie}`, p.documento]));
+  return contratos.filter((c) => !ehIntercompany(documento.get(`${c.conexaoId}:${c.parceiroCodigo}`), raizes));
 }
 
 export function escopoTexto(conexaoId: string | null): string {

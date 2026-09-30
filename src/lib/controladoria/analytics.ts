@@ -7,6 +7,7 @@ import { calcularCiclo, projetarFluxoCaixa } from "./agents/fluxoCaixa";
 import { resumoAging } from "./agents/contasReceber";
 import type { ContextoAuditoria } from "./types";
 import { dataDeCompetencia } from "./competencia";
+import { entraNoResultado } from "./intercompany";
 
 // ANÁLISE FINANCEIRA — os numeros do painel e do relatorio.
 //
@@ -45,15 +46,23 @@ export function resumoDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo): Resum
   // tela de resultado usa emissão faria duas telas do mesmo sistema discordarem
   // sobre a receita do mês. Isso não é inconsistência de exibição: é o fim da
   // confiança no sistema inteiro.
-  const pagar = titulosAtivos(ctx, "PAGAR").filter((t) => dentro(dataDeCompetencia(t), periodo));
-  const receber = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo));
+  // Na visão do grupo, a operação entre as empresas fica fora (intercompany.ts),
+  // como no gêmeo em SQL.
+  const fica = entraNoResultado(ctx);
+  const pagar = titulosAtivos(ctx, "PAGAR").filter((t) => dentro(dataDeCompetencia(t), periodo) && fica(t));
+  const receber = titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo) && fica(t));
 
   const receita = somar(receber, (t) => t.valorDocumentoCents);
   const despesa = somar(pagar, (t) => t.valorDocumentoCents);
   const resultado = receita - despesa;
 
-  const baixasDoPeriodo = ctx.baixas.filter((b) => dentro(b.dataBaixa, periodo));
   const tituloPorId = new Map(ctx.titulos.map((t) => [t.id, t]));
+  // Baixa sem título conhecido fica, como o LEFT JOIN do gêmeo em SQL.
+  const baixasDoPeriodo = ctx.baixas.filter((b) => {
+    if (!dentro(b.dataBaixa, periodo)) return false;
+    const t = tituloPorId.get(b.tituloId);
+    return !t || fica(t);
+  });
   const baixasPagar = baixasDoPeriodo.filter((b) => tituloPorId.get(b.tituloId)?.natureza === "PAGAR");
   const baixasReceber = baixasDoPeriodo.filter((b) => tituloPorId.get(b.tituloId)?.natureza === "RECEBER");
 
@@ -213,9 +222,10 @@ export type LinhaDre = {
 export function dreGerencial(ctx: ContextoAuditoria, periodo: Periodo, periodoAnterior: Periodo): LinhaDre[] {
   const descricaoPorCodigo = new Map(ctx.categorias.map((c) => [c.codigo, c.descricao]));
 
+  const fica = entraNoResultado(ctx);
   const montar = (p: Periodo, natureza: "PAGAR" | "RECEBER") =>
     agrupar(
-      titulosAtivos(ctx, natureza).filter((t) => dentro(dataDeCompetencia(t), p)),
+      titulosAtivos(ctx, natureza).filter((t) => dentro(dataDeCompetencia(t), p) && fica(t)),
       (t) => t.categoriaCodigo ?? "SEM_CATEGORIA"
     );
 
@@ -260,7 +270,8 @@ export function ranking(
   natureza: "PAGAR" | "RECEBER",
   limite = 10
 ): LinhaRanking[] {
-  const titulos = titulosAtivos(ctx, natureza).filter((t) => dentro(dataDeCompetencia(t), periodo));
+  const fica = entraNoResultado(ctx);
+  const titulos = titulosAtivos(ctx, natureza).filter((t) => dentro(dataDeCompetencia(t), periodo) && fica(t));
   const nomePorCodigo = new Map(ctx.parceiros.map((p) => [p.codigoOmie, p.nome]));
 
   return [...agrupar(titulos, (t) => t.parceiroCodigo ?? t.parceiroNome ?? "?")]

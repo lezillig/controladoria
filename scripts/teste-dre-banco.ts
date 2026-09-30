@@ -71,10 +71,12 @@ async function principal() {
   await limpar();
 
   const cx1 = await prisma.omieConexao.create({
-    data: { companyId: EMPRESA, nome: "Azul DRE", apelido: "AZ", credencialRef: "AZ" },
+    // O CNPJ das duas empresas: é a raiz dele que identifica a operação entre
+    // elas, eliminada na visão do grupo.
+    data: { companyId: EMPRESA, nome: "Azul DRE", apelido: "AZ", credencialRef: "AZ", cnpj: "11111111000191" },
   });
   const cx2 = await prisma.omieConexao.create({
-    data: { companyId: EMPRESA, nome: "MCZ DRE", apelido: "MC", credencialRef: "MC" },
+    data: { companyId: EMPRESA, nome: "MCZ DRE", apelido: "MC", credencialRef: "MC", cnpj: "22.222.222/0001-91" },
   });
   await prisma.controladoriaConfig.create({
     data: { companyId: EMPRESA, dataInicioBase: new Date(2025, 0, 1), retencoesNasDeducoes: false },
@@ -179,6 +181,24 @@ async function principal() {
       dataEmissao: new Date(2025, 8, 5), dataVencimento: new Date(2025, 8, 25), valorDocumentoCents: 190_600,
       liquidado: true },
 
+    // --- OPERAÇÃO ENTRE AS EMPRESAS DO GRUPO ---
+    // A MCZ fatura a Azul (o caso da tela: "Clientes — Serviços Prestados" do
+    // grupo com a Azul como cliente) e a Azul paga a MCZ, por outro
+    // estabelecimento (filial 0002) — a raiz é que decide. Na visão do grupo
+    // os dois somem; na da Azul, o pagamento fica.
+    { ...comum(cx2, "MC"), codigoLancamento: "IC1", natureza: "RECEBER" as const, categoriaCodigo: "R1",
+      parceiroCodigo: "PAZ", parceiroNome: "AZUL TRANSPORTES E TURISMO LTDA", parceiroDocumento: "11111111000191",
+      dataEmissao: new Date(2026, 8, 12), dataVencimento: new Date(2026, 8, 30), valorDocumentoCents: 450_000 },
+    { ...comum(cx1, "AZ"), codigoLancamento: "IC2", natureza: "PAGAR" as const, categoriaCodigo: "D1",
+      parceiroCodigo: "PMC", parceiroNome: "MCZ LTDA", parceiroDocumento: "22222222000272",
+      dataEmissao: new Date(2026, 8, 13), dataVencimento: new Date(2026, 8, 14), valorDocumentoCents: 200_000,
+      liquidado: true },
+    // CPF que começa pelos mesmos oito dígitos de uma raiz: NÃO é empresa do
+    // grupo (a raiz só vale para documento de 14 dígitos).
+    { ...comum(cx1, "AZ"), codigoLancamento: "IC3", natureza: "PAGAR" as const, categoriaCodigo: "D2",
+      parceiroCodigo: "PCPF", parceiroNome: "Pessoa Física", parceiroDocumento: "11111111099",
+      dataEmissao: new Date(2026, 8, 14), dataVencimento: new Date(2026, 8, 15), valorDocumentoCents: 12_300 },
+
     // --- fora de qualquer mês da tela, dentro da janela: só movimento ---
     { ...comum(cx1, "AZ"), codigoLancamento: "A15", natureza: "RECEBER" as const, categoriaCodigo: "R9",
       dataEmissao: new Date(2026, 5, 10), dataVencimento: new Date(2026, 5, 20), valorDocumentoCents: 555_400,
@@ -224,6 +244,9 @@ async function principal() {
         dataBaixa: new Date(2025, 8, 24), valorCents: 700_500 },
       { companyId: EMPRESA, conexaoId: conexaoDe("A14"), tituloId: idDe("A14"), chave: "K10",
         dataBaixa: new Date(2025, 8, 25), valorCents: 190_600 },
+      // O pagamento da Azul à MCZ: no caixa do grupo também some.
+      { companyId: EMPRESA, conexaoId: conexaoDe("IC2"), tituloId: idDe("IC2"), chave: "K11",
+        dataBaixa: new Date(2026, 8, 14), valorCents: 200_000, jurosCents: 1_500 },
     ],
   });
 
@@ -314,6 +337,78 @@ async function principal() {
       dre.linhas.find((l) => l.chave === "CUSTO_SERVICO")?.valorAnteriorCents,
       210_700
     );
+  }
+
+  // --------------------------------------- operação entre as empresas
+  // ELIMINADA NA VISÃO DO GRUPO, MANTIDA NA DE UMA EMPRESA. O teste diferencial
+  // acima já exige que memória e SQL eliminem igual (IC1, IC2 e IC3 estão na
+  // base); aqui, os valores que provam que a eliminação aconteceu — e que o
+  // detalhe, a composição e o resumo do painel somam o mesmo que a linha.
+  {
+    const { resumoDoPeriodo } = await import("../src/lib/controladoria/analytics");
+    const { resumoDoPeriodoNoBanco } = await import("../src/lib/controladoria/resumoNoBanco");
+    const { detalharTitulos, detalharPerdas } = await import("../src/lib/controladoria/detalhamento");
+    const { composicaoDoPeriodo } = await import("../src/lib/controladoria/composicao");
+    const { intercompanyEliminado } = await import("../src/lib/controladoria/dreNoBanco");
+    const mes = janelas.mesAtual;
+
+    for (const conexaoId of [null, cx1.id]) {
+      const alvo = conexaoId ? "uma empresa" : "grupo";
+      const escopo = { companyId: EMPRESA, conexaoId, janela: { desde: desdeMensal, ate: null } };
+      const ctx = await carregarContexto(EMPRESA, REFERENCIA, conexaoId ?? undefined, { desde: desdeMensal });
+      const dre = await montarDreNoBanco(escopo, mes, janelas.mesAnterior, classificacoes, { regime: "competencia" });
+      const dreCaixa = await montarDreNoBanco(escopo, mes, janelas.mesAnterior, classificacoes, { regime: "caixa" });
+      const item = (r: typeof dre, codigo: string) =>
+        r.linhas.flatMap((l) => l.itens).find((i) => i.categoriaCodigo === codigo)?.valorCents ?? 0;
+
+      if (!conexaoId) {
+        conferir("grupo: receita da MCZ contra a Azul não é receita", item(dre, "R1"), 900_100 + 450_200);
+        conferir("grupo: pagamento da Azul à MCZ não é custo", item(dre, "D1"), 310_300 - 15_800);
+        // No caixa até o dia 22: A3 (18/09); o estorno A9 é baixado dia 24.
+        conferir("grupo: nem no caixa", item(dreCaixa, "D1"), 310_300);
+        conferir("grupo: CPF com os mesmos 8 dígitos não é empresa do grupo", item(dre, "D2") >= 12_300, true);
+        conferir("grupo: o que foi eliminado é dito", await intercompanyEliminado(escopo, mes, "competencia"), {
+          receitaCents: 450_000,
+          despesaCents: 200_000,
+          titulos: 2,
+        });
+        conferir("grupo: o eliminado no caixa", await intercompanyEliminado(escopo, mes, "caixa"), {
+          receitaCents: 0,
+          despesaCents: 200_000,
+          titulos: 1,
+        });
+      } else {
+        conferir("uma empresa: o pagamento à MCZ é custo da Azul", item(dre, "D1"), 310_300 - 15_800 + 200_000);
+        conferir("uma empresa: nada eliminado", await intercompanyEliminado(escopo, mes, "competencia"), {
+          receitaCents: 0,
+          despesaCents: 0,
+          titulos: 0,
+        });
+      }
+
+      // O resumo do painel: gêmeos iguais, e o detalhe que o cartão abre soma
+      // o mesmo que o cartão.
+      const resumoSql = await resumoDoPeriodoNoBanco({ companyId: EMPRESA, conexaoId, periodo: mes });
+      conferir(`resumo do painel idêntico nos dois gêmeos — ${alvo}`, resumoSql, resumoDoPeriodo(ctx, mes));
+      for (const natureza of ["RECEBER", "PAGAR"] as const) {
+        const detalhe = await detalharTitulos({ companyId: EMPRESA, conexaoId, periodo: mes, natureza, dimensao: null });
+        const composicao = await composicaoDoPeriodo({ companyId: EMPRESA, conexaoId, periodo: mes, natureza });
+        const doCartao = natureza === "RECEBER" ? resumoSql.receitaCents : resumoSql.despesaCents;
+        conferir(`detalhe ${natureza} soma o cartão — ${alvo}`, detalhe.totalCents, doCartao);
+        conferir(`composição ${natureza} soma o cartão — ${alvo}`, composicao.totalCents, doCartao);
+      }
+      const juros = await detalharPerdas({ companyId: EMPRESA, conexaoId, periodo: mes, componente: "juros" });
+      conferir(`detalhe dos juros soma o cartão — ${alvo}`, juros.totalCents, resumoSql.jurosCents);
+      conferir(`juros pagos à MCZ ${conexaoId ? "contam" : "não contam"} — ${alvo}`, resumoSql.jurosCents, conexaoId ? 1_500 : 0);
+
+      // O drill-down da categoria no DRE soma a linha da categoria.
+      const r1 = dre.linhas.flatMap((l) => l.itens).find((i) => i.categoriaCodigo === "R1");
+      conferir(
+        `drill-down de R1 soma o item — ${alvo}`,
+        (r1?.titulos ?? []).reduce((a, t) => a + t.valorCents, 0),
+        r1?.valorCents ?? 0
+      );
+    }
   }
 
   // ------------------------------------------------------------------ anual

@@ -8,7 +8,7 @@ import { comparativoDoEscopo } from "./analytics";
 import { montarDreAnualNoBanco, montarDreNoBanco } from "./dreNoBanco";
 import { analisarEstrategiaNoBanco } from "./estrategiaCustoNoBanco";
 import { rankingNoBanco, resumoDoPeriodoNoBanco } from "./resumoNoBanco";
-import { filtroConexaoTitulo } from "./escopoSql";
+import { filtroConexaoTitulo, filtroSoConexaoTitulo } from "./escopoSql";
 import { LINHAS_DE_GRUPO, mesesDoHorizonte, projetar, sensibilidade, type Premissa } from "./projecao";
 import { baseHistoricaNoBanco, contratosDoEscopo } from "./projecaoNoBanco";
 import { dataReferenciaPadrao } from "./ciclo";
@@ -282,7 +282,7 @@ export function ferramentasDeAnalise(
          WHERE t."companyId" = ${escopo.companyId}
            AND t.cancelado = false AND t.liquidado = false
            AND COALESCE(t."saldoCents", t."valorDocumentoCents" - t."valorPagoCents") > 0
-           ${filtroConexaoTitulo(escopo.conexaoId)}
+           ${filtroSoConexaoTitulo(escopo.conexaoId)}
            ${input.natureza ? Prisma.sql`AND t.natureza::text = ${input.natureza}` : Prisma.empty}
          GROUP BY 1, 2
       `;
@@ -306,7 +306,7 @@ export function ferramentasDeAnalise(
           FROM ${tabela("OmieTitulo")} t
          WHERE t."companyId" = ${escopo.companyId} AND t.cancelado = false AND t.natureza = 'RECEBER'
            AND ${competenciaSql("t")} >= ${mes.inicio} AND ${competenciaSql("t")} <= ${mes.fim}
-           ${filtroConexaoTitulo(escopo.conexaoId)}
+           ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
          GROUP BY 1 ORDER BY cents DESC
       `;
       registrar("receita_por_tipo_de_documento", input, `${mes.rotulo}: ${linhas.length} tipo(s)`);

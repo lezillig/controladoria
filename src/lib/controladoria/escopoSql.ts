@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { tabela } from "@/lib/esquemaDoBanco";
 
 // O RECORTE DA LEITURA, ESCRITO UMA VEZ EM SQL.
 //
@@ -27,14 +28,74 @@ export type EscopoSql = {
   janela: { desde: Date; ate?: Date | null };
 };
 
+// ELIMINAÇÃO DAS OPERAÇÕES ENTRE EMPRESAS DO GRUPO (intercompany).
+//
+// Na visão do GRUPO, o que a MCZ fatura contra a Azul não é receita — é
+// dinheiro trocando de bolso dentro da mesma casa —, e o título espelho, a
+// Azul pagando a MCZ, não é despesa. Somados, os dois inflam receita e despesa
+// na mesma medida: o resultado fecha, e toda margem e todo percentual do DRE
+// ficam errados. Foi o que a tela de Custos mostrou: "Clientes — Serviços
+// Prestados" do grupo com títulos da MCZ cujo cliente era a própria Azul.
+//
+// O CRITÉRIO é a RAIZ DO CNPJ (8 primeiros dígitos, que identificam a empresa
+// e não o estabelecimento): o parceiro do título tem a mesma raiz do CNPJ de
+// alguma conexão Omie da instalação — ativa ou não, porque título antigo de
+// uma conexão desativada continua sendo operação dentro do grupo. Conexão sem
+// CNPJ cadastrado não contribui com raiz nenhuma: adivinhar pelo nome
+// eliminaria receita verdadeira de cliente homônimo, e isso é pior que deixar
+// uma operação interna à vista (a tela de conexões é onde se conserta).
+//
+// SÓ NA VISÃO DO GRUPO. Com uma empresa filtrada, o título contra a outra é
+// receita e despesa de verdade daquela empresa, e fica. E só nos números de
+// RESULTADO — os agentes de auditoria não passam por aqui: título entre as
+// empresas vencido e não pago continua sendo fato a auditar.
+//
+// A expressão nunca é nula (COALESCE): um documento nulo dentro de `NOT (...)`
+// faria o título sumir em vez de ficar, que é o erro silencioso clássico.
+export function ehIntercompanySql(companyId: string, alias = "t"): Prisma.Sql {
+  const doc = Prisma.raw(`${alias}."parceiroDocumento"`);
+  return Prisma.sql`COALESCE(
+      char_length(${doc}) = 14
+      AND LEFT(${doc}, 8) IN (
+        SELECT LEFT(regexp_replace(cx.cnpj, '[^0-9]', '', 'g'), 8)
+          FROM ${tabela("OmieConexao")} cx
+         WHERE cx."companyId" = ${companyId}
+           AND char_length(regexp_replace(cx.cnpj, '[^0-9]', '', 'g')) = 14
+      ),
+      false)`;
+}
+
 // Sempre parametrizado, nunca interpolação de texto: o id da conexão vem da
 // querystring, e concatenar valor de requisição dentro de SQL é como se escreve
 // uma injeção.
-export function filtroConexaoTitulo(conexaoId?: string | null) {
+//
+// Sem conexão (visão do grupo), elimina as operações entre as empresas — ver
+// `ehIntercompanySql`. O `companyId` é obrigatório por isso: é dele que saem as
+// raízes de CNPJ do grupo.
+export function filtroConexaoTitulo(conexaoId: string | null | undefined, companyId: string) {
+  return conexaoId
+    ? Prisma.sql`AND t."conexaoId" = ${conexaoId}`
+    : Prisma.sql`AND NOT ${ehIntercompanySql(companyId)}`;
+}
+
+// Para consultas de BAIXA que juntam o título como `t`. Com LEFT JOIN, baixa
+// sem título fica (documento nulo → não é intercompany).
+export function filtroConexaoBaixa(conexaoId: string | null | undefined, companyId: string) {
+  return conexaoId
+    ? Prisma.sql`AND b."conexaoId" = ${conexaoId}`
+    : Prisma.sql`AND NOT ${ehIntercompanySql(companyId)}`;
+}
+
+// Só a conexão do título, SEM eliminação: para leitura de posição (em aberto,
+// aging) que as telas fazem pelo contexto dos agentes — onde o título entre
+// as empresas continua contando, porque dívida vencida entre elas é fato.
+export function filtroSoConexaoTitulo(conexaoId?: string | null) {
   return conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
 }
 
-export function filtroConexaoBaixa(conexaoId?: string | null) {
+// Só a conexão da baixa, para consulta que ainda não juntou o título (a
+// eliminação acontece adiante, onde o título entra).
+export function filtroSoConexaoBaixa(conexaoId?: string | null) {
   return conexaoId ? Prisma.sql`AND b."conexaoId" = ${conexaoId}` : Prisma.empty;
 }
 

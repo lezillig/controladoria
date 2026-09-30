@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { rotuloMes } from "./periodos";
 import { competenciaSql } from "./competencia";
+import { filtroConexaoBaixa as filtroConexaoBaixaCompartilhado, filtroConexaoTitulo } from "./escopoSql";
 
 // RESULTADO MÊS A MÊS — somado no banco, não na memória da função.
 //
@@ -82,8 +83,12 @@ export async function serieMensal(params: {
   // O filtro de conexão entra como fragmento parametrizado, nunca por
   // interpolação de texto: id vem da querystring, e concatenar valor de
   // requisição dentro de SQL é como se escreve uma injeção.
-  const filtroConexao = conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
-  const filtroConexaoBaixa = conexaoId ? Prisma.sql`AND b."conexaoId" = ${conexaoId}` : Prisma.empty;
+  // Títulos e baixas pelos fragmentos compartilhados (escopoSql.ts): na visão
+  // do grupo, sem as operações entre as empresas, como o painel e o DRE. As
+  // NOTAS não passam por isso: o faturamento fiscal é conferência documento a
+  // documento contra a declaração de cada empresa, não resultado do grupo.
+  const filtroConexao = filtroConexaoTitulo(conexaoId, companyId);
+  const filtroConexaoBaixa = filtroConexaoBaixaCompartilhado(conexaoId, companyId);
   const filtroConexaoNota = conexaoId ? Prisma.sql`AND n."conexaoId" = ${conexaoId}` : Prisma.empty;
 
   const [competencia, caixa, fiscal] = await Promise.all([

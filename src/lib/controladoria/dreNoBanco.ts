@@ -3,8 +3,10 @@ import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "./competencia";
 import {
   CATEGORIA_SQL as CATEGORIA,
+  ehIntercompanySql,
   filtroConexaoBaixa,
   filtroConexaoTitulo,
+  filtroSoConexaoBaixa,
   naJanela,
   type EscopoSql,
 } from "./escopoSql";
@@ -127,7 +129,7 @@ async function somaPorCategoriaCompetencia(escopo: EscopoDre, periodo: Periodo):
        AND t.cancelado = false
        AND ${competenciaSql("t")} >= ${periodo.inicio}
        AND ${competenciaSql("t")} <= ${periodo.fim}
-       ${filtroConexaoTitulo(escopo.conexaoId)}
+       ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
        ${naJanela(escopo.janela)}
      GROUP BY 1
   `;
@@ -147,11 +149,60 @@ async function somaPorCategoriaCaixa(escopo: EscopoDre, periodo: Periodo): Promi
        AND b."dataBaixa" >= ${periodo.inicio}
        AND b."dataBaixa" <= ${periodo.fim}
        AND t.cancelado = false
-       ${filtroConexaoBaixa(escopo.conexaoId)}
+       ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
        ${naJanela(escopo.janela)}
      GROUP BY 1
   `;
   return mapaDeSomas(linhas);
+}
+
+// O QUE A VISÃO DO GRUPO ELIMINOU, para a tela dizer. As duas consultas acima
+// com o filtro invertido — o mesmo recorte (empresa, janela, cancelado, data do
+// regime) e o mesmo critério de operação entre as empresas (escopoSql.ts) —,
+// somadas por natureza. Com uma empresa filtrada nada é eliminado, e nem se
+// consulta.
+export async function intercompanyEliminado(
+  escopo: EscopoDre,
+  periodo: Periodo,
+  regime: "competencia" | "caixa"
+): Promise<{ receitaCents: number; despesaCents: number; titulos: number }> {
+  if (escopo.conexaoId) return { receitaCents: 0, despesaCents: 0, titulos: 0 };
+  const ehInterna = ehIntercompanySql(escopo.companyId);
+  const linhas =
+    regime === "caixa"
+      ? await prisma.$queryRaw<{ natureza: string; cents: bigint; quantidade: bigint }[]>`
+          SELECT t.natureza::text AS natureza,
+                 COALESCE(SUM(b."valorCents"), 0)::bigint AS cents,
+                 COUNT(DISTINCT t.id)::bigint AS quantidade
+            FROM ${tabela("OmieBaixa")} b
+            JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
+           WHERE b."companyId" = ${escopo.companyId}
+             AND b."dataBaixa" >= ${periodo.inicio}
+             AND b."dataBaixa" <= ${periodo.fim}
+             AND t.cancelado = false
+             AND ${ehInterna}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1
+        `
+      : await prisma.$queryRaw<{ natureza: string; cents: bigint; quantidade: bigint }[]>`
+          SELECT t.natureza::text AS natureza,
+                 COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
+                 COUNT(*)::bigint AS quantidade
+            FROM ${tabela("OmieTitulo")} t
+           WHERE t."companyId" = ${escopo.companyId}
+             AND t.cancelado = false
+             AND ${competenciaSql("t")} >= ${periodo.inicio}
+             AND ${competenciaSql("t")} <= ${periodo.fim}
+             AND ${ehInterna}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1
+        `;
+  const de = (n: string) => linhas.find((l) => l.natureza === n);
+  return {
+    receitaCents: Number(de("RECEBER")?.cents ?? 0),
+    despesaCents: Number(de("PAGAR")?.cents ?? 0),
+    titulos: linhas.reduce((a, l) => a + Number(l.quantidade), 0),
+  };
 }
 
 function somaPorCategoria(escopo: EscopoDre, periodo: Periodo, regime: "competencia" | "caixa") {
@@ -170,7 +221,7 @@ export async function movimentoPorCategoria(escopo: EscopoDre) {
       FROM ${tabela("OmieTitulo")} t
      WHERE t."companyId" = ${escopo.companyId}
        AND t.cancelado = false
-       ${filtroConexaoTitulo(escopo.conexaoId)}
+       ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
        ${naJanela(escopo.janela)}
      GROUP BY 1, 2
   `;
@@ -203,7 +254,7 @@ async function retencoesCompetencia(escopo: EscopoDre, periodo: Periodo): Promis
        AND t.natureza = 'RECEBER'
        AND ${competenciaSql("t")} >= ${periodo.inicio}
        AND ${competenciaSql("t")} <= ${periodo.fim}
-       ${filtroConexaoTitulo(escopo.conexaoId)}
+       ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
        ${naJanela(escopo.janela)}
   `;
   return retencaoDaLinha(linha);
@@ -225,7 +276,7 @@ async function retencoesCaixa(escopo: EscopoDre, periodo: Periodo): Promise<Rete
        WHERE b."companyId" = ${escopo.companyId}
          AND b."dataBaixa" >= ${periodo.inicio}
          AND b."dataBaixa" <= ${periodo.fim}
-         ${filtroConexaoBaixa(escopo.conexaoId)}
+         ${filtroSoConexaoBaixa(escopo.conexaoId)}
        GROUP BY 1
     ), proporcional AS (
       SELECT ROUND(t."retencaoIssCents"    * LEAST(1, p.pago / ABS(t."valorDocumentoCents"))) AS iss,
@@ -240,7 +291,7 @@ async function retencoesCaixa(escopo: EscopoDre, periodo: Periodo): Promise<Rete
          AND t.cancelado = false
          AND t.natureza = 'RECEBER'
          AND t."valorDocumentoCents" > 0
-         ${filtroConexaoTitulo(escopo.conexaoId)}
+         ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
          ${naJanela(escopo.janela)}
     )
     SELECT COALESCE(SUM(iss), 0)::bigint    AS iss,
@@ -288,7 +339,7 @@ async function drillCompetencia(escopo: EscopoDre, periodo: Periodo) {
          AND t.cancelado = false
          AND ${competenciaSql("t")} >= ${periodo.inicio}
          AND ${competenciaSql("t")} <= ${periodo.fim}
-         ${filtroConexaoTitulo(escopo.conexaoId)}
+         ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
          ${naJanela(escopo.janela)}
     ) x
      WHERE x.pos <= ${TITULOS_POR_CATEGORIA_NA_TELA}
@@ -320,7 +371,7 @@ async function drillCaixa(escopo: EscopoDre, periodo: Periodo) {
          AND b."dataBaixa" >= ${periodo.inicio}
          AND b."dataBaixa" <= ${periodo.fim}
          AND t.cancelado = false
-         ${filtroConexaoBaixa(escopo.conexaoId)}
+         ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
          ${naJanela(escopo.janela)}
     ) x
      WHERE x.pos <= ${TITULOS_POR_CATEGORIA_NA_TELA}
@@ -490,7 +541,7 @@ async function somaPorCategoriaPorMes(
              AND b."dataBaixa" >= ${inicio}
              AND b."dataBaixa" <= ${fim}
              AND t.cancelado = false
-             ${filtroConexaoBaixa(escopo.conexaoId)}
+             ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
              ${naJanela(escopo.janela)}
            GROUP BY 1, 2
         `
@@ -503,7 +554,7 @@ async function somaPorCategoriaPorMes(
              AND t.cancelado = false
              AND ${competenciaSql("t")} >= ${inicio}
              AND ${competenciaSql("t")} <= ${fim}
-             ${filtroConexaoTitulo(escopo.conexaoId)}
+             ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
              ${naJanela(escopo.janela)}
            GROUP BY 1, 2
         `;

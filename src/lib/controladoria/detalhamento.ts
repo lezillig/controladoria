@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { temColuna } from "./esquema";
 import { competenciaSql } from "./competencia";
+import { filtroConexaoBaixa, filtroConexaoTitulo } from "./escopoSql";
 import { codigosDoTipoDocumento } from "./composicao";
 import type { Periodo } from "./periodos";
 
@@ -108,7 +109,9 @@ export async function detalharTitulos(params: {
 }): Promise<Detalhamento> {
   const { companyId, conexaoId, periodo, natureza, dimensao, valor, limite = LIMITE_PADRAO } = params;
 
-  const filtroEmpresa = conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
+  // O mesmo fragmento do cartão (escopoSql.ts): na visão do grupo, sem as
+  // operações entre as empresas — senão a lista somaria mais que o número.
+  const filtroEmpresa = filtroConexaoTitulo(conexaoId, companyId);
 
   // A mesma resolução de nome de categoria da composição (ver composicao.ts):
   // a Omie devolve só o código, e o join condicional existe porque o banco de
@@ -225,7 +228,8 @@ export async function detalharPerdas(params: {
   // fechada acima e o tipo de `componente` não admite outra coisa — nunca da
   // querystring direto.
   const coluna = Prisma.raw(`b."${campo}"`);
-  const filtroEmpresa = conexaoId ? Prisma.sql`AND b."conexaoId" = ${conexaoId}` : Prisma.empty;
+  // Idem, com a baixa juntando o título por LEFT JOIN como no resumo.
+  const filtroEmpresa = filtroConexaoBaixa(conexaoId, companyId);
   const filtroNatureza = natureza ? Prisma.sql`AND t.natureza::text = ${natureza}` : Prisma.empty;
 
   const linhas = await prisma.$queryRaw<LinhaBruta[]>`

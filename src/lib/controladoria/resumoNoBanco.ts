@@ -1,10 +1,9 @@
-import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import type { LinhaRanking, ResumoPeriodo } from "./analytics";
 import type { Periodo } from "./periodos";
 import { competenciaSql } from "./competencia";
-import { filtroConexaoTitulo, naJanela, type EscopoSql } from "./escopoSql";
+import { filtroConexaoBaixa, filtroConexaoTitulo, naJanela, type EscopoSql } from "./escopoSql";
 
 // RESUMO DE UM PERÍODO, SOMADO NO BANCO.
 //
@@ -47,11 +46,12 @@ export async function resumoDoPeriodoNoBanco(params: {
 }): Promise<ResumoPeriodo> {
   const { companyId, conexaoId, periodo } = params;
 
-  // Fragmento parametrizado, nunca interpolação de texto: o id vem da
-  // querystring, e concatenar valor de requisição dentro de SQL é como se
-  // escreve uma injeção.
-  const filtroTitulo = conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
-  const filtroBaixa = conexaoId ? Prisma.sql`AND b."conexaoId" = ${conexaoId}` : Prisma.empty;
+  // Os fragmentos compartilhados (escopoSql.ts): parametrizados, e na visão do
+  // grupo eliminam as operações entre as empresas — receita da MCZ contra a
+  // Azul não é receita do grupo. A baixa entra por LEFT JOIN: baixa sem título
+  // continua (documento nulo não é intercompany), como sempre foi.
+  const filtroTitulo = filtroConexaoTitulo(conexaoId, companyId);
+  const filtroBaixa = filtroConexaoBaixa(conexaoId, companyId);
 
   const [titulos, baixas] = await Promise.all([
     prisma.$queryRaw<LinhaTitulos[]>`
@@ -168,7 +168,7 @@ export async function rankingNoBanco(
          AND t.natureza::text = ${natureza}
          AND ${competenciaSql("t")} >= ${periodo.inicio}
          AND ${competenciaSql("t")} <= ${periodo.fim}
-         ${filtroConexaoTitulo(escopo.conexaoId)}
+         ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
          ${naJanela(escopo.janela)}
        GROUP BY 1
        ORDER BY valor DESC

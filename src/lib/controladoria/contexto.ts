@@ -19,6 +19,7 @@ import {
 import { carregarConformidade } from "@/lib/conformidade/panorama";
 import type { ContextoAuditoria } from "./types";
 import { fimDoDia, inicioDoAno, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
+import { raizesDoGrupo } from "./intercompany";
 
 // Data a partir da qual a base histórica é carregada.
 //
@@ -138,6 +139,7 @@ export async function carregarContexto(
     ctes,
     receita,
     movimentoAntesDoCorte,
+    conexoesDoGrupo,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -271,6 +273,11 @@ export async function carregarContexto(
       where: { ...escopo, data: { lt: corteRecente } },
       _sum: { valorCents: true },
     }),
+    // TODA conexão da instalação, ativa ou não, só o CNPJ: é dele que sai a
+    // raiz que identifica operação entre as empresas do grupo (ver
+    // intercompany.ts). `conexoes` acima traz só as ativas, e título antigo de
+    // conexão desativada continua sendo operação interna.
+    prisma.omieConexao.findMany({ where: { companyId }, select: { cnpj: true } }),
   ]);
 
   // Só os CNPJs que este contexto conhece — os agentes não têm o que fazer
@@ -290,6 +297,7 @@ export async function carregarContexto(
     movimentoAntesDaJanelaCents: new Map(
       movimentoAntesDoCorte.map((g) => [`${g.conexaoId}:${g.contaCorrenteCodigo}`, g._sum.valorCents ?? 0])
     ),
+    raizesCnpjDoGrupo: raizesDoGrupo(conexoesDoGrupo),
     notas,
     parceiros,
     categorias,

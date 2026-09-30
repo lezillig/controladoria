@@ -48,6 +48,35 @@ apenas o **nome** das variáveis (`credencialRef` `AZUL` → `OMIE_APP_KEY_AZUL`
 Guardar chave e segredo no banco significaria que um vazamento de backup
 entregaria acesso ao ERP financeiro do grupo.
 
+### Operações entre as empresas do grupo (eliminação)
+
+Na visão do **grupo** ("Grupo (todas)", sem empresa filtrada), o que uma
+empresa fatura contra a outra não é receita, e o título espelho não é despesa:
+é dinheiro trocando de bolso dentro da mesma casa. Somados, inflariam receita e
+despesa na mesma medida, e toda margem do DRE sairia errada.
+
+- **Critério**: o documento do parceiro do título tem 14 dígitos e a mesma
+  **raiz de CNPJ** (8 primeiros dígitos) do CNPJ de alguma conexão Omie da
+  instalação, ativa ou não. Conexão **sem CNPJ cadastrado não contribui** —
+  não se adivinha pelo nome; cadastre o CNPJ em Conexões.
+- **Só na visão do grupo.** Com uma empresa filtrada, o título contra a outra
+  fica: para aquela empresa é receita e despesa de verdade.
+- **Onde vale**: todos os números de resultado — DRE (competência e caixa,
+  mensal e anual, planilha de conferência), painel (receita, despesa,
+  resultado, perdas, maiores clientes/fornecedores, BSC de receita), composição
+  e detalhamento, resultado mês a mês, estratégia de custo, projeção e as
+  ferramentas da IA. A regra mora em `escopoSql.ts` (`ehIntercompanySql`,
+  usada por `filtroConexaoTitulo`/`filtroConexaoBaixa`) e o gêmeo em memória em
+  `intercompany.ts`; o teste diferencial exige que os dois eliminem igual.
+- **Onde NÃO vale**: agentes de auditoria (título entre as empresas vencido e
+  não pago continua sendo fato), posição em aberto e aging, faturamento fiscal
+  por nota e retenções da tela de resultados (conferência documento a
+  documento contra a declaração de cada empresa) e o extrato bancário — a
+  transferência entre contas das duas empresas não é identificável com
+  segurança linha a linha, e no saldo consolidado ela já se anula.
+- **Transparência**: a tela de Custos e DRE, na visão do grupo, diz quanto foi
+  eliminado de receita e de despesa no período, com a mesma consulta.
+
 ---
 
 ## 3. Estrutura de agentes

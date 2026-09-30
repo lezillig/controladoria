@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { temColuna } from "./esquema";
 import { competenciaSql } from "./competencia";
+import { filtroConexaoTitulo } from "./escopoSql";
 import type { Regime } from "@/app/(app)/Filtros";
 import type { Periodo } from "./periodos";
 
@@ -65,7 +66,9 @@ export async function composicaoDoPeriodo(params: {
   const { companyId, conexaoId, periodo, natureza, regime = "competencia" } = params;
 
   // Fragmento parametrizado, nunca interpolação: o id vem da querystring.
-  const filtro = conexaoId ? Prisma.sql`AND t."conexaoId" = ${conexaoId}` : Prisma.empty;
+  // Na visão do grupo, sem as operações entre as empresas (escopoSql.ts): é a
+  // abertura do cartão de receita do painel, e o cartão já as elimina.
+  const filtro = filtroConexaoTitulo(conexaoId, companyId);
 
   // OS DOIS REGIMES, NA MESMA CONSULTA.
   //
@@ -198,36 +201,28 @@ export async function maioresTitulosDoPeriodo(params: {
   // que os põe no período é a da última baixa. Filtrar por emissão aqui
   // mostraria títulos que ainda não movimentaram a conta, ao lado de uma tabela
   // que só soma o que movimentou.
-  const janela =
-    regime === "caixa"
-      ? { dataUltimaBaixa: { gte: periodo.inicio, lte: periodo.fim } }
-      : { dataEmissao: { gte: periodo.inicio, lte: periodo.fim } };
+  const coluna = regime === "caixa" ? Prisma.sql`t."dataUltimaBaixa"` : Prisma.sql`t."dataEmissao"`;
 
-  return prisma.omieTitulo.findMany({
-    where: {
-      companyId,
-      ...(conexaoId ? { conexaoId } : {}),
-      ...(regime === "caixa" ? {} : { cancelado: false }),
-      natureza,
-      ...janela,
-    },
-    orderBy: { valorDocumentoCents: "desc" },
-    take: limite,
-    // `select` explícito: esta consulta existe para caber numa tela, e trazer
-    // as 38 colunas do título para exibir sete seria repetir em pequeno o
-    // problema que derrubou o banco em grande.
-    select: {
-      id: true,
-      conexaoApelido: true,
-      numeroDocumento: true,
-      parceiroNome: true,
-      categoriaDescricao: true,
-      tipoDocumento: true,
-      dataVencimento: true,
-      valorDocumentoCents: true,
-      liquidado: true,
-    },
-  });
+  // SQL cru, e não o cliente do Prisma, por um motivo só: a eliminação das
+  // operações entre as empresas do grupo (escopoSql.ts) é uma expressão SQL, e
+  // a lista dos maiores títulos tem de usar a MESMA que as somas ao lado —
+  // senão a tabela da composição e a dos maiores discordariam na visão do
+  // grupo. Colunas explícitas: esta consulta existe para caber numa tela, e
+  // trazer as 38 colunas do título para exibir sete seria repetir em pequeno o
+  // problema que derrubou o banco em grande.
+  return prisma.$queryRaw<TituloDoPeriodo[]>`
+    SELECT t.id, t."conexaoApelido", t."numeroDocumento", t."parceiroNome", t."categoriaDescricao",
+           t."tipoDocumento", t."dataVencimento", t."valorDocumentoCents", t.liquidado
+      FROM ${tabela("OmieTitulo")} t
+     WHERE t."companyId" = ${companyId}
+       ${regime === "caixa" ? Prisma.empty : Prisma.sql`AND t.cancelado = false`}
+       AND t.natureza::text = ${natureza}
+       AND ${coluna} >= ${periodo.inicio}
+       AND ${coluna} <= ${periodo.fim}
+       ${filtroConexaoTitulo(conexaoId, companyId)}
+     ORDER BY t."valorDocumentoCents" DESC, t.id ASC
+     LIMIT ${limite}
+  `;
 }
 
 // ROTULOS DOS TIPOS DE DOCUMENTO da Omie, para a tela falar a língua da

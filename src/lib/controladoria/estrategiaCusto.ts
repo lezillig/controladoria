@@ -1,6 +1,7 @@
 import { fmtBRL, fmtPercent } from "./format";
 import { inicioDoMes } from "./periodos";
 import { somar, titulosAtivos } from "./agents/comum";
+import { entraNoResultado } from "./intercompany";
 import type { ContextoAuditoria } from "./types";
 // Custo POR MÊS é competência: a despesa pertence ao mês em que foi incorrida,
 // não ao mês em que a fatura vence. Ver competencia.ts.
@@ -151,11 +152,14 @@ export function janelaDeAnalise(dataReferencia: Date): { primeiroMes: Date; mese
 
 function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
   const { primeiroMes, meses, fim } = janelaDeAnalise(ctx.dataReferencia);
+  // Operação entre as empresas do grupo fora da visão do grupo (intercompany.ts):
+  // o aluguel que a Azul paga à MCZ não é custo que o grupo possa cortar.
+  const fica = entraNoResultado(ctx);
 
   const porCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "PAGAR")) {
     const competencia = dataDeCompetencia(t);
-    if (competencia < primeiroMes || competencia > fim) continue;
+    if (competencia < primeiroMes || competencia > fim || !fica(t)) continue;
     const categoria = t.categoriaCodigo ?? "SEM_CATEGORIA";
     const mes = chaveMes(competencia);
     const serie = porCategoria.get(categoria) ?? new Map<string, number>();
@@ -166,7 +170,7 @@ function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
   const receitaPorCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "RECEBER")) {
     const competencia = dataDeCompetencia(t);
-    if (competencia < primeiroMes || competencia > fim) continue;
+    if (competencia < primeiroMes || competencia > fim || !fica(t)) continue;
     const categoria = t.categoriaCodigo ?? "SEM_CATEGORIA";
     const mes = chaveMes(competencia);
     const serie = receitaPorCategoria.get(categoria) ?? new Map<string, number>();

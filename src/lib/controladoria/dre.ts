@@ -2,6 +2,7 @@ import type { Periodo } from "./periodos";
 import { dentro } from "./periodos";
 import { dataDeCompetencia } from "./competencia";
 import { titulosAtivos, somar } from "./agents/comum";
+import { entraNoResultado } from "./intercompany";
 import type { ContextoAuditoria } from "./types";
 
 // DEMONSTRAÇÃO DO RESULTADO DO EXERCÍCIO.
@@ -407,6 +408,9 @@ function retencoesDoPeriodo(
   periodo: Periodo,
   regime: "competencia" | "caixa" = "competencia"
 ): Retencoes {
+  // Na visão do grupo, a operação entre as empresas não é receita — e a
+  // retenção dela não entra como dedução (ver intercompany.ts).
+  const fica = entraNoResultado(ctx);
   // NO CAIXA a retenção acompanha o RECEBIMENTO, não a emissão — e ela é
   // gravada no título, não na baixa. Um título recebido pela metade teve
   // metade da retenção; por isso a proporção, e não o valor cheio. É
@@ -420,7 +424,7 @@ function retencoesDoPeriodo(
             pagoPorTitulo.set(b.tituloId, (pagoPorTitulo.get(b.tituloId) ?? 0) + Math.abs(b.valorCents));
           }
           return titulosAtivos(ctx, "RECEBER")
-            .filter((t) => pagoPorTitulo.has(t.id) && t.valorDocumentoCents > 0)
+            .filter((t) => pagoPorTitulo.has(t.id) && t.valorDocumentoCents > 0 && fica(t))
             .map((t) => {
               const fracao = Math.min(1, (pagoPorTitulo.get(t.id) ?? 0) / Math.abs(t.valorDocumentoCents));
               const p = (v: number) => Math.round(v * fracao);
@@ -435,7 +439,7 @@ function retencoesDoPeriodo(
               };
             });
         })()
-      : titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo));
+      : titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo) && fica(t));
   const soma = (campo: (t: (typeof receber)[number]) => number) => somar(receber, campo);
 
   const issCents = soma((t) => t.retencaoIssCents);
@@ -548,6 +552,9 @@ export function insumosDoContexto(
   const { regime = "competencia", incluirTitulos = true, periodoAnoAnterior } = opcoes;
   const porTitulo = new Map(ctx.titulos.map((t) => [t.id, t]));
   const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
+  // Operação entre as empresas do grupo fica fora na visão do grupo — nas
+  // somas, no lado da categoria e no drill-down, como na colheita em SQL.
+  const fica = entraNoResultado(ctx);
 
   // Movimento por categoria, nas duas janelas. Título cancelado fica fora: ele
   // não é resultado, e mantê-lo faria a receita do mês incluir documento que
@@ -567,7 +574,7 @@ export function insumosDoContexto(
         const t = porTitulo.get(b.tituloId);
         // Baixa de título cancelado fica de fora, como o título ficaria: se o
         // documento não existe, o resultado dele não é resultado.
-        if (!t || t.cancelado) continue;
+        if (!t || t.cancelado || !fica(t)) continue;
         const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
         mapa.set(chave, (mapa.get(chave) ?? 0) + b.valorCents);
       }
@@ -576,7 +583,7 @@ export function insumosDoContexto(
 
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
       for (const t of titulosAtivos(ctx, natureza)) {
-        if (!dentro(dataDeCompetencia(t), p)) continue;
+        if (!dentro(dataDeCompetencia(t), p) || !fica(t)) continue;
         const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
         mapa.set(chave, (mapa.get(chave) ?? 0) + t.valorDocumentoCents);
       }
@@ -599,6 +606,7 @@ export function insumosDoContexto(
   const movimentoPorCategoria = new Map<string, { receberCents: number; pagarCents: number }>();
   for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
+      if (!fica(t)) continue;
       const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
       const m = movimentoPorCategoria.get(chave) ?? { receberCents: 0, pagarCents: 0 };
       if (natureza === "RECEBER") m.receberCents += Math.abs(t.valorDocumentoCents);
@@ -618,7 +626,7 @@ export function insumosDoContexto(
     for (const b of ctx.baixas) {
       if (!dentro(b.dataBaixa, periodo)) continue;
       const t = porTitulo.get(b.tituloId);
-      if (!t || t.cancelado) continue;
+      if (!t || t.cancelado || !fica(t)) continue;
       const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
       const lista = titulosPorCategoria.get(chave) ?? [];
       lista.push({
@@ -635,7 +643,7 @@ export function insumosDoContexto(
   } else {
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
-      if (!dentro(dataDeCompetencia(t), periodo)) continue;
+      if (!dentro(dataDeCompetencia(t), periodo) || !fica(t)) continue;
       const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
       const lista = titulosPorCategoria.get(chave) ?? [];
       lista.push({

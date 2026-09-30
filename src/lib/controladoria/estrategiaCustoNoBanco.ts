@@ -47,7 +47,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
          AND t.natureza = 'PAGAR'
          AND ${competenciaSql("t")} >= ${primeiroMes}
          AND ${competenciaSql("t")} <= ${fim}
-         ${filtroConexaoTitulo(escopo.conexaoId)}
+         ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
          ${naJanela(escopo.janela)}
        GROUP BY 1, 2
     `,
@@ -61,7 +61,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
          AND t.natureza = 'RECEBER'
          AND ${competenciaSql("t")} >= ${primeiroMes}
          AND ${competenciaSql("t")} <= ${fim}
-         ${filtroConexaoTitulo(escopo.conexaoId)}
+         ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
          ${naJanela(escopo.janela)}
        GROUP BY 1, 2
     `,

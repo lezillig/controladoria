@@ -454,5 +454,22 @@ console.log("\n15. Visão anual — mês a mês e total do ano");
     linha("RECEITA_BRUTA").porMes[5], junho.linhas.find((l) => l.chave === "RECEITA_BRUTA")?.valorCents);
 }
 
+console.log("\n17. Operação entre as empresas do grupo — eliminada só na visão do grupo");
+{
+  // A MCZ fatura a Azul: no grupo não é receita, na MCZ é. A raiz do CNPJ
+  // decide (qualquer filial), e CPF com os mesmos oito dígitos não é empresa.
+  const cliente = (documento: string | null, reais: number) =>
+    ({ ...tit("RECEBER", "1", reais), parceiroDocumento: documento }) as unknown as ContextoAuditoria["titulos"][number];
+  const titulos = [cliente("11111111000191", 45_000), cliente("11111111000272", 20_000), cliente("11111111099", 7_000),
+    cliente("99999999000100", 100_000), cliente(null, 3_000)];
+  const cats = [cat("1", "Clientes - Serviços Prestados", true)];
+  const receita = (c: ContextoAuditoria) =>
+    montarDre(c, MES, ANT, cls({})).linhas.find((l) => l.chave === "RECEITA_BRUTA")?.valorCents;
+  const grupo = { ...ctx(titulos, cats), raizesCnpjDoGrupo: ["11111111"] } as ContextoAuditoria;
+  conferir("grupo: sem os R$ 65 mil da Azul", receita(grupo), (7_000 + 100_000 + 3_000) * 100);
+  conferir("uma empresa: tudo fica", receita({ ...grupo, conexaoId: "x" }), (45_000 + 20_000 + 7_000 + 100_000 + 3_000) * 100);
+  conferir("sem raiz cadastrada, nada é eliminado", receita(ctx(titulos, cats)), (45_000 + 20_000 + 7_000 + 100_000 + 3_000) * 100);
+}
+
 console.log(falhas === 0 ? "\nTodos os testes passaram.\n" : `\n${falhas} FALHA(S).\n`);
 process.exit(falhas === 0 ? 0 : 1);

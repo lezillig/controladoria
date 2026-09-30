@@ -90,6 +90,12 @@ export type ContextoAuditoria = {
   // detalhamento (que soma sem corte). Opcional porque só o saldo o usa, e os
   // contextos montados à mão nos testes não precisam declarar.
   movimentoAntesDaJanelaCents?: Map<string, number>;
+  // RAÍZES DE CNPJ DAS EMPRESAS DO GRUPO (8 dígitos), de toda conexão da
+  // instalação — ativa ou não. É o que identifica a operação entre as
+  // empresas, eliminada dos números de resultado na visão do grupo (ver
+  // intercompany.ts). Opcional: contexto montado à mão nos testes sem ela não
+  // elimina nada, que é o comportamento de antes.
+  raizesCnpjDoGrupo?: string[];
   notas: OmieNota[];
   parceiros: OmieParceiro[];
   categorias: OmieCategoria[];

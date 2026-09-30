@@ -902,7 +902,7 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
          AND t.cancelado = false
          AND ${competenciaSql("t")} >= ${inicio}
          AND ${competenciaSql("t")} <= ${fim}
-         ${filtroConexaoTitulo(conexaoId)}
+         ${filtroConexaoTitulo(conexaoId, companyId)}
          ${naJanela(escopo.janela)}
        GROUP BY 1, 2
     `,
