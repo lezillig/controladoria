@@ -2,7 +2,7 @@ import type { OmieContrato, OmieTitulo } from "@prisma/client";
 import { contratoAtivo, contratoInativo, contratoMensal, PERIODICIDADE_CONTRATO } from "@/lib/omie/mapping";
 import type { VersaoContrato } from "@/lib/omie/types";
 import { fmtBRL, fmtData } from "../format";
-import { diasEntre, fimDoMes, inicioDoMes } from "../periodos";
+import { diasEntre, fimDoMes, inicioDoDia, inicioDoMes } from "../periodos";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import {
   chaveAchado,
@@ -206,7 +206,10 @@ function mesesAvaliados(ctx: ContextoAuditoria, c: OmieContrato): { inicio: Date
 function contratoDeveOMes(c: OmieContrato, mes: { inicio: Date; fim: Date }): boolean {
   if (!contratoAtivo(c.situacao) || !contratoMensal(c.periodicidade) || c.valorMensalCents <= 0) return false;
   if (c.vigenciaInicio !== null && c.vigenciaInicio > mes.inicio) return false;
-  if (c.vigenciaFim !== null && c.vigenciaFim < mes.fim) return false;
+  // Pelo DIA, não pelo instante: a vigência vem à meia-noite do último dia e
+  // `mes.fim` é 23:59:59 desse mesmo dia. Comparando instantes, contrato até
+  // 31/07 "terminava antes de julho acabar" e o último mês nunca era cobrado.
+  if (c.vigenciaFim !== null && c.vigenciaFim < inicioDoDia(mes.fim)) return false;
   return true;
 }
 

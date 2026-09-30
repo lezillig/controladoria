@@ -288,6 +288,22 @@ console.log("\nCR-CONTRATO-SEM-FATURAMENTO — contrato ativo, mês sem título"
   conferir("contrato que começou no meio de julho não deve julho", rodar(ctx, "CR-CONTRATO-SEM-FATURAMENTO").map((a) => a.chave), ["CR-CONTRATO-SEM-FATURAMENTO|AZUL|C1|2026-08"]);
 }
 {
+  // Vigência até 31/07: a data vem da Omie à meia-noite do dia, e o fim do
+  // mês é 23:59:59 do mesmo dia. Comparar os dois instantes dizia que o
+  // contrato "terminou antes do fim de julho" — e o último mês de todo
+  // contrato nunca era cobrado, justamente o mês em que o cliente já está de
+  // saída e o faturamento esquecido não volta.
+  const ctx = contexto({ contratos: [contrato({ vigenciaFim: d("2026-07-31") })], titulos: [eloDeFundo()] });
+  conferir("contrato que vai até 31/07 deve julho (e não agosto)", rodar(ctx, "CR-CONTRATO-SEM-FATURAMENTO").map((a) => a.chave), ["CR-CONTRATO-SEM-FATURAMENTO|AZUL|C1|2026-07"]);
+  const aMenor = contexto({
+    contratos: [contrato({ vigenciaFim: d("2026-07-31") })],
+    titulos: [titulo({ contratoCodigo: "C1", dataEmissao: d("2026-07-12"), valorDocumentoCents: 40_000_00 })],
+  });
+  conferir("e o faturado a menor no último mês também aparece", rodar(aMenor, "CR-CONTRATO-FATURADO-A-MENOR").length, 1);
+  const ateDia30 = contexto({ contratos: [contrato({ vigenciaFim: d("2026-07-30") })], titulos: [eloDeFundo()] });
+  conferir("vigência até 30/07 não cobre julho inteiro", rodar(ateDia30, "CR-CONTRATO-SEM-FATURAMENTO").length, 0);
+}
+{
   conferir("trimestral fica de fora", rodar(contexto({ contratos: [contrato({ periodicidade: "03" })], titulos: [eloDeFundo()] }), "CR-CONTRATO-SEM-FATURAMENTO").length, 0);
   conferir("suspenso fica de fora", rodar(contexto({ contratos: [contrato({ situacao: "90" })], titulos: [eloDeFundo()] }), "CR-CONTRATO-SEM-FATURAMENTO").length, 0);
   conferir("sem valor mensal fica de fora", rodar(contexto({ contratos: [contrato({ valorMensalCents: 0 })], titulos: [eloDeFundo()] }), "CR-CONTRATO-SEM-FATURAMENTO").length, 0);
