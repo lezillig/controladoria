@@ -347,7 +347,9 @@ export default function Operacao({ entrada, alterar, podeEditar }: { entrada: En
                           vazioPermitido={campo === "diasMes"}
                           rotulo={`${ROTULO_CAMPO_ROTA[campo as string] ?? campo} — ${r.nome}`}
                           desativado={!podeEditar}
-                          aoMudar={(v) => (v === null && campo !== "diasMes") || (v !== null && v < 0) ? undefined : mudarRota(k, campo, v)}
+                          // Dias por mês é inteiro (coluna Int, e o campo mostra 0 casas):
+                          // "21,5" aparecia como 22 e a conta usava 21,5.
+                          aoMudar={(v) => (v === null && campo !== "diasMes") || (v !== null && v < 0) ? undefined : mudarRota(k, campo, campo === "diasMes" && v !== null ? Math.round(v) : v)}
                         />
                       </td>
                     ))}

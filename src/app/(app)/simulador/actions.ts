@@ -17,7 +17,7 @@ import {
   TIPOS_SERVICO,
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
-import { lerNumero } from "@/lib/simulador/numeros";
+import { lerDataHoraDeBrasilia, lerInteiro, lerNumero } from "@/lib/simulador/numeros";
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
@@ -35,6 +35,10 @@ const texto = (f: FormData, k: string, max = 300) => {
 const numero = (f: FormData, k: string) => {
   const v = texto(f, k);
   return v === null ? null : lerNumero(v);
+};
+const inteiro = (f: FormData, k: string) => {
+  const v = texto(f, k);
+  return v === null ? null : lerInteiro(v);
 };
 const UNIDADES: UnidadePreco[] = ["KM", "VEICULO_MES", "DIARIA", "HORA", "BINOMIA"];
 
@@ -55,10 +59,12 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   const tiposVeiculo = [...new Set(formData.getAll("tiposVeiculo").map(String))].filter((t): t is TipoVeiculo => (TIPOS_VEICULO as string[]).includes(t));
   // Número digitado por extenso ("doze") ou fora de faixa não vira padrão
   // calado: volta como erro para a pessoa corrigir.
-  for (const [campo, rotulo, max] of [["vigenciaMeses", "Vigência", 240], ["prazoPagamentoDias", "Prazo de pagamento", 365], ["valorTotalMaximo", "Valor total máximo", 1e12], ["avisoRescisaoDias", "Aviso para rescisão", 365]] as const) {
+  // Vigência, prazo e aviso são colunas Int: fracionário é recusado, e não
+  // truncado calado pelo Prisma (ver lerInteiro).
+  for (const [campo, rotulo, max, soInteiro] of [["vigenciaMeses", "Vigência", 240, true], ["prazoPagamentoDias", "Prazo de pagamento", 365, true], ["valorTotalMaximo", "Valor total máximo", 1e12, false], ["avisoRescisaoDias", "Aviso para rescisão", 365, true]] as const) {
     const bruto = texto(formData, campo);
-    const n = numero(formData, campo);
-    if (bruto !== null && (n === null || n < 0 || n > max)) return { erro: `${rotulo}: informe um número válido.` };
+    const n = soInteiro ? inteiro(formData, campo) : numero(formData, campo);
+    if (bruto !== null && (n === null || n < 0 || n > max)) return { erro: `${rotulo}: informe um número ${soInteiro ? "inteiro " : ""}válido.` };
   }
   const id = await criarEstudoNoBanco(
     session.companyId,
@@ -139,12 +145,15 @@ export async function registrarLance(estudoId: string, formData: FormData): Prom
   if (preco === null || preco <= 0) return { erro: "Informe o preço lançado." };
   const itens = String(formData.get("itens") ?? "").split(",").filter(Boolean);
   const quando = texto(formData, "dataHora");
+  // O campo datetime-local chega sem fuso: é hora de Brasília (lerDataHoraDeBrasilia).
+  const dataHora = quando ? lerDataHoraDeBrasilia(quando) : new Date();
+  if (!dataHora) return { erro: "Data e hora do lance inválidas." };
   const r = await registrarLanceNoBanco(
     session.companyId,
     estudoId,
     {
       fase,
-      dataHora: quando ? new Date(quando) : new Date(),
+      dataHora,
       precos: (itens.length > 0 ? itens : ["lote"]).map((item) => ({ item, preco })),
       valorTotal: numero(formData, "valorTotal"),
       observacao: texto(formData, "observacao", 500),
@@ -162,9 +171,12 @@ export async function registrarResultado(estudoId: string, formData: FormData): 
   const status = texto(formData, "status") ?? "EM_ESTUDO";
   if (!(STATUS_ESTUDO as readonly string[]).includes(status)) return { erro: "Situação inválida." };
   const data = texto(formData, "data");
+  // Posição é Int no banco: "1,5" era gravada como 1 sem aviso.
+  const posicao = inteiro(formData, "posicao");
+  if (texto(formData, "posicao") !== null && (posicao === null || posicao < 1 || posicao > 10_000)) return { erro: "Posição: informe um número inteiro (1, 2, 3…)." };
   const r = await registrarResultadoNoBanco(session.companyId, estudoId, {
     status,
-    posicao: numero(formData, "posicao"),
+    posicao,
     vencedor: texto(formData, "vencedor", 200),
     precoKm: numero(formData, "precoVencedor"),
     valorTotal: numero(formData, "valorTotal"),

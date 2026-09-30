@@ -162,6 +162,43 @@ async function principal() {
   const recusa = await estudos.gravarRealizado("outra-empresa", sjp.id, { competencia: "2027-02", kmRealizado: 1 }, "x", null);
   ok("outra empresa não grava no estudo", Boolean(recusa.erro));
 
+  // Regressão: a versão do lance vinha do formulário sem conferência — id
+  // inexistente estourava a chave estrangeira; id de outro estudo (ou de
+  // outra empresa) era aceito e ligado ao lance.
+  const lanceBase = { fase: "LANCE", dataHora: new Date(), precos: [{ item: "lote", preco: 9.3 }], valorTotal: null, observacao: null };
+  const semVersao = await estudos.registrarLance(EMPRESA, sjp.id, { ...lanceBase, simulacaoId: "nao-existe" }, "teste");
+  ok("lance com versão inexistente é recusado sem exceção", "erro" in semVersao, JSON.stringify(semVersao));
+  const binomia = await estudos.salvarVersao(
+    EMPRESA,
+    novoId,
+    { entrada: { ...ini.entrada, rotas: historicoSaoJoseDosPinhais().entrada.rotas.map((r) => ({ ...r, item: ini.entrada.itens[0].codigo, perfilVeiculo: null })) }, origem: {}, status: "RASCUNHO", observacoes: null, baseEm: null },
+    "teste"
+  );
+  ok("versão do estudo binômio salva", Boolean(binomia.id), JSON.stringify(binomia.erro));
+  const deOutroEstudo = await estudos.registrarLance(EMPRESA, sjp.id, { ...lanceBase, simulacaoId: binomia.id! }, "teste");
+  ok("lance com versão de outro estudo é recusado", "erro" in deOutroEstudo, JSON.stringify(deOutroEstudo));
+  const dataRuim = await estudos.registrarLance(EMPRESA, sjp.id, { ...lanceBase, dataHora: new Date("não é data"), simulacaoId: null }, "teste");
+  ok("lance com data inválida é recusado sem exceção", "erro" in dataRuim, JSON.stringify(dataRuim));
+  conferir("… e nenhum desses lances foi gravado", await prisma.simLance.count({ where: { estudoId: sjp.id } }), 1);
+  // Regressão: o preço do resumo da versão (binômia por item) era faturamento
+  // ÷ km — o faturamento inteiro por km — enquanto o editor mostra a parcela por km.
+  const gravada = await prisma.simSimulacao.findUniqueOrThrow({ where: { id: binomia.id! } });
+  const { precoDoConjunto } = await import("../src/lib/simulador/decisao");
+  const r = binomia.resultado!;
+  ok(
+    "binômia: preço do resumo é o do editor (parcela por km), não faturamento ÷ km",
+    Math.abs(Number(gravada.precoKm) - precoDoConjunto(r)) < 1e-6 && Math.abs(Number(gravada.precoKm) - r.totais.faturamento / r.totais.kmUtil) > 0.5,
+    `${gravada.precoKm} × ${precoDoConjunto(r)}`
+  );
+  // Regressão: diasMes 21,5 era aceito e truncado para 21 na definição.
+  const diasFrac = await estudos.salvarVersao(
+    EMPRESA,
+    sjp.id,
+    { entrada: { ...entrada2, rotas: entrada2.rotas.map((x, k) => (k === 0 ? { ...x, diasMes: 21.5 } : x)) }, origem: {}, status: "RASCUNHO", observacoes: null, baseEm: null },
+    "teste"
+  );
+  ok("dias por mês fracionário é recusado ao salvar", Boolean(diasFrac.erro), JSON.stringify(diasFrac.erro ?? diasFrac.versao));
+
   console.log("\nEXPORTAR — versão salva e rascunho, sem gravar nada");
   const { exportarEstudo } = await import("../src/lib/simulador/exportacaoEstudo");
   const versoesAntes = await prisma.simSimulacao.count({ where: { estudoId: sjp.id } });

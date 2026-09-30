@@ -1,6 +1,7 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { simular, VERSAO_MOTOR } from "./motor";
+import { precoDoConjunto } from "./decisao";
 import { baseVigente, paraNumero, type BaseVigente } from "./baseDeCustos";
 import { PERFIS_PADRAO, perfisDaBase, premissasDaBase, problemasNasPremissas, type MapaOrigem } from "./premissas";
 import { simulacoesHistoricas, FONTE_HISTORICO } from "./historico";
@@ -304,10 +305,44 @@ function numerosFinitos(obj: unknown): boolean {
   return Object.values(obj as Record<string, unknown>).every(numerosFinitos);
 }
 
+// Campos numéricos da rota: obrigatórios (número ≥ 0) e opcionais (nulo ou
+// número ≥ 0). `numerosFinitos` só olha o que já é número — um texto no lugar
+// de um número passava por ele e virava NaN no motor e erro do Prisma ao
+// gravar a definição corrente.
+const CAMPOS_ROTA_OBRIGATORIOS = ["kmReferencia", "kmDia", "kmTerraDia", "veiculos", "motoristas", "monitoras", "passagensPedagioMes", "tarifaPedagio"] as const;
+const CAMPOS_ROTA_OPCIONAIS = ["diasMes", "horasDia", "viagensDia"] as const;
+const UNIDADES_PRECO: UnidadePreco[] = ["KM", "VEICULO_MES", "DIARIA", "HORA", "BINOMIA"];
+const numeroValido = (v: unknown) => typeof v === "number" && Number.isFinite(v) && v >= 0;
+const opcionalValido = (v: unknown) => v === null || v === undefined || numeroValido(v);
+
 export function validarEntrada(entrada: EntradaSimulacao): string | null {
   if (!entrada || !Array.isArray(entrada.itens) || !Array.isArray(entrada.rotas) || !entrada.premissas) return "Simulação incompleta.";
   if (entrada.itens.length > 100 || entrada.rotas.length > 1000 || (entrada.premissas.perfis?.length ?? 0) > 40) return "Simulação grande demais (máx. 100 itens, 1.000 rotas, 40 perfis).";
   if (!numerosFinitos(entrada)) return "Há um número inválido nas premissas, itens ou rotas.";
+  // Critério e unidade vão direto para o motor e para SimEstudo: uma unidade
+  // desconhecida fazia o faturamento sair NaN e a gravação estourar no banco.
+  if (entrada.criterio !== "ITEM" && entrada.criterio !== "LOTE") return "Critério de julgamento inválido (ITEM ou LOTE).";
+  if (entrada.unidadePreco !== undefined && entrada.unidadePreco !== null && !UNIDADES_PRECO.includes(entrada.unidadePreco)) return "Unidade de preço inválida.";
+  const itemRuim = entrada.itens.find(
+    (i) => !i || typeof i.codigo !== "string" || i.codigo.trim() === "" || typeof i.descricao !== "string" || !numeroValido(i.shareIntermunicipal) || i.shareIntermunicipal > 1 || !opcionalValido(i.precoMaximoKm) || !opcionalValido(i.precoReferenciaKm)
+  );
+  if (itemRuim) return `O item "${String(itemRuim?.codigo ?? "")}" tem código, descrição, parcela intermunicipal ou preço inválidos.`;
+  const rotaRuim = entrada.rotas.find(
+    (r) =>
+      !r ||
+      typeof r.item !== "string" ||
+      typeof r.nome !== "string" ||
+      typeof r.noturno !== "boolean" ||
+      (r.periodos !== null && r.periodos !== undefined && typeof r.periodos !== "string") ||
+      CAMPOS_ROTA_OBRIGATORIOS.some((k) => !numeroValido(r[k])) ||
+      CAMPOS_ROTA_OPCIONAIS.some((k) => !opcionalValido(r[k]))
+  );
+  if (rotaRuim) return `A rota "${String(rotaRuim?.nome ?? "")}" tem um campo inválido (km, veículos, equipe, dias, horas, pedágio, noturno ou períodos).`;
+  // SimRota.diasMes é inteiro no banco: 21,5 era truncado para 21 na definição
+  // corrente enquanto o snapshot da versão guardava 21,5 — reabrir o estudo
+  // dava outra conta que a da versão salva.
+  const diasRuins = entrada.rotas.find((r) => r.diasMes !== null && r.diasMes !== undefined && (!Number.isInteger(r.diasMes) || r.diasMes > 31));
+  if (diasRuins) return `A rota "${diasRuins.nome}" tem ${diasRuins.diasMes} dias por mês: informe um número inteiro de 0 a 31.`;
   const problemas = problemasNasPremissas(entrada.premissas);
   if (problemas.length > 0) return problemas[0];
   if (entrada.itens.length === 0) return "O estudo precisa de ao menos um item.";
@@ -336,10 +371,16 @@ export async function salvarVersao(
   if (problema) return { erro: problema };
   const resultado = simular(dados.entrada);
   const { entrada } = dados;
+  // O preço do resumo é o mesmo do topo do editor e do painel de decisão
+  // (precoDoConjunto): a média de precoUnidade ponderada pela quantidade. A
+  // conta antiga (faturamento ÷ quantidade) dava, na binômia, o faturamento
+  // inteiro por km (R$ 9,31) onde a tela mostrava a parcela por km (R$ 2,38);
+  // e o Math.max(1, …) dividia por 1 quando a quantidade era menor que 1.
+  const quantidade = resultado.itens.reduce((a, i) => a + i.quantidadeUnidade, 0);
   const principal = resultado.lote
     ? { preco: resultado.lote.precoPropostaUnidade, margem: resultado.lote.margemAoPrecoProposta, lucro: resultado.lote.lucroAoPrecoProposta, fat: resultado.lote.faturamentoAoPrecoProposta }
     : {
-        preco: resultado.totais.kmUtil > 0 ? resultado.totais.faturamento / Math.max(1, resultado.itens.reduce((a, i) => a + i.quantidadeUnidade, 0)) : null,
+        preco: quantidade > 0 ? precoDoConjunto(resultado) : null,
         margem: resultado.totais.margem,
         lucro: resultado.totais.lucro,
         fat: resultado.totais.faturamento,
@@ -494,6 +535,14 @@ export async function registrarLance(
 ) {
   const estudo = await prisma.simEstudo.findFirst({ where: { id: estudoId, companyId }, select: { id: true } });
   if (!estudo) return { erro: "Estudo não encontrado." };
+  if (Number.isNaN(dados.dataHora.getTime())) return { erro: "Data e hora do lance inválidas." };
+  // A versão vem do formulário: tem de ser uma versão DESTE estudo. Sem a
+  // conferência, um id qualquer estourava a chave estrangeira (erro cru na
+  // tela) e o id de uma versão de outra empresa era aceito e ligado ao lance.
+  if (dados.simulacaoId) {
+    const versao = await prisma.simSimulacao.findFirst({ where: { id: dados.simulacaoId, estudoId }, select: { id: true } });
+    if (!versao) return { erro: "Versão da simulação não encontrada neste estudo." };
+  }
   await prisma.simLance.create({
     data: {
       estudoId,

@@ -11,6 +11,9 @@ import esperado from "../src/lib/simulador/historico/casos_de_teste_esperados.js
 import { historicoHolambra, historicoSaoJoseDosPinhais } from "../src/lib/simulador/historico";
 import { arredondarParaCima, custoDeCapital, simular } from "../src/lib/simulador/motor";
 import { PERFIS_PADRAO } from "../src/lib/simulador/premissas";
+// validarEntrada é pura (estudos.ts só toca o banco nas outras funções).
+import { validarEntrada } from "../src/lib/simulador/estudos";
+import type { EntradaSimulacao } from "../src/lib/simulador/tipos";
 
 let falhas = 0;
 function ok(nome: string, passou: boolean, detalhe = "") {
@@ -387,6 +390,33 @@ console.log("\nREVISÃO DE PRECIFICAÇÃO — adicional noturno, locação sem m
   // N(u) = capital próprio × meses + contingência × custo direto(u); custo direto = custo total ÷ 1,10.
   const n85 = real.itens.reduce((a, i) => a + i.remuneracaoCapitalProprio, 0) + (0.03 * linha85.custoTotal) / 1.1;
   perto("cenário 85%: lucro = lucro antes do IR − 34% × (lucro antes do IR + N(u))", linha85.lucro, lair85 - 0.34 * (lair85 + n85), "total");
+}
+
+console.log("\nVALIDAÇÃO DA ENTRADA — o que chega do navegador antes do motor e do banco");
+{
+  // Regressões: unidade de preço desconhecida fazia o faturamento sair NaN e
+  // a gravação estourar no Prisma; texto no lugar de número passava por
+  // numerosFinitos; diasMes 21,5 era truncado para 21 na definição corrente
+  // (SimRota.diasMes é Int) e reabrir o estudo dava outra conta.
+  const base = historicoSaoJoseDosPinhais().entrada;
+  const variar = (mudar: (e: EntradaSimulacao) => void) => {
+    const e = structuredClone(base);
+    mudar(e);
+    return validarEntrada(e);
+  };
+  conferir("SJP válida", validarEntrada(base), null);
+  conferir("Holambra válida", validarEntrada(historicoHolambra().entrada), null);
+  const semNaN = simular({ ...structuredClone(base), unidadePreco: "XYZ" as never }).totais.faturamento;
+  ok("unidade desconhecida dava faturamento NaN no motor…", Number.isNaN(semNaN), String(semNaN));
+  ok("… e é recusada", variar((e) => (e.unidadePreco = "XYZ" as never)) !== null);
+  ok("critério desconhecido é recusado", variar((e) => (e.criterio = "GLOBAL" as never)) !== null);
+  ok("km/dia em texto é recusado", variar((e) => (e.rotas[0].kmDia = "100" as never)) !== null);
+  ok("pedágio negativo é recusado", variar((e) => (e.rotas[0].tarifaPedagio = -1)) !== null);
+  ok("noturno fora de sim/não é recusado", variar((e) => (e.rotas[0].noturno = "S" as never)) !== null);
+  ok("dias por mês fracionário é recusado", variar((e) => (e.rotas[0].diasMes = 21.5)) !== null);
+  ok("dias por mês acima de 31 é recusado", variar((e) => (e.rotas[0].diasMes = 40)) !== null);
+  conferir("dias por mês vazio continua válido", variar((e) => (e.rotas[0].diasMes = null)), null);
+  ok("parcela intermunicipal acima de 100% é recusada", variar((e) => (e.itens[0].shareIntermunicipal = 1.5)) !== null);
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

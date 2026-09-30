@@ -12,3 +12,28 @@ export function lerNumero(texto: string): number | null {
   const n = Number(normalizado);
   return Number.isFinite(n) ? n : null;
 }
+
+// Inteiro digitado (vigência em meses, prazo em dias, posição na disputa):
+// as colunas são Int no banco, e o Prisma TRUNCA o decimal sem avisar —
+// "12,5" meses virava 12 e a posição "1,5" virava 1. Fracionário é recusado
+// (null), para a ação devolver o erro em vez de gravar outro número.
+export function lerInteiro(texto: string): number | null {
+  const n = lerNumero(texto);
+  return n !== null && Number.isInteger(n) ? n : null;
+}
+
+// DATA E HORA DIGITADAS NUM <input type="datetime-local"> ("2026-09-30T10:00"),
+// que não traz fuso. `new Date(texto)` lia no fuso do SERVIDOR (UTC na
+// Vercel): o lance das 10h de Brasília era gravado às 10h UTC e aparecia às
+// 7h na tela. Aqui o texto é lido como hora de Brasília (−03:00 fixo, sem
+// horário de verão desde 2019, como `dataReferenciaPadrao`). Texto que não é
+// data e hora válida → null.
+export function lerDataHoraDeBrasilia(texto: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(texto.trim());
+  if (!m) return null;
+  const d = new Date(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6] ?? "00"}-03:00`);
+  if (Number.isNaN(d.getTime())) return null;
+  // "2026-02-30T10:00" pode rolar para março: o dia lido tem de ser o digitado.
+  const deVolta = new Date(d.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 16);
+  return deVolta === `${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}` ? d : null;
+}
