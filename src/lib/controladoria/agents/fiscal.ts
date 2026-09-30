@@ -383,7 +383,10 @@ function notaCanceladaComTitulo(ctx: ContextoAuditoria, materialidade: number): 
       entidadeId: nota.id,
       entidadeRef: `Nota ${nota.numero}`,
       evidencia: { nota: nota.numero, tipo: nota.tipo, titulos: titulos.map((t) => t.codigoLancamento), valor },
-      chave: chaveAchado("FI-NOTA-CANCELADA", nota.chave),
+      // Com a empresa: `nota.chave` é "NFSE:251:1", igual na Azul e na MCZ. As
+      // duas canceladas ao mesmo tempo davam a mesma chave, e o motor grava
+      // uma linha por chave — a outra sumia da fila.
+      chave: chaveAchado("FI-NOTA-CANCELADA", nota.conexaoApelido, nota.chave),
     });
   }
   return achados;
@@ -751,10 +754,17 @@ function nfeDeVendaDeMercadoria(ctx: ContextoAuditoria, materialidade: number): 
 function falhaNaSequencia(ctx: ContextoAuditoria): AchadoNovo[] {
   const inicio = inicioDoMes(new Date(ctx.dataReferencia.getFullYear(), ctx.dataReferencia.getMonth() - 1, 1));
   const recentes = ctx.notas.filter((n) => n.dataEmissao >= inicio && n.numero !== null);
-  const porSerie = agrupar(recentes, (n) => `${n.tipo}:${n.serie ?? "-"}`);
+  // A sequência é do EMITENTE: a NFS-e 1200 da Azul e a 400 da MCZ são
+  // numerações diferentes. Agrupar só por tipo e série juntava as duas — com
+  // faixas distantes, o "buraco" entre elas passava de 50 e a regra se calava
+  // para as duas; com faixas sobrepostas, a nota de uma tapava o buraco da
+  // outra.
+  const porSerie = agrupar(recentes, (n) => `${n.conexaoApelido}|${n.tipo}:${n.serie ?? "-"}`);
 
   const achados: AchadoNovo[] = [];
-  for (const [serie, grupo] of porSerie) {
+  for (const [chaveDaSerie, grupo] of porSerie) {
+    const empresa = grupo[0].conexaoApelido;
+    const serie = chaveDaSerie.slice(empresa.length + 1);
     const numeros = grupo
       .map((n) => Number(n.numero))
       .filter((n) => Number.isFinite(n))
@@ -778,17 +788,17 @@ function falhaNaSequencia(ctx: ContextoAuditoria): AchadoNovo[] {
       tipo: "ESTADO",
       severidade: "BAIXA",
       categoria: "CONFORMIDADE",
-      titulo: `${faltantes.length} número(s) faltando na sequência de notas (${serie})`,
+      titulo: `${faltantes.length} número(s) faltando na sequência de notas (${serie}, ${empresa})`,
       descricao:
-        `Na série ${serie}, os números ${faltantes.slice(0, 10).join(", ")}${
+        `Na série ${serie} de ${empresa}, os números ${faltantes.slice(0, 10).join(", ")}${
           faltantes.length > 10 ? "..." : ""
         } não aparecem entre ${numeros[0]} e ${numeros[numeros.length - 1]}, e não constam como cancelados na base.`,
       recomendacao:
         "Verificar na Omie/SEFAZ se são notas inutilizadas, denegadas ou canceladas fora do sistema. " +
         "Toda nota da sequência precisa ter destino documentado — é item padrão de fiscalização.",
       dataReferencia: ctx.dataReferencia,
-      evidencia: { serie, faltantes: faltantes.slice(0, 50), de: numeros[0], ate: numeros[numeros.length - 1] },
-      chave: chaveAchado("FI-SEQUENCIA", serie, chaveMes(ctx.dataReferencia)),
+      evidencia: { empresa, serie, faltantes: faltantes.slice(0, 50), de: numeros[0], ate: numeros[numeros.length - 1] },
+      chave: chaveAchado("FI-SEQUENCIA", empresa, serie, chaveMes(ctx.dataReferencia)),
     });
   }
   return achados;

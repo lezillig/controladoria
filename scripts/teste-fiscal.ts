@@ -335,6 +335,43 @@ const guiaAbril = (valor: number) =>
     conferir("NF-e sem itens fica sem CFOP", normalizarNfe({ ide: { nNF: "78", dEmi: "03/05/2026" }, total: { ICMSTot: { vNF: 1 } } })?.cfop, null);
   }
 
+  console.log("\n4. Duas empresas, duas numerações");
+  {
+    // FI-SEQUENCIA juntava as notas das duas contas pela série: a Azul em
+    // 1200–1210 (faltando a 1205) e a MCZ em 400–405 viravam uma sequência só,
+    // com um "buraco" de 406 a 1199 — acima de 50, a regra se calava.
+    const mcz = { conexaoId: "y", conexaoApelido: "MCZ" };
+    const azul = [1200, 1201, 1202, 1203, 1204, 1206, 1207, 1208, 1209, 1210].map((n) =>
+      nota({ numero: String(n), chave: `NFSE:${n}:NFSE`, dataEmissao: d("2026-08-10") })
+    );
+    const daMcz = [400, 401, 402, 403, 404, 405].map((n) => nota({ ...mcz, numero: String(n), chave: `NFSE:${n}:NFSE`, dataEmissao: d("2026-08-10") }));
+    const r = await rodar(contexto({ titulos: fundo(), notas: [...azul, ...daMcz] }), "FI-SEQUENCIA");
+    conferir("a 1205 da Azul aparece, mesmo com a MCZ na mesma série", r.map((a) => (a.evidencia as { faltantes: number[] }).faltantes), [[1205]]);
+    conferir("chave com a empresa", r[0]?.chave, "FI-SEQUENCIA|AZUL|NFSE:NFSE|2026-09");
+    // Faixas sobrepostas: a 105 da MCZ tapava o buraco da 105 da Azul.
+    const azul2 = [100, 101, 102, 103, 104, 106, 107].map((n) => nota({ numero: String(n), chave: `NFSE:${n}:NFSE`, dataEmissao: d("2026-08-10") }));
+    const mcz2 = [100, 101, 102, 103, 104, 105, 106, 107].map((n) => nota({ ...mcz, numero: String(n), chave: `NFSE:${n}:NFSE`, dataEmissao: d("2026-08-10") }));
+    const r2 = await rodar(contexto({ titulos: fundo(), notas: [...azul2, ...mcz2] }), "FI-SEQUENCIA");
+    conferir("a nota de uma empresa não tapa o buraco da outra", r2.map((a) => a.chave), ["FI-SEQUENCIA|AZUL|NFSE:NFSE|2026-09"]);
+  }
+  {
+    // FI-NOTA-CANCELADA: a NFS-e 251 cancelada na Azul E na MCZ, cada uma com
+    // o seu título vivo. `nota.chave` ("NFSE:251:NFSE") é igual nas duas
+    // contas, e o motor grava uma linha por chave — a segunda sumia.
+    const mcz = { conexaoId: "y", conexaoApelido: "MCZ" };
+    const aReceber = { natureza: "RECEBER" as const, liquidado: false, status: "ABERTO", numeroDocumento: "251", valorDocumentoCents: 30_000_00, valorPagoCents: 0 };
+    const ctx = contexto({
+      titulos: [...fundo(), titulo(aReceber), titulo({ ...aReceber, ...mcz })],
+      notas: [
+        nota({ numero: "251", chave: "NFSE:251:NFSE", cancelada: true }),
+        nota({ ...mcz, numero: "251", chave: "NFSE:251:NFSE", cancelada: true }),
+      ],
+    });
+    const r = await rodar(ctx, "FI-NOTA-CANCELADA");
+    conferir("duas empresas, dois achados", r.length, 2);
+    conferir("com chaves diferentes", new Set(r.map((a) => a.chave)).size, 2);
+  }
+
   console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTodos os testes passaram.");
   process.exit(falhas ? 1 : 0);
 })();
