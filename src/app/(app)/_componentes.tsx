@@ -29,15 +29,16 @@ export function Kpi({
   }[tom];
 
   return (
-    <div className={cardClass}>
+    <div className={`${cardClass} @container`}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-medium text-slate-500">{rotulo}</p>
         {icone && <span className="text-slate-400">{icone}</span>}
       </div>
-      {/* break-words: valores em reais podem estourar a coluna no celular
-          (R$ 1.234.567,89 não cabe em card de 160px) — quebrar é melhor que
-          cortar ou empurrar o layout para o lado. */}
-      <p className={`mt-2 text-2xl font-semibold break-words ${cor}`}>{valor}</p>
+      {/* O NÚMERO NUNCA QUEBRA A LINHA: a fonte acompanha a largura do cartão
+          (container query, cqw) entre 1rem e 1.5rem. Seis cartões lado a lado
+          deixam ~250px para "R$ 3.685.247,87", que em 1.5rem quebrava no meio
+          do número; tabular-nums deixa os dígitos com a mesma largura. */}
+      <p className={`mt-2 whitespace-nowrap text-[clamp(1rem,8.5cqw,1.5rem)] font-semibold leading-tight tabular-nums ${cor}`}>{valor}</p>
       {apoio && <p className="mt-1 text-xs text-slate-500">{apoio}</p>}
     </div>
   );
