@@ -337,6 +337,14 @@ export type Rota = {
   // Praça de pedágio da base (chave): a tarifa por passagem sai dela e da
   // categoria do tipo de veículo da rota. Sem praça, a tarifa é digitada.
   pracaPedagio?: string | null;
+  // Operação do veículo no dia ("06:00" a "18:30"): dá as horas por dia e o
+  // noturno (ver horario.ts). Turnos multiplicam os motoristas da rota.
+  horarioInicio?: string | null;
+  horarioFim?: string | null;
+  turnos?: number | null;
+  // Veículo à disposição do contratante (uso administrativo), e não rota
+  // fixa de passageiros.
+  administrativo?: boolean;
   viagensDia?: number | null;
   periodos?: string | null;
 };

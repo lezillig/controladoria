@@ -1,5 +1,6 @@
 "use client";
 
+import { jornadaDoHorario } from "@/lib/simulador/horario";
 import { codigoLivre, duplicarItem } from "@/lib/simulador/itens";
 import { PERFIS_PADRAO } from "@/lib/simulador/premissas";
 import { tarifaParaPerfil, type PracaPedagio } from "@/lib/simulador/pedagio";
@@ -80,9 +81,18 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
       const r = e.rotas[k];
       (r as unknown as Record<string, unknown>)[campo as string] = valor;
       // Motoristas sugeridos pelo tipo de veículo — ajustáveis depois.
-      if (campo === "perfilVeiculo" || campo === "veiculos") {
+      // Cada turno tem a sua equipe: veículos × fator do tipo × turnos.
+      if (campo === "perfilVeiculo" || campo === "veiculos" || campo === "turnos") {
         const perfil = garantirPerfil(e, r.perfilVeiculo ?? null);
-        if (perfil) r.motoristas = r.veiculos * perfil.motorista.motoristasPorVeiculo;
+        if (perfil) r.motoristas = Math.round(r.veiculos * perfil.motorista.motoristasPorVeiculo * (r.turnos ?? 1) * 100) / 100;
+      }
+      // O horário dá as horas por dia e o noturno (22h às 5h).
+      if (campo === "horarioInicio" || campo === "horarioFim") {
+        const jornada = jornadaDoHorario(r.horarioInicio, r.horarioFim);
+        if (jornada) {
+          r.horasDia = jornada.horas;
+          r.noturno = jornada.noturno;
+        }
       }
       // Tarifa da praça: muda com a categoria do novo tipo de veículo.
       if (campo === "perfilVeiculo" || campo === "pracaPedagio") {
@@ -317,6 +327,10 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
                   <th className={thN}>Veículos</th>
                   <th className={thN}>Motoristas</th>
                   <th className={thN}>Monitores</th>
+                  <th className={th} title="Veículo à disposição do contratante (uso administrativo)">ADM</th>
+                  <th className={thN}>Turnos</th>
+                  <th className={th}>Início</th>
+                  <th className={th}>Fim</th>
                   <th className={th}>Noturno</th>
                   <th className={thN}>Horas/dia</th>
                   <th className={th}>Praça de pedágio</th>
@@ -382,6 +396,30 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
                       </td>
                     ))}
                     <td className={td}>
+                      <input type="checkbox" aria-label={`Veículo à disposição (ADM) — ${r.nome}`} disabled={!podeEditar} checked={r.administrativo === true} onChange={(ev) => mudarRota(k, "administrativo", ev.target.checked)} />
+                    </td>
+                    <td className={`${tdN} w-16`}>
+                      <select aria-label={`Turnos — ${r.nome}`} className={selecao} disabled={!podeEditar} value={r.turnos ?? 1} onChange={(ev) => mudarRota(k, "turnos", Number(ev.target.value))}>
+                        {[1, 2, 3, 4].map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    {(["horarioInicio", "horarioFim"] as const).map((campo) => (
+                      <td key={campo} className={td}>
+                        <input
+                          type="time"
+                          aria-label={`${campo === "horarioInicio" ? "Início" : "Fim"} — ${r.nome}`}
+                          className="rounded-md border border-slate-300 px-1.5 py-1 text-[13px]"
+                          disabled={!podeEditar}
+                          value={r[campo] ?? ""}
+                          onChange={(ev) => mudarRota(k, campo, ev.target.value || null)}
+                        />
+                      </td>
+                    ))}
+                    <td className={td}>
                       <input type="checkbox" aria-label={`Rota noturna — ${r.nome}`} disabled={!podeEditar} checked={r.noturno} onChange={(ev) => mudarRota(k, "noturno", ev.target.checked)} />
                     </td>
                     <td className={`${tdN} w-20`}>
@@ -432,7 +470,7 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
                   <td className={td} colSpan={3} />
                   <td className={tdN}>{num(totais.v)}</td>
                   <td className={tdN}>{num(totais.m, 1)}</td>
-                  <td className={td} colSpan={6} />
+                  <td className={td} colSpan={10} />
                 </tr>
               </tbody>
             </table>

@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { horarioValido, jornadaDoHorario } from "./horario";
 import { prisma } from "@/lib/prisma";
 import { simular, VERSAO_MOTOR } from "./motor";
 import { precoDoConjunto } from "./decisao";
@@ -89,6 +90,12 @@ export type ItemNovo = {
   veiculos?: number | null;
   km?: number | null;
   precoMaximoKm?: number | null;
+  // Proposta privada: como o veículo roda no dia (ver horario.ts).
+  administrativo?: boolean;
+  turnos?: number | null;
+  diasMes?: number | null;
+  horarioInicio?: string | null;
+  horarioFim?: string | null;
 };
 
 // Dias de referência para o km por dia da rota inicial: 22 no mês, 200 no
@@ -101,7 +108,7 @@ const DIAS_ROTA_INICIAL = { MENSAL: 22, PERIODO: 200 } as const;
 export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | "itens" | "tiposVeiculo">) {
   const comMotorista = dados.tipoServico !== "LOCACAO_SM";
   const periodo = dados.tipoServico === "ESCOLAR";
-  const lista = (dados.itens ?? []).filter((i) => i.descricao.trim() !== "" || (i.km ?? 0) > 0).slice(0, 100);
+  const lista = (dados.itens ?? []).filter((i) => i.descricao.trim() !== "" || (i.km ?? 0) > 0 || i.administrativo === true).slice(0, 100);
   if (lista.length === 0) return { itens: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista }], rotas: [] };
   const itens = lista.map((i, k) => ({
     codigo: String(k + 1),
@@ -110,23 +117,36 @@ export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | 
     comMotorista,
     precoMaximoKm: i.precoMaximoKm && i.precoMaximoKm > 0 ? i.precoMaximoKm : null,
   }));
+  // A rota nasce com o km, ou com o veículo à disposição (ADM), ou com o
+  // horário da operação — o resto se ajusta na aba Operação.
   const rotas = lista.flatMap((i, k) => {
-    if (!i.km || i.km <= 0) return [];
+    const jornada = jornadaDoHorario(i.horarioInicio, i.horarioFim);
+    const km = i.km && i.km > 0 ? i.km : 0;
+    if (km === 0 && i.administrativo !== true && !jornada) return [];
     const tipo = i.tipoVeiculo ?? dados.tiposVeiculo?.[0] ?? null;
     const veiculos = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;
+    const turnos = i.turnos && Number.isInteger(i.turnos) && i.turnos >= 1 && i.turnos <= 4 ? i.turnos : 1;
     const fu = PERFIS_PADRAO.find((p) => p.tipo === tipo)?.motorista.motoristasPorVeiculo ?? 1.2;
-    const dias = periodo ? DIAS_ROTA_INICIAL.PERIODO : DIAS_ROTA_INICIAL.MENSAL;
+    const diasMes = i.diasMes && Number.isInteger(i.diasMes) && i.diasMes >= 1 && i.diasMes <= 31 ? i.diasMes : 22;
+    const dias = periodo ? DIAS_ROTA_INICIAL.PERIODO : diasMes;
     return [
       {
         itemCodigo: String(k + 1),
         ordem: k,
         nome: itens[k].descricao,
-        kmReferencia: i.km,
-        kmDia: Math.round((i.km / dias) * 10) / 10,
-        diasMes: 22,
+        kmReferencia: km,
+        kmDia: Math.round((km / dias) * 10) / 10,
+        diasMes,
         veiculos,
-        motoristas: comMotorista ? Math.round(veiculos * fu * 100) / 100 : 0,
+        // Cada turno tem a sua equipe: motoristas = veículos × fator do tipo × turnos.
+        motoristas: comMotorista ? Math.round(veiculos * fu * turnos * 100) / 100 : 0,
         perfilVeiculo: tipo,
+        horasDia: jornada?.horas ?? null,
+        noturno: jornada?.noturno ?? false,
+        horarioInicio: jornada ? i.horarioInicio!.trim() : null,
+        horarioFim: jornada ? i.horarioFim!.trim() : null,
+        turnos,
+        administrativo: i.administrativo === true,
       },
     ];
   });
@@ -141,7 +161,7 @@ export function perfilDasRotasNovas(rotas: Rota[], perfis: PerfilVeiculo[]): Rot
     if (!r.perfilVeiculo || perfis.some((p) => p.codigo === r.perfilVeiculo)) return r;
     const doTipo = perfis.find((p) => p.tipo === r.perfilVeiculo) ?? perfis[0];
     if (!doTipo) return { ...r, perfilVeiculo: null };
-    const motoristas = r.motoristas > 0 ? Math.round(r.veiculos * doTipo.motorista.motoristasPorVeiculo * 100) / 100 : 0;
+    const motoristas = r.motoristas > 0 ? Math.round(r.veiculos * doTipo.motorista.motoristasPorVeiculo * (r.turnos ?? 1) * 100) / 100 : 0;
     return { ...r, perfilVeiculo: doTipo.codigo, motoristas };
   });
 }
@@ -227,6 +247,10 @@ export function rotaDoBanco(r: Prisma.SimRotaGetPayload<object>): Rota {
     horasDia: paraNumero(r.horasDia),
     perfilVeiculo: r.perfilVeiculo,
     pracaPedagio: r.pracaPedagio,
+    horarioInicio: r.horarioInicio,
+    horarioFim: r.horarioFim,
+    turnos: r.turnos,
+    administrativo: r.administrativo,
   };
 }
 
@@ -404,10 +428,14 @@ export function validarEntrada(entrada: EntradaSimulacao): string | null {
       typeof r.nome !== "string" ||
       typeof r.noturno !== "boolean" ||
       (r.periodos !== null && r.periodos !== undefined && typeof r.periodos !== "string") ||
+      !horarioValido(r.horarioInicio) ||
+      !horarioValido(r.horarioFim) ||
+      (r.turnos !== null && r.turnos !== undefined && !(Number.isInteger(r.turnos) && r.turnos >= 1 && r.turnos <= 4)) ||
+      (r.administrativo !== undefined && typeof r.administrativo !== "boolean") ||
       CAMPOS_ROTA_OBRIGATORIOS.some((k) => !numeroValido(r[k])) ||
       CAMPOS_ROTA_OPCIONAIS.some((k) => !opcionalValido(r[k]))
   );
-  if (rotaRuim) return `A rota "${String(rotaRuim?.nome ?? "")}" tem um campo inválido (km, veículos, equipe, dias, horas, pedágio, noturno ou períodos).`;
+  if (rotaRuim) return `A rota "${String(rotaRuim?.nome ?? "")}" tem um campo inválido (km, veículos, equipe, dias, horas, horário, turnos, pedágio, noturno ou períodos).`;
   // SimRota.diasMes é inteiro no banco: 21,5 era truncado para 21 na definição
   // corrente enquanto o snapshot da versão guardava 21,5 — reabrir o estudo
   // dava outra conta que a da versão salva.
@@ -497,6 +525,10 @@ export async function salvarVersao(
           horasDia: r.horasDia ?? null,
           perfilVeiculo: r.perfilVeiculo ?? null,
           pracaPedagio: r.pracaPedagio ?? null,
+          horarioInicio: r.horarioInicio || null,
+          horarioFim: r.horarioFim || null,
+          turnos: r.turnos ?? null,
+          administrativo: r.administrativo === true,
         })),
       });
     await tx.simEstudo.update({

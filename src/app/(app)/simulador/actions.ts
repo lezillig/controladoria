@@ -19,6 +19,7 @@ import {
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerDataHoraDeBrasilia, lerInteiro, lerNumero } from "@/lib/simulador/numeros";
+import { horarioValido } from "@/lib/simulador/horario";
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
@@ -60,12 +61,23 @@ function lerItensNovos(bruto: string | null): ItemNovo[] | string {
     for (const [v, rotulo] of [[veiculos, "veículos"], [km, "km"], [precoMaximoKm, "preço máximo"]] as const)
       if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1e9)) return `Item ${k + 1}: ${rotulo} inválido.`;
     const tipo = String(o.tipoVeiculo ?? "");
+    const [turnos, diasMes] = [num(o.turnos), num(o.diasMes)];
+    if (turnos !== null && !(Number.isInteger(turnos) && turnos >= 1 && turnos <= 4)) return `Item ${k + 1}: turnos de 1 a 4.`;
+    if (diasMes !== null && !(Number.isInteger(diasMes) && diasMes >= 1 && diasMes <= 31)) return `Item ${k + 1}: dias no mês de 1 a 31, inteiro.`;
+    const horario = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, 5) : null);
+    const [inicio, fim] = [horario(o.horarioInicio), horario(o.horarioFim)];
+    if (!horarioValido(inicio) || !horarioValido(fim)) return `Item ${k + 1}: horário no formato 06:30.`;
     itens.push({
       descricao: String(o.descricao ?? "").slice(0, 200),
       tipoVeiculo: (TIPOS_VEICULO as string[]).includes(tipo) ? (tipo as TipoVeiculo) : null,
       veiculos,
       km,
       precoMaximoKm,
+      administrativo: o.administrativo === true,
+      turnos,
+      diasMes,
+      horarioInicio: inicio,
+      horarioFim: fim,
     });
   }
   return itens;

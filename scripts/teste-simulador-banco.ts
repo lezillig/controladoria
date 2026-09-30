@@ -155,6 +155,34 @@ async function principal() {
   );
   const salvoComItens = await estudos.salvarVersao(EMPRESA, comItens, { entrada: abertoComItens.entrada, origem: abertoComItens.origem, status: "RASCUNHO", observacoes: null, baseEm: null }, "teste");
   ok("estudo criado com itens salva a primeira versão", salvoComItens.versao === 1, JSON.stringify(salvoComItens.erro));
+  const privado = await estudos.criarEstudo(
+    EMPRESA,
+    {
+      tipo: "CONTRATO_PRIVADO",
+      nome: "Fábrica em turnos",
+      tipoServico: "FRETAMENTO",
+      criterioJulgamento: "ITEM",
+      unidadePreco: "VEICULO_MES",
+      esfera: "PRIVADO",
+      itens: [{ descricao: "Diretoria", veiculos: 1, administrativo: true, turnos: 2, diasMes: 26, horarioInicio: "05:30", horarioFim: "23:00" }],
+    },
+    "teste"
+  );
+  const abertoPrivado = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, privado))!);
+  const salvoPrivado = await estudos.salvarVersao(EMPRESA, privado, { entrada: abertoPrivado.entrada, origem: abertoPrivado.origem, status: "RASCUNHO", observacoes: null, baseEm: null }, "teste");
+  const reabertoPrivado = (await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, privado))!)).entrada.rotas[0];
+  conferir(
+    "proposta privada: ADM, turnos, dias e horário salvam e voltam",
+    [salvoPrivado.versao, reabertoPrivado.administrativo, reabertoPrivado.turnos, reabertoPrivado.diasMes, reabertoPrivado.horarioInicio, reabertoPrivado.horarioFim, reabertoPrivado.horasDia, reabertoPrivado.noturno],
+    [1, true, 2, 26, "05:30", "23:00", 17.5, true]
+  );
+  const horarioRuim = await estudos.salvarVersao(
+    EMPRESA,
+    privado,
+    { entrada: { ...abertoPrivado.entrada, rotas: [{ ...abertoPrivado.entrada.rotas[0], horarioInicio: "25h" }] }, origem: {}, status: "RASCUNHO", observacoes: null, baseEm: null },
+    "teste"
+  );
+  ok("horário inválido é recusado ao salvar", Boolean(horarioRuim.erro), JSON.stringify(horarioRuim));
 
   console.log("\nAJUSTES DA BASE PELA TELA — vigência nova, nada sobrescrito");
   {

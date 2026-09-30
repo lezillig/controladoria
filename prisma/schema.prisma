@@ -1971,6 +1971,10 @@ model SimRota {
   // Chave da praça de pedágio da base: a tarifa sai dela e da categoria do
   // tipo de veículo.
   pracaPedagio        String?
+  // Turnos por dia (multiplicam os motoristas) e veículo à disposição
+  // (uso administrativo).
+  turnos              Int?
+  administrativo      Boolean   @default(false)
 
   @@index([estudoId, ordem])
 }

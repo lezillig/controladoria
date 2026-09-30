@@ -1,5 +1,6 @@
 "use client";
 
+import { jornadaDoHorario } from "@/lib/simulador/horario";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cardClass, inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
@@ -55,8 +56,74 @@ function ajudaDoTipo(t: TipoVeiculo) {
 // Cada linha nova copia a anterior (tipo, veículos, km, preço máximo): em
 // orçamentos com itens parecidos só se muda o que difere. Com km informado,
 // o item nasce com uma rota; sem km, só o item (as rotas vêm na Operação).
-type LinhaItem = { descricao: string; tipoVeiculo: string; veiculos: string; km: string; precoMaximoKm: string };
-const LINHA_VAZIA: LinhaItem = { descricao: "", tipoVeiculo: "", veiculos: "1", km: "", precoMaximoKm: "" };
+//
+// NA PROPOSTA PRIVADA, também como o veículo roda no dia: uso administrativo
+// (à disposição), turnos, dias trabalhados no mês e horário de início e fim —
+// as horas por dia e o noturno saem do horário (ver horario.ts).
+type LinhaItem = {
+  descricao: string;
+  tipoVeiculo: string;
+  veiculos: string;
+  km: string;
+  precoMaximoKm: string;
+  administrativo: boolean;
+  turnos: string;
+  diasMes: string;
+  horarioInicio: string;
+  horarioFim: string;
+};
+const LINHA_VAZIA: LinhaItem = { descricao: "", tipoVeiculo: "", veiculos: "1", km: "", precoMaximoKm: "", administrativo: false, turnos: "1", diasMes: "22", horarioInicio: "", horarioFim: "" };
+
+// O que vai ao servidor: no público, sem os campos da proposta privada.
+function itensParaEnviar(itens: LinhaItem[], publico: boolean) {
+  return itens.map((x) =>
+    publico
+      ? { descricao: x.descricao, tipoVeiculo: x.tipoVeiculo, veiculos: x.veiculos, km: x.km, precoMaximoKm: x.precoMaximoKm }
+      : { ...x, precoMaximoKm: "" }
+  );
+}
+
+// A segunda linha do item na proposta privada: como o veículo roda no dia.
+function OperacaoDoItem({ x, k, mudar }: { x: LinhaItem; k: number; mudar: (k: number, campo: keyof LinhaItem, valor: string | boolean) => void }) {
+  const pequeno = "rounded-md border border-slate-300 px-2 py-1 text-sm";
+  const jornada = jornadaDoHorario(x.horarioInicio, x.horarioFim);
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
+      <label className="flex items-center gap-1.5" title="Veículo à disposição do contratante (uso administrativo), sem rota fixa de passageiros">
+        <input type="checkbox" checked={x.administrativo} onChange={(e) => mudar(k, "administrativo", e.target.checked)} />
+        ADM (à disposição)
+      </label>
+      <label className="flex items-center gap-1.5">
+        Turnos
+        <select aria-label={`Turnos do item ${k + 1}`} className={pequeno} value={x.turnos} onChange={(e) => mudar(k, "turnos", e.target.value)}>
+          {["1", "2", "3"].map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex items-center gap-1.5">
+        Dias no mês
+        <input aria-label={`Dias trabalhados no mês do item ${k + 1}`} inputMode="numeric" className={`${pequeno} w-14 text-right`} value={x.diasMes} onChange={(e) => mudar(k, "diasMes", e.target.value)} />
+      </label>
+      <label className="flex items-center gap-1.5">
+        Início
+        <input type="time" aria-label={`Horário de início do item ${k + 1}`} className={pequeno} value={x.horarioInicio} onChange={(e) => mudar(k, "horarioInicio", e.target.value)} />
+      </label>
+      <label className="flex items-center gap-1.5">
+        Fim
+        <input type="time" aria-label={`Horário de fim do item ${k + 1}`} className={pequeno} value={x.horarioFim} onChange={(e) => mudar(k, "horarioFim", e.target.value)} />
+      </label>
+      {jornada && (
+        <span className="text-slate-500">
+          {jornada.horas.toLocaleString("pt-BR")} h/dia{jornada.noturno ? " · com horário noturno" : ""}
+          {Number(x.turnos) > 1 ? ` · ${x.turnos} equipes de motoristas` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function ItensDoEstudo({
   itens,
@@ -74,7 +141,7 @@ function ItensDoEstudo({
   // Só os tipos marcados (ou todos, sem nenhum marcado); tipo desmarcado
   // depois volta a "principal".
   const opcoes = (tipos.length > 0 ? tipos : [...TIPOS_VEICULO]) as TipoVeiculo[];
-  const mudar = (k: number, campo: keyof LinhaItem, valor: string) => setItens((atual) => atual.map((x, j) => (j === k ? { ...x, [campo]: valor } : x)));
+  const mudar = (k: number, campo: keyof LinhaItem, valor: string | boolean) => setItens((atual) => atual.map((x, j) => (j === k ? { ...x, [campo]: valor } : x)));
   const pequeno = "w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm";
   const colunas = publico ? "sm:grid-cols-[1fr_150px_80px_110px_110px_32px]" : "sm:grid-cols-[1fr_150px_80px_110px_32px]";
   return (
@@ -82,8 +149,8 @@ function ItensDoEstudo({
       <legend className={labelClass}>Itens do estudo</legend>
       <p className="mb-2 text-xs text-slate-500">
         Os itens ou lotes do edital, as linhas da proposta — cada um com o seu preço. Cada item novo copia o anterior; mude só o que difere. Com o
-        km informado, o item já nasce com uma rota; o resto (dias, pedágio, horários) se ajusta na aba Operação, onde também dá para duplicar
-        itens com as rotas.
+        km informado{publico ? "" : ", o horário ou a marca ADM"}, o item já nasce com uma rota; o resto (pedágio, monitores) se ajusta na aba
+        Operação, onde também dá para duplicar itens com as rotas.
       </p>
       <div className="space-y-2">
         <div className={`hidden gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500 sm:grid ${colunas}`}>
@@ -95,7 +162,8 @@ function ItensDoEstudo({
           <span />
         </div>
         {itens.map((x, k) => (
-          <div key={k} className={`grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-2 sm:border-0 sm:p-0 ${colunas}`}>
+          <div key={k} className={publico ? "" : "space-y-1.5 rounded-lg border border-slate-200 p-2"}>
+          <div className={`grid grid-cols-2 gap-2 ${publico ? "rounded-lg border border-slate-200 p-2 sm:border-0 sm:p-0" : ""} ${colunas}`}>
             <input
               aria-label={`Descrição do item ${k + 1}`}
               className={`${pequeno} col-span-2 sm:col-span-1`}
@@ -127,6 +195,8 @@ function ItensDoEstudo({
             >
               ✕
             </button>
+          </div>
+          {!publico && <OperacaoDoItem x={x} k={k} mudar={mudar} />}
           </div>
         ))}
         <button
@@ -170,7 +240,7 @@ export default function NovoEstudoForm() {
         formData.set("esfera", esfera);
         formData.delete("tiposVeiculo");
         for (const t of tipos) formData.append("tiposVeiculo", t);
-        formData.set("itens", JSON.stringify(itens));
+        formData.set("itens", JSON.stringify(itensParaEnviar(itens, publico)));
         iniciar(async () => {
           const r = await criarEstudo(formData);
           if (r.erro) setErro(r.erro);
