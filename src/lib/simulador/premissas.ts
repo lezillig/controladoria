@@ -369,9 +369,21 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
 // Validação mínima antes de rodar: o que o motor não consegue dividir.
 export function problemasNasPremissas(p: Premissas): string[] {
   const problemas: string[] = [];
-  const divisor = 1 - p.preco.lucroAlvoPct - p.preco.pis - p.preco.cofins - p.preco.irpj - p.preco.csll - Math.max(p.preco.iss, p.preco.icms) - (p.preco.custoCapitalGiroAm * p.preco.prazoRecebimentoDias) / 30 - p.preco.despesasSobrePrecoPct;
+  // O divisor como o motor o usa: o lucro alvo entra como α ÷ (1 − IR sobre o
+  // lucro). Com α sozinho, o Lucro Real passava aqui com divisor negativo no
+  // motor e o preço saía negativo (−R$ 253,67/km em SJP com Real e lucro alvo
+  // de 60%).
+  const pr = p.preco;
+  const ir = pr.irpjCsllSobreLucroPct;
+  if (ir < 0 || ir >= 1) problemas.push("IRPJ + CSLL sobre o lucro precisa ficar entre 0% e 100%.");
+  const lucroNoDivisor = ir >= 0 && ir < 1 ? pr.lucroAlvoPct / (1 - ir) : pr.lucroAlvoPct;
+  const divisor = 1 - lucroNoDivisor - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
   if (divisor <= 0.05) problemas.push("Lucro, tributos e despesas sobre o preço somam 95% ou mais — o preço não fecha.");
   if (p.variaveis.consumoAsfaltoKmL <= 0) problemas.push("Consumo em asfalto precisa ser maior que zero.");
+  // Os tipos de veículo têm consumo próprio: zero ali não quebrava a conta
+  // (o motor divide com proteção) — zerava o combustível das rotas do tipo.
+  const semConsumo = (p.perfis ?? []).find((x) => !(x.variaveis.consumoAsfaltoKmL > 0));
+  if (semConsumo) problemas.push(`Consumo em asfalto do tipo "${semConsumo.descricao}" precisa ser maior que zero.`);
   if (p.contrato.utilizacao <= 0 || p.contrato.utilizacao > 1.5) problemas.push("Utilização fora da faixa (0 a 150%).");
   if (p.contrato.mesesCustoFixo <= 0) problemas.push("Meses de custo fixo precisa ser ao menos 1.");
   if (p.contrato.vigenciaMeses <= 0) problemas.push("Vigência precisa ser ao menos 1 mês.");

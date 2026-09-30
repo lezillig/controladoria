@@ -12,7 +12,7 @@ import ExcelJS from "exceljs";
 import { readFileSync } from "node:fs";
 import { baseDaLeitura, lerGabarito } from "../src/lib/simulador/gabarito";
 import { CATALOGO_PARAMETROS, numeroDoTexto, todosOsNumeros } from "../src/lib/simulador/catalogo";
-import { CAMPOS_PREMISSAS, PREMISSAS_PADRAO, lerCaminho, premissasDaBase, problemasNasPremissas } from "../src/lib/simulador/premissas";
+import { CAMPOS_PREMISSAS, PERFIS_PADRAO, PREMISSAS_PADRAO, lerCaminho, premissasDaBase, problemasNasPremissas } from "../src/lib/simulador/premissas";
 import { simular } from "../src/lib/simulador/motor";
 import { historicoSaoJoseDosPinhais } from "../src/lib/simulador/historico";
 
@@ -122,6 +122,24 @@ async function principal() {
   conferir("todo campo de Premissas tem descrição", caminhos.filter((c) => !CAMPOS_PREMISSAS.some((d) => d.caminho === c)), []);
   conferir("nenhuma descrição sem campo", CAMPOS_PREMISSAS.filter((d) => lerCaminho(PREMISSAS_PADRAO, d.caminho) === undefined).map((d) => d.caminho), []);
   conferir("padrão sem problemas", problemasNasPremissas(PREMISSAS_PADRAO), []);
+  {
+    // Regressão: o divisor da validação ignorava o IR sobre o lucro. Com Real
+    // (34%) e lucro alvo de 60%, a validação passava e o motor dava preço
+    // negativo (−R$ 253,67/km em SJP).
+    const real = structuredClone(historicoSaoJoseDosPinhais().entrada);
+    Object.assign(real.premissas.preco, { irpj: 0, csll: 0, irpjCsllSobreLucroPct: 0.34, lucroAlvoPct: 0.6 });
+    ok("Real com lucro alvo que o divisor do motor não comporta é recusado", simular(real).itens[0].precoUnidade < 0 && problemasNasPremissas(real.premissas).length > 0, JSON.stringify(problemasNasPremissas(real.premissas)));
+    Object.assign(real.premissas.preco, { lucroAlvoPct: 0.12 });
+    conferir("Real com lucro alvo de 12% passa", problemasNasPremissas(real.premissas), []);
+    conferir("IR sobre o lucro de 100% é recusado", problemasNasPremissas({ ...real.premissas, preco: { ...real.premissas.preco, irpjCsllSobreLucroPct: 1 } }).length > 0, true);
+    // Regressão: consumo zero num tipo de veículo passava e zerava o
+    // combustível das rotas do tipo (o motor divide com proteção).
+    const comPerfil = structuredClone(PREMISSAS_PADRAO);
+    comPerfil.perfis = [structuredClone(PERFIS_PADRAO.find((x) => x.codigo === "VAN")!)];
+    conferir("tipo de veículo com consumo passa", problemasNasPremissas(comPerfil), []);
+    comPerfil.perfis[0].variaveis.consumoAsfaltoKmL = 0;
+    ok("tipo de veículo com consumo zero é recusado", problemasNasPremissas(comPerfil).some((x) => x.includes("Van")), JSON.stringify(problemasNasPremissas(comPerfil)));
+  }
 
   console.log("\nSIMULAÇÃO COM A BASE — as rotas de SJP, os custos do Gabarito");
   const sjp = historicoSaoJoseDosPinhais().entrada;
