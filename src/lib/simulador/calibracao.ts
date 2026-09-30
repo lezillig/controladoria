@@ -24,8 +24,6 @@ export const ROTULO_NATUREZA: Record<Natureza, string> = {
   indiretos: "Indiretos",
 };
 
-const VARIAVEIS: Natureza[] = ["combustivel", "manutencao", "pedagio"];
-
 export type RealizadoMes = {
   competencia: string;
   kmRealizado: number | null;
@@ -55,17 +53,21 @@ export type Calibracao = {
   sugestoes: string[];
 };
 
-function previstoPorNatureza(r: ResultadoSimulacao, mesesPorApuracao: number): Record<Natureza, number> {
+// Previsto de cada natureza no mês, separado na parte que acompanha o km e na
+// que não acompanha. Só a primeira é ajustada ao km realizado: a manutenção
+// fixa (% do valor do veículo ao mês) entra na natureza "manutenção", mas não
+// cresce porque se rodou mais — escalá-la com o km inventava desvio.
+function previstoPorNatureza(r: ResultadoSimulacao, mesesPorApuracao: number): Record<Natureza, { variavel: number; fixo: number }> {
   const s = (f: (i: ResultadoSimulacao["itens"][number]) => number) => r.itens.reduce((a, i) => a + f(i), 0);
   // Mão de obra e veículo já são mensais na composição; os variáveis e os
   // indiretos estão na apuração.
   return {
-    folha: s((i) => i.maoDeObraMes),
-    combustivel: s((i) => i.diesel + i.arla) / mesesPorApuracao,
-    manutencao: s((i) => i.manutencao + i.pneus + i.oleoLavagem) / mesesPorApuracao + s((i) => i.manutencaoFixa),
-    veiculo: s((i) => i.veiculoMes - i.manutencaoFixa + i.implantacaoMes),
-    pedagio: s((i) => i.pedagio) / mesesPorApuracao,
-    indiretos: s((i) => i.indiretos) / mesesPorApuracao,
+    folha: { variavel: 0, fixo: s((i) => i.maoDeObraMes) },
+    combustivel: { variavel: s((i) => i.diesel + i.arla) / mesesPorApuracao, fixo: 0 },
+    manutencao: { variavel: s((i) => i.manutencao + i.pneus + i.oleoLavagem) / mesesPorApuracao, fixo: s((i) => i.manutencaoFixa) },
+    veiculo: { variavel: 0, fixo: s((i) => i.veiculoMes - i.manutencaoFixa + i.implantacaoMes) },
+    pedagio: { variavel: s((i) => i.pedagio) / mesesPorApuracao, fixo: 0 },
+    indiretos: { variavel: 0, fixo: s((i) => i.indiretos) / mesesPorApuracao },
   };
 }
 
@@ -73,7 +75,9 @@ export function calibrar(resultado: ResultadoSimulacao, mesesCustoFixo: number, 
   const mesesPorApuracao = resultado.modo === "MENSAL" ? 1 : Math.max(1, mesesCustoFixo);
   const previsto = previstoPorNatureza(resultado, mesesPorApuracao);
   const kmPrevistoMes = resultado.totais.kmUtil / mesesPorApuracao;
-  const faturamentoPrevistoMes = resultado.totais.faturamento / mesesPorApuracao;
+  // No lote, o contrato fatura ao preço único da proposta — é com ele que o
+  // faturamento realizado se compara, não com a soma dos preços por item.
+  const faturamentoPrevistoMes = (resultado.lote ? resultado.lote.faturamentoAoPrecoProposta : resultado.totais.faturamento) / mesesPorApuracao;
   const media = (xs: (number | null | undefined)[]) => {
     const v = xs.filter((x): x is number => typeof x === "number");
     return v.length > 0 ? v.reduce((a, b) => a + b, 0) / v.length : null;
@@ -84,11 +88,12 @@ export function calibrar(resultado: ResultadoSimulacao, mesesCustoFixo: number, 
   const linhas: LinhaCalibracao[] = (Object.keys(ROTULO_NATUREZA) as Natureza[]).map((natureza) => {
     const valores = realizados.map((r) => r.custos[natureza]);
     const realizadoMedio = media(valores);
-    const previstoAjustado = VARIAVEIS.includes(natureza) ? previsto[natureza] * fatorKm : previsto[natureza];
+    const { variavel, fixo } = previsto[natureza];
+    const previstoAjustado = variavel * fatorKm + fixo;
     const desvio = realizadoMedio === null ? null : realizadoMedio - previstoAjustado;
     return {
       natureza,
-      previstoMes: previsto[natureza],
+      previstoMes: variavel + fixo,
       previstoAjustado,
       realizadoMedio,
       desvio,

@@ -98,6 +98,21 @@ console.log("\nCALIBRAÇÃO — realizado × previsto");
   const esc = historicoHolambra().entrada;
   const ce = calibrar(simular(esc), 12, []);
   ok("escolar: previsto mensal = período ÷ 12", Math.abs(ce.kmPrevistoMes - simular(esc).totais.kmUtil / 12) < 1e-6);
+
+  // Regressão: a manutenção fixa (% do valor ao mês) era escalada com o km
+  // realizado junto com a manutenção por km — 20% mais km "previa" 20% mais
+  // manutenção fixa e inventava desvio.
+  const mf = structuredClone(e);
+  mf.premissas.veiculo.manutencaoFixaPctMes = 0.002;
+  const rmf = simular(mf);
+  const fixa = rmf.itens.reduce((a, i) => a + i.manutencaoFixa, 0);
+  const porKm = rmf.itens.reduce((a, i) => a + i.manutencao + i.pneus + i.oleoLavagem, 0);
+  const cmf = calibrar(rmf, 1, [{ competencia: "2027-01", kmRealizado: rmf.totais.kmUtil * 1.2, faturamento: null, custos: { manutencao: porKm * 1.2 + fixa } }]);
+  const lm = cmf.linhas.find((l) => l.natureza === "manutencao")!;
+  ok("manutenção: só a parte por km acompanha o km (fixa não)", fixa > 0 && Math.abs(lm.previstoAjustado - (porKm * 1.2 + fixa)) < 1e-6, `${lm.previstoAjustado} × ${porKm * 1.2 + fixa}`);
+  ok("… e o realizado igual ao previsto não dá desvio", Math.abs(lm.desvioPct ?? 1) < 1e-12, `${lm.desvioPct}`);
+  // Regressão: no lote, o faturamento previsto é o do preço único da proposta.
+  ok("lote: faturamento previsto ao preço único", r.lote !== null && Math.abs(calibrar(r, 1, []).faturamentoPrevistoMes - r.lote.faturamentoAoPrecoProposta) < 1e-6);
 }
 
 console.log("\nALERTAS DA PESQUISA — depreciação, ARLA, reforma tributária");
