@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { clausulaDeReequilibrio, lerInicio, proximoMes, reformaAnoAAno } from "./reforma";
 import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, DIAS_VR_MAXIMO, IRPJ_LOCACAO_PADRAO } from "./motor";
 import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, type EntradaSimulacao, type PerfilVeiculo, type Premissas, type ResultadoSimulacao } from "./tipos";
 
@@ -64,7 +65,7 @@ export type DadosExportacao = {
 };
 
 // Nomes das abas, na ordem da pasta. O teste confere a ordem.
-export const ABAS = ["Regras do Edital", "Premissas", "Perfis de Veículo", "Rotas", "Composição de Custo", "Cenários", "Proposta"] as const;
+export const ABAS = ["Regras do Edital", "Premissas", "Perfis de Veículo", "Rotas", "Composição de Custo", "Cenários", "Reforma", "Proposta"] as const;
 
 // ---------------------------------------------------------------- estilo
 
@@ -210,7 +211,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   // Sem valores guardados nas fórmulas: o Excel recalcula tudo ao abrir.
   wb.calcProperties = { fullCalcOnLoad: true };
 
-  const [wsRegras, ws, wf, wr, wc, wz, wp] = ABAS.map((nome) => wb.addWorksheet(nome));
+  const [wsRegras, ws, wf, wr, wc, wz, wReforma, wp] = ABAS.map((nome) => wb.addWorksheet(nome));
 
   // ============================================================ REGRAS DO EDITAL
   const privado = d.esfera === "PRIVADO";
@@ -1279,6 +1280,60 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   wp.pageSetup = { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
   congelar(wp, 0, 9);
 
+  abaReforma(wReforma, d);
   const bytes = await wb.xlsx.writeBuffer();
   return Buffer.from(bytes as ArrayBuffer);
+}
+
+// ---------------------------------------------------------------- reforma
+//
+// A aba Reforma do estudo, em valores (a conta está em reforma.ts e os
+// testes a conferem): a tabela de transição e cada ano do contrato — o preço
+// que mantém o lucro alvo e a margem com a nota de hoje.
+function abaReforma(w: ExcelJS.Worksheet, d: DadosExportacao) {
+  const inicioTexto = d.entrada.reforma?.inicio ?? d.comercial?.inicioPrevisto?.slice(0, 7) ?? null;
+  const inicio = lerInicio(inicioTexto) ?? lerInicio(proximoMes(d.geradoEm))!;
+  const ref = reformaAnoAAno(d.entrada, d.resultado, { inicio, creditoVeiculo: d.entrada.reforma?.creditoVeiculo === true });
+  const col = 11;
+  titulo(w, 1, `REFORMA TRIBUTÁRIA ANO A ANO — início ${String(inicio.mes).padStart(2, "0")}/${inicio.ano}, ${ref.vigenciaMeses} meses`, col);
+  nota(
+    w,
+    2,
+    "Estimativa com as alíquotas de referência da CBS e do IBS (a fixar pelo Senado). Fretamento sem redução. CBS e IBS por fora do preço, com crédito sobre as compras a partir de 2027; ISS e ICMS a 90%, 80%, 70% e 60% de 2029 a 2032. " +
+      "B = o preço que mantém o lucro alvo; A = o cliente pagando a nota de hoje. Preço dos insumos o de hoje, com CBS/IBS dentro; administração central igual.",
+    col,
+    42
+  );
+  let l = 4;
+  secao(w, l++, "TABELA DE TRANSIÇÃO", col);
+  cabecalho(w, l++, ["Ano", "PIS/COFINS", "CBS", "IBS", "ISS/ICMS (fração do de hoje)", "Observação"], [10, 14, 12, 12, 16, 18]);
+  for (const t of ref.tabela) {
+    escrever(w, l, 1, t.ano);
+    escrever(w, l, 2, t.pisCofins ? "sim" : "não");
+    escrever(w, l, 3, t.cbs, { fmt: PCT2 });
+    escrever(w, l, 4, t.ibs, { fmt: PCT2 });
+    escrever(w, l, 5, t.fatorIssIcms, { fmt: PCT });
+    escrever(w, l, 6, t.teste ? "teste, compensado" : "");
+    l++;
+  }
+  l++;
+  secao(w, l++, "O CONTRATO ANO A ANO (R$ no ano)", col);
+  cabecalho(w, l++, ["Ano", "Meses", "Custo", "Crédito", "Tributos por dentro", "B: preço sem CBS/IBS", "B: CBS + IBS", "B: nota", "B: reequilíbrio", "A: margem", "Carga"], [10, 14, 16, 16, 16, 18, 16, 16, 14, 12, 12]);
+  for (const a of ref.anos) {
+    escrever(w, l, 1, a.ano);
+    escrever(w, l, 2, a.meses, { fmt: "0" });
+    escrever(w, l, 3, a.custo, { fmt: BRL });
+    escrever(w, l, 4, -a.credito, { fmt: BRL });
+    escrever(w, l, 5, a.tributosDentroPct, { fmt: PCT2 });
+    escrever(w, l, 6, a.receita, { fmt: BRL });
+    escrever(w, l, 7, a.cbs + a.ibs, { fmt: BRL });
+    escrever(w, l, 8, a.nota, { fmt: BRL, negrito: true });
+    escrever(w, l, 9, a.reequilibrio, { fmt: PCT });
+    escrever(w, l, 10, a.semReequilibrio.margem, { fmt: PCT });
+    escrever(w, l, 11, a.carga, { fmt: PCT });
+    l++;
+  }
+  l++;
+  secao(w, l++, "CLÁUSULA DE REEQUILÍBRIO (sugestão)", col);
+  nota(w, l, clausulaDeReequilibrio(ref), col, 90);
 }

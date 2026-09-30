@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, us
 import { useRouter } from "next/navigation";
 import { simular } from "@/lib/simulador/motor";
 import { montarPainel } from "@/lib/simulador/decisao";
+import { lerInicio } from "@/lib/simulador/reforma";
 import type { IndicadorReal } from "@/lib/simulador/aplicarReais";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerCaminho } from "@/lib/simulador/premissas";
@@ -15,6 +16,7 @@ import Operacao from "./abas/Operacao";
 import Premissas from "./abas/Premissas";
 import Veiculos from "./abas/Veiculos";
 import Proposta from "./abas/Proposta";
+import Reforma from "./abas/Reforma";
 import { Cenarios, Custos, Decisao, SeloVeredicto } from "./abas/Resultado";
 
 // O EDITOR DE UM ESTUDO.
@@ -30,7 +32,7 @@ import { Cenarios, Custos, Decisao, SeloVeredicto } from "./abas/Resultado";
 // quanto falta ou o que chama atenção, para ninguém precisar abrir todas para
 // saber onde está.
 
-type Aba = "operacao" | "veiculos" | "premissas" | "custos" | "cenarios" | "decisao" | "proposta" | "acompanhamento";
+type Aba = "operacao" | "veiculos" | "premissas" | "custos" | "cenarios" | "reforma" | "decisao" | "proposta" | "acompanhamento";
 
 export type EstudoTela = {
   id: string;
@@ -38,6 +40,8 @@ export type EstudoTela = {
   subtitulo: string;
   status: string;
   statusRotulo: string;
+  // Início previsto da operação ("2027-01"), para a aba Reforma.
+  inicioPrevisto: string | null;
 };
 
 const LIMITE_DESFAZER = 60;
@@ -198,11 +202,12 @@ export default function EditorEstudo({
   const painel = useMemo(() => {
     try {
       if (entradaAdiada.itens.length === 0 || entradaAdiada.rotas.length === 0) return null;
-      return montarPainel(entradaAdiada, simular(entradaAdiada), { margemMinima, margemAlvo, origem: origemAdiada });
+      const ini = lerInicio(entradaAdiada.reforma?.inicio ?? estudo.inicioPrevisto);
+      return montarPainel(entradaAdiada, simular(entradaAdiada), { margemMinima, margemAlvo, origem: origemAdiada, inicioContrato: ini ? new Date(ini.ano, ini.mes - 1, 1) : undefined });
     } catch {
       return null;
     }
-  }, [entradaAdiada, origemAdiada, margemMinima, margemAlvo]);
+  }, [entradaAdiada, origemAdiada, margemMinima, margemAlvo, estudo.inicioPrevisto]);
 
   const estimadas = Object.values(origem).filter((o) => o.origem === "PADRAO").length;
   const rotasSemVeiculo = entrada.rotas.filter((r) => r.veiculos <= 0).length;
@@ -214,9 +219,10 @@ export default function EditorEstudo({
     { id: "premissas", rotulo: "3. Premissas", selo: estimadas > 0 ? <Selo cor="amber">{estimadas} estimadas</Selo> : undefined },
     { id: "custos", rotulo: "4. Custos" },
     { id: "cenarios", rotulo: "5. Cenários" },
-    { id: "decisao", rotulo: "6. Decisão", selo: painel ? <SeloVeredicto veredicto={painel.veredicto} /> : undefined },
-    { id: "proposta", rotulo: "7. Orçamento" },
-    { id: "acompanhamento", rotulo: "8. Versões" },
+    { id: "reforma", rotulo: "6. Reforma" },
+    { id: "decisao", rotulo: "7. Decisão", selo: painel ? <SeloVeredicto veredicto={painel.veredicto} /> : undefined },
+    { id: "proposta", rotulo: "8. Orçamento" },
+    { id: "acompanhamento", rotulo: "9. Versões" },
   ];
 
   const salvar = () =>
@@ -375,9 +381,10 @@ export default function EditorEstudo({
       {aba === "premissas" && <Premissas entrada={entrada} origem={origem} alterar={alterar} podeEditar indicadores={indicadores} lacunas={lacunas} />}
       {aba === "custos" && resultado && <Custos resultado={resultado} entrada={entrada} />}
       {aba === "cenarios" && resultado && <Cenarios resultado={resultado} entrada={entrada} alterar={alterar} />}
+      {aba === "reforma" && resultado && <Reforma entrada={entrada} resultado={resultado} alterar={alterar} inicioPrevisto={estudo.inicioPrevisto} />}
       {aba === "decisao" && (painel ? <Decisao painel={painel} /> : !calculo.erro && <p className="text-sm text-slate-500">Calculando…</p>)}
       {aba === "decisao" && podeConsultarEspecialista && <PerguntarAoEspecialista nome={estudo.nome} versao={versaoBase} sujo={sujo} />}
-      {aba === "proposta" && resultado && <Proposta entrada={entrada} resultado={resultado} nomeArquivo={nomeArquivo} aoExportarExcel={exportarExcel} exportando={exportando} />}
+      {aba === "proposta" && resultado && <Proposta entrada={entrada} resultado={resultado} nomeArquivo={nomeArquivo} aoExportarExcel={exportarExcel} exportando={exportando} inicioPrevisto={estudo.inicioPrevisto} />}
       <div hidden={aba !== "acompanhamento"}>{acompanhamento}</div>
 
       {/* Próxima etapa: o orçamento se lê de cima para baixo e da esquerda

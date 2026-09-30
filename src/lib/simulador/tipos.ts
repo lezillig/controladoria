@@ -170,6 +170,12 @@ export type Premissas = {
     // Opcionais como o adicional noturno: sem eles, 4,8% e 2,88%.
     irpjLocacao?: number;
     csllLocacao?: number;
+    // REFORMA TRIBUTÁRIA (reforma.ts): alíquotas de referência estimadas da
+    // CBS e do IBS e a redução do serviço (fretamento: zero). Opcionais: sem
+    // elas, os padrões de reforma.ts.
+    cbsReferencia?: number;
+    ibsReferencia?: number;
+    reducaoIbsCbsPct?: number;
   };
   // Perfis de veículo além do padrão (`veiculo` + `variaveis`): van, micro,
   // ônibus, carro executivo. Cada rota aponta o seu em `Rota.perfilVeiculo`.
@@ -363,6 +369,9 @@ export type EntradaSimulacao = {
   // Preço de lance para a tabela de cenários. Sem ele, o preço da proposta.
   precoTesteKm?: number | null;
   utilizacoesCenario?: number[];
+  // Aba Reforma: mês de início do contrato ("2027-01") e se o veículo é
+  // comprado já com crédito de CBS/IBS.
+  reforma?: { inicio?: string | null; creditoVeiculo?: boolean };
 };
 
 export type ComposicaoItem = {

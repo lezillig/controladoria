@@ -1,3 +1,4 @@
+import { lerInicio } from "./reforma";
 import { Prisma } from "@prisma/client";
 import { PREMIO_EVENTUAL_FIM_DE_SEMANA } from "./convencoes";
 import { horarioValido, jornadaDoHorario } from "./horario";
@@ -509,6 +510,12 @@ export function validarEntrada(entrada: EntradaSimulacao): string | null {
   // desconhecida fazia o faturamento sair NaN e a gravação estourar no banco.
   if (entrada.criterio !== "ITEM" && entrada.criterio !== "LOTE") return "Critério de julgamento inválido (ITEM ou LOTE).";
   if (entrada.unidadePreco !== undefined && entrada.unidadePreco !== null && !UNIDADES_PRECO.includes(entrada.unidadePreco)) return "Unidade de preço inválida.";
+  if (entrada.reforma !== undefined && entrada.reforma !== null) {
+    const { inicio, creditoVeiculo } = entrada.reforma;
+    if (typeof entrada.reforma !== "object") return "Dados da reforma inválidos.";
+    if (inicio !== undefined && inicio !== null && !lerInicio(inicio)) return "Início do contrato inválido (mês e ano).";
+    if (creditoVeiculo !== undefined && typeof creditoVeiculo !== "boolean") return "Crédito do veículo inválido.";
+  }
   const itemRuim = entrada.itens.find(
     (i) => !i || typeof i.codigo !== "string" || i.codigo.trim() === "" || typeof i.descricao !== "string" || !numeroValido(i.shareIntermunicipal) || i.shareIntermunicipal > 1 || !opcionalValido(i.precoMaximoKm) || !opcionalValido(i.precoReferenciaKm)
   );

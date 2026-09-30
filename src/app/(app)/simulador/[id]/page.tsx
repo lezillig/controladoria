@@ -139,6 +139,7 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
           subtitulo,
           status: estudo.status,
           statusRotulo: ROTULO_STATUS_ESTUDO[estudo.status as keyof typeof ROTULO_STATUS_ESTUDO] ?? estudo.status,
+          inicioPrevisto: estudo.inicioPrevisto ? estudo.inicioPrevisto.toISOString().slice(0, 7) : null,
         }}
         entradaInicial={inicial.entrada}
         origemInicial={inicial.origem}

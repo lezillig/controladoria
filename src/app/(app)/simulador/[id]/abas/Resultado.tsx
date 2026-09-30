@@ -338,9 +338,9 @@ function Resumo({
         <thead>
           <tr className="text-[10.5px] uppercase tracking-wide text-slate-500">
             <th className="py-1 text-left font-medium">Componente</th>
-            <th className="py-1 text-right font-medium">Valor</th>
-            <th className="py-1 text-right font-medium">%</th>
-            <th className="py-1 text-right font-medium">{divisor.rotulo}</th>
+            <th className="py-1 pl-3 text-right font-medium">Valor</th>
+            <th className="py-1 pl-3 text-right font-medium">%</th>
+            <th className="py-1 pl-3 text-right font-medium">{divisor.rotulo}</th>
           </tr>
         </thead>
         <tbody>
@@ -351,9 +351,9 @@ function Resumo({
               g.titulo && (
                 <tr key={`t-${g.titulo}`} className="font-semibold text-slate-700">
                   <td className="border-t border-slate-100 pt-1.5">{g.titulo}</td>
-                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{brl(total)}</td>
-                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{participacao(total)}</td>
-                  <td className="border-t border-slate-100 pt-1.5 text-right font-mono tabular-nums">{porUnidade(total)}</td>
+                  <td className="border-t border-slate-100 pt-1.5 pl-3 text-right font-mono tabular-nums">{brl(total)}</td>
+                  <td className="border-t border-slate-100 pt-1.5 pl-3 text-right font-mono tabular-nums">{participacao(total)}</td>
+                  <td className="border-t border-slate-100 pt-1.5 pl-3 text-right font-mono tabular-nums">{porUnidade(total)}</td>
                 </tr>
               ),
               ...visiveis.flatMap((c) => [
@@ -362,9 +362,9 @@ function Resumo({
                     {c.rotulo}
                     {c.memo && <span className="block text-[11px] leading-tight text-slate-500">{c.memo}</span>}
                   </td>
-                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums">{brl(c.valor)}</td>
-                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{participacao(c.valor)}</td>
-                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{porUnidade(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 pl-3 text-right align-top font-mono tabular-nums">{brl(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 pl-3 text-right align-top font-mono tabular-nums text-slate-500">{participacao(c.valor)}</td>
+                  <td className="border-t border-slate-100 py-1 pl-3 text-right align-top font-mono tabular-nums text-slate-500">{porUnidade(c.valor)}</td>
                 </tr>,
                 ...(c.sub ?? []).map((x) => (
                   <tr key={`${g.titulo}-${c.rotulo}-${x.rotulo}`} className="text-[11.5px] text-slate-500">
@@ -372,9 +372,9 @@ function Resumo({
                       ↳ {x.rotulo}
                       {x.memo && <span className="block text-[10.5px] leading-tight text-slate-400">{x.memo}</span>}
                     </td>
-                    <td className="py-0.5 text-right align-top font-mono tabular-nums">{brl(x.valor)}</td>
-                    <td className="py-0.5 text-right align-top font-mono tabular-nums">{participacao(x.valor)}</td>
-                    <td className="py-0.5 text-right align-top font-mono tabular-nums">{porUnidade(x.valor)}</td>
+                    <td className="py-0.5 pl-3 text-right align-top font-mono tabular-nums">{brl(x.valor)}</td>
+                    <td className="py-0.5 pl-3 text-right align-top font-mono tabular-nums">{participacao(x.valor)}</td>
+                    <td className="py-0.5 pl-3 text-right align-top font-mono tabular-nums">{porUnidade(x.valor)}</td>
                   </tr>
                 )),
               ]),
@@ -393,17 +393,17 @@ function Resumo({
                       {brl(parte.direto)} × {pct(taxa, 2)} · {memo}
                     </span>
                   </td>
-                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums">{brl(parte.direto * taxa)}</td>
-                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{participacao(parte.direto * taxa)}</td>
-                  <td className="border-t border-slate-100 py-1 text-right align-top font-mono tabular-nums text-slate-500">{porUnidade(parte.direto * taxa)}</td>
+                  <td className="border-t border-slate-100 py-1 pl-3 text-right align-top font-mono tabular-nums">{brl(parte.direto * taxa)}</td>
+                  <td className="border-t border-slate-100 py-1 pl-3 text-right align-top font-mono tabular-nums text-slate-500">{participacao(parte.direto * taxa)}</td>
+                  <td className="border-t border-slate-100 py-1 pl-3 text-right align-top font-mono tabular-nums text-slate-500">{porUnidade(parte.direto * taxa)}</td>
                 </tr>
               ) : null
             )}
           <tr className="font-semibold text-slate-900">
             <td className="border-t border-slate-300 py-1">Total</td>
-            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{brl(parte.comIndiretos)}</td>
-            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{participacao(parte.comIndiretos)}</td>
-            <td className="border-t border-slate-300 py-1 text-right font-mono tabular-nums">{porUnidade(parte.comIndiretos)}</td>
+            <td className="border-t border-slate-300 py-1 pl-3 text-right font-mono tabular-nums">{brl(parte.comIndiretos)}</td>
+            <td className="border-t border-slate-300 py-1 pl-3 text-right font-mono tabular-nums">{participacao(parte.comIndiretos)}</td>
+            <td className="border-t border-slate-300 py-1 pl-3 text-right font-mono tabular-nums">{porUnidade(parte.comIndiretos)}</td>
           </tr>
         </tbody>
       </table>

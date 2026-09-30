@@ -1,3 +1,4 @@
+import { CBS_REFERENCIA_PADRAO, IBS_REFERENCIA_PADRAO } from "./reforma";
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B, VR_TRANSFRETUR_DIA } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
@@ -115,6 +116,9 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("preco.prazoRecebimentoDias", "Prazo de recebimento", "dias", "numero"),
   c("preco.despesasSobrePrecoPct", "Despesas sobre o preço (adm. do contrato, comissão)", "% do preço", "pct"),
   c("preco.irpjCsllSobreLucroPct", "IRPJ + CSLL sobre o lucro (Lucro Real)", "% do lucro", "pct", "No Lucro Real: 34% (15% + 10% adicional + 9%), sobre o lucro fiscal — o lucro antes do IR somado à remuneração do capital próprio e à contingência, que o fisco não deduz. No Presumido, zero — e IRPJ/CSLL entram acima como % do faturamento."),
+  c("preco.cbsReferencia", "CBS — alíquota de referência (reforma)", "%", "pct", "Estimativa até o Senado fixar (governo: ~8,8%). Só a aba Reforma usa: cobrada por fora do preço a partir de 2027."),
+  c("preco.ibsReferencia", "IBS — alíquota de referência (reforma)", "%", "pct", "Estimativa (governo: ~17,7%, estados + municípios). Entra em frações de 2029 a 2032 e cheio em 2033, enquanto ISS e ICMS saem."),
+  c("preco.reducaoIbsCbsPct", "Redução de IBS/CBS do serviço", "% das alíquotas", "pct", "Fretamento: 0% (alíquota cheia). A redução de 40% é do transporte coletivo regular (LC 214/2025)."),
   c("preco.creditoPisCofinsPct", "Crédito de PIS/COFINS não cumulativo", "% dos custos com crédito", "pct", "Transporte de passageiros (fretamento incluído) fica no PIS/COFINS cumulativo de 3,65% SEM crédito mesmo no Lucro Real (SC Cosit 50/2026). Só a locação sem motorista no Real é não cumulativa: 9,25% com crédito sobre combustível, peças, pneus, depreciação e garagem."),
 ];
 
@@ -217,6 +221,9 @@ export const PREMISSAS_PADRAO: Premissas = {
     creditoPisCofinsPct: 0,
     irpjLocacao: IRPJ_LOCACAO_PADRAO,
     csllLocacao: CSLL_LOCACAO_PADRAO,
+    cbsReferencia: CBS_REFERENCIA_PADRAO,
+    ibsReferencia: IBS_REFERENCIA_PADRAO,
+    reducaoIbsCbsPct: 0,
   },
 };
 
@@ -280,6 +287,9 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
   deParam("preco.csll", "csll");
   deParam("preco.iss", "iss_sp");
   deParam("preco.icms", "icms_sp");
+  deParam("preco.cbsReferencia", "cbs_referencia", normalizarPct);
+  deParam("preco.ibsReferencia", "ibs_referencia", normalizarPct);
+  deParam("preco.reducaoIbsCbsPct", "reducao_ibs_cbs", normalizarPct);
   deParam("preco.custoCapitalGiroAm", "capital_giro_am");
   // Garantia contratual (art. 96 da Lei 14.133): custo proporcional ao valor
   // do contrato, então entra como despesa sobre o preço.

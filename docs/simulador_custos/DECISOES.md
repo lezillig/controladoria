@@ -390,6 +390,36 @@ Aprendido com o roteiro de outro kit de custeio (detalhe em
 - **Registro intermunicipal em SP**: ARTESP; a EMTU deixou de ser citada como
   órgão vigente.
 
+## 7.3 Reforma tributária ano a ano (aba 6. Reforma)
+
+O estudo calcula com os tributos de hoje; a aba Reforma passa o mesmo custo
+por cada ano civil do contrato com os tributos daquele ano
+(`src/lib/simulador/reforma.ts`):
+
+- 2026: PIS/COFINS como hoje; CBS 0,9% + IBS 0,1% de teste, compensados;
+- 2027–2028: sem PIS/COFINS; CBS cheia − 0,1 p.p.; IBS 0,1%;
+- 2029–2032: ISS/ICMS a 90/80/70/60%; IBS a 10/20/30/40% da referência;
+- 2033: ISS/ICMS extintos; IBS cheio.
+
+CBS e IBS por fora do preço, com crédito sobre as compras (combustível,
+ARLA, óleo, pneus, manutenção, pedágio, garagem, telemetria, higienização;
+o veículo só com "comprado com crédito"), a folha sem crédito. IRPJ/CSLL
+continuam (Presumido: sobre a receita sem CBS/IBS). Duas leituras: B, o
+preço que mantém o lucro alvo (nota a cobrar e reequilíbrio sobre a de
+hoje); A, o cliente pagando a nota de hoje (a margem que sobra). Em 2026 o
+B é o preço do motor; em todos os anos o B dá exatamente o lucro alvo
+(teste). Simplificações ditas na tela: insumos ao preço de hoje com CBS/IBS
+dentro (crédito = t ÷ (1 + t)); administração central igual.
+
+Alíquotas de referência: premissas `preco.cbsReferencia` (8,8%),
+`preco.ibsReferencia` (17,7%) e `preco.reducaoIbsCbsPct` (0, fretamento),
+estimativas até o Senado fixar; na base, `cbs_referencia`, `ibs_referencia`
+e `reducao_ibs_cbs`. O início do contrato é o da aba (gravado na versão, em
+`entrada.reforma`), senão o início previsto do estudo, senão o mês seguinte.
+O alerta da Decisão traz os números; o Orçamento mostra preço sem CBS/IBS,
+CBS, IBS e valor da nota de 2027 em diante; o Excel ganhou a aba Reforma e
+a cláusula de reequilíbrio sugerida.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

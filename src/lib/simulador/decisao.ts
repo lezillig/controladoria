@@ -1,3 +1,4 @@
+import { reformaAnoAAno } from "./reforma";
 import { simular } from "./motor";
 import { escreverCaminho, lerCaminho, type MapaOrigem } from "./premissas";
 import { CATEGORIA_DO_TIPO, type EntradaSimulacao, type Premissas, type ResultadoSimulacao, type UnidadePreco } from "./tipos";
@@ -228,13 +229,27 @@ export function montarPainel(
   // reequilíbrio pela mudança tributária.
   const inicio = opcoes.inicioContrato ?? new Date();
   const fim = new Date(inicio.getFullYear(), inicio.getMonth() + entrada.premissas.contrato.vigenciaMeses, 1);
-  if (fim > new Date(2027, 0, 1))
+  if (fim > new Date(2027, 0, 1)) {
+    // Os números da aba Reforma: a margem que sobra com a nota de hoje e o
+    // reequilíbrio para manter o lucro alvo.
+    let numeros = "";
+    try {
+      const ref = reformaAnoAAno(entrada, resultado, { inicio: { ano: inicio.getFullYear(), mes: inicio.getMonth() + 1 }, creditoVeiculo: entrada.reforma?.creditoVeiculo === true });
+      const ultimo = ref.anos[ref.anos.length - 1];
+      if (ref.piorSemReequilibrio && ultimo)
+        numeros = ` Com as alíquotas estimadas, sem reequilíbrio a margem cai de ${pctTexto(ref.hoje.margem ?? 0)} para ${pctTexto(ref.piorSemReequilibrio.margem ?? 0)} em ${ref.piorSemReequilibrio.ano}; para manter o lucro alvo, a nota sobe ${pctTexto(ultimo.reequilibrio ?? 0)} até ${ultimo.ano} (aba Reforma).`;
+    } catch {
+      numeros = "";
+    }
     alertas.push({
       nivel: "INFO",
       titulo: "Contrato atravessa a reforma tributária",
       detalhe:
-        "A partir de 2027 a CBS substitui PIS/COFINS e é cobrada por fora do preço; de 2029 a 2032 ISS e ICMS caem com a entrada do IBS (em 2026, CBS 0,9% e IBS 0,1% são compensáveis — carga adicional zero). O fretamento não tem redução: vai à alíquota integral; a redução de 40% é do transporte coletivo regular (LC 214/2025, art. 284 e 286). Os tributos desta simulação são os de hoje: preveja cláusula de reequilíbrio pela mudança tributária.",
+        "A partir de 2027 a CBS substitui PIS/COFINS e é cobrada por fora do preço; de 2029 a 2032 ISS e ICMS caem com a entrada do IBS (em 2026, CBS 0,9% e IBS 0,1% são compensáveis — carga adicional zero). O fretamento não tem redução: vai à alíquota integral; a redução de 40% é do transporte coletivo regular (LC 214/2025, art. 284 e 286)." +
+        numeros +
+        " Preveja cláusula de reequilíbrio pela mudança tributária.",
     });
+  }
   // IMPOSTO EM DOBRO: IRPJ/CSLL na receita (Presumido) E sobre o lucro
   // (Real) ao mesmo tempo; crédito de PIS/COFINS com alíquota cumulativa.
   if (pr.irpjCsllSobreLucroPct > 0 && pr.irpj + pr.csll > 0)

@@ -88,6 +88,10 @@ export const CATALOGO_PARAMETROS: DefinicaoParametro[] = [
   p("TRIBUTO", "icms_outros", "ICMS interestadual", "pct", false),
   p("TRIBUTO", "retencoes", "Retenções na fonte", "texto", false),
   p("TRIBUTO", "cprb", "Desoneração da folha", "texto", false),
+  // Reforma tributária (aba Reforma dos estudos): referências estimadas.
+  p("TRIBUTO", "cbs_referencia", "CBS — alíquota de referência (reforma)", "pct", false),
+  p("TRIBUTO", "ibs_referencia", "IBS — alíquota de referência (reforma)", "pct", false),
+  p("TRIBUTO", "reducao_ibs_cbs", "Redução de IBS/CBS do serviço (fretamento: 0%)", "pct", false),
   // 5 — Financeiro
   p("FINANCEIRO", "prazo_prefeituras", "Prazo médio real de recebimento — prefeituras", "numero"),
   p("FINANCEIRO", "prazo_empresas", "Prazo médio real de recebimento — empresas", "numero"),

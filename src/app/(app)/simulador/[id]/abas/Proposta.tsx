@@ -1,5 +1,6 @@
 "use client";
 
+import { lerInicio, proximoMes, reformaAnoAAno } from "@/lib/simulador/reforma";
 import { ROTULO_UNIDADE, type EntradaSimulacao, type ResultadoSimulacao } from "@/lib/simulador/tipos";
 import { Cartao, brl, num, pct, td, tdN, th, thN, botao, botaoPrimario } from "../comum";
 
@@ -36,12 +37,14 @@ export default function Proposta({
   nomeArquivo,
   aoExportarExcel,
   exportando,
+  inicioPrevisto = null,
 }: {
   entrada: EntradaSimulacao;
   resultado: ResultadoSimulacao;
   nomeArquivo: string;
   aoExportarExcel: () => void;
   exportando: boolean;
+  inicioPrevisto?: string | null;
 }) {
   const mensal = entrada.premissas.contrato.modo === "MENSAL";
   const unidade = resultado.unidade;
@@ -98,7 +101,14 @@ export default function Proposta({
     baixar(`${nomeArquivo}.csv`, csv([cab, ...linhas, linhaTotal]), "text/csv;charset=utf-8");
   };
 
+  // A partir de 2027 a nota leva CBS e IBS por fora: o preço sem eles, os
+  // tributos destacados e o valor da nota, por mês, em cada ano (aba Reforma).
+  const inicio = lerInicio(entrada.reforma?.inicio ?? inicioPrevisto) ?? lerInicio(proximoMes())!;
+  const reforma = reformaAnoAAno(entrada, resultado, { inicio, creditoVeiculo: entrada.reforma?.creditoVeiculo === true });
+  const anosNovos = reforma.anos.filter((a) => a.ano >= 2027);
+
   return (
+    <>
     <Cartao
       titulo="Orçamento"
       ajuda={`Preço de cada item na unidade do contrato (${ROTULO_UNIDADE[unidade]}) e o equivalente nas outras unidades. Valores do ${periodo} na utilização prevista.`}
@@ -195,5 +205,38 @@ export default function Proposta({
         </p>
       )}
     </Cartao>
+    {anosNovos.length > 0 && (
+      <Cartao
+        titulo="A partir de 2027: preço, CBS/IBS e valor da nota"
+        ajuda="Com a reforma, a CBS e o IBS são somados ao preço e destacados na nota. Por mês, no preço que mantém o lucro alvo em cada ano (estimativa — detalhe na aba Reforma)."
+      >
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full text-[13px]">
+            <thead>
+              <tr>
+                {["Ano", "Preço sem CBS/IBS (mês)", "CBS (mês)", "IBS (mês)", "Valor da nota (mês)", "Sobre a nota de hoje"].map((t, k) => (
+                  <th key={t} className={k === 0 ? th : thN}>
+                    {t}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {anosNovos.map((a) => (
+                <tr key={a.ano}>
+                  <td className={td}>{a.ano}</td>
+                  <td className={tdN}>{brl(a.receita / a.meses)}</td>
+                  <td className={tdN}>{brl(a.cbs / a.meses)}</td>
+                  <td className={tdN}>{brl(a.ibs / a.meses)}</td>
+                  <td className={`${tdN} font-semibold`}>{brl(a.nota / a.meses)}</td>
+                  <td className={tdN}>{a.reequilibrio === null ? "—" : `${a.reequilibrio >= 0 ? "+" : ""}${pct(a.reequilibrio)}`}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Cartao>
+    )}
+    </>
   );
 }
