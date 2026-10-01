@@ -3,6 +3,7 @@
 // A aritmética de um DRE é a parte que ninguém confere de olho: os subtotais
 // encadeiam, e um sinal trocado no meio fecha o resultado líquido certo com o
 // lucro bruto errado. É exatamente o erro que passa numa reunião.
+import { agruparPorDocumento, grupoDoDocumento } from "../src/lib/controladoria/dreNoBanco";
 import { categoriasEmColisao, chaveDaCategoria, partesDaChave } from "../src/lib/controladoria/chaveCategoria";
 import { montarDre, montarDreAnual, proporLinha } from "../src/lib/controladoria/dre";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
@@ -177,6 +178,25 @@ console.log("\n2d. Categoria classificada direto em pessoas — corporativo: int
     r.linhas.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO")?.itens.map((i) => i.linhaClassificada),
     ["DESPESA_SALARIOS_CORPORATIVO"]
   );
+}
+
+// ------------------------------------------------------ receita por documento
+console.log("\n2e. Receita bruta por tipo de documento");
+{
+  conferir(
+    "grupos dos tipos da Omie",
+    [grupoDoDocumento("NFS-e"), grupoDoDocumento("NF"), grupoDoDocumento("CTe OS"), grupoDoDocumento("CTRC"), grupoDoDocumento("REC"), grupoDoDocumento("99999"), grupoDoDocumento(null), grupoDoDocumento("99999", "Reembolso de despesas")],
+    ["Nota fiscal (NF-e / NFS-e)", "Nota fiscal (NF-e / NFS-e)", "CT-e / CT-e OS", "CT-e / CT-e OS", "Recibo", "Outros (99999)", "Sem tipo de documento", "Reembolso"]
+  );
+  const g = agruparPorDocumento(
+    [
+      { tipo: "NFS", categoria: "1", atualCents: 500, anteriorCents: 400, quantidade: 2 },
+      { tipo: "NFE", categoria: "1", atualCents: 300, anteriorCents: 0, quantidade: 1 },
+      { tipo: "REC", categoria: "2", atualCents: 100, anteriorCents: 50, quantidade: 1 },
+    ],
+    new Map([["1", "Serviços"], ["2", "Reembolsos"]])
+  );
+  conferir("soma por grupo, maior primeiro", g.map((x) => [x.grupo, x.atualCents, x.tipos]), [["Nota fiscal (NF-e / NFS-e)", 800, ["NFE", "NFS"]], ["Reembolso", 100, ["REC"]]]);
 }
 
 // ------------------------------------------------------ sem categoria

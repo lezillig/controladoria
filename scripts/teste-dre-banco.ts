@@ -306,6 +306,17 @@ async function principal() {
           banco,
           memoria
         );
+        // A RECEITA BRUTA POR DOCUMENTO soma a linha, nos dois meses.
+        if (!somarRetencoes) {
+          const { receitaBrutaPorDocumento } = await import("../src/lib/controladoria/dreNoBanco");
+          const rb = banco.linhas.find((l) => l.chave === "RECEITA_BRUTA")!;
+          const docs = await receitaBrutaPorDocumento(escopo, janelas.mesAtual, janelas.mesAnterior, rb.itens.map((i) => ({ chave: i.categoriaCodigo, descricao: i.descricao })), regime);
+          conferir(
+            `receita por documento soma a receita bruta — ${alvo}, ${regime}`,
+            [docs.reduce((a, d) => a + d.atualCents, 0), docs.reduce((a, d) => a + d.anteriorCents, 0)],
+            [Math.abs(rb.valorCents), Math.abs(rb.valorAnteriorCents)]
+          );
+        }
       }
     }
 

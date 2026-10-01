@@ -836,3 +836,106 @@ export async function pessoasCorporativoPorCentroDeCusto(
     .filter((l) => l.atualCents !== 0 || l.anteriorCents !== 0)
     .sort((a, b) => b.atualCents - a.atualCents || b.anteriorCents - a.anteriorCents);
 }
+
+// A RECEITA BRUTA POR TIPO DE DOCUMENTO — nota fiscal, CT-e/CT-e OS, recibo,
+// reembolso —, no MESMO recorte da demonstração (as categorias da linha,
+// competência ou caixa, visão do grupo sem as operações entre as empresas).
+// Responde "quanto do faturamento tem documento fiscal": o recibo e o
+// reembolso não são faturamento de serviço com nota, e misturados no total
+// não aparecem.
+
+export type ReceitaPorDocumento = {
+  grupo: string;
+  // Os tipos de documento da Omie que caíram no grupo, como vieram.
+  tipos: string[];
+  atualCents: number;
+  anteriorCents: number;
+  quantidade: number;
+};
+
+const somenteLetras = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+// O grupo de um tipo de documento da Omie. Reembolso também pela categoria
+// (o título de reembolso costuma vir com tipo genérico).
+export function grupoDoDocumento(tipo: string | null | undefined, categoria = ""): string {
+  const t = somenteLetras(tipo ?? "");
+  if (t.includes("REEMB") || /reembols/i.test(categoria)) return "Reembolso";
+  if (t.startsWith("CTE") || t === "CTRC") return "CT-e / CT-e OS";
+  if (t.startsWith("NF")) return "Nota fiscal (NF-e / NFS-e)";
+  if (t.startsWith("REC") || t === "RPA") return "Recibo";
+  if (t === "") return "Sem tipo de documento";
+  return `Outros (${(tipo ?? "").trim()})`;
+}
+
+type LinhaDocumento = { tipo: string | null; categoria: string; atual: bigint; anterior: bigint; quantidade: bigint };
+
+export async function receitaBrutaPorDocumento(
+  escopo: EscopoDre,
+  periodo: Periodo,
+  periodoAnterior: Periodo,
+  categorias: { chave: string; descricao: string }[],
+  regime: "competencia" | "caixa"
+): Promise<ReceitaPorDocumento[]> {
+  if (categorias.length === 0) return [];
+  const desde = periodoAnterior.inicio < periodo.inicio ? periodoAnterior.inicio : periodo.inicio;
+  const ate = periodoAnterior.fim > periodo.fim ? periodoAnterior.fim : periodo.fim;
+  const chaves = categorias.map((c) => c.chave);
+  const linhas =
+    regime === "caixa"
+      ? await prisma.$queryRaw<LinhaDocumento[]>`
+          SELECT NULLIF(TRIM(t."tipoDocumento"), '') AS tipo, ${categoriaSql()} AS categoria,
+                 COALESCE(SUM(b."valorCents") FILTER (WHERE b."dataBaixa" >= ${periodo.inicio} AND b."dataBaixa" <= ${periodo.fim}), 0)::bigint AS atual,
+                 COALESCE(SUM(b."valorCents") FILTER (WHERE b."dataBaixa" >= ${periodoAnterior.inicio} AND b."dataBaixa" <= ${periodoAnterior.fim}), 0)::bigint AS anterior,
+                 COUNT(DISTINCT t.id) FILTER (WHERE b."dataBaixa" >= ${periodo.inicio} AND b."dataBaixa" <= ${periodo.fim})::bigint AS quantidade
+            FROM ${tabela("OmieBaixa")} b
+            JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
+           WHERE b."companyId" = ${escopo.companyId}
+             AND b."dataBaixa" >= ${desde}
+             AND b."dataBaixa" <= ${ate}
+             AND t.cancelado = false
+             AND ${categoriaSql()} IN (${Prisma.join(chaves)})
+             ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1, 2`
+      : await prisma.$queryRaw<LinhaDocumento[]>`
+          SELECT NULLIF(TRIM(t."tipoDocumento"), '') AS tipo, ${categoriaSql()} AS categoria,
+                 COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${competenciaSql("t")} >= ${periodo.inicio} AND ${competenciaSql("t")} <= ${periodo.fim}), 0)::bigint AS atual,
+                 COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${competenciaSql("t")} >= ${periodoAnterior.inicio} AND ${competenciaSql("t")} <= ${periodoAnterior.fim}), 0)::bigint AS anterior,
+                 COUNT(*) FILTER (WHERE ${competenciaSql("t")} >= ${periodo.inicio} AND ${competenciaSql("t")} <= ${periodo.fim})::bigint AS quantidade
+            FROM ${tabela("OmieTitulo")} t
+           WHERE t."companyId" = ${escopo.companyId}
+             AND t.cancelado = false
+             AND ${competenciaSql("t")} >= ${desde}
+             AND ${competenciaSql("t")} <= ${ate}
+             AND ${categoriaSql()} IN (${Prisma.join(chaves)})
+             ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1, 2`;
+  return agruparPorDocumento(
+    linhas.map((l) => ({ tipo: l.tipo, categoria: l.categoria, atualCents: Number(l.atual), anteriorCents: Number(l.anterior), quantidade: Number(l.quantidade) })),
+    new Map(categorias.map((c) => [c.chave, c.descricao]))
+  );
+}
+
+// Pura: soma por grupo. O sinal acompanha o da linha (a soma é em módulo no
+// fim, como a linha do DRE).
+export function agruparPorDocumento(
+  linhas: { tipo: string | null; categoria: string; atualCents: number; anteriorCents: number; quantidade: number }[],
+  descricaoDaCategoria: Map<string, string>
+): ReceitaPorDocumento[] {
+  const grupos = new Map<string, ReceitaPorDocumento>();
+  for (const l of linhas) {
+    const nome = grupoDoDocumento(l.tipo, descricaoDaCategoria.get(l.categoria) ?? "");
+    const g = grupos.get(nome) ?? { grupo: nome, tipos: [], atualCents: 0, anteriorCents: 0, quantidade: 0 };
+    g.atualCents += l.atualCents;
+    g.anteriorCents += l.anteriorCents;
+    g.quantidade += l.quantidade;
+    const tipo = l.tipo ?? "(em branco)";
+    if (!g.tipos.includes(tipo)) g.tipos.push(tipo);
+    grupos.set(nome, g);
+  }
+  return [...grupos.values()]
+    .map((g) => ({ ...g, atualCents: Math.abs(g.atualCents), anteriorCents: Math.abs(g.anteriorCents), tipos: g.tipos.sort() }))
+    .filter((g) => g.atualCents !== 0 || g.anteriorCents !== 0)
+    .sort((a, b) => b.atualCents - a.atualCents || b.anteriorCents - a.anteriorCents);
+}

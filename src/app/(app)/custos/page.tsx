@@ -2,7 +2,7 @@ import { categoriasEmColisao, categoriasPorChave, descreverColisoes } from "@/li
 import Link from "next/link";
 import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
 import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
-import { intercompanyEliminado, montarDreNoBanco, montarDreAnualNoBanco, pessoasCorporativoPorCentroDeCusto, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
+import { intercompanyEliminado, montarDreNoBanco, montarDreAnualNoBanco, pessoasCorporativoPorCentroDeCusto, receitaBrutaPorDocumento, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
 import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
@@ -158,6 +158,19 @@ export default async function CustosPage({
           recorteMensal.periodo,
           recorteMensal.periodoAnterior,
           linhaCorporativa.itens.map((i) => i.categoriaCodigo),
+          regime
+        )
+      : [];
+  // A RECEITA BRUTA POR TIPO DE DOCUMENTO (nota, CT-e, recibo, reembolso):
+  // as mesmas categorias da linha, no mesmo recorte. Só no mês.
+  const linhaReceita = anual ? undefined : dre.linhas.find((l) => l.chave === "RECEITA_BRUTA");
+  const receitaPorDocumento =
+    linhaReceita && linhaReceita.itens.length > 0
+      ? await receitaBrutaPorDocumento(
+          escopoSql,
+          recorteMensal.periodo,
+          recorteMensal.periodoAnterior,
+          linhaReceita.itens.map((i) => ({ chave: i.categoriaCodigo, descricao: i.descricao })),
           regime
         )
       : [];
@@ -573,6 +586,38 @@ export default async function CustosPage({
           estrutura legal: serve para decidir no dia 5, não para assinar balanço. O DRE oficial é o da contabilidade.
         </p>
       </Secao>
+
+      {linhaReceita && receitaPorDocumento.length > 0 && (
+        <Secao
+          titulo="Receita bruta por tipo de documento"
+          descricao="A receita bruta da demonstração aberta pelo tipo de documento de cada título na Omie (nota fiscal, CT-e/CT-e OS, recibo, reembolso), no mesmo recorte. Reembolso também pela categoria. Recibo e reembolso não têm documento fiscal de serviço."
+        >
+          <Tabela
+            colunas={["Documento", "Tipos na Omie", comparativo.janelas.mesAtual.rotulo, "% da receita bruta", "Títulos", "Mês anterior (fechado)"]}
+            alinharDireita={[2, 3, 4, 5]}
+            linhas={[
+              ...receitaPorDocumento.map((g) => [
+                g.grupo,
+                <span key="t" className="text-xs text-slate-500">{g.tipos.join(", ")}</span>,
+                <span key="a" className="tabular-nums">{fmtBRL(g.atualCents)}</span>,
+                <span key="p" className="tabular-nums">
+                  {fmtPercent(linhaReceita.valorCents !== 0 ? (g.atualCents / Math.abs(linhaReceita.valorCents)) * 100 : null)}
+                </span>,
+                <span key="q" className="tabular-nums">{g.quantidade}</span>,
+                <span key="b" className="tabular-nums">{fmtBRL(g.anteriorCents)}</span>,
+              ]),
+              [
+                <strong key="t">Receita bruta</strong>,
+                "",
+                <strong key="a" className="tabular-nums">{fmtBRL(Math.abs(linhaReceita.valorCents))}</strong>,
+                "",
+                "",
+                <strong key="b" className="tabular-nums">{fmtBRL(Math.abs(linhaReceita.valorAnteriorCents))}</strong>,
+              ],
+            ]}
+          />
+        </Secao>
+      )}
 
       {linhaCorporativa && centrosDeCusto.length > 0 && (
         <Secao
