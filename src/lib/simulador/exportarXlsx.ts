@@ -1289,7 +1289,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
 //
 // A aba Reforma do estudo, em valores (a conta está em reforma.ts e os
 // testes a conferem): a tabela de transição e cada ano do contrato — o preço
-// que mantém o lucro alvo e a margem com a nota de hoje.
+// que mantém o lucro alvo e a margem com a nota de hoje —, seguidos dos anos
+// da transição depois do contrato, como renovação.
 function abaReforma(w: ExcelJS.Worksheet, d: DadosExportacao) {
   const inicioTexto = d.entrada.reforma?.inicio ?? d.comercial?.inicioPrevisto?.slice(0, 7) ?? null;
   const inicio = lerInicio(inicioTexto) ?? lerInicio(proximoMes(d.geradoEm))!;
@@ -1319,8 +1320,11 @@ function abaReforma(w: ExcelJS.Worksheet, d: DadosExportacao) {
   l++;
   secao(w, l++, "O CONTRATO ANO A ANO (R$ no ano)", col);
   cabecalho(w, l++, ["Ano", "Meses", "Custo", "Crédito", "Tributos por dentro", "B: preço sem CBS/IBS", "B: CBS + IBS", "B: nota", "B: reequilíbrio", "A: margem", "Carga"], [10, 14, 16, 16, 16, 18, 16, 16, 14, 12, 12]);
-  for (const a of ref.anos) {
-    escrever(w, l, 1, a.ano);
+  for (const a of [...ref.anos, ...ref.alemDoContrato]) {
+    if (a === ref.alemDoContrato[0]) {
+      nota(w, l++, "Depois do contrato, até o fim da transição: projeção como renovação nas mesmas condições, 12 meses por ano.", col);
+    }
+    escrever(w, l, 1, a.projecao ? `${a.ano} (renovação)` : a.ano);
     escrever(w, l, 2, a.meses, { fmt: "0" });
     escrever(w, l, 3, a.custo, { fmt: BRL });
     escrever(w, l, 4, -a.credito, { fmt: BRL });

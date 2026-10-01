@@ -105,7 +105,7 @@ export default function Proposta({
   // tributos destacados e o valor da nota, por mês, em cada ano (aba Reforma).
   const inicio = lerInicio(entrada.reforma?.inicio ?? inicioPrevisto) ?? lerInicio(proximoMes())!;
   const reforma = reformaAnoAAno(entrada, resultado, { inicio, creditoVeiculo: entrada.reforma?.creditoVeiculo === true });
-  const anosNovos = reforma.anos.filter((a) => a.ano >= 2027);
+  const anosNovos = [...reforma.anos, ...reforma.alemDoContrato].filter((a) => a.ano >= 2027);
 
   return (
     <>
@@ -208,7 +208,7 @@ export default function Proposta({
     {anosNovos.length > 0 && (
       <Cartao
         titulo="A partir de 2027: preço, CBS/IBS e valor da nota"
-        ajuda="Com a reforma, a CBS e o IBS são somados ao preço e destacados na nota. Por mês, no preço que mantém o lucro alvo em cada ano (estimativa — detalhe na aba Reforma)."
+        ajuda="Com a reforma, a CBS e o IBS são somados ao preço e destacados na nota. Por mês, no preço que mantém o lucro alvo em cada ano, até o fim da transição em 2033; os anos depois do contrato valem se ele for renovado (estimativa — detalhe na aba Reforma)."
       >
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-[13px]">
@@ -224,7 +224,10 @@ export default function Proposta({
             <tbody>
               {anosNovos.map((a) => (
                 <tr key={a.ano}>
-                  <td className={td}>{a.ano}</td>
+                  <td className={td}>
+                    {a.ano}
+                    {a.projecao && <span className="ml-1 text-[11px] text-slate-500">renovação</span>}
+                  </td>
                   <td className={tdN}>{brl(a.receita / a.meses)}</td>
                   <td className={tdN}>{brl(a.cbs / a.meses)}</td>
                   <td className={tdN}>{brl(a.ibs / a.meses)}</td>

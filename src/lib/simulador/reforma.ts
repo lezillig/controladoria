@@ -4,7 +4,9 @@ import type { EntradaSimulacao, Premissas, ResultadoSimulacao } from "./tipos";
 // A REFORMA TRIBUTÁRIA ANO A ANO (EC 132/2023, LC 214/2025).
 //
 // O estudo calcula com os tributos de hoje. Aqui, o mesmo custo passa por
-// cada ano do contrato com os tributos daquele ano:
+// cada ano do contrato com os tributos daquele ano — e, depois do fim do
+// contrato, pelos anos que faltam até 2033, como renovação nas mesmas
+// condições (12 meses por ano):
 //   - 2026: PIS/COFINS como hoje; CBS 0,9% e IBS 0,1% de teste, compensáveis
 //     (carga adicional zero — só destaque na nota);
 //   - 2027 e 2028: PIS/COFINS extintos; CBS cheia menos 0,1 p.p. e IBS 0,1%;
@@ -64,6 +66,9 @@ export type Linha = { rotulo: string; aliquota: number | null; valor: number; me
 export type AnoReforma = {
   ano: number;
   meses: number;
+  // Ano depois do fim do contrato, projetado como renovação nas mesmas
+  // condições (12 meses): mostra o reequilíbrio até o fim da transição.
+  projecao: boolean;
   transicao: AnoTransicao;
   // Valores do ANO (mês médio × meses do contrato no ano).
   custo: number;
@@ -93,6 +98,8 @@ export type ReformaDoEstudo = {
   vigenciaMeses: number;
   hoje: { notaMes: number; margem: number | null; custoMes: number };
   anos: AnoReforma[];
+  // Os anos da transição depois do contrato (até 2033), se renovado.
+  alemDoContrato: AnoReforma[];
   tabela: AnoTransicao[];
   // A pior margem sem reequilíbrio e o reequilíbrio acumulado até o último ano.
   piorSemReequilibrio: { ano: number; margem: number | null } | null;
@@ -188,8 +195,7 @@ export function reformaAnoAAno(
     return antes - (ir > 0 ? Math.max(0, antes + naoDedutiveisMes) * ir : 0);
   };
 
-  const porAno = mesesPorAno(opcoes.inicio, p.contrato.vigenciaMeses);
-  const anos: AnoReforma[] = [...porAno].map(([ano, meses]) => {
+  const calcularAno = (ano: number, meses: number, projecao: boolean): AnoReforma => {
     const t = anoDaTransicao(tabela, ano);
     const novo = !t.pisCofins; // CBS/IBS de verdade (não o teste de 2026)
     const aliquota = novo ? t.cbs + t.ibs : 0;
@@ -238,6 +244,7 @@ export function reformaAnoAAno(
     return {
       ano,
       meses,
+      projecao,
       transicao: t,
       custo: custoMes * meses,
       credito: creditoMes * meses,
@@ -261,7 +268,14 @@ export function reformaAnoAAno(
         margem: receitaA > 0 ? lucroA / receitaA : null,
       },
     };
-  });
+  };
+
+  const porAno = mesesPorAno(opcoes.inicio, p.contrato.vigenciaMeses);
+  const anos = [...porAno].map(([ano, meses]) => calcularAno(ano, meses, false));
+  const ultimoAno = Math.max(...porAno.keys());
+  const ANO_FINAL = tabela[tabela.length - 1].ano;
+  const alemDoContrato: AnoReforma[] = [];
+  for (let ano = ultimoAno + 1; ano <= ANO_FINAL; ano++) alemDoContrato.push(calcularAno(ano, 12, true));
 
   const comMargem = anos.filter((a) => a.semReequilibrio.margem !== null);
   const pior = comMargem.length ? comMargem.reduce((a, b) => ((b.semReequilibrio.margem ?? 0) < (a.semReequilibrio.margem ?? 0) ? b : a)) : null;
@@ -271,6 +285,7 @@ export function reformaAnoAAno(
     vigenciaMeses: p.contrato.vigenciaMeses,
     hoje: { notaMes: faturamentoMes, margem: resultado.totais.margem, custoMes: custoMes - creditoHojeMes },
     anos,
+    alemDoContrato,
     tabela,
     piorSemReequilibrio: pior ? { ano: pior.ano, margem: pior.semReequilibrio.margem } : null,
     reequilibrioFinal: ultimo?.reequilibrio ?? null,

@@ -83,6 +83,26 @@ for (const [nome, e] of [
   ok("cláusula traz os anos", /2027: [+-]/.test(clausulaDeReequilibrio(ref)) && /LC|Lei Complementar 214/.test(clausulaDeReequilibrio(ref)));
 }
 
+console.log("\nDEPOIS DO CONTRATO — os anos que faltam até 2033, como renovação");
+{
+  const e = van();
+  e.premissas.contrato.vigenciaMeses = 12;
+  const r = simular(e);
+  const ref = reformaAnoAAno(e, r, { inicio: { ano: 2026, mes: 10 } });
+  ok("contrato: 2026 (3 meses) e 2027 (9 meses)", ref.anos.map((x) => `${x.ano}:${x.meses}`).join(",") === "2026:3,2027:9" && ref.anos.every((x) => !x.projecao));
+  ok("depois: 2028 a 2033, 12 meses cada, marcados como projeção", ref.alemDoContrato.map((x) => x.ano).join(",") === "2028,2029,2030,2031,2032,2033" && ref.alemDoContrato.every((x) => x.meses === 12 && x.projecao));
+  // O ano projetado é a mesma conta de um contrato que cobrisse aquele ano.
+  const longo = reformaAnoAAno({ ...e, premissas: { ...e.premissas, contrato: { ...e.premissas.contrato, vigenciaMeses: 96 } } }, r, { inicio: { ano: 2026, mes: 1 } });
+  for (const y of [2029, 2033]) {
+    const p = ref.alemDoContrato.find((x) => x.ano === y)!, c = longo.anos.find((x) => x.ano === y)!;
+    perto(`${y}: projeção = ano de contrato (reequilíbrio)`, p.reequilibrio ?? 0, c.reequilibrio ?? 0, 1e-9);
+    perto(`${y}: projeção = ano de contrato (nota)`, p.nota, c.nota, 0.01);
+  }
+  ok("indicadores e cláusula seguem só o contrato", ref.reequilibrioFinal === ref.anos[1].reequilibrio && !/2029:/.test(clausulaDeReequilibrio(ref)));
+  const fim = reformaAnoAAno(e, r, { inicio: { ano: 2033, mes: 1 } });
+  ok("contrato em 2033: nada depois", fim.alemDoContrato.length === 0);
+}
+
 console.log("\nLUCRO REAL — B mantém o lucro alvo depois do IR");
 {
   const e = van();

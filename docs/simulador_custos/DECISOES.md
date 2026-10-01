@@ -440,6 +440,22 @@ O alerta da Decisão traz os números; o Orçamento mostra preço sem CBS/IBS,
 CBS, IBS e valor da nota de 2027 em diante; o Excel ganhou a aba Reforma e
 a cláusula de reequilíbrio sugerida.
 
+Depois do fim do contrato, a aba, o Orçamento e o Excel seguem até 2033
+com os anos que faltam da transição (`alemDoContrato`), como renovação nas
+mesmas condições, 12 meses por ano, marcados "renovação" e mais claros no
+gráfico. É a mesma conta de um contrato que cobrisse aquele ano (teste). Os
+indicadores do topo (pior margem, reequilíbrio no último ano, carga média) e
+a cláusula seguem só os anos do contrato.
+
+## 7.4 Modelo de proposta (Word)
+
+`docs/proposta-modelo/` tem o modelo de proposta técnica e comercial da Azul
+Mob em Word (`Modelo_Proposta_Azul_Mob.docx`), gerado por `gerar.js` (lib
+`docx`) com o papel timbrado da empresa e fotos do site azulmob.com.br
+(`img/`). Os campos a preencher estão entre « » com marca-texto amarelo; a
+tabela de preço ano a ano (2026–2033) é a da aba Reforma. Próximo passo
+possível: o simulador gerar este documento já preenchido com o estudo.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

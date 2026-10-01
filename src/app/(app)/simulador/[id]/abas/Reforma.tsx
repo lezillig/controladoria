@@ -33,14 +33,14 @@ function GraficoMargem({ anos, alvo }: { anos: AnoReforma[]; alvo: number }) {
         const x = M.l + i * bw + bw * 0.22, w = bw * 0.56, topo = Math.min(y(0), y(v)), altura = Math.max(1, Math.abs(y(v) - y(0)));
         return (
           <g key={a.ano}>
-            <title>{`${a.ano}: margem ${pct(v)} sem reequilíbrio; ${a.reequilibrio !== null ? `reequilíbrio para manter o alvo ${pct(a.reequilibrio)}` : ""}`}</title>
-            <rect x={x} y={topo} width={w} height={altura} rx={4} fill={v >= alvo - 0.0005 ? "#1d4ed8" : v >= 0 ? "#d97706" : "#c2410c"} />
+            <title>{`${a.ano}${a.projecao ? " (renovação)" : ""}: margem ${pct(v)} sem reequilíbrio; ${a.reequilibrio !== null ? `reequilíbrio para manter o alvo ${pct(a.reequilibrio)}` : ""}`}</title>
+            <rect x={x} y={topo} width={w} height={altura} rx={4} fill={v >= alvo - 0.0005 ? "#1d4ed8" : v >= 0 ? "#d97706" : "#c2410c"} fillOpacity={a.projecao ? 0.4 : 1} />
             <text
               x={x + w / 2}
               y={altura > 24 ? topo + 16 : topo - 5}
               textAnchor="middle"
               fontSize={11}
-              fill={altura > 24 ? "#ffffff" : "#0f172a"}
+              fill={altura > 24 && !a.projecao ? "#ffffff" : "#0f172a"}
               fontFamily="var(--font-geist-mono), monospace"
             >
               {pct(v)}
@@ -164,16 +164,17 @@ export default function Reforma({ entrada, resultado, alterar, inicioPrevisto }:
 
         <div>
           <h3 className="text-sm font-semibold text-slate-900">Margem por ano, se o cliente continuar pagando a nota de hoje</h3>
-          <GraficoMargem anos={ref.anos} alvo={alvo} />
+          <GraficoMargem anos={[...ref.anos, ...ref.alemDoContrato]} alvo={alvo} />
           <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#1d4ed8]" /> no lucro alvo
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#d97706]" /> abaixo do alvo
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#c2410c]" /> prejuízo · tracejado: lucro alvo
+            {ref.alemDoContrato.length > 0 && <span>· mais claro: depois do contrato, se renovado</span>}
           </div>
         </div>
       </Cartao>
 
-      <Cartao titulo="Ano a ano" ajuda="Valores de cada ano civil do contrato (meses do contrato no ano). B: o preço que mantém o lucro alvo — a nota a cobrar e o reequilíbrio sobre a de hoje. A: a nota de hoje, com a CBS/IBS saindo de dentro dela. Clique no ano para abrir tributos e créditos.">
+      <Cartao titulo="Ano a ano" ajuda="Valores de cada ano civil do contrato (meses do contrato no ano) e, depois dele, os anos que faltam até o fim da transição (2033), como renovação nas mesmas condições, 12 meses por ano. B: o preço que mantém o lucro alvo — a nota a cobrar e o reequilíbrio sobre a de hoje. A: a nota de hoje, com a CBS/IBS saindo de dentro dela. Clique no ano para abrir tributos e créditos.">
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-[13px]">
             <thead>
@@ -186,13 +187,25 @@ export default function Reforma({ entrada, resultado, alterar, inicioPrevisto }:
               </tr>
             </thead>
             <tbody>
-              {ref.anos.map((a) => (
+              {[...ref.anos, ...ref.alemDoContrato].map((a) => (
                 <Fragment key={a.ano}>
-                  <tr className="cursor-pointer hover:bg-slate-50" onClick={() => setAberto(aberto === a.ano ? null : a.ano)} aria-expanded={aberto === a.ano}>
+                  {a === ref.alemDoContrato[0] && (
+                    <tr>
+                      <td colSpan={11} className="border-y border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
+                        Depois do contrato, até o fim da transição — se renovado nas mesmas condições, 12 meses por ano
+                      </td>
+                    </tr>
+                  )}
+                  <tr
+                    className={`cursor-pointer hover:bg-slate-50 ${a.projecao ? "text-slate-500" : ""}`}
+                    onClick={() => setAberto(aberto === a.ano ? null : a.ano)}
+                    aria-expanded={aberto === a.ano}
+                  >
                     <td className={`${td} font-medium`}>
                       <span className="mr-1 text-slate-400">{aberto === a.ano ? "▾" : "▸"}</span>
                       {a.ano}
                       {a.transicao.teste && <span className="ml-1 text-[11px] font-normal text-slate-500">teste</span>}
+                      {a.projecao && <span className="ml-1 text-[11px] font-normal text-slate-500">renovação</span>}
                     </td>
                     <td className={tdN}>{a.meses}</td>
                     <td className={tdN}>{brl0(a.custo)}</td>
