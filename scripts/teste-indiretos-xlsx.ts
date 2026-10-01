@@ -77,6 +77,24 @@ meses.forEach((m, i) => {
 const lancamentos = classificarTitulos(titulos, dre, ["JL Business", "Joel"], { fornecedores: ["Manoel"], categorias: ["Compra de Serviços"] });
 
 async function principal() {
+  console.log("SÓCIOS NA ADMINISTRAÇÃO — o % ajustável da base");
+  {
+    const { premissasDaBase } = await import("../src/lib/simulador/premissas");
+    const base = (parametros: [string, number][]) => ({
+      em: new Date(2026, 9, 1),
+      parametros: new Map(parametros.map(([k, v]) => [k, { valor: v, texto: null, fonte: "teste", vigenciaInicio: new Date(2026, 0, 1) }])),
+      veiculos: [], funcoes: [], pedagios: [],
+    });
+    const escolhas = { clientePublico: false, escolar: false, baseLocal: false };
+    const adm = (parametros: [string, number][]) => premissasDaBase(base(parametros) as never, escolhas).premissas.indiretos.administracaoPct;
+    const p = premissasDaBase(base([["faturamento_medio", 100_000]]) as never, escolhas).premissas.preco;
+    const dv = 1 - p.lucroAlvoPct - p.pis - p.cofins - p.irpj - p.csll - Math.max(p.iss, p.icms) - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
+    const x = (a: number) => a / (dv - a);
+    perto("sócios inteiros por padrão (10 mil gerais + 20 mil sócios)", adm([["faturamento_medio", 100_000], ["gerais", 10_000], ["socios", 20_000]]), x(0.3), 1e-9);
+    perto("sócios a 50%", adm([["faturamento_medio", 100_000], ["gerais", 10_000], ["socios", 20_000], ["socios_pct_adm", 0.5]]), x(0.2), 1e-9);
+    perto("sócios a 0% (digitado como 0)", adm([["faturamento_medio", 100_000], ["gerais", 10_000], ["socios", 20_000], ["socios_pct_adm", 0]]), x(0.1), 1e-9);
+  }
+
   const soffice = ["soffice", "libreoffice"].find((c) => {
     const r = spawnSync(c, ["--version"], { stdio: "ignore" });
     return !r.error && r.status === 0;

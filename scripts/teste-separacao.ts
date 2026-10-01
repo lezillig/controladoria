@@ -87,8 +87,8 @@ console.log("\nUM MOTORISTA DE VAN (o estudo do print)");
   ok("encargos abertos nos grupos A a D", enc.sub?.map((x) => x.rotulo[0]).join("") === "ABCD");
   // 4.400 km ÷ 200 km/dia = 22 dias (segunda a sexta): VR R$ 42 × 22 = R$ 924.
   perto("VR por dia trabalhado: 42 × 22 dias", r.itens[0].valeRefeicao, 924);
-  perto("benefícios: 924 de VR + 661,26 da convenção + 100 de uniforme", ben.valor, 1685.26);
-  ok("benefícios abertos: VR, cesta, PLR, plano, uniforme", ben.sub?.map((x) => x.rotulo.split(" ")[0]).join(",") === "Vale-refeição,Cesta,PLR,Plano,Uniforme,");
+  perto("benefícios: 924 de VR + 661,26 da convenção + 15 de seguro de vida + 100 de uniforme", ben.valor, 1700.26);
+  ok("benefícios abertos: VR, cesta, PLR, plano, seguro, uniforme", ben.sub?.map((x) => x.rotulo.split(" ")[0]).join(",") === "Vale-refeição,Cesta,PLR,Plano,Seguro,Uniforme,");
   ok("o VR diz os dias", /22 dias trabalhados/.test(ben.sub?.[0].memo ?? ""));
   parcelasFecham("van", s);
 

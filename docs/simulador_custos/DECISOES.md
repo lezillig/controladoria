@@ -327,6 +327,16 @@ fornecedor e Lançamentos abrem cada custo nos títulos do Omie (quem recebeu,
 documento, competência, centro de custo), com a diferença para o DRE
 (movimentos de caixa sem título e ajustes).
 
+**Sócios na administração central.** A linha "Despesas com sócios" (pró-labore)
+entra como custo de estrutura (`socios`), na parte do campo
+`socios_pct_adm` da base (padrão 100%; 0% tira tudo). A folha da oficina
+continua na administração.
+
+**Seguro de vida e carro.** O seguro de vida da Azul (R$ 15 por pessoa/mês)
+entra nos benefícios padrão; vale-transporte fica zero (por estudo). O carro
+(SINDILOCADESP) usa o padrão da TRANSFRETUR Nível B até a convenção dele ser
+informada.
+
 **Fora da administração central.** O que está nas linhas de estrutura do DRE
 mas não é estrutura sai do rateio: por fornecedor (`fornecedores_fora_adm`,
 padrão "Manoel", o advogado) e por categoria (`categorias_fora_adm`, padrão

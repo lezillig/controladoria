@@ -1,9 +1,10 @@
 import ExcelJS from "exceljs";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import type { BaseVigente } from "./baseDeCustos";
-import { CATALOGO_PARAMETROS } from "./catalogo";
+import { CATALOGO_PARAMETROS, normalizarPct } from "./catalogo";
 import type { DreDosMeses } from "./custosReais";
 import {
+  CHAVE_SOCIOS_PCT,
   exclusoesDoDre,
   INDIRETO_FORA,
   LINHAS_DOS_INDIRETOS,
@@ -45,7 +46,7 @@ export type DadosIndiretos = {
   lancamentos?: LancamentoIndireto[];
 };
 
-export const INDIRETOS_DA_ADMINISTRACAO = ["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"] as const;
+export const INDIRETOS_DA_ADMINISTRACAO = ["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais", "socios"] as const;
 
 const BRL = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
 const PCT = "0.00%";
@@ -214,7 +215,10 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   const linhaFat = 5 + INDIRETOS_DA_ADMINISTRACAO.length + 1;
   const primeiraR = lr;
   for (const chave of INDIRETOS_DA_ADMINISTRACAO) {
-    const u = valorUsado(d, chave);
+    const bruto = valorUsado(d, chave);
+    // Sócios: só a parte que a base põe na administração (padrão 100%).
+    const pctSocios = chave === "socios" ? normalizarPct(Number(d.base?.parametros.get(CHAVE_SOCIOS_PCT)?.valor ?? 1)) : 1;
+    const u = chave === "socios" && pctSocios !== 1 ? { valor: bruto.valor * pctSocios, origem: `${(pctSocios * 100).toLocaleString("pt-BR")}% de ${bruto.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} — ${bruto.origem}` } : bruto;
     const r = ws.getRow(lr);
     r.getCell(1).value = rotuloDoIndireto(chave);
     r.getCell(2).value = u.valor;

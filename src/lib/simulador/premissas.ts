@@ -1,3 +1,4 @@
+import { CHAVE_SOCIOS_PCT } from "./indiretosDoDre";
 import { CBS_REFERENCIA_PADRAO, IBS_REFERENCIA_PADRAO } from "./reforma";
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B, VR_TRANSFRETUR_DIA } from "./convencoes";
@@ -155,7 +156,8 @@ export const PREMISSAS_PADRAO: Premissas = {
     horasNoturnasMes: 0,
     adicionalNoturnoPct: ADICIONAL_NOTURNO_PADRAO,
     // PLR + cesta + plano médico e odontológico da circular TRANSFRETUR
-    // 013-A/2026 — R$ 661,26 por mês — e o VR de R$ 42 por dia trabalhado.
+    // 013-A/2026 + seguro de vida da Azul — R$ 676,26 por mês — e o VR de
+    // R$ 42 por dia trabalhado.
     beneficiosPorFuncionario: Object.values(BENEFICIOS_MOTORISTA_TRANSFRETUR).reduce((a, v) => a + v, 0),
     valeRefeicaoDia: VR_TRANSFRETUR_DIA,
     uniformeEpiPorFuncionario: 100,
@@ -299,7 +301,13 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
 
   // Administração central: o rateio REAL (indiretos ÷ faturamento médio)
   // quando a base tem os números; senão, o percentual padrão das regras.
-  const indiretos = ["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"].map(numeroDe);
+  // Sócios (pró-labore): a parte que a base diz que é estrutura (padrão 100%).
+  const parteDosSocios = numeroDe(CHAVE_SOCIOS_PCT);
+  const socios = numeroDe("socios");
+  const indiretos = [
+    ...["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"].map(numeroDe),
+    socios === null ? null : socios * (parteDosSocios === null ? 1 : normalizarPct(parteDosSocios)),
+  ];
   const faturamento = numeroDe("faturamento_medio");
   if (faturamento && faturamento > 0 && indiretos.some((v) => v !== null)) {
     const total = indiretos.reduce<number>((a, v) => a + (v ?? 0), 0);
@@ -497,7 +505,9 @@ function perfil(
 }
 
 const PERFIS_BASE: PerfilVeiculo[] = [
-  perfil("CARRO", "CARRO", "Carro executivo (sedã/SUV)", 4, "B", 2400, 1.2,
+  // Carro: SINDILOCADESP, com o padrão da TRANSFRETUR Nível B até a convenção
+  // do carro ser informada (convencoes.ts).
+  perfil("CARRO", "CARRO", "Carro executivo (sedã/SUV)", 4, "B", PISO_TRANSFRETUR_NIVEL_B, 1.2,
     { valor: 140000, seguroMes: 350, ipvaLicenciamentoAno: 5200, laudoVistoriaAno: 300, rastreadorMes: 80 },
     { dieselLitro: 6.3, consumoAsfaltoKmL: 11, consumoTerraKmL: 9, arlaKm: 0, pneusAsfaltoKm: 0.05, pneusTerraKm: 0.07, manutencaoAsfaltoKm: 0.18, manutencaoTerraKm: 0.25 }),
   // Van e micro (até 32 lugares): Nível B da TRANSFRETUR; ônibus: Nível A.

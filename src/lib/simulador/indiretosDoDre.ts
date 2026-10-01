@@ -43,6 +43,8 @@ export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business; Joel";
 // é custo da operação). Nomes separados por ";". Sai do custo e não entra em
 // nenhum outro.
 export const CHAVE_FORNECEDORES_FORA = "fornecedores_fora_adm";
+// A parte das despesas com sócios que entra na administração central.
+export const CHAVE_SOCIOS_PCT = "socios_pct_adm";
 export const CHAVE_CATEGORIAS_FORA = "categorias_fora_adm";
 export const FORNECEDORES_FORA_PADRAO = "Manoel";
 export const CATEGORIAS_FORA_PADRAO = "Compra de Serviços";
@@ -74,6 +76,9 @@ export const LINHAS_DOS_INDIRETOS: Record<string, string[]> = {
   sistemas: ["DESPESA_INFORMATICA"],
   sede_garagem_sp: ["DESPESA_ESTRUTURA"],
   gerais: ["DESPESA_COMERCIAL", "DESPESA_GERAL"],
+  // Pró-labore e despesas com sócios: estrutura, na parte que a base disser
+  // (CHAVE_SOCIOS_PCT, padrão 100%).
+  socios: ["DESPESA_SOCIOS"],
   faturamento_medio: ["RECEITA_BRUTA"],
 };
 

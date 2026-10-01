@@ -152,13 +152,14 @@ function parcelasDosBeneficios(p: Premissas, pessoas: number, valeRefeicaoMes: n
     });
   }
   const linha = (rotulo: string, porPessoa: number, memo: string): Componente => ({ rotulo, valor: porPessoa * pessoas, memo: `${brl(porPessoa)} por pessoa · ${memo}` });
-  const daConvencao = b.cesta + b.plrMes + b.planoSaude;
+  const daConvencao = b.cesta + b.plrMes + b.planoSaude + b.seguroVida;
   const mensais = p.pessoal.beneficiosPorFuncionario;
   if (Math.abs(mensais - daConvencao) <= 0.005) {
     parcelas.push(
       linha("Cesta básica", b.cesta, cct),
       linha("PLR", b.plrMes, `${brl(b.plrMes * 12)} por ano ÷ 12 (${cct})`),
-      linha("Plano médico e odontológico", b.planoSaude, `médico ${brl(PLANO_MEDICO_TRANSFRETUR)} + odontológico familiar ${brl(ODONTO_FAMILIAR_TRANSFRETUR)} (${cct})`)
+      linha("Plano médico e odontológico", b.planoSaude, `médico ${brl(PLANO_MEDICO_TRANSFRETUR)} + odontológico familiar ${brl(ODONTO_FAMILIAR_TRANSFRETUR)} (${cct})`),
+      linha("Seguro de vida", b.seguroVida, "prêmio pago pela Azul (cobertura mínima da CCT: 10 pisos)")
     );
   } else if (mensais) parcelas.push(linha("Outros benefícios mensais", mensais, "cesta, plano, PLR, VA, VT, seguro — o valor do estudo"));
   if (p.pessoal.uniformeEpiPorFuncionario)

@@ -53,10 +53,15 @@ export const ODONTO_FAMILIAR_TRANSFRETUR = 50;
 // níveis). O vale-refeição fica fora: é por dia trabalhado (VR_TRANSFRETUR_DIA)
 // e os dias saem da operação do estudo — a circular conta 26 (escala 6x1);
 // um contrato de segunda a sexta paga ~22.
+// O seguro de vida (cobertura mínima de 10 pisos pela CCT) é o prêmio que a
+// Azul paga: R$ 15 por pessoa por mês. Vale-transporte fica zero no padrão —
+// depende de onde a pessoa mora; entra por estudo, quando houver.
+export const SEGURO_VIDA_AZUL_MES = 15;
 export const BENEFICIOS_MOTORISTA_TRANSFRETUR = {
   plrMes: 137.5,
   cesta: 190,
   planoSaude: PLANO_MEDICO_TRANSFRETUR + ODONTO_FAMILIAR_TRANSFRETUR,
+  seguroVida: SEGURO_VIDA_AZUL_MES,
 };
 
 // PRÊMIO DO FRETAMENTO EVENTUAL (CCT, cláusula 9ª): sobre o valor da nota da
@@ -72,7 +77,10 @@ export const PREMIO_EVENTUAL_DIA_UTIL = 0.05;
 export function funcaoPelaConvencao(categoria: CategoriaVeiculo, salarioPadrao: number): { convencao: Convencao; campos: Record<string, string | number> } {
   const convencao = CONVENCOES[CONVENCAO_DA_CATEGORIA[categoria]];
   const base = { cct: convencao.nome, regiao: convencao.abrangencia };
-  if (convencao.chave === "TRANSFRETUR") {
+  // Carro (SINDILOCADESP): enquanto a convenção dela não for informada, o
+  // padrão é o da TRANSFRETUR no Nível B — piso, benefícios, VR e seguro —,
+  // ajustável na base.
+  if (convencao.chave === "TRANSFRETUR" || convencao.chave === "SINDILOCADESP") {
     const nivelA = categoria === "ONIBUS";
     return {
       convencao,
@@ -81,8 +89,10 @@ export function funcaoPelaConvencao(categoria: CategoriaVeiculo, salarioPadrao: 
         salarioBase: nivelA ? PISO_TRANSFRETUR_NIVEL_A : PISO_TRANSFRETUR_NIVEL_B,
         ...BENEFICIOS_MOTORISTA_TRANSFRETUR,
         vrDia: VR_TRANSFRETUR_DIA,
-        observacoes: nivelA
-          ? "Nível A (acima de 32 lugares): R$ 3.663,66 de mai/26 a out/26, R$ 3.733,44 desde 01/11/2026. Plano = médico R$ 283,76 + odonto R$ 50. VR R$ 42 por dia trabalhado (dias da operação do estudo). Seguro de vida: cobertura mínima de 10 pisos (prêmio a informar). Jornada 44 h (7h20/dia); HE legal, domingo e feriado 100%."
+        observacoes: convencao.chave === "SINDILOCADESP"
+          ? "SINDILOCADESP: convenção a informar. Até lá, o padrão da TRANSFRETUR Nível B (piso R$ 2.986,75, benefícios, VR R$ 42 por dia, seguro de vida R$ 15) — ajuste aqui se a do carro for outra."
+          : nivelA
+          ? "Nível A (acima de 32 lugares): R$ 3.663,66 de mai/26 a out/26, R$ 3.733,44 desde 01/11/2026. Plano = médico R$ 283,76 + odonto R$ 50. VR R$ 42 por dia trabalhado (dias da operação do estudo). Seguro de vida R$ 15/mês (cobertura mínima de 10 pisos). Jornada 44 h (7h20/dia); HE legal, domingo e feriado 100%."
           : "Nível B (van e micro, com acordo coletivo da empresa): 80% do Nível A — R$ 2.930,93 de mai/26 a out/26, R$ 2.986,75 desde 01/11/2026. Plano = médico R$ 283,76 + odonto R$ 50. VR R$ 42 por dia trabalhado (dias da operação do estudo). Sem acordo coletivo, vale o piso do Nível A.",
       },
     };
