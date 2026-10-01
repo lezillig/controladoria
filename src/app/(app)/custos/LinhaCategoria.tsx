@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
-import { LINHAS_DRE, type ItemDre } from "@/lib/controladoria/dre";
+import { LINHAS_DRE, linhaDeClassificacao, type ItemDre } from "@/lib/controladoria/dre";
 import ClassificarCategoria from "./ClassificarCategoria";
 
 // A CATEGORIA, E O QUE ELA ESCONDE.
@@ -100,7 +100,7 @@ export default function LinhaCategoria({
           {podeClassificar && (
             <ClassificarCategoria
               categoriaCodigo={item.categoriaCodigo}
-              linhaAtual={linhaChave}
+              linhaAtual={item.linhaClassificada ?? linhaDeClassificacao(linhaChave)}
               subgrupoAtual={item.subgrupo}
               confirmada={item.confirmada}
               subgruposConhecidos={subgruposConhecidos}

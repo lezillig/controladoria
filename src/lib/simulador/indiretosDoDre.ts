@@ -438,7 +438,10 @@ export function classificarTitulos(
     if (!meses.has(t.mes)) continue;
     let indireto: string | null = null;
     let descricao = t.categoriaDescricao ?? linhaDaCategoria.get(t.categoria)?.descricao ?? t.categoria;
-    if (t.corporativo && corporativas.has(t.categoria)) {
+    // Folha corporativa: a parte da MCZ nas categorias de pessoas, ou a
+    // categoria inteira quando ela foi classificada direto no corporativo (só
+    // existe na linha corporativa — o PJ pago pela Azul).
+    if (corporativas.has(t.categoria) && (t.corporativo || !linhaDaCategoria.has(t.categoria))) {
       indireto = /oficina/i.test(t.centroDeCusto ?? "") ? "oficina" : "folha_adm";
       descricao = corporativas.get(t.categoria)?.descricao ?? descricao;
     } else {

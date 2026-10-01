@@ -157,6 +157,28 @@ console.log("\n2c. Código repetido entre as empresas com nomes diferentes: uma 
   conferir("chave e partes", [chaveDaCategoria("9", "AZUL", new Set(["9"])), chaveDaCategoria("8", "AZUL", new Set(["9"])), chaveDaCategoria(null, "AZUL", new Set()), partesDaChave("9@AZUL")], ["9@AZUL", "8", "SEM_CATEGORIA", { codigo: "9", empresa: "AZUL" }]);
 }
 
+// ------------------------------------------------------ apoio administrativo no corporativo
+console.log("\n2d. Categoria classificada direto em pessoas — corporativo: inteira, qualquer empresa");
+{
+  // Apoio Administrativo: PJ pagos pela AZUL (empresa de operação).
+  const titulos = [tit("RECEBER", "1", 100_000), tit("PAGAR", "6", 11_000), tit("PAGAR", "6", 6_500), tit("PAGAR", "2", 20_000)];
+  const categorias = [cat("1", "Serviços", true), cat("6", "Apoio Administrativo"), cat("2", "Salários")];
+  const r = montarDre(
+    { ...ctx(titulos, categorias), conexoesCorporativas: ["mcz"] } as unknown as ContextoAuditoria,
+    MES,
+    ANT,
+    cls({ "1": ["RECEITA_BRUTA", null, true], "6": ["DESPESA_SALARIOS_CORPORATIVO", null, true], "2": ["DESPESA_SALARIOS", null, true] })
+  );
+  const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
+  conferir("apoio administrativo inteiro no corporativo, mesmo pago pela Azul", v("DESPESA_SALARIOS_CORPORATIVO"), 1_750_000);
+  conferir("os salários da Azul seguem na operação", v("DESPESA_SALARIOS"), 2_000_000);
+  conferir(
+    "o seletor mostra o corporativo marcado",
+    r.linhas.find((l) => l.chave === "DESPESA_SALARIOS_CORPORATIVO")?.itens.map((i) => i.linhaClassificada),
+    ["DESPESA_SALARIOS_CORPORATIVO"]
+  );
+}
+
 // ------------------------------------------------------ sem categoria
 console.log("\n3. Título sem categoria fica FORA da demonstração");
 {

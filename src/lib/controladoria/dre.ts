@@ -88,7 +88,9 @@ export const LINHAS_DRE = [
   //
   // A classificação continua gravada como DESPESA_SALARIOS (é a chave das
   // classificações manuais já feitas); a separação acontece na conta, título a
-  // título. Por isso a linha corporativa NÃO é oferecida na classificação.
+  // título. A linha corporativa também pode ser escolhida na classificação: aí
+  // a categoria INTEIRA vai para ela, qualquer que seja a empresa (o apoio
+  // administrativo PJ pago pela Azul).
   { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com pessoas — operação", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_SALARIOS_CORPORATIVO", rotulo: "(-) Despesas com pessoas — corporativo", tipo: "GRUPO", sinal: -1 },
   // SÓCIOS em linha própria porque a pergunta que ela responde é de governança,
@@ -147,12 +149,14 @@ export type ChaveDre = (typeof LINHAS_DRE)[number]["chave"];
 // conta, nunca de classificação — oferecê-los na tela de classificação seria
 // convidar alguém a jogar uma categoria dentro de "Lucro bruto".
 //
-// A linha de pessoas CORPORATIVA também fica de fora: ela sai da empresa do
-// título, não da categoria (ver LINHAS_DRE).
+// A linha de pessoas CORPORATIVA também é classificável, com um sentido
+// próprio: "Despesas com pessoas" (DESPESA_SALARIOS) divide pela EMPRESA do
+// título (operação × corporativo); "Despesas com pessoas — corporativo" leva a
+// categoria INTEIRA para a linha corporativa, qualquer que seja a empresa que
+// pagou — o apoio administrativo contratado como PJ e pago pela Azul é gente
+// do corporativo (ver LINHAS_DRE).
 export const LINHA_PESSOAS_CORPORATIVO = "DESPESA_SALARIOS_CORPORATIVO";
-export const LINHAS_CLASSIFICAVEIS = LINHAS_DRE.filter(
-  (l) => l.tipo === "GRUPO" && l.chave !== LINHA_PESSOAS_CORPORATIVO
-).map((l) => l.chave);
+export const LINHAS_CLASSIFICAVEIS = LINHAS_DRE.filter((l) => l.tipo === "GRUPO").map((l) => l.chave);
 
 // A linha em que a categoria está CLASSIFICADA, a partir da linha em que ela
 // aparece: um item na linha corporativa de pessoas é uma categoria gravada como
@@ -165,6 +169,7 @@ export function linhaDeClassificacao(chave: string): string {
 // Rótulo na CLASSIFICAÇÃO — a de pessoas diz que a empresa decide o resto.
 export function rotuloDeClassificacao(chave: string): string {
   if (chave === "DESPESA_SALARIOS") return "(-) Despesas com pessoas (operação ou corporativo, pela empresa)";
+  if (chave === LINHA_PESSOAS_CORPORATIVO) return "(-) Despesas com pessoas — corporativo (a categoria inteira, qualquer empresa)";
   return LINHAS_DRE.find((l) => l.chave === chave)?.rotulo ?? chave;
 }
 
@@ -355,6 +360,9 @@ export type ItemDre = {
   // e nulo é dito na tela como "—", nunca como zero: zero é uma afirmação
   // ("não houve movimento") onde só existe ausência de dado.
   valorAnoAnteriorCents: number | null;
+  // A linha em que a categoria está CLASSIFICADA (gravada ou proposta), antes
+  // da divisão por empresa das pessoas — é a que o seletor mostra marcada.
+  linhaClassificada?: string;
   // De que lado a categoria vive. Decide o SINAL com que ela entra na linha:
   // uma entrada dentro de uma linha de saída reduz a linha, não a engorda.
   ehReceita: boolean;
@@ -842,6 +850,7 @@ export function montarDreDeInsumos(
       categoriaCodigo: codigo,
       descricao: `${cat?.descricao ?? `Categoria ${partesDaChave(codigo).codigo}`}${empresaDaChave ? ` · ${empresaDaChave}` : ""}`,
       subgrupo: guardada?.subgrupo ?? null,
+      linhaClassificada: linha,
       confirmada,
       ehReceita: (mov?.receberCents ?? 0) > (mov?.pagarCents ?? 0),
     };
@@ -850,7 +859,9 @@ export function montarDreDeInsumos(
     // empresa do título (ver LINHAS_DRE). Cada parte leva só os seus títulos e
     // a sua contagem; parte zerada nas três colunas não vira item — é o que
     // faz a linha da outra empresa sumir quando uma empresa só está filtrada.
-    if (linha === "DESPESA_SALARIOS" || linha === LINHA_PESSOAS_CORPORATIVO) {
+    // Só "Despesas com pessoas" divide pela empresa; a categoria classificada
+    // direto no corporativo vai inteira para lá (segue o caminho comum).
+    if (linha === "DESPESA_SALARIOS") {
       const corpAtual = insumos.corporativo?.atual.get(codigo) ?? 0;
       const corpAnterior = insumos.corporativo?.anterior.get(codigo) ?? 0;
       const corpAno = valorAnoAnterior === null ? null : (insumos.corporativo?.anoAnterior?.get(codigo) ?? 0);

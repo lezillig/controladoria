@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { LINHAS_CLASSIFICAVEIS, linhaDeClassificacao, rotuloDeClassificacao } from "@/lib/controladoria/dre";
+import { LINHAS_CLASSIFICAVEIS, rotuloDeClassificacao } from "@/lib/controladoria/dre";
 import { classificarCategoria } from "./actions";
 
 // Classificação inline, na própria linha do DRE.
@@ -62,9 +62,10 @@ export default function ClassificarCategoria({
     >
       <select
         name="linha"
-        // Item na linha corporativa de pessoas é categoria gravada como
-        // DESPESA_SALARIOS — é essa a opção que tem de vir marcada.
-        defaultValue={linhaDeClassificacao(linhaAtual)}
+        // A linha classificada (gravada ou proposta) — não a linha em que o
+        // item aparece: pessoas divididas pela empresa aparecem na corporativa
+        // e estão gravadas como DESPESA_SALARIOS.
+        defaultValue={linhaAtual}
         className="rounded-md border border-slate-300 px-2 py-1 text-xs"
         aria-label="Linha do DRE"
       >

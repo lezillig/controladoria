@@ -89,8 +89,10 @@ título, em qualquer visão. No grupo aparecem as duas; numa empresa só, a linh
 da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
 
 - A classificação continua gravada como `DESPESA_SALARIOS` (chave das
-  classificações já feitas); a linha corporativa (`DESPESA_SALARIOS_CORPORATIVO`)
-  sai da conta e não é oferecida no seletor de classificação.
+  classificações já feitas), e a empresa do título divide. Classificar a
+  categoria direto em "— corporativo" (`DESPESA_SALARIOS_CORPORATIVO`) leva a
+  categoria INTEIRA para a linha corporativa, qualquer que seja a empresa que
+  pagou — o apoio administrativo contratado como PJ e pago pela Azul.
 - Orçamento gravado antes da separação (toda a folha em `DESPESA_SALARIOS`) é
   comparado com o realizado das DUAS linhas; premissa de cenário antiga sobre
   `DESPESA_SALARIOS` passa a valer só para a operação.
