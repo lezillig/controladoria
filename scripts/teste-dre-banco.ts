@@ -100,6 +100,10 @@ async function principal() {
       // pessoas, e a EMPRESA do título decide qual das duas linhas.
       { companyId: EMPRESA, conexaoId: cx1.id, conexaoApelido: "AZ", codigo: "D5", descricao: "Folha de pagamento", contaDespesa: true },
       { companyId: EMPRESA, conexaoId: cx2.id, conexaoApelido: "MC", codigo: "D5", descricao: "Folha de pagamento", contaDespesa: true },
+      // O MESMO CÓDIGO com outro nome na MCZ (a Bessa: "Comissão" de um lado,
+      // "Combustível" do outro): duas categorias, uma por empresa
+      // (chaveCategoria.ts) — memória e SQL têm de separar igual.
+      { companyId: EMPRESA, conexaoId: cx2.id, conexaoApelido: "MC", codigo: "D1", descricao: "Comissões", contaDespesa: true },
     ],
   });
 
@@ -213,6 +217,9 @@ async function principal() {
       dataEmissao: new Date(2026, 8, 6), dataVencimento: new Date(2026, 8, 6), valorDocumentoCents: 60_700, liquidado: true },
     { ...comum(cx2, "MC"), codigoLancamento: "P3", natureza: "PAGAR" as const, categoriaCodigo: "D5",
       dataEmissao: new Date(2026, 7, 7), dataVencimento: new Date(2026, 7, 7), valorDocumentoCents: 55_500, liquidado: true },
+    // Comissão paga pela MCZ no código D1 (que na Azul é combustível).
+    { ...comum(cx2, "MC"), codigoLancamento: "C1", natureza: "PAGAR" as const, categoriaCodigo: "D1",
+      dataEmissao: new Date(2026, 8, 8), dataVencimento: new Date(2026, 8, 23), valorDocumentoCents: 123_400 },
 
     // --- fora de qualquer mês da tela, dentro da janela: só movimento ---
     { ...comum(cx1, "AZ"), codigoLancamento: "A15", natureza: "RECEBER" as const, categoriaCodigo: "R9",
@@ -382,9 +389,13 @@ async function principal() {
 
       if (!conexaoId) {
         conferir("grupo: receita da MCZ contra a Azul não é receita", item(dre, "R1"), 900_100 + 450_200);
-        conferir("grupo: pagamento da Azul à MCZ não é custo", item(dre, "D1"), 310_300 - 15_800);
+        conferir("grupo: pagamento da Azul à MCZ não é custo", item(dre, "D1@AZ"), 310_300 - 15_800);
         // No caixa até o dia 22: A3 (18/09); o estorno A9 é baixado dia 24.
-        conferir("grupo: nem no caixa", item(dreCaixa, "D1"), 310_300);
+        conferir("grupo: nem no caixa", item(dreCaixa, "D1@AZ"), 310_300);
+        // A comissão da MCZ no mesmo código D1: categoria própria, nome com a
+        // empresa, e a classificação de D1 vale para ela até ser separada.
+        const c1 = dre.linhas.flatMap((l) => l.itens.map((i) => ({ ...i, linha: l.chave }))).find((i) => i.categoriaCodigo === "D1@MC");
+        conferir("colisão: comissão da MCZ separada, com a classificação de D1", [c1?.descricao, c1?.valorCents, c1?.linha], ["Comissões · MC", 123_400, "CUSTO_SERVICO"]);
         conferir("grupo: CPF com os mesmos 8 dígitos não é empresa do grupo", item(dre, "D2") >= 12_300, true);
         conferir("grupo: o que foi eliminado é dito", await intercompanyEliminado(escopo, mes, "competencia"), {
           receitaCents: 450_000,
@@ -397,7 +408,7 @@ async function principal() {
           titulos: 1,
         });
       } else {
-        conferir("uma empresa: o pagamento à MCZ é custo da Azul", item(dre, "D1"), 310_300 - 15_800 + 200_000);
+        conferir("uma empresa: o pagamento à MCZ é custo da Azul", item(dre, "D1@AZ"), 310_300 - 15_800 + 200_000);
         conferir("uma empresa: nada eliminado", await intercompanyEliminado(escopo, mes, "competencia"), {
           receitaCents: 0,
           despesaCents: 0,

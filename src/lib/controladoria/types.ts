@@ -100,6 +100,10 @@ export type ContextoAuditoria = {
   // folha delas vai para "Despesas com pessoas — corporativo" no DRE; a das demais, para "— operação". Opcional pelo
   // mesmo motivo acima: sem ela, toda folha é de operação.
   conexoesCorporativas?: string[];
+  // Códigos de categoria que se repetem entre as contas da empresa com nomes
+  // diferentes (chaveCategoria.ts) — apurados sobre TODAS as categorias, não
+  // só as da visão filtrada.
+  categoriasEmColisao?: string[];
   notas: OmieNota[];
   parceiros: OmieParceiro[];
   categorias: OmieCategoria[];

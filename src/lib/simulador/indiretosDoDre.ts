@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "@/lib/controladoria/competencia";
 import { Prisma } from "@prisma/client";
-import { CATEGORIA_SQL, ehCorporativoSql, filtroConexaoTitulo, naJanela } from "@/lib/controladoria/escopoSql";
+import { categoriaSql, ehCorporativoSql, filtroConexaoTitulo, naJanela } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import type { BaseValor, BaseVigente } from "./baseDeCustos";
@@ -258,7 +258,7 @@ async function pagamentosDeUmFornecedor(companyId: string, nome: string, dataRef
   const [ano, mes] = meses[0].split("-").map(Number);
   const inicio = new Date(ano, mes - 1, 1, 0, 0, 0, 0);
   const linhas = await prisma.$queryRaw<LinhaFornecedor[]>`
-    SELECT ${CATEGORIA_SQL} AS categoria,
+    SELECT ${categoriaSql()} AS categoria,
            to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
            COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
       FROM ${tabela("OmieTitulo")} t
@@ -302,7 +302,7 @@ export async function folhaDaOficina(companyId: string, dataReferencia: Date, dr
        AND t.cancelado = false
        AND d.descricao ILIKE '%oficina%'
        AND ${ehCorporativoSql(companyId)}
-       AND ${CATEGORIA_SQL} IN (${Prisma.join(categorias)})
+       AND ${categoriaSql()} IN (${Prisma.join(categorias)})
        AND ${competenciaSql("t")} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
        AND ${competenciaSql("t")} <= ${fechado.fim}
        ${filtroConexaoTitulo(null, companyId)}
@@ -498,7 +498,7 @@ export async function lancamentosDosIndiretos(
   const [ano, mes] = dre.meses[0].split("-").map(Number);
   const linhas = await prisma.$queryRaw<LinhaTitulo[]>`
     SELECT t."conexaoApelido" AS empresa,
-           ${CATEGORIA_SQL} AS categoria,
+           ${categoriaSql()} AS categoria,
            t."categoriaDescricao" AS categoria_descricao,
            to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
            t."parceiroNome" AS fornecedor,
@@ -514,7 +514,7 @@ export async function lancamentosDosIndiretos(
       LEFT JOIN ${tabela("OmieDepartamento")} d ON d."conexaoId" = t."conexaoId" AND d.codigo = t."departamentoCodigo"
      WHERE t."companyId" = ${companyId}
        AND t.cancelado = false
-       AND ${CATEGORIA_SQL} IN (${Prisma.join(codigos)})
+       AND ${categoriaSql()} IN (${Prisma.join(codigos)})
        AND ${competenciaSql("t")} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
        AND ${competenciaSql("t")} <= ${fechado.fim}
        ${filtroConexaoTitulo(null, companyId)}

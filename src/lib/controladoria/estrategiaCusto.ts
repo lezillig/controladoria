@@ -1,3 +1,4 @@
+import { categoriasEmColisao, chaveDaCategoria, descricoesPorChave } from "./chaveCategoria";
 import { fmtBRL, fmtPercent } from "./format";
 import { inicioDoMes } from "./periodos";
 import { somar, titulosAtivos } from "./agents/comum";
@@ -156,11 +157,13 @@ function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
   // o aluguel que a Azul paga à MCZ não é custo que o grupo possa cortar.
   const fica = entraNoResultado(ctx);
 
+  // A chave da categoria (chaveCategoria.ts), como no DRE.
+  const colisoes = new Set(ctx.categoriasEmColisao ?? [...categoriasEmColisao(ctx.categorias)]);
   const porCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "PAGAR")) {
     const competencia = dataDeCompetencia(t);
     if (competencia < primeiroMes || competencia > fim || !fica(t)) continue;
-    const categoria = t.categoriaCodigo ?? "SEM_CATEGORIA";
+    const categoria = chaveDaCategoria(t.categoriaCodigo, t.conexaoApelido, colisoes);
     const mes = chaveMes(competencia);
     const serie = porCategoria.get(categoria) ?? new Map<string, number>();
     serie.set(mes, (serie.get(mes) ?? 0) + t.valorDocumentoCents);
@@ -171,7 +174,7 @@ function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
   for (const t of titulosAtivos(ctx, "RECEBER")) {
     const competencia = dataDeCompetencia(t);
     if (competencia < primeiroMes || competencia > fim || !fica(t)) continue;
-    const categoria = t.categoriaCodigo ?? "SEM_CATEGORIA";
+    const categoria = chaveDaCategoria(t.categoriaCodigo, t.conexaoApelido, colisoes);
     const mes = chaveMes(competencia);
     const serie = receitaPorCategoria.get(categoria) ?? new Map<string, number>();
     serie.set(mes, (serie.get(mes) ?? 0) + t.valorDocumentoCents);
@@ -241,7 +244,7 @@ export type AnaliseDeCusto = {
 export function analisarEstrategiaDeCusto(ctx: ContextoAuditoria, linhaPorCategoria?: Map<string, string>): AnaliseDeCusto {
   return analisarEstrategiaDeSeries(
     seriesMensais(ctx),
-    new Map(ctx.categorias.map((c) => [c.codigo, c.descricao])),
+    descricoesPorChave(ctx.categorias, new Set(ctx.categoriasEmColisao ?? [...categoriasEmColisao(ctx.categorias)])),
     linhaPorCategoria
   );
 }

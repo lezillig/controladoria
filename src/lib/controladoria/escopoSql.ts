@@ -121,6 +121,21 @@ export function naJanela(janela: { desde: Date; ate?: Date | null }) {
     )`;
 }
 
-// Categoria do título, com o mesmo nome que a conta em memória usa para o
-// "sem categoria" — que aparece como aviso, fora da demonstração.
-export const CATEGORIA_SQL = Prisma.sql`COALESCE(t."categoriaCodigo", 'SEM_CATEGORIA')`;
+// A CHAVE DA CATEGORIA do título — a mesma de chaveCategoria.ts, em SQL: o
+// código; "código@EMPRESA" quando o código se repete entre as contas Omie da
+// empresa com nomes diferentes; "SEM_CATEGORIA" sem categoria (aviso, fora da
+// demonstração). A colisão vem de uma subconsulta NÃO correlacionada sobre as
+// categorias (centenas de linhas), que o Postgres resolve uma vez por consulta.
+export function categoriaSql(alias = "t"): Prisma.Sql {
+  const t = (coluna: string) => Prisma.raw(`${alias}."${coluna}"`);
+  return Prisma.sql`(CASE
+    WHEN ${t("categoriaCodigo")} IS NULL THEN 'SEM_CATEGORIA'
+    WHEN (${t("companyId")} || '|' || ${t("categoriaCodigo")}) IN (
+      SELECT cc."companyId" || '|' || cc.codigo
+        FROM ${tabela("OmieCategoria")} cc
+       GROUP BY cc."companyId", cc.codigo
+      HAVING COUNT(DISTINCT lower(btrim(cc.descricao))) > 1
+    ) THEN ${t("categoriaCodigo")} || '@' || ${t("conexaoApelido")}
+    ELSE ${t("categoriaCodigo")}
+  END)`;
+}

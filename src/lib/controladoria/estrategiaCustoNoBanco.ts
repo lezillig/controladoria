@@ -1,7 +1,8 @@
+import { categoriasEmColisao, categoriasPorChave, classificacaoDaChave, descricoesPorChave } from "./chaveCategoria";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "./competencia";
-import { CATEGORIA_SQL as CATEGORIA, filtroConexaoTitulo, naJanela, type EscopoSql } from "./escopoSql";
+import { categoriaSql, filtroConexaoTitulo, naJanela, type EscopoSql } from "./escopoSql";
 import {
   analisarEstrategiaDeSeries,
   janelaDeAnalise,
@@ -38,7 +39,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
   // em curso, pela metade, distorcia a comparação de metades.
   const [custos, receitas] = await Promise.all([
     prisma.$queryRaw<LinhaSerie[]>`
-      SELECT ${CATEGORIA} AS categoria,
+      SELECT ${categoriaSql()} AS categoria,
              to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
              COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
         FROM ${tabela("OmieTitulo")} t
@@ -52,7 +53,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
        GROUP BY 1, 2
     `,
     prisma.$queryRaw<LinhaReceita[]>`
-      SELECT ${CATEGORIA} AS categoria,
+      SELECT ${categoriaSql()} AS categoria,
              to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
              COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
         FROM ${tabela("OmieTitulo")} t
@@ -89,16 +90,20 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
 // — a mesma regra da tela de Custos. É o que tira financiamento, tributo e
 // receita da fila de corte.
 export async function linhaPorCategoriaDoBanco(escopo: Pick<EscopoSql, "companyId" | "conexaoId">): Promise<Map<string, string>> {
-  const [guardadas, categorias] = await Promise.all([
+  const [guardadas, todas] = await Promise.all([
     prisma.dreClassificacao.findMany({ where: { companyId: escopo.companyId }, select: { categoriaCodigo: true, linha: true } }),
     prisma.omieCategoria.findMany({
-      where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
-      select: { codigo: true, descricao: true, natureza: true, contaReceita: true, contaDespesa: true },
+      where: { companyId: escopo.companyId },
+      select: { codigo: true, descricao: true, natureza: true, contaReceita: true, contaDespesa: true, conexaoId: true, conexaoApelido: true },
     }),
   ]);
+  // Pela chave (chaveCategoria.ts); a classificação da chave composta, sem a
+  // própria, é a do código.
+  const porChave = categoriasPorChave(escopo.conexaoId ? todas.filter((c) => c.conexaoId === escopo.conexaoId) : todas, categoriasEmColisao(todas));
+  const gravadas = new Map(guardadas.map((g) => [g.categoriaCodigo, g.linha]));
   const mapa = new Map<string, string>();
-  for (const c of categorias) mapa.set(c.codigo, proporLinha(c));
-  for (const g of guardadas) mapa.set(g.categoriaCodigo, g.linha);
+  for (const [chave, c] of porChave) mapa.set(chave, classificacaoDaChave(gravadas, chave) ?? proporLinha(c));
+  for (const [codigo, linha] of gravadas) if (!mapa.has(codigo)) mapa.set(codigo, linha);
   return mapa;
 }
 
@@ -106,10 +111,11 @@ export async function analisarEstrategiaNoBanco(escopo: EscopoSql, dataReferenci
   const [series, categorias, linhas] = await Promise.all([
     seriesMensaisNoBanco(escopo, dataReferencia),
     prisma.omieCategoria.findMany({
-      where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
-      select: { codigo: true, descricao: true },
+      where: { companyId: escopo.companyId },
+      select: { codigo: true, descricao: true, conexaoId: true, conexaoApelido: true },
     }),
     linhaPorCategoriaDoBanco(escopo),
   ]);
-  return analisarEstrategiaDeSeries(series, new Map(categorias.map((c) => [c.codigo, c.descricao])), linhas);
+  const doEscopo = escopo.conexaoId ? categorias.filter((c) => c.conexaoId === escopo.conexaoId) : categorias;
+  return analisarEstrategiaDeSeries(series, descricoesPorChave(doEscopo, categoriasEmColisao(categorias)), linhas);
 }

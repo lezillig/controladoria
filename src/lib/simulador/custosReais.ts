@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "@/lib/controladoria/competencia";
-import { CATEGORIA_SQL, ehCorporativoSql, filtroConexaoTitulo, naJanela, type EscopoSql } from "@/lib/controladoria/escopoSql";
+import { categoriaSql, ehCorporativoSql, filtroConexaoTitulo, naJanela, type EscopoSql } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE, RETENCOES_ZERADAS, montarDreDeInsumos, type Retencoes } from "@/lib/controladoria/dre";
 import { categoriasDoEscopo, movimentoPorCategoria, retencoes } from "@/lib/controladoria/dreNoBanco";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
@@ -891,7 +891,7 @@ export async function carregarDreDosMeses(companyId: string, conexaoId: string |
 
   const [somas, movimento, categoriasDaOmie, guardadas, config] = await Promise.all([
     prisma.$queryRaw<LinhaCategoriaMes[]>`
-      SELECT ${CATEGORIA_SQL} AS categoria,
+      SELECT ${categoriaSql()} AS categoria,
              to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
              COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
              COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(companyId)}), 0)::bigint AS corp

@@ -95,6 +95,19 @@ da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
   comparado com o realizado das DUAS linhas; premissa de cenário antiga sobre
   `DESPESA_SALARIOS` passa a valer só para a operação.
 
+### Mesmo código de categoria nas duas empresas
+
+Cada conta Omie tem o seu plano de categorias, e os códigos se repetem. Quando
+o mesmo código tem nomes diferentes nas duas contas (ex.: "Comissão" na Azul,
+"Combustível" na MCZ), o DRE os trata como categorias diferentes: a chave
+passa a ser `código@EMPRESA` ("2.01.05@AZUL"), com nome "Comissão · AZUL" e
+classificação própria (`src/lib/controladoria/chaveCategoria.ts`; em SQL,
+`categoriaSql()` em escopoSql.ts). Código igual com o mesmo nome continua uma
+categoria só. A colisão é apurada sobre todas as categorias da empresa, mesmo
+com a tela filtrada, e a classificação gravada no código puro vale para as
+duas até alguém classificar cada uma. A tela de Custos e DRE lista os códigos
+repetidos.
+
 ### Outras receitas operacionais
 
 `OUTRAS_RECEITAS`, **"(+) Outras receitas operacionais"** (venda de veículo,

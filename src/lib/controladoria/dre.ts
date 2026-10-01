@@ -1,3 +1,4 @@
+import { categoriasEmColisao, categoriasPorChave, chaveDaCategoria, classificacaoDaChave, partesDaChave } from "./chaveCategoria";
 import type { Periodo } from "./periodos";
 import { dentro } from "./periodos";
 import { dataDeCompetencia } from "./competencia";
@@ -601,7 +602,11 @@ export function insumosDoContexto(
 ): InsumosDre {
   const { regime = "competencia", incluirTitulos = true, periodoAnoAnterior } = opcoes;
   const porTitulo = new Map(ctx.titulos.map((t) => [t.id, t]));
-  const categorias = new Map(ctx.categorias.map((c) => [c.codigo, c]));
+  // A chave da categoria (chaveCategoria.ts): código, ou "código@EMPRESA" na
+  // colisão entre as contas — a mesma da soma em SQL.
+  const colisoes = new Set(ctx.categoriasEmColisao ?? [...categoriasEmColisao(ctx.categorias)]);
+  const categorias = categoriasPorChave(ctx.categorias, colisoes);
+  const chaveDe = (t: { categoriaCodigo: string | null; conexaoApelido: string }) => chaveDaCategoria(t.categoriaCodigo, t.conexaoApelido, colisoes);
   // Operação entre as empresas do grupo fica fora na visão do grupo — nas
   // somas, no lado da categoria e no drill-down, como na colheita em SQL.
   const fica = entraNoResultado(ctx);
@@ -630,7 +635,7 @@ export function insumosDoContexto(
         // Baixa de título cancelado fica de fora, como o título ficaria: se o
         // documento não existe, o resultado dele não é resultado.
         if (!t || t.cancelado || !fica(t)) continue;
-        const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+        const chave = chaveDe(t);
         mapa.set(chave, (mapa.get(chave) ?? 0) + b.valorCents);
         if (ehCorporativo(t)) corp.set(chave, (corp.get(chave) ?? 0) + b.valorCents);
       }
@@ -640,7 +645,7 @@ export function insumosDoContexto(
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
       for (const t of titulosAtivos(ctx, natureza)) {
         if (!dentro(dataDeCompetencia(t), p) || !fica(t)) continue;
-        const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+        const chave = chaveDe(t);
         mapa.set(chave, (mapa.get(chave) ?? 0) + t.valorDocumentoCents);
         if (ehCorporativo(t)) corp.set(chave, (corp.get(chave) ?? 0) + t.valorDocumentoCents);
       }
@@ -664,7 +669,7 @@ export function insumosDoContexto(
   for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
       if (!fica(t)) continue;
-      const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+      const chave = chaveDe(t);
       const m = movimentoPorCategoria.get(chave) ?? { receberCents: 0, pagarCents: 0 };
       if (natureza === "RECEBER") m.receberCents += Math.abs(t.valorDocumentoCents);
       else m.pagarCents += Math.abs(t.valorDocumentoCents);
@@ -684,7 +689,7 @@ export function insumosDoContexto(
       if (!dentro(b.dataBaixa, periodo)) continue;
       const t = porTitulo.get(b.tituloId);
       if (!t || t.cancelado || !fica(t)) continue;
-      const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+      const chave = chaveDe(t);
       const lista = titulosPorCategoria.get(chave) ?? [];
       lista.push({
         id: b.id,
@@ -702,7 +707,7 @@ export function insumosDoContexto(
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
       if (!dentro(dataDeCompetencia(t), periodo) || !fica(t)) continue;
-      const chave = t.categoriaCodigo ?? "SEM_CATEGORIA";
+      const chave = chaveDe(t);
       const lista = titulosPorCategoria.get(chave) ?? [];
       lista.push({
         id: t.id,
@@ -809,7 +814,10 @@ export function montarDreDeInsumos(
     }
 
     const cat = categorias.get(codigo);
-    const guardada = classificacoes.get(codigo);
+    // Na chave "código@EMPRESA", sem classificação própria vale a do código
+    // (a de antes da separação por empresa).
+    const guardada = classificacaoDaChave(classificacoes, codigo);
+    const empresaDaChave = partesDaChave(codigo).empresa;
     const linha =
       guardada?.linha ??
       (cat
@@ -832,7 +840,7 @@ export function montarDreDeInsumos(
     const totalDeTitulos = insumos.totalDeTitulosPorCategoria?.get(codigo) ?? doMes.length;
     const base = {
       categoriaCodigo: codigo,
-      descricao: cat?.descricao ?? `Categoria ${codigo}`,
+      descricao: `${cat?.descricao ?? `Categoria ${partesDaChave(codigo).codigo}`}${empresaDaChave ? ` · ${empresaDaChave}` : ""}`,
       subgrupo: guardada?.subgrupo ?? null,
       confirmada,
       ehReceita: (mov?.receberCents ?? 0) > (mov?.pagarCents ?? 0),

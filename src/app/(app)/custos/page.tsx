@@ -1,3 +1,4 @@
+import { categoriasEmColisao, categoriasPorChave, descreverColisoes } from "@/lib/controladoria/chaveCategoria";
 import Link from "next/link";
 import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
 import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
@@ -101,10 +102,14 @@ export default async function CustosPage({
       select: { categoriaCodigo: true, linha: true, subgrupo: true, origem: true },
     }),
     prisma.omieCategoria.findMany({
-      where: { companyId: session.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
-      select: { codigo: true, codigoDre: true, tipoCategoria: true, contaReceita: true, contaDespesa: true },
+      where: { companyId: session.companyId },
+      select: { codigo: true, descricao: true, conexaoId: true, conexaoApelido: true, codigoDre: true, tipoCategoria: true, contaReceita: true, contaDespesa: true },
     }),
   ]);
+  // Códigos repetidos entre as contas com nomes diferentes: viram uma
+  // categoria por empresa (chaveCategoria.ts), e a tela avisa quais.
+  const colisoes = categoriasEmColisao(categorias);
+  const avisoDeColisoes = descreverColisoes(categorias, colisoes);
 
   const classificacoes = new Map(
     guardadas.map((c) => [
@@ -116,14 +121,15 @@ export default async function CustosPage({
   // e mandar o cadastro inteiro de categorias para o navegador só para extrair
   // quatro campos seria carga que ninguém vê e todos pagam.
   const marcasPorCategoria: Record<string, string> = {};
-  for (const c of categorias) {
+  const categoriasDaVisao = escopo.conexaoId ? categorias.filter((c) => c.conexaoId === escopo.conexaoId) : categorias;
+  for (const [chave, c] of categoriasPorChave(categoriasDaVisao, colisoes)) {
     const marcas = [
       c.codigoDre ? `DRE ${c.codigoDre}` : null,
       c.tipoCategoria,
       c.contaReceita ? "receita" : null,
       c.contaDespesa ? "despesa" : null,
     ].filter(Boolean);
-    if (marcas.length > 0) marcasPorCategoria[c.codigo] = marcas.join(" · ");
+    if (marcas.length > 0) marcasPorCategoria[chave] = marcas.join(" · ");
   }
   const subgruposConhecidos = [...new Set(guardadas.map((c) => c.subgrupo).filter((s): s is string => !!s))].sort();
 
@@ -423,6 +429,29 @@ export default async function CustosPage({
             </>
           )}
         </div>
+      )}
+
+      {avisoDeColisoes.length > 0 && (
+        <details className="rounded-lg bg-blue-50 px-4 py-3 text-sm text-blue-900">
+          <summary className="cursor-pointer">
+            <strong>
+              {avisoDeColisoes.length === 1 ? "1 código de categoria se repete" : `${avisoDeColisoes.length} códigos de categoria se repetem`} entre as
+              empresas com nomes diferentes
+            </strong>{" "}
+            — no DRE eles aparecem separados por empresa (ex.: “Comissão · AZUL”), cada um com a sua classificação. Ver quais.
+          </summary>
+          <p className="mt-2 text-[13px]">
+            Até você classificar cada um, vale a classificação que o código já tinha. Para não ter de separar, o ideal é usar o mesmo código para a mesma coisa
+            nas duas contas Omie.
+          </p>
+          <ul className="mt-2 grid gap-1 text-[13px] sm:grid-cols-2">
+            {avisoDeColisoes.map((c) => (
+              <li key={c.codigo}>
+                <span className="font-mono">{c.codigo}</span>: {c.nomes.map((n) => `${n.descricao} (${n.empresa})`).join(" × ")}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
 
       <Secao

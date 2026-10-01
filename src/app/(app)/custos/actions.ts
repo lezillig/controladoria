@@ -1,5 +1,6 @@
 "use server";
 
+import { partesDaChave } from "@/lib/controladoria/chaveCategoria";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { LINHAS_CLASSIFICAVEIS, rotuloDeClassificacao } from "@/lib/controladoria/dre";
@@ -36,8 +37,11 @@ export async function classificarCategoria(formData: FormData): Promise<Resultad
     return { erro: "Linha do DRE inválida." };
   }
 
+  // Na chave "código@EMPRESA" (código repetido entre as contas com nomes
+  // diferentes), a categoria é a daquela empresa — ver chaveCategoria.ts.
+  const partes = partesDaChave(categoriaCodigo);
   const categoria = await prisma.omieCategoria.findFirst({
-    where: { companyId: session.companyId, codigo: categoriaCodigo },
+    where: { companyId: session.companyId, codigo: partes.codigo, ...(partes.empresa ? { conexaoApelido: partes.empresa } : {}) },
     select: { descricao: true },
   });
 

@@ -3,6 +3,7 @@
 // A aritmética de um DRE é a parte que ninguém confere de olho: os subtotais
 // encadeiam, e um sinal trocado no meio fecha o resultado líquido certo com o
 // lucro bruto errado. É exatamente o erro que passa numa reunião.
+import { categoriasEmColisao, chaveDaCategoria, partesDaChave } from "../src/lib/controladoria/chaveCategoria";
 import { montarDre, montarDreAnual, proporLinha } from "../src/lib/controladoria/dre";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 
@@ -122,6 +123,38 @@ console.log("\n2b. Serviços de terceiros: linha própria, entre as despesas da 
   const pos = (c: string) => r.linhas.findIndex((l) => l.chave === c);
   conferir("grupo próprio, logo depois dos veículos", pos("DESPESA_SERVICOS_TERCEIROS") - pos("DESPESA_VEICULOS"), 1);
   conferir("fora das linhas de pessoas (antes das duas)", pos("DESPESA_SERVICOS_TERCEIROS") < pos("DESPESA_SALARIOS") && pos("DESPESA_SALARIOS_CORPORATIVO") - pos("DESPESA_SALARIOS") === 1, true);
+}
+
+// ------------------------------------------------------ mesmo código, empresas diferentes
+console.log("\n2c. Código repetido entre as empresas com nomes diferentes: uma categoria por empresa");
+{
+  const daEmpresa = (t: ReturnType<typeof tit>, empresa: string) => ({ ...t, conexaoId: empresa, conexaoApelido: empresa }) as unknown as ContextoAuditoria["titulos"][number];
+  const catDe = (codigo: string, descricao: string, empresa: string) => ({ ...cat(codigo, descricao), conexaoId: empresa, conexaoApelido: empresa });
+  const titulos = [
+    tit("RECEBER", "1", 100_000),
+    daEmpresa(tit("PAGAR", "9", 10_000), "AZUL"), // Bessa: Comissão na Azul
+    daEmpresa(tit("PAGAR", "9", 3_500), "MCZ"), // Combustível na MCZ
+    daEmpresa(tit("PAGAR", "8", 2_000), "AZUL"), // mesmo nome nas duas: uma só
+    daEmpresa(tit("PAGAR", "8", 1_000), "MCZ"),
+  ];
+  const categorias = [cat("1", "Serviços", true), catDe("9", "Comissão", "AZUL"), catDe("9", "Combustível", "MCZ"), catDe("8", "Pneus", "AZUL"), catDe("8", "PNEUS ", "MCZ")];
+  const antiga = cls({ "1": ["RECEITA_BRUTA", null, true], "9": ["DESPESA_VEICULOS", null, true], "8": ["DESPESA_VEICULOS", null, true] });
+  const r = montarDre(ctx(titulos, categorias), MES, ANT, antiga);
+  const itens = (l: string) => r.linhas.find((x) => x.chave === l)?.itens.map((i) => [i.categoriaCodigo, i.categoriaCodigo === "8" ? "(o nome de uma das duas)" : i.descricao, i.valorCents]);
+  conferir(
+    "separadas por empresa, com a classificação antiga do código",
+    itens("DESPESA_VEICULOS"),
+    [["9@AZUL", "Comissão · AZUL", 1_000_000], ["9@MCZ", "Combustível · MCZ", 350_000], ["8", "(o nome de uma das duas)", 300_000]]
+  );
+  conferir("as duas continuam confirmadas (a classificação valeu)", r.linhas.find((x) => x.chave === "DESPESA_VEICULOS")?.itens.every((i) => i.confirmada), true);
+  // Classificar a da Azul não mexe na da MCZ.
+  const nova = cls({ "1": ["RECEITA_BRUTA", null, true], "9": ["DESPESA_VEICULOS", null, true], "9@AZUL": ["DESPESA_COMERCIAL", null, true] });
+  const r2 = montarDre(ctx(titulos, categorias), MES, ANT, nova);
+  const v2 = (l: string) => r2.linhas.find((x) => x.chave === l)?.valorCents;
+  conferir("comissão da Azul em comerciais", v2("DESPESA_COMERCIAL"), 1_000_000);
+  conferir("combustível da MCZ segue nos veículos (com os pneus sem classificação)", r2.linhas.find((x) => x.chave === "DESPESA_VEICULOS")?.itens.find((i) => i.categoriaCodigo === "9@MCZ")?.valorCents, 350_000);
+  conferir("colisão só com nomes diferentes (caixa e espaços não contam)", [...categoriasEmColisao(categorias as never)], ["9"]);
+  conferir("chave e partes", [chaveDaCategoria("9", "AZUL", new Set(["9"])), chaveDaCategoria("8", "AZUL", new Set(["9"])), chaveDaCategoria(null, "AZUL", new Set()), partesDaChave("9@AZUL")], ["9@AZUL", "8", "SEM_CATEGORIA", { codigo: "9", empresa: "AZUL" }]);
 }
 
 // ------------------------------------------------------ sem categoria

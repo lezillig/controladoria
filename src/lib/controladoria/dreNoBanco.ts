@@ -1,9 +1,10 @@
+import { categoriasEmColisao, categoriasPorChave, descreverColisoes } from "./chaveCategoria";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "./competencia";
 import {
-  CATEGORIA_SQL as CATEGORIA,
+  categoriaSql,
   ehCorporativoSql,
   ehIntercompanySql,
   filtroConexaoBaixa,
@@ -131,7 +132,7 @@ function retencaoDaLinha(linha: LinhaRetencao | undefined): Retencoes {
 // o sinal dela na demonstração sai do lado em que ela vive.
 async function somaPorCategoriaCompetencia(escopo: EscopoDre, periodo: Periodo): Promise<Somas> {
   const linhas = await prisma.$queryRaw<LinhaSoma[]>`
-    SELECT ${CATEGORIA} AS categoria,
+    SELECT ${categoriaSql()} AS categoria,
            COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
            COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
       FROM ${tabela("OmieTitulo")} t
@@ -151,7 +152,7 @@ async function somaPorCategoriaCompetencia(escopo: EscopoDre, periodo: Periodo):
 // se trata. Título cancelado fica fora, como ficaria na competência.
 async function somaPorCategoriaCaixa(escopo: EscopoDre, periodo: Periodo): Promise<Somas> {
   const linhas = await prisma.$queryRaw<LinhaSoma[]>`
-    SELECT ${CATEGORIA} AS categoria,
+    SELECT ${categoriaSql()} AS categoria,
            COALESCE(SUM(b."valorCents"), 0)::bigint AS cents,
            COALESCE(SUM(b."valorCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
       FROM ${tabela("OmieBaixa")} b
@@ -226,7 +227,7 @@ function somaPorCategoria(escopo: EscopoDre, periodo: Periodo, regime: "competen
 // despesa, e uma ENTRADA aparecia como saída.
 export async function movimentoPorCategoria(escopo: EscopoDre) {
   const linhas = await prisma.$queryRaw<LinhaMovimento[]>`
-    SELECT ${CATEGORIA} AS categoria,
+    SELECT ${categoriaSql()} AS categoria,
            t.natureza::text AS natureza,
            COALESCE(SUM(ABS(t."valorDocumentoCents")), 0)::bigint AS cents
       FROM ${tabela("OmieTitulo")} t
@@ -333,7 +334,7 @@ async function drillCompetencia(escopo: EscopoDre, periodo: Periodo) {
   const linhas = await prisma.$queryRaw<LinhaDrill[]>`
     SELECT * FROM (
       SELECT t.id,
-             ${CATEGORIA} AS categoria,
+             ${categoriaSql()} AS categoria,
              t.natureza::text AS natureza,
              COALESCE(t."parceiroNome", '(sem parceiro)') AS parceiro,
              t."numeroDocumento" AS documento,
@@ -346,10 +347,10 @@ async function drillCompetencia(escopo: EscopoDre, periodo: Periodo) {
              -- demais linhas os dois pedaços se juntam de novo, e os vinte
              -- maiores da categoria estão sempre entre os vinte de cada lado.
              ROW_NUMBER() OVER (
-               PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)}
+               PARTITION BY ${categoriaSql()}, ${ehCorporativoSql(escopo.companyId)}
                ORDER BY ABS(t."valorDocumentoCents") DESC, t.natureza::text DESC, t."dataVencimento" ASC, t.id ASC
              ) AS pos,
-             COUNT(*) OVER (PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)})::bigint AS total
+             COUNT(*) OVER (PARTITION BY ${categoriaSql()}, ${ehCorporativoSql(escopo.companyId)})::bigint AS total
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${escopo.companyId}
          AND t.cancelado = false
@@ -369,7 +370,7 @@ async function drillCaixa(escopo: EscopoDre, periodo: Periodo) {
   const linhas = await prisma.$queryRaw<LinhaDrill[]>`
     SELECT * FROM (
       SELECT b.id,
-             ${CATEGORIA} AS categoria,
+             ${categoriaSql()} AS categoria,
              t.natureza::text AS natureza,
              COALESCE(t."parceiroNome", '(sem parceiro)') AS parceiro,
              t."numeroDocumento" AS documento,
@@ -378,10 +379,10 @@ async function drillCaixa(escopo: EscopoDre, periodo: Periodo) {
              t."conexaoApelido" AS empresa,
              ${ehCorporativoSql(escopo.companyId)} AS corporativo,
              ROW_NUMBER() OVER (
-               PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)}
+               PARTITION BY ${categoriaSql()}, ${ehCorporativoSql(escopo.companyId)}
                ORDER BY ABS(b."valorCents") DESC, b."dataBaixa" ASC, b.id ASC
              ) AS pos,
-             COUNT(*) OVER (PARTITION BY ${CATEGORIA}, ${ehCorporativoSql(escopo.companyId)})::bigint AS total
+             COUNT(*) OVER (PARTITION BY ${categoriaSql()}, ${ehCorporativoSql(escopo.companyId)})::bigint AS total
         FROM ${tabela("OmieBaixa")} b
         JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
        WHERE b."companyId" = ${escopo.companyId}
@@ -426,12 +427,23 @@ function agruparDrill(linhas: LinhaDrill[]) {
   return { titulos, totais, totaisCorporativos };
 }
 
+// Pela CHAVE (chaveCategoria.ts): na colisão entre empresas, uma entrada por
+// empresa. A colisão é apurada sobre todas as categorias da empresa, mesmo com
+// a visão filtrada — a chave do título não muda com o filtro.
 export async function categoriasDoEscopo(escopo: EscopoDre): Promise<Map<string, CategoriaParaDre>> {
-  const linhas = await prisma.omieCategoria.findMany({
-    where: { companyId: escopo.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
-    select: { codigo: true, descricao: true, natureza: true, contaReceita: true, contaDespesa: true },
+  const todas = await prisma.omieCategoria.findMany({
+    where: { companyId: escopo.companyId },
+    select: { codigo: true, descricao: true, natureza: true, contaReceita: true, contaDespesa: true, conexaoId: true, conexaoApelido: true },
   });
-  return new Map(linhas.map((c) => [c.codigo, c]));
+  const colisoes = categoriasEmColisao(todas);
+  return categoriasPorChave(escopo.conexaoId ? todas.filter((c) => c.conexaoId === escopo.conexaoId) : todas, colisoes);
+}
+
+// Os códigos que se repetem entre as empresas com nomes diferentes — o aviso
+// da tela de Custos e DRE.
+export async function colisoesDeCategoria(companyId: string) {
+  const todas = await prisma.omieCategoria.findMany({ where: { companyId }, select: { codigo: true, descricao: true, conexaoApelido: true } });
+  return descreverColisoes(todas, categoriasEmColisao(todas));
 }
 
 // ---------------------------------------------------------------------------
@@ -566,7 +578,7 @@ async function somaPorCategoriaPorMes(
   const linhas =
     regime === "caixa"
       ? await prisma.$queryRaw<LinhaSomaMes[]>`
-          SELECT ${CATEGORIA} AS categoria,
+          SELECT ${categoriaSql()} AS categoria,
                  (EXTRACT(MONTH FROM b."dataBaixa") - 1)::int AS mes,
                  COALESCE(SUM(b."valorCents"), 0)::bigint AS cents,
                  COALESCE(SUM(b."valorCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
@@ -581,7 +593,7 @@ async function somaPorCategoriaPorMes(
            GROUP BY 1, 2
         `
       : await prisma.$queryRaw<LinhaSomaMes[]>`
-          SELECT ${CATEGORIA} AS categoria,
+          SELECT ${categoriaSql()} AS categoria,
                  (EXTRACT(MONTH FROM ${competenciaSql("t")}) - 1)::int AS mes,
                  COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
                  COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
@@ -795,7 +807,7 @@ export async function pessoasCorporativoPorCentroDeCusto(
              AND b."dataBaixa" <= ${ate}
              AND t.cancelado = false
              AND ${ehCorporativoSql(escopo.companyId)}
-             AND ${CATEGORIA} IN (${Prisma.join(categorias)})
+             AND ${categoriaSql()} IN (${Prisma.join(categorias)})
              ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
              ${naJanela(escopo.janela)}
            GROUP BY 1`
@@ -810,7 +822,7 @@ export async function pessoasCorporativoPorCentroDeCusto(
              AND ${competenciaSql("t")} >= ${desde}
              AND ${competenciaSql("t")} <= ${ate}
              AND ${ehCorporativoSql(escopo.companyId)}
-             AND ${CATEGORIA} IN (${Prisma.join(categorias)})
+             AND ${categoriaSql()} IN (${Prisma.join(categorias)})
              ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
              ${naJanela(escopo.janela)}
            GROUP BY 1`;

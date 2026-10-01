@@ -1,3 +1,4 @@
+import { categoriasEmColisao, categoriasPorChave, classificacaoDaChave } from "@/lib/controladoria/chaveCategoria";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { garantirConfig } from "@/lib/controladoria/contexto";
@@ -57,7 +58,8 @@ export async function GET(req: NextRequest) {
       { linha: c.linha, subgrupo: c.subgrupo, confirmada: c.origem === "CONFIRMADA" },
     ])
   );
-  const quemClassificou = new Map(guardadas.map((c) => [c.categoriaCodigo, c.userNome]));
+  const quemClassificouPorCodigo = new Map(guardadas.map((c) => [c.categoriaCodigo, c.userNome]));
+  const quemClassificou = { get: (chave: string) => classificacaoDaChave(quemClassificouPorCodigo, chave) };
 
   // `garantirConfig`, como a tela (via escopoDaPagina): a leitura das
   // retenções tem que ser a mesma nos dois lados.
@@ -68,13 +70,14 @@ export async function GET(req: NextRequest) {
     incluirTitulos: false,
   });
   // As colunas "Omie:" do cadastro, no mesmo recorte de empresa da colheita.
-  const categorias = new Map(
-    (
-      await prisma.omieCategoria.findMany({
-        where: { companyId: session.companyId, ...(escopo.conexaoId ? { conexaoId: escopo.conexaoId } : {}) },
-        select: { codigo: true, codigoDre: true, tipoCategoria: true, contaReceita: true, contaDespesa: true },
-      })
-    ).map((c) => [c.codigo, c])
+  // Pela chave da categoria (chaveCategoria.ts), como o DRE.
+  const todasAsCategorias = await prisma.omieCategoria.findMany({
+    where: { companyId: session.companyId },
+    select: { codigo: true, descricao: true, conexaoId: true, conexaoApelido: true, codigoDre: true, tipoCategoria: true, contaReceita: true, contaDespesa: true },
+  });
+  const categorias = categoriasPorChave(
+    escopo.conexaoId ? todasAsCategorias.filter((c) => c.conexaoId === escopo.conexaoId) : todasAsCategorias,
+    categoriasEmColisao(todasAsCategorias)
   );
   const { janelas } = recorte;
 

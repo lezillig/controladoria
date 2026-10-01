@@ -1,3 +1,4 @@
+import { categoriasEmColisao } from "./chaveCategoria";
 import { Prisma } from "@prisma/client";
 import type { ControladoriaConfig, OmieTitulo } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -281,6 +282,13 @@ export async function carregarContexto(
     prisma.omieConexao.findMany({ where: { companyId }, select: { id: true, cnpj: true, papelNoGrupo: true } }),
   ]);
 
+  // As colisões de código entre as contas (chaveCategoria.ts), sobre TODAS as
+  // categorias da empresa: com a visão filtrada por empresa, uma leitura a mais
+  // (algumas centenas de linhas curtas).
+  const colisoesDeCategoria = [
+    ...categoriasEmColisao(conexaoId ? await prisma.omieCategoria.findMany({ where: { companyId }, select: { codigo: true, descricao: true } }) : categorias),
+  ];
+
   // Só os CNPJs que este contexto conhece — os agentes não têm o que fazer
   // com a consulta de um fornecedor fora do recorte (outra empresa, inativo).
   const cnpjsDoContexto = new Set(parceiros.map((p) => p.documento).filter((d): d is string => Boolean(d)));
@@ -300,6 +308,7 @@ export async function carregarContexto(
     ),
     raizesCnpjDoGrupo: raizesDoGrupo(conexoesDoGrupo),
     conexoesCorporativas: conexoesDoGrupo.filter((c) => c.papelNoGrupo === "CORPORATIVO").map((c) => c.id),
+    categoriasEmColisao: colisoesDeCategoria,
     notas,
     parceiros,
     categorias,
