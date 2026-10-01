@@ -175,7 +175,9 @@ export default async function CustosPage({
   let ultimoSubtotal: number | null = null;
   for (const linha of dre.linhas) {
     if (linha.tipo === "GRUPO") {
-      if (linha.valorCents === 0 && linha.valorAnteriorCents === 0 && linha.itens.length === 0) continue;
+      // Serviços de terceiros aparece mesmo vazia: é a linha nova para onde as
+      // categorias vão ser reclassificadas, e escondida não seria achada.
+      if (linha.valorCents === 0 && linha.valorAnteriorCents === 0 && linha.itens.length === 0 && linha.chave !== "DESPESA_SERVICOS_TERCEIROS") continue;
       linhasVisiveis.push(linha);
       ultimoSubtotal = null;
       continue;

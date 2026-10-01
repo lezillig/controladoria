@@ -97,8 +97,9 @@ da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
 
 ### Serviços de terceiros
 
-`DESPESA_SERVICOS_TERCEIROS`, **"(-) Serviços de terceiros"**, logo depois de
-pessoas — operação: a operação feita por outros (viagem repassada a outra
+`DESPESA_SERVICOS_TERCEIROS`, **"(-) Serviços de terceiros"**, grupo próprio
+logo depois de "Despesas com veículos" (fora das linhas de pessoas, e visível
+na tela mesmo vazia): a operação feita por outros (viagem repassada a outra
 transportadora — "Compra de Serviços" —, motorista ou veículo contratado). É
 custo da operação, entra no EBIT e nasce vazia: as categorias vêm pela
 classificação (tela Custos e DRE → classificar a categoria). Não entra na

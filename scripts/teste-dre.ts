@@ -119,11 +119,9 @@ console.log("\n2b. Serviços de terceiros: linha própria, entre as despesas da 
   const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
   conferir("Compra de Serviços na linha de terceiros", v("DESPESA_SERVICOS_TERCEIROS"), 2_500_000);
   conferir("EBIT desconta os terceiros", v("EBIT"), 10_000_000 - 2_500_000 - 1_000_000);
-  conferir(
-    "a linha vem depois de pessoas — operação",
-    r.linhas.findIndex((l) => l.chave === "DESPESA_SERVICOS_TERCEIROS") - r.linhas.findIndex((l) => l.chave === "DESPESA_SALARIOS"),
-    1
-  );
+  const pos = (c: string) => r.linhas.findIndex((l) => l.chave === c);
+  conferir("grupo próprio, logo depois dos veículos", pos("DESPESA_SERVICOS_TERCEIROS") - pos("DESPESA_VEICULOS"), 1);
+  conferir("fora das linhas de pessoas (antes das duas)", pos("DESPESA_SERVICOS_TERCEIROS") < pos("DESPESA_SALARIOS") && pos("DESPESA_SALARIOS_CORPORATIVO") - pos("DESPESA_SALARIOS") === 1, true);
 }
 
 // ------------------------------------------------------ sem categoria
