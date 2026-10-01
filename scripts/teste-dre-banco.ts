@@ -316,6 +316,22 @@ async function principal() {
             [docs.reduce((a, d) => a + d.atualCents, 0), docs.reduce((a, d) => a + d.anteriorCents, 0)],
             [Math.abs(rb.valorCents), Math.abs(rb.valorAnteriorCents)]
           );
+          // A LISTA DE TÍTULOS DA PLANILHA soma, por categoria, o valor das
+          // categorias do DRE — é ela que se cruza com a exportação da Omie.
+          const { titulosDaConferencia } = await import("../src/lib/controladoria/dreNoBanco");
+          const lista = await titulosDaConferencia(escopo, janelas.mesAtual, regime);
+          const porCategoria = new Map<string, number>();
+          for (const t of lista) porCategoria.set(t.categoria, (porCategoria.get(t.categoria) ?? 0) + t.valorCents);
+          const doDre = new Map<string, number>();
+          for (const l of banco.linhas)
+            for (const i of l.itens) if (i.categoriaCodigo !== "RETENCAO_NA_FONTE") doDre.set(i.categoriaCodigo, (doDre.get(i.categoriaCodigo) ?? 0) + Math.abs(i.valorCents));
+          const chaves = [...new Set([...doDre.keys()].filter((k) => (doDre.get(k) ?? 0) !== 0))].sort();
+          conferir(
+            `títulos da planilha somam as categorias do DRE — ${alvo}, ${regime}`,
+            chaves.map((k) => [k, Math.abs(porCategoria.get(k) ?? 0)]),
+            chaves.map((k) => [k, doDre.get(k)])
+          );
+          conferir(`títulos da planilha: a lista não vem vazia — ${alvo}, ${regime}`, lista.length > 0, true);
         }
       }
     }

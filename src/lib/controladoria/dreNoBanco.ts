@@ -397,6 +397,77 @@ async function drillCaixa(escopo: EscopoDre, periodo: Periodo) {
   return agruparDrill(linhas);
 }
 
+// TODOS OS TÍTULOS DO MÊS, para a planilha de conferência.
+//
+// A tela mostra os vinte maiores de cada categoria e diz "a lista completa
+// está na planilha de conferência" — e a planilha trazia só as categorias.
+// Quem fecha o mês contra a Omie precisa da lista inteira: no setembro/2026 da
+// Azul, o DRE tinha 131 títulos em "Clientes - Serviços Prestados" e a
+// exportação da Omie 130, com R$ 9.190,00 de diferença, e só a lista título a
+// título diz qual.
+//
+// O MESMO recorte da soma (empresa, janela, cancelado, data do regime) e a
+// mesma chave de categoria: a soma desta lista por categoria é o valor da
+// linha (teste do banco). No caixa, uma linha por BAIXA, com a data e o valor
+// do pagamento, como o drill-down da tela.
+export type TituloDaConferencia = {
+  categoria: string;
+  natureza: "RECEBER" | "PAGAR";
+  parceiro: string;
+  parceiroDocumento: string | null;
+  documento: string | null;
+  parcela: string | null;
+  tipoDocumento: string | null;
+  data: Date;
+  vencimento: Date;
+  valorCents: number;
+  status: string;
+  empresa: string;
+  codigoLancamento: string;
+  corporativo: boolean;
+};
+
+type LinhaConferencia = Omit<TituloDaConferencia, "valorCents" | "natureza"> & { natureza: string; cents: bigint | number };
+
+export async function titulosDaConferencia(escopo: EscopoDre, periodo: Periodo, regime: "competencia" | "caixa"): Promise<TituloDaConferencia[]> {
+  const linhas =
+    regime === "caixa"
+      ? await prisma.$queryRaw<LinhaConferencia[]>`
+          SELECT ${categoriaSql()} AS categoria, t.natureza::text AS natureza,
+                 COALESCE(t."parceiroNome", '(sem parceiro)') AS parceiro, t."parceiroDocumento" AS "parceiroDocumento",
+                 t."numeroDocumento" AS documento, t."numeroParcela" AS parcela, t."tipoDocumento" AS "tipoDocumento",
+                 b."dataBaixa" AS data, t."dataVencimento" AS vencimento, b."valorCents" AS cents,
+                 t.status, t."conexaoApelido" AS empresa, t."codigoLancamento" AS "codigoLancamento",
+                 ${ehCorporativoSql(escopo.companyId)} AS corporativo
+            FROM ${tabela("OmieBaixa")} b
+            JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
+           WHERE b."companyId" = ${escopo.companyId}
+             AND b."dataBaixa" >= ${periodo.inicio}
+             AND b."dataBaixa" <= ${periodo.fim}
+             AND t.cancelado = false
+             ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           ORDER BY 1, ABS(b."valorCents") DESC, b."dataBaixa", b.id
+        `
+      : await prisma.$queryRaw<LinhaConferencia[]>`
+          SELECT ${categoriaSql()} AS categoria, t.natureza::text AS natureza,
+                 COALESCE(t."parceiroNome", '(sem parceiro)') AS parceiro, t."parceiroDocumento" AS "parceiroDocumento",
+                 t."numeroDocumento" AS documento, t."numeroParcela" AS parcela, t."tipoDocumento" AS "tipoDocumento",
+                 ${competenciaSql("t")} AS data, t."dataVencimento" AS vencimento, t."valorDocumentoCents" AS cents,
+                 t.status, t."conexaoApelido" AS empresa, t."codigoLancamento" AS "codigoLancamento",
+                 ${ehCorporativoSql(escopo.companyId)} AS corporativo
+            FROM ${tabela("OmieTitulo")} t
+           WHERE t."companyId" = ${escopo.companyId}
+             AND t.cancelado = false
+             AND ${competenciaSql("t")} >= ${periodo.inicio}
+             AND ${competenciaSql("t")} <= ${periodo.fim}
+             ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           ORDER BY 1, ABS(t."valorDocumentoCents") DESC, t."dataVencimento", t.id
+        `;
+  return linhas.map((l) => ({ ...l, natureza: l.natureza === "RECEBER" ? "RECEBER" : "PAGAR", valorCents: Number(l.cents) }));
+}
+
 function agruparDrill(linhas: LinhaDrill[]) {
   const titulos = new Map<string, TituloDoDre[]>();
   // A contagem vem por (categoria, papel): soma-se por categoria, e a parte

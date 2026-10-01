@@ -1,9 +1,9 @@
-import { categoriasEmColisao, categoriasPorChave, classificacaoDaChave } from "@/lib/controladoria/chaveCategoria";
+import { SEM_CATEGORIA, categoriasEmColisao, categoriasPorChave, classificacaoDaChave } from "@/lib/controladoria/chaveCategoria";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { garantirConfig } from "@/lib/controladoria/contexto";
 import { LINHA_PESSOAS_CORPORATIVO, LINHAS_DRE, ROTULO_LINHA } from "@/lib/controladoria/dre";
-import { montarDreNoBanco, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
+import { montarDreNoBanco, recorteMensalDoDre, titulosDaConferencia } from "@/lib/controladoria/dreNoBanco";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { fmtData } from "@/lib/controladoria/format";
 import { rotuloMes } from "@/lib/controladoria/periodos";
@@ -204,6 +204,68 @@ export async function GET(req: NextRequest) {
       "",
       "",
       "",
+    ]);
+  }
+
+  // TODOS OS TÍTULOS DO MÊS, na ordem da demonstração. A tela mostra os vinte
+  // maiores de cada categoria e manda para cá o resto; é esta lista que se
+  // cruza com a exportação da Omie no fechamento (ver titulosDaConferencia).
+  const titulos = await titulosDaConferencia(recorte.escopo, recorte.periodo, regime);
+  const linhaDaCategoria = new Map<string, { ordem: number; rotulo: string; descricao: string }[]>();
+  LINHAS_DRE.forEach((def, ordemDaLinha) => {
+    for (const item of dre.linhas.find((l) => l.chave === def.chave)?.itens ?? []) {
+      const lista = linhaDaCategoria.get(item.categoriaCodigo) ?? [];
+      lista.push({ ordem: ordemDaLinha, rotulo: ROTULO_LINHA[def.chave] ?? def.chave, descricao: item.descricao });
+      linhaDaCategoria.set(item.categoriaCodigo, lista);
+    }
+  });
+  const rotuloCorporativo = ROTULO_LINHA[LINHA_PESSOAS_CORPORATIVO];
+  const linhaDoTitulo = (t: (typeof titulos)[number]) => {
+    const opcoes = linhaDaCategoria.get(t.categoria) ?? [];
+    // A mesma categoria pode estar nas duas linhas de pessoas (operação e
+    // corporativo): o título vai à do seu papel.
+    return opcoes.find((o) => (o.rotulo === rotuloCorporativo) === t.corporativo) ?? opcoes[0];
+  };
+  const comLinha = titulos
+    .map((t) => ({ t, linha: linhaDoTitulo(t) }))
+    .sort((a, b) => (a.linha?.ordem ?? 999) - (b.linha?.ordem ?? 999));
+  linhas.push([]);
+  linhas.push([
+    "",
+    regime === "caixa" ? "TÍTULOS DO MÊS — cada pagamento ou recebimento, pela data da baixa" : "TÍTULOS DO MÊS — todos os documentos, pela data de emissão",
+  ]);
+  linhas.push([
+    "Linha do DRE",
+    "Categoria (código)",
+    "Categoria (descrição)",
+    "Empresa",
+    "Cliente / fornecedor",
+    "CNPJ/CPF",
+    "Documento",
+    "Parcela",
+    "Tipo de documento",
+    regime === "caixa" ? "Data da baixa" : "Data de emissão",
+    "Vencimento",
+    regime === "caixa" ? "Valor da baixa (R$)" : "Valor do documento (R$)",
+    "Status na Omie",
+    "Código do lançamento na Omie",
+  ]);
+  for (const { t, linha } of comLinha) {
+    linhas.push([
+      linha?.rotulo ?? (t.categoria === SEM_CATEGORIA ? "FORA DA DEMONSTRAÇÃO (sem categoria)" : "FORA DA DEMONSTRAÇÃO"),
+      t.categoria === SEM_CATEGORIA ? "" : t.categoria,
+      linha?.descricao ?? categorias.get(t.categoria)?.descricao ?? "",
+      t.empresa,
+      t.parceiro,
+      t.parceiroDocumento ?? "",
+      t.documento ?? "",
+      t.parcela ?? "",
+      t.tipoDocumento ?? "",
+      fmtData(t.data),
+      fmtData(t.vencimento),
+      t.valorCents / 100,
+      t.status,
+      t.codigoLancamento,
     ]);
   }
 
