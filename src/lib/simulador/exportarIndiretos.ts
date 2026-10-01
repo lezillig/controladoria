@@ -3,7 +3,7 @@ import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import type { BaseVigente } from "./baseDeCustos";
 import { CATALOGO_PARAMETROS } from "./catalogo";
 import type { DreDosMeses } from "./custosReais";
-import { LINHAS_DOS_INDIRETOS, type FolhaDaOficina, type IndiretoDoDre, type PagamentosDoFornecedor } from "./indiretosDoDre";
+import { LINHAS_DOS_INDIRETOS, type FolhaDaOficina, type IndiretoDoDre, type LancamentoIndireto, type PagamentosDoFornecedor } from "./indiretosDoDre";
 import type { Premissas } from "./tipos";
 
 // A COMPOSIÇÃO DA ADMINISTRAÇÃO CENTRAL, EM EXCEL — de onde sai o % que o
@@ -14,7 +14,10 @@ import type { Premissas } from "./tipos";
 // alvo ou os tributos recalcula. Aba "Categorias por mês": cada categoria do
 // Omie que forma cada custo, mês a mês, nos doze meses fechados, com o
 // fornecedor da contabilidade e a folha da oficina à parte; a média usa só os
-// meses com receita, como a conta do sistema (indiretosDoDre.ts).
+// meses com receita, como a conta do sistema (indiretosDoDre.ts). Abas "Por
+// fornecedor" e "Lançamentos": os títulos do Omie de cada custo — quem
+// recebeu, quanto, em que mês — e a diferença para o DRE (movimentos de caixa
+// sem título e ajustes).
 
 export type DadosIndiretos = {
   dre: DreDosMeses;
@@ -26,6 +29,9 @@ export type DadosIndiretos = {
   premissas: Premissas;
   empresa: string;
   geradoEm: Date;
+  // Os títulos de cada custo (lancamentosDosIndiretos). Sem eles, as duas
+  // abas de lançamentos não saem.
+  lancamentos?: LancamentoIndireto[];
 };
 
 export const INDIRETOS_DA_ADMINISTRACAO = ["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"] as const;
@@ -72,6 +78,8 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
 
   // ------------------------------------------------ Categorias por mês
   const wc = wb.addWorksheet("Categorias por mês");
+  const wf = d.lancamentos ? wb.addWorksheet("Por fornecedor") : null;
+  const wl = d.lancamentos ? wb.addWorksheet("Lançamentos") : null;
   const C0 = 4; // primeira coluna de mês (D)
   const colMedia = C0 + n;
   const L = (i: number) => letra(C0 + i);
@@ -238,5 +246,97 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   }
   ws.getColumn(4).alignment = { wrapText: true, vertical: "top" };
 
+  if (wf && wl && d.lancamentos) abasDeLancamentos(wf, wl, d, d.lancamentos);
   return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+// Por fornecedor: dentro de cada custo, quem recebeu, a média por mês (nos
+// meses com receita, como o sistema) e a diferença para o valor do DRE.
+// Lançamentos: um título por linha, com filtro.
+function abasDeLancamentos(wf: ExcelJS.Worksheet, wl: ExcelJS.Worksheet, d: DadosIndiretos, lancamentos: LancamentoIndireto[]) {
+  const receita = d.dre.linhasDre.RECEITA_BRUTA ?? [];
+  const mesesDaMedia = new Set(d.dre.meses.filter((_, i) => (receita[i] ?? 0) > 0));
+  const n = Math.max(1, mesesDaMedia.size);
+
+  wf.columns = [{ width: 44 }, { width: 46 }, { width: 16 }, { width: 16 }, { width: 11 }, { width: 12 }, { width: 50 }];
+  wf.getCell("A1").value = "Quem recebeu — cada custo de estrutura por fornecedor";
+  wf.getCell("A1").font = { bold: true, size: 13 };
+  wf.getCell("A2").value = `Títulos do Omie no recorte do DRE (competência, visão do grupo). Média = total dos ${mesesDaMedia.size} meses com receita ÷ ${mesesDaMedia.size}.`;
+  wf.getCell("A2").font = { italic: true, size: 9 };
+  let l = 4;
+  for (const chave of INDIRETOS_DA_ADMINISTRACAO) {
+    const doCusto = lancamentos.filter((x) => x.indireto === chave && mesesDaMedia.has(x.mes));
+    const sistema = d.doDre.get(chave)?.valor ?? 0;
+    if (doCusto.length === 0 && sistema === 0) continue;
+    const cab = wf.getRow(l++);
+    [rotuloDoIndireto(chave), "Fornecedor", "Total nos meses", "Média/mês", "% do custo", "Lançamentos", "Categorias"].forEach((t, i) => (cab.getCell(i + 1).value = t));
+    cab.font = { bold: true };
+    cab.eachCell((c) => (c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: FUNDO_TITULO } }));
+    const porFornecedor = new Map<string, { total: number; qtd: number; categorias: Map<string, number> }>();
+    for (const x of doCusto) {
+      const f = porFornecedor.get(x.fornecedor) ?? { total: 0, qtd: 0, categorias: new Map() };
+      f.total += x.valor;
+      f.qtd++;
+      f.categorias.set(x.categoria, (f.categorias.get(x.categoria) ?? 0) + x.valor);
+      porFornecedor.set(x.fornecedor, f);
+    }
+    const primeira = l;
+    for (const [fornecedor, f] of [...porFornecedor].sort((a, b) => b[1].total - a[1].total)) {
+      const r = wf.getRow(l);
+      r.getCell(2).value = fornecedor;
+      r.getCell(3).value = Math.round(f.total * 100) / 100;
+      r.getCell(4).value = { formula: `C${l}/${n}` };
+      r.getCell(6).value = f.qtd;
+      r.getCell(7).value = [...f.categorias].sort((a, b) => b[1] - a[1]).map(([c]) => c).join("; ");
+      l++;
+    }
+    const ultima = l - 1;
+    const soma = l++;
+    wf.getRow(soma).getCell(2).value = "Soma dos lançamentos";
+    wf.getRow(soma).getCell(3).value = ultima >= primeira ? { formula: `SUM(C${primeira}:C${ultima})` } : 0;
+    wf.getRow(soma).getCell(4).value = { formula: `C${soma}/${n}` };
+    const dre = l++;
+    wf.getRow(dre).getCell(2).value = "Valor que o sistema usa (DRE)";
+    wf.getRow(dre).getCell(4).value = sistema;
+    const dif = l++;
+    wf.getRow(dif).getCell(2).value = "Diferença: movimentos de caixa sem título e ajustes";
+    wf.getRow(dif).getCell(4).value = { formula: `D${dre}-D${soma}` };
+    for (let r = primeira; r <= ultima; r++) wf.getRow(r).getCell(5).value = { formula: `IF(D$${dre}<>0,D${r}/D$${dre},0)` };
+    for (const r of [soma, dre, dif]) wf.getRow(r).font = { bold: true };
+    for (let r = primeira; r <= dif; r++) {
+      wf.getRow(r).getCell(3).numFmt = BRL;
+      wf.getRow(r).getCell(4).numFmt = BRL;
+      wf.getRow(r).getCell(5).numFmt = PCT;
+    }
+    l++;
+  }
+
+  wl.columns = [{ width: 30 }, { width: 38 }, { width: 11 }, { width: 9 }, { width: 40 }, { width: 18 }, { width: 22 }, { width: 12 }, { width: 12 }, { width: 15 }, { width: 10 }];
+  const cab = wl.getRow(1);
+  ["Custo de estrutura", "Categoria do Omie", "Competência", "Empresa", "Fornecedor", "Documento / parcela", "Centro de custo", "Emissão", "Vencimento", "Valor (R$)", "Na média?"].forEach(
+    (t, i) => (cab.getCell(i + 1).value = t)
+  );
+  cab.font = { bold: true };
+  cab.eachCell((c) => (c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: FUNDO_TITULO } }));
+  lancamentos.forEach((x, i) => {
+    const r = wl.getRow(i + 2);
+    r.values = [
+      rotuloDoIndireto(x.indireto),
+      x.categoria,
+      rotuloMes(x.mes),
+      x.empresa,
+      x.fornecedor,
+      x.documento,
+      x.centroDeCusto,
+      x.emissao,
+      x.vencimento,
+      x.valor,
+      mesesDaMedia.has(x.mes) ? "sim" : "não",
+    ];
+    r.getCell(8).numFmt = "dd/mm/yyyy";
+    r.getCell(9).numFmt = "dd/mm/yyyy";
+    r.getCell(10).numFmt = BRL;
+  });
+  wl.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, lancamentos.length + 1), column: 11 } };
+  wl.views = [{ state: "frozen", ySplit: 1 }];
 }

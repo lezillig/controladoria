@@ -521,6 +521,16 @@ async function principal() {
       await prisma.omieTitulo.update({ where: { id: idDe("P3") }, data: { departamentoCodigo: "OF" } });
       const oficina = await folhaDaOficina(EMPRESA, REFERENCIA, doze);
       conferir("oficina no simulador: agosto na oficina", [oficina?.centros, oficina?.porMes[11], oficina?.porMes.slice(0, 11).every((v) => v === 0)], [["Oficina"], 55_500, true]);
+      // Os lançamentos da planilha da administração: P3 (agosto, MCZ, centro
+      // Oficina) cai na oficina, com o valor do título.
+      const { lancamentosDosIndiretos } = await import("../src/lib/simulador/indiretosDoDre");
+      const lancs = await lancamentosDosIndiretos(EMPRESA, REFERENCIA, doze, "");
+      conferir(
+        "lançamentos: a oficina de agosto é o título P3",
+        lancs.filter((l) => l.indireto === "oficina").map((l) => [l.mes, l.centroDeCusto, Math.round(l.valor * 100)]),
+        [["2026-08", "Oficina", 55_500]]
+      );
+      conferir("lançamentos: nada de setembro (mês aberto)", lancs.every((l) => l.mes <= "2026-08"), true);
       await prisma.omieTitulo.update({ where: { id: idDe("P3") }, data: { departamentoCodigo: null } });
       await prisma.omieTitulo.update({ where: { id: idDe("P2") }, data: { departamentoCodigo: null } });
     }

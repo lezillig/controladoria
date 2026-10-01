@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { competenciaSql } from "@/lib/controladoria/competencia";
 import { Prisma } from "@prisma/client";
-import { CATEGORIA_SQL, ehCorporativoSql, filtroConexaoTitulo } from "@/lib/controladoria/escopoSql";
+import { CATEGORIA_SQL, ehCorporativoSql, filtroConexaoTitulo, naJanela } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import type { BaseValor, BaseVigente } from "./baseDeCustos";
@@ -290,4 +290,165 @@ export function baseComIndiretosDoDre(base: BaseVigente | null, doDre: Map<strin
     parametros.set(chave, { valor: v.valor, texto: null, fonte: v.fonte, vigenciaInicio: new Date() });
   }
   return base ? { ...base, parametros } : { em: new Date(), parametros, veiculos: [], funcoes: [], pedagios: [] };
+}
+
+// OS LANÇAMENTOS DE CADA CUSTO DE ESTRUTURA — os títulos do Omie que formam
+// cada indireto nos doze meses fechados, no recorte do DRE (competência,
+// visão do grupo), para a planilha da administração central. A classificação
+// é a de indiretosDoDre: a folha corporativa pela parte da MCZ (a oficina
+// pelo centro de custo), a contabilidade pelos pagamentos ao fornecedor, o
+// resto pela linha do DRE da categoria. O que o DRE tem e não é título
+// (movimentos de caixa sem título, ajustes) aparece na planilha como a
+// diferença para o subtotal.
+
+export type LancamentoIndireto = {
+  indireto: string;
+  categoria: string;
+  categoriaCodigo: string;
+  mes: string;
+  empresa: string;
+  fornecedor: string;
+  documento: string;
+  centroDeCusto: string;
+  emissao: Date | null;
+  vencimento: Date;
+  // Reais, com o sinal da despesa: positivo pesa, negativo (estorno) alivia.
+  valor: number;
+};
+
+export type TituloDoIndireto = {
+  empresa: string;
+  categoria: string;
+  categoriaDescricao: string | null;
+  mes: string;
+  fornecedor: string | null;
+  documento: string | null;
+  parcela: string | null;
+  centroDeCusto: string | null;
+  emissao: Date | null;
+  vencimento: Date;
+  natureza: string;
+  cents: number;
+  corporativo: boolean;
+};
+
+const semAcentoMaiusculo = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
+// O padrão LIKE de padraoDoNome ("%JL%BUS%") aplicado em JavaScript.
+export function casaComPadrao(nome: string | null, padrao: string): boolean {
+  if (!nome) return false;
+  const regex = new RegExp(`^${padrao.split("%").map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(".*")}$`);
+  return regex.test(semAcentoMaiusculo(nome));
+}
+
+// Pura: decide o indireto de cada título (ou nenhum).
+export function classificarTitulos(titulos: TituloDoIndireto[], dre: DreDosMeses, fornecedores: string[]): LancamentoIndireto[] {
+  const padroes = fornecedores.map(padraoDoNome).filter((p): p is string => p !== null);
+  const comFornecedor = padroes.length > 0;
+  const mapa = comFornecedor ? LINHAS_COM_FORNECEDOR : LINHAS_DOS_INDIRETOS;
+  const indiretoDaLinha = new Map<string, string>();
+  for (const [chave, linhas] of Object.entries(mapa)) if (chave !== "faturamento_medio" && chave !== "folha_adm") for (const l of linhas) indiretoDaLinha.set(l, chave);
+  // A mesma categoria de pessoal tem duas entradas (operação e corporativo),
+  // com o mesmo código: a da linha corporativa é a da folha da MCZ.
+  const CORP = "DESPESA_SALARIOS_CORPORATIVO";
+  const linhaDaCategoria = new Map(dre.categorias.filter((c) => c.linha !== CORP).map((c) => [c.codigo, c]));
+  const corporativas = new Map(dre.categorias.filter((c) => c.linha === CORP).map((c) => [c.codigo, c]));
+  const meses = new Set(dre.meses);
+  const r: LancamentoIndireto[] = [];
+  for (const t of titulos) {
+    if (!meses.has(t.mes)) continue;
+    let indireto: string | null = null;
+    let descricao = t.categoriaDescricao ?? linhaDaCategoria.get(t.categoria)?.descricao ?? t.categoria;
+    if (t.corporativo && corporativas.has(t.categoria)) {
+      indireto = /oficina/i.test(t.centroDeCusto ?? "") ? "oficina" : "folha_adm";
+      descricao = corporativas.get(t.categoria)?.descricao ?? descricao;
+    } else {
+      const linha = linhaDaCategoria.get(t.categoria)?.linha;
+      if (!linha) continue;
+      if (comFornecedor && padroes.some((p) => casaComPadrao(t.fornecedor, p)) && indiretoDaLinha.has(linha)) indireto = "contabilidade";
+      else indireto = indiretoDaLinha.get(linha) ?? null;
+    }
+    if (!indireto) continue;
+    const valor = (t.natureza === "RECEBER" ? -1 : 1) * Math.abs(t.cents) / 100;
+    r.push({
+      indireto,
+      categoria: descricao,
+      categoriaCodigo: t.categoria,
+      mes: t.mes,
+      empresa: t.empresa,
+      fornecedor: t.fornecedor ?? "(sem fornecedor)",
+      documento: [t.documento, t.parcela].filter(Boolean).join(" / "),
+      centroDeCusto: t.centroDeCusto ?? "",
+      emissao: t.emissao,
+      vencimento: t.vencimento,
+      valor,
+    });
+  }
+  return r.sort((a, b) => a.indireto.localeCompare(b.indireto) || a.categoria.localeCompare(b.categoria) || b.valor - a.valor);
+}
+
+type LinhaTitulo = {
+  empresa: string;
+  categoria: string;
+  categoria_descricao: string | null;
+  mes: string;
+  fornecedor: string | null;
+  documento: string | null;
+  parcela: string | null;
+  centro: string | null;
+  emissao: Date | null;
+  vencimento: Date;
+  natureza: string;
+  cents: number;
+  corp: boolean;
+};
+
+export async function lancamentosDosIndiretos(companyId: string, dataReferencia: Date, dre: DreDosMeses, fornecedores: string): Promise<LancamentoIndireto[]> {
+  const linhasDosIndiretos = new Set([...Object.values(LINHAS_COM_FORNECEDOR), ...Object.values(LINHAS_DOS_INDIRETOS)].flat());
+  const codigos = [...new Set(dre.categorias.filter((c) => linhasDosIndiretos.has(c.linha)).map((c) => c.codigo))];
+  if (codigos.length === 0 || dre.meses.length === 0) return [];
+  const fechado = ultimoMesFechado(dataReferencia);
+  const [ano, mes] = dre.meses[0].split("-").map(Number);
+  const linhas = await prisma.$queryRaw<LinhaTitulo[]>`
+    SELECT t."conexaoApelido" AS empresa,
+           ${CATEGORIA_SQL} AS categoria,
+           t."categoriaDescricao" AS categoria_descricao,
+           to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+           t."parceiroNome" AS fornecedor,
+           t."numeroDocumento" AS documento,
+           t."numeroParcela" AS parcela,
+           d.descricao AS centro,
+           t."dataEmissao" AS emissao,
+           t."dataVencimento" AS vencimento,
+           t.natureza::text AS natureza,
+           t."valorDocumentoCents" AS cents,
+           ${ehCorporativoSql(companyId)} AS corp
+      FROM ${tabela("OmieTitulo")} t
+      LEFT JOIN ${tabela("OmieDepartamento")} d ON d."conexaoId" = t."conexaoId" AND d.codigo = t."departamentoCodigo"
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND ${CATEGORIA_SQL} IN (${Prisma.join(codigos)})
+       AND ${competenciaSql("t")} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
+       AND ${competenciaSql("t")} <= ${fechado.fim}
+       ${filtroConexaoTitulo(null, companyId)}
+       ${naJanela({ desde: new Date(ano, mes - 1, 1, 0, 0, 0, 0), ate: null })}
+  `;
+  return classificarTitulos(
+    linhas.map((l) => ({
+      empresa: l.empresa,
+      categoria: l.categoria,
+      categoriaDescricao: l.categoria_descricao,
+      mes: l.mes,
+      fornecedor: l.fornecedor,
+      documento: l.documento,
+      parcela: l.parcela,
+      centroDeCusto: l.centro,
+      emissao: l.emissao,
+      vencimento: l.vencimento,
+      natureza: l.natureza,
+      cents: Number(l.cents),
+      corporativo: Boolean(l.corp),
+    })),
+    dre,
+    nomesDosFornecedores(fornecedores)
+  );
 }

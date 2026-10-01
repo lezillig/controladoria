@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CategoriaReal, DreDosMeses } from "../src/lib/simulador/custosReais";
 import { planilhaDosIndiretos } from "../src/lib/simulador/exportarIndiretos";
-import { indiretosDoDre, type FolhaDaOficina, type PagamentosDoFornecedor } from "../src/lib/simulador/indiretosDoDre";
+import { casaComPadrao, classificarTitulos, indiretosDoDre, padraoDoNome, type FolhaDaOficina, type PagamentosDoFornecedor, type TituloDoIndireto } from "../src/lib/simulador/indiretosDoDre";
 import { PREMISSAS_PADRAO } from "../src/lib/simulador/premissas";
 
 let falhas = 0;
@@ -24,8 +24,8 @@ const meses = Array.from({ length: 12 }, (_, i) => `2025-${String(i + 10 > 12 ? 
 const mes = (v: number, semReceita = false) => meses.map((_, i) => (semReceita && i < 2 ? 0 : v));
 const cat = (codigo: string, descricao: string, linha: string, porMesCents: number[]): CategoriaReal => ({ codigo, descricao, linha, confirmada: true, porMesCents });
 const categorias = [
-  cat("3.01@corporativo", "Salários (MCZ)", "DESPESA_SALARIOS_CORPORATIVO", mes(8_000_000)),
-  cat("3.02@corporativo", "Encargos (MCZ)", "DESPESA_SALARIOS_CORPORATIVO", mes(3_000_000)),
+  cat("3.01", "Salários (MCZ)", "DESPESA_SALARIOS_CORPORATIVO", mes(8_000_000)),
+  cat("3.02", "Encargos (MCZ)", "DESPESA_SALARIOS_CORPORATIVO", mes(3_000_000)),
   cat("4.01", "Serviços contábeis e jurídicos", "DESPESA_ADMINISTRATIVA", mes(1_500_000)),
   cat("4.02", "Material de escritório", "DESPESA_ADMINISTRATIVA", mes(200_000)),
   cat("5.01", "Sistemas", "DESPESA_INFORMATICA", mes(900_000)),
@@ -45,12 +45,48 @@ const fornecedor: PagamentosDoFornecedor = {
 const oficina: FolhaDaOficina = { centros: ["Oficina"], porMes: mes(2_500_000) };
 const doDre = indiretosDoDre(dre, fornecedor, oficina);
 
+// Os títulos que formam o mesmo DRE: um por categoria e mês; a 4.01 dividida
+// entre JL (R$ 9 mil), Joel (R$ 3 mil) e outro escritório (R$ 3 mil); a folha
+// da MCZ com R$ 25 mil no centro de custo Oficina.
+const titulo = (categoria: string, mesChave: string, cents: number, fornecedor: string, extra: Partial<TituloDoIndireto> = {}): TituloDoIndireto => ({
+  empresa: "AZUL", categoria, categoriaDescricao: null, mes: mesChave, fornecedor, documento: "NF 1", parcela: null, centroDeCusto: null,
+  emissao: null, vencimento: new Date(2026, 0, 10), natureza: "PAGAR", cents, corporativo: false, ...extra,
+});
+const titulos: TituloDoIndireto[] = [];
+meses.forEach((m, i) => {
+  titulos.push(titulo("3.01", m, 5_500_000, "Folha MCZ", { empresa: "MCZ", corporativo: true }));
+  titulos.push(titulo("3.01", m, 2_500_000, "Folha MCZ", { empresa: "MCZ", corporativo: true, centroDeCusto: "Oficina" }));
+  titulos.push(titulo("3.02", m, 3_000_000, "INSS", { empresa: "MCZ", corporativo: true }));
+  titulos.push(titulo("4.01", m, 900_000, "JL BUSSINESS LTDA"));
+  titulos.push(titulo("4.01", m, 300_000, "Joel Advogados"));
+  titulos.push(titulo("4.01", m, 300_000, "Outro Escritório"));
+  titulos.push(titulo("4.02", m, 200_000, "Kalunga"));
+  titulos.push(titulo("5.01", m, 900_000, "Sistema X"));
+  titulos.push(titulo("6.01", m, 1_200_000, "Imobiliária"));
+  titulos.push(titulo("7.01", m, 300_000, "Agência"));
+  titulos.push(titulo("8.01", m, 400_000, "Diversos"));
+  if (i === 0) titulos.push(titulo("8.01", "2024-01", 999_999, "Fora da janela"));
+});
+const lancamentos = classificarTitulos(titulos, dre, ["JL Business", "Joel"]);
+
 async function principal() {
   const soffice = ["soffice", "libreoffice"].find((c) => {
     const r = spawnSync(c, ["--version"], { stdio: "ignore" });
     return !r.error && r.status === 0;
   });
-  const conteudo = await planilhaDosIndiretos({ dre, fornecedor, oficina, doDre, base: null, premissas: PREMISSAS_PADRAO, empresa: "Grupo teste", geradoEm: new Date(2026, 9, 4) });
+  console.log("LANÇAMENTOS — cada título no seu custo, somando o mesmo que o DRE");
+  ok("padrão do nome: JL Business acha JL BUSSINESS LTDA", casaComPadrao("JL BUSSINESS LTDA", padraoDoNome("JL Business")!));
+  ok("Joel acha Joel Advogados", casaComPadrao("Joel Advogados", padraoDoNome("Joel")!));
+  ok("título fora da janela não entra", !lancamentos.some((x) => x.fornecedor === "Fora da janela"));
+  const mesesComReceita = new Set(meses.filter((_, i) => i >= 2));
+  for (const chave of ["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"]) {
+    const media = lancamentos.filter((x) => x.indireto === chave && mesesComReceita.has(x.mes)).reduce((a, x) => a + x.valor, 0) / mesesComReceita.size;
+    perto(`${chave}: média dos lançamentos = valor do sistema`, media, doDre.get(chave)?.valor ?? NaN);
+  }
+  ok("JL e Joel na contabilidade; o outro escritório em gerais", lancamentos.filter((x) => x.indireto === "contabilidade").every((x) => /JL|Joel/.test(x.fornecedor)) && lancamentos.some((x) => x.indireto === "gerais" && x.fornecedor === "Outro Escritório"));
+  ok("oficina pelo centro de custo", lancamentos.filter((x) => x.indireto === "oficina").every((x) => x.centroDeCusto === "Oficina"));
+
+  const conteudo = await planilhaDosIndiretos({ dre, fornecedor, oficina, doDre, base: null, premissas: PREMISSAS_PADRAO, empresa: "Grupo teste", geradoEm: new Date(2026, 9, 4), lancamentos });
   ok("gera um .xlsx", conteudo.subarray(0, 2).toString() === "PK");
   if (!soffice) {
     ok("LibreOffice para recalcular", false, "instale o LibreOffice (soffice): sem recálculo o teste não prova nada");
@@ -104,6 +140,13 @@ async function principal() {
     perto("d = o que sobra do preço", celula("Resumo", "d —", "B"), d, 1e-9);
     perto("administração = a ÷ (d − a)", celula("Resumo", "Administração central, %", "B"), a / (d - a), 1e-9);
     perto("administração + contingência", celula("Resumo", "Administração + contingência", "B"), a / (d - a) + PREMISSAS_PADRAO.indiretos.contingenciaPct, 1e-9);
+
+    console.log("\nPOR FORNECEDOR — a diferença para o DRE é zero quando tudo é título");
+    const pf = aba("Por fornecedor");
+    const difs = Object.keys(pf).filter((k) => /^B\d+$/.test(k) && String(pf[k]).startsWith("Diferença")).map((k) => pf[`D${k.slice(1)}`]);
+    ok("seis custos, diferença zero em todos", difs.length === 6 && difs.every((v) => typeof v === "number" && Math.abs(v) < 0.01), JSON.stringify(difs));
+    const lancs = aba("Lançamentos");
+    ok("aba Lançamentos com um título por linha", Object.keys(lancs).filter((k) => /^J\d+$/.test(k)).length === lancamentos.length + 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
