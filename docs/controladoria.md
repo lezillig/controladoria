@@ -95,6 +95,15 @@ da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
   comparado com o realizado das DUAS linhas; premissa de cenário antiga sobre
   `DESPESA_SALARIOS` passa a valer só para a operação.
 
+### Serviços de terceiros
+
+`DESPESA_SERVICOS_TERCEIROS`, **"(-) Serviços de terceiros"**, logo depois de
+pessoas — operação: a operação feita por outros (viagem repassada a outra
+transportadora — "Compra de Serviços" —, motorista ou veículo contratado). É
+custo da operação, entra no EBIT e nasce vazia: as categorias vêm pela
+classificação (tela Custos e DRE → classificar a categoria). Não entra na
+administração central do simulador.
+
 A tela de Custos abre a linha corporativa por **centro de custo** (o
 departamento da Omie de cada título; título rateado conta inteiro no
 primeiro departamento), no mesmo recorte da demonstração.

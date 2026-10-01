@@ -65,6 +65,12 @@ export const LINHAS_DRE = [
   // classificações manuais já feitas); a separação acontece na conta, título a
   // título. Por isso a linha corporativa NÃO é oferecida na classificação.
   { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com pessoas — operação", tipo: "GRUPO", sinal: -1 },
+  // SERVIÇOS DE TERCEIROS: a operação feita por outros — a viagem repassada a
+  // outra transportadora (Compra de Serviços), o motorista ou o veículo
+  // contratado. É custo da operação, como frota e gente, e não estrutura: lê-la
+  // à parte responde "quanto do que vendemos não rodamos nós?". Nasce vazia; as
+  // categorias vêm para cá pela classificação.
+  { chave: "DESPESA_SERVICOS_TERCEIROS", rotulo: "(-) Serviços de terceiros", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_SALARIOS_CORPORATIVO", rotulo: "(-) Despesas com pessoas — corporativo", tipo: "GRUPO", sinal: -1 },
   // SÓCIOS em linha própria porque a pergunta que ela responde é de governança,
   // não de operação: quanto a sociedade retira. Misturada na administrativa,
@@ -749,6 +755,7 @@ export function subtotaisDoDre(g: (chave: string) => number): Record<string, num
       lucroBruto -
       g("DESPESA_VEICULOS") -
       g("DESPESA_SALARIOS") -
+      g("DESPESA_SERVICOS_TERCEIROS") -
       g(LINHA_PESSOAS_CORPORATIVO) -
       g("DESPESA_SOCIOS") -
       g("DESPESA_ESTRUTURA") -

@@ -107,6 +107,25 @@ console.log("\n2. Estorno: despesa com valor negativo");
   conferir("lucro bruto reflete o estorno", v("LUCRO_BRUTO"), 7_000_000);
 }
 
+// ------------------------------------------------------ serviços de terceiros
+console.log("\n2b. Serviços de terceiros: linha própria, entre as despesas da operação");
+{
+  const r = montarDre(
+    ctx([tit("RECEBER", "1", 100_000), tit("PAGAR", "7", 25_000), tit("PAGAR", "3", 10_000)],
+        [cat("1", "Serviços", true), cat("7", "Compra de Serviços"), cat("3", "Combustível")]),
+    MES, ANT,
+    cls({ "1": ["RECEITA_BRUTA", null, true], "7": ["DESPESA_SERVICOS_TERCEIROS", null, true], "3": ["DESPESA_VEICULOS", null, true] })
+  );
+  const v = (c: string) => r.linhas.find((l) => l.chave === c)?.valorCents;
+  conferir("Compra de Serviços na linha de terceiros", v("DESPESA_SERVICOS_TERCEIROS"), 2_500_000);
+  conferir("EBIT desconta os terceiros", v("EBIT"), 10_000_000 - 2_500_000 - 1_000_000);
+  conferir(
+    "a linha vem depois de pessoas — operação",
+    r.linhas.findIndex((l) => l.chave === "DESPESA_SERVICOS_TERCEIROS") - r.linhas.findIndex((l) => l.chave === "DESPESA_SALARIOS"),
+    1
+  );
+}
+
 // ------------------------------------------------------ sem categoria
 console.log("\n3. Título sem categoria fica FORA da demonstração");
 {
