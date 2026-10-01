@@ -31,6 +31,23 @@ export const LINHAS_DRE = [
   { chave: "RECEITA_BRUTA", rotulo: "Receita operacional bruta", tipo: "GRUPO", sinal: 1 },
   { chave: "DEDUCOES", rotulo: "(-) Deduções da receita bruta", tipo: "GRUPO", sinal: -1 },
   { chave: "RECEITA_LIQUIDA", rotulo: "= Receita operacional líquida", tipo: "SUBTOTAL", sinal: 1 },
+  // OUTRAS RECEITAS OPERACIONAIS — a linha que faltava, e a tela mostrou por
+  // quê: "Venda de Veículos", "Resgate Consórcio", "Lucros Cessantes",
+  // "Reembolso de multa de trânsito" e "Pagamento Convênio Médico" estavam
+  // todas dentro da RECEITA OPERACIONAL BRUTA.
+  //
+  // Nenhuma delas é receita de serviço. Venda de veículo é baixa de
+  // imobilizado; resgate de consórcio é recuperação de aplicação; reembolso é
+  // devolução de despesa. Somá-las ao faturamento infla a base sobre a qual
+  // TODO percentual do DRE é calculado — a margem bruta cai, a carga
+  // tributária efetiva parece menor, e o faturamento deixa de bater com a
+  // declaração da contabilidade sem que nada aponte onde.
+  //
+  // No GRUPO DE RECEITA, logo abaixo da receita líquida (pedido da área: quem
+  // lê receita quer ver as duas juntas) — mas DEPOIS dela: soma no lucro bruto
+  // e no EBIT, e não entra na receita líquida, que é a base de todo "% RL".
+  // Antes ficava depois das despesas operacionais, logo acima do EBIT.
+  { chave: "OUTRAS_RECEITAS", rotulo: "(+) Outras receitas operacionais", tipo: "GRUPO", sinal: 1 },
   { chave: "CUSTO_SERVICO", rotulo: "(-) Custo dos serviços prestados", tipo: "GRUPO", sinal: -1 },
   { chave: "LUCRO_BRUTO", rotulo: "= Lucro bruto", tipo: "SUBTOTAL", sinal: 1 },
   // DESPESAS COM VEÍCULOS — linha própria, e não uma dobra de "outras
@@ -95,22 +112,6 @@ export const LINHAS_DRE = [
   { chave: "DESPESA_COMERCIAL", rotulo: "(-) Despesas comerciais", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_ADMINISTRATIVA", rotulo: "(-) Despesas administrativas", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_GERAL", rotulo: "(-) Outras despesas operacionais", tipo: "GRUPO", sinal: -1 },
-  // OUTRAS RECEITAS OPERACIONAIS — a linha que faltava, e a tela mostrou por
-  // quê: "Venda de Veículos", "Resgate Consórcio", "Lucros Cessantes",
-  // "Reembolso de multa de trânsito" e "Pagamento Convênio Médico" estavam
-  // todas dentro da RECEITA OPERACIONAL BRUTA.
-  //
-  // Nenhuma delas é receita de serviço. Venda de veículo é baixa de
-  // imobilizado; resgate de consórcio é recuperação de aplicação; reembolso é
-  // devolução de despesa. Somá-las ao faturamento infla a base sobre a qual
-  // TODO percentual do DRE é calculado — a margem bruta cai, a carga
-  // tributária efetiva parece menor, e o faturamento deixa de bater com a
-  // declaração da contabilidade sem que nada aponte onde.
-  //
-  // Depois das despesas operacionais e antes do EBIT, que é onde a prática
-  // contábil brasileira as colocou depois de a Lei 11.941/09 extinguir o
-  // "resultado não operacional".
-  { chave: "OUTRAS_RECEITAS", rotulo: "(+) Outras receitas operacionais", tipo: "GRUPO", sinal: 1 },
   { chave: "EBIT", rotulo: "= Resultado antes do financeiro (EBIT)", tipo: "SUBTOTAL", sinal: 1 },
   { chave: "RECEITA_FINANCEIRA", rotulo: "(+) Receitas financeiras", tipo: "GRUPO", sinal: 1 },
   { chave: "DESPESA_FINANCEIRA", rotulo: "(-) Despesas financeiras", tipo: "GRUPO", sinal: -1 },
@@ -751,7 +752,7 @@ export function montarDre(
 // mesmos subtotais, pela mesma conta.
 export function subtotaisDoDre(g: (chave: string) => number): Record<string, number> {
     const receitaLiquida = g("RECEITA_BRUTA") - g("DEDUCOES");
-    const lucroBruto = receitaLiquida - g("CUSTO_SERVICO");
+    const lucroBruto = receitaLiquida + g("OUTRAS_RECEITAS") - g("CUSTO_SERVICO");
     const ebit =
       lucroBruto -
       g("DESPESA_VEICULOS") -
@@ -763,8 +764,7 @@ export function subtotaisDoDre(g: (chave: string) => number): Record<string, num
       g("DESPESA_INFORMATICA") -
       g("DESPESA_COMERCIAL") -
       g("DESPESA_ADMINISTRATIVA") -
-      g("DESPESA_GERAL") +
-      g("OUTRAS_RECEITAS");
+      g("DESPESA_GERAL");
     const lair = ebit + g("RECEITA_FINANCEIRA") - g("DESPESA_FINANCEIRA");
     return {
       RECEITA_LIQUIDA: receitaLiquida,

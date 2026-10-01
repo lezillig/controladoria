@@ -547,7 +547,7 @@ async function principal() {
       v("EBIT"),
       v("LUCRO_BRUTO") - ["DESPESA_VEICULOS", "DESPESA_SALARIOS", "DESPESA_SERVICOS_TERCEIROS", "DESPESA_SALARIOS_CORPORATIVO", "DESPESA_SOCIOS",
         "DESPESA_ESTRUTURA", "DESPESA_INFORMATICA", "DESPESA_COMERCIAL", "DESPESA_ADMINISTRATIVA", "DESPESA_GERAL"]
-        .reduce((a, c) => a + v(c), 0) + v("OUTRAS_RECEITAS")
+        .reduce((a, c) => a + v(c), 0)
     );
   }
 

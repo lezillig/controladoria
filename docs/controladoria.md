@@ -95,6 +95,13 @@ da outra fica vazia e é escondida (tela, planilha, ferramentas da IA).
   comparado com o realizado das DUAS linhas; premissa de cenário antiga sobre
   `DESPESA_SALARIOS` passa a valer só para a operação.
 
+### Outras receitas operacionais
+
+`OUTRAS_RECEITAS`, **"(+) Outras receitas operacionais"** (venda de veículo,
+resgate de consórcio, reembolsos), fica no grupo de receita, logo abaixo da
+receita líquida: soma no lucro bruto e no EBIT, mas não entra na receita
+líquida, que é a base de todo "% RL".
+
 ### Serviços de terceiros
 
 `DESPESA_SERVICOS_TERCEIROS`, **"(-) Serviços de terceiros"**, grupo próprio

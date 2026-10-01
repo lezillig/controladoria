@@ -128,8 +128,8 @@ console.log("\nSUBTOTAIS — a mesma conta do DRE");
   ]);
   const s = subtotaisDe(g);
   conferir("receita líquida", s.get("RECEITA_LIQUIDA"), 900);
-  conferir("lucro bruto", s.get("LUCRO_BRUTO"), 600);
-  conferir("EBIT soma outras receitas", s.get("EBIT"), 470);
+  conferir("lucro bruto soma outras receitas (logo abaixo da receita líquida)", s.get("LUCRO_BRUTO"), 620);
+  conferir("EBIT", s.get("EBIT"), 470);
   conferir("LAIR desconta financeira", s.get("LAIR"), 460);
   conferir("resultado líquido", s.get("RESULTADO_LIQUIDO"), 360);
 }

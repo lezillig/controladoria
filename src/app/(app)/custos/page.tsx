@@ -37,6 +37,9 @@ import Filtros from "../Filtros";
 // Categoria em branco fica FORA da demonstração, num aviso à parte. Diluí-la
 // faria o DRE fechar escondendo justamente o que falta classificar.
 
+// Linhas do DRE que a tela mostra mesmo sem nenhuma categoria (ver abaixo).
+const SEMPRE_VISIVEIS = new Set(["DESPESA_SERVICOS_TERCEIROS", "OUTRAS_RECEITAS", "RECEITA_FINANCEIRA"]);
+
 export default async function CustosPage({
   searchParams,
 }: {
@@ -175,9 +178,10 @@ export default async function CustosPage({
   let ultimoSubtotal: number | null = null;
   for (const linha of dre.linhas) {
     if (linha.tipo === "GRUPO") {
-      // Serviços de terceiros aparece mesmo vazia: é a linha nova para onde as
-      // categorias vão ser reclassificadas, e escondida não seria achada.
-      if (linha.valorCents === 0 && linha.valorAnteriorCents === 0 && linha.itens.length === 0 && linha.chave !== "DESPESA_SERVICOS_TERCEIROS") continue;
+      // Linhas que aparecem mesmo vazias: são destino de reclassificação
+      // (serviços de terceiros, outras receitas, receitas financeiras), e
+      // escondidas não seriam achadas.
+      if (linha.valorCents === 0 && linha.valorAnteriorCents === 0 && linha.itens.length === 0 && !SEMPRE_VISIVEIS.has(linha.chave)) continue;
       linhasVisiveis.push(linha);
       ultimoSubtotal = null;
       continue;
