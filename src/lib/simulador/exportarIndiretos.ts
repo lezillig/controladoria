@@ -3,7 +3,16 @@ import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import type { BaseVigente } from "./baseDeCustos";
 import { CATALOGO_PARAMETROS } from "./catalogo";
 import type { DreDosMeses } from "./custosReais";
-import { LINHAS_DOS_INDIRETOS, type FolhaDaOficina, type IndiretoDoDre, type LancamentoIndireto, type PagamentosDoFornecedor } from "./indiretosDoDre";
+import {
+  exclusoesDoDre,
+  INDIRETO_FORA,
+  LINHAS_DOS_INDIRETOS,
+  type FolhaDaOficina,
+  type ForaDaAdministracao,
+  type IndiretoDoDre,
+  type LancamentoIndireto,
+  type PagamentosDoFornecedor,
+} from "./indiretosDoDre";
 import type { Premissas } from "./tipos";
 
 // A COMPOSIÇÃO DA ADMINISTRAÇÃO CENTRAL, EM EXCEL — de onde sai o % que o
@@ -29,6 +38,8 @@ export type DadosIndiretos = {
   premissas: Premissas;
   empresa: string;
   geradoEm: Date;
+  // O que fica fora da administração (categorias e fornecedores excluídos).
+  fora?: ForaDaAdministracao | null;
   // Os títulos de cada custo (lancamentosDosIndiretos). Sem eles, as duas
   // abas de lançamentos não saem.
   lancamentos?: LancamentoIndireto[];
@@ -51,7 +62,8 @@ const letra = (n: number) => {
   for (let x = n; x > 0; x = Math.floor((x - 1) / 26)) s = String.fromCharCode(65 + ((x - 1) % 26)) + s;
   return s;
 };
-const rotuloDoIndireto = (chave: string) => CATALOGO_PARAMETROS.find((p) => p.chave === chave)?.rotulo ?? chave;
+const rotuloDoIndireto = (chave: string) =>
+  chave === INDIRETO_FORA ? "Fora da administração (excluído)" : (CATALOGO_PARAMETROS.find((p) => p.chave === chave)?.rotulo ?? chave);
 const rotuloDaLinha = (l: string) => LINHAS_DRE.find((x) => x.chave === l)?.rotulo.replace(/^\(-\) |^= /, "") ?? l;
 
 // O valor que o estudo novo usa: o digitado na base vale acima do DRE.
@@ -121,6 +133,7 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   };
   const comFornecedor = d.doDre.get("contabilidade")?.linhas.some((l) => l.startsWith("Pagamentos a")) ?? false;
   const doFornecedor = d.fornecedor?.porCategoria ?? new Map<string, number[]>();
+  const ex = exclusoesDoDre(d.dre, d.fora);
   const mapa: Record<string, string[]> = comFornecedor
     ? { ...LINHAS_DOS_INDIRETOS, contabilidade: [], gerais: ["DESPESA_ADMINISTRATIVA", "DESPESA_COMERCIAL", "DESPESA_GERAL"] }
     : LINHAS_DOS_INDIRETOS;
@@ -134,11 +147,18 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
       if (d.oficina) escreverLinha(nome, `Folha no centro de custo ${d.oficina.centros.join(", ")}`, rotuloDaLinha("DESPESA_SALARIOS_CORPORATIVO"), d.oficina.porMes);
     } else {
       for (const l of mapa[chave] ?? []) {
-        for (const c of d.dre.categorias.filter((x) => x.linha === l)) {
-          const tirar = comFornecedor && !c.codigo.includes("@") ? (doFornecedor.get(c.codigo) ?? []) : [];
-          const valores = c.porMesCents.map((v, i) => v - (tirar[i] ?? 0));
+        for (const c of d.dre.categorias.filter((x) => x.linha === l && !ex.codigos.has(x.codigo))) {
+          const corp = c.linha === "DESPESA_SALARIOS_CORPORATIVO";
+          const tirar = comFornecedor && !corp ? (doFornecedor.get(c.codigo) ?? []) : [];
+          const tirarFora = !corp ? (ex.fornecedorPorCategoria.get(c.codigo) ?? []) : [];
+          const valores = c.porMesCents.map((v, i) => v - (tirar[i] ?? 0) - (tirarFora[i] ?? 0));
           if (valores.every((v) => Math.abs(v) < 1)) continue;
-          escreverLinha(nome, `${c.descricao}${tirar.some((x) => x) ? " (sem a contabilidade/jurídico)" : ""}`, rotuloDaLinha(l), valores);
+          escreverLinha(
+            nome,
+            `${c.descricao}${tirar.some((x) => x) ? " (sem a contabilidade/jurídico)" : ""}${tirarFora.some((x) => x) ? ` (sem ${ex.nomeFornecedores})` : ""}`,
+            rotuloDaLinha(l),
+            valores
+          );
         }
       }
       if (chave === "folha_adm" && d.oficina) escreverLinha(nome, `(−) Oficina: centro de custo ${d.oficina.centros.join(", ")}`, "vai para a linha Oficina", d.oficina.porMes.map((v) => -v));
@@ -161,7 +181,22 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   meses.forEach((_, i) => (rTot.getCell(C0 + i).value = { formula: [...subtotalDe.values()].map((r) => `${L(i)}${r}`).join("+") }));
   rTot.getCell(colMedia).value = { formula: media(linha) };
   rTot.font = { bold: true };
-  for (let r = 6; r <= linha; r++) for (let c = C0; c <= colMedia; c++) wc.getRow(r).getCell(c).numFmt = BRL;
+  // O que saiu da administração, para conferir — fora das somas.
+  let linhaFora = linha;
+  if (ex.categorias.length || ex.fornecedorPorCategoria.size) {
+    linha += 2;
+    wc.getRow(linha).getCell(1).value = "FORA DA ADMINISTRAÇÃO (não entra no total — base de custos: fornecedores e categorias fora)";
+    wc.getRow(linha).font = { bold: true };
+    linha++;
+    for (const c of ex.categorias) escreverLinha(rotuloDoIndireto(INDIRETO_FORA), `${c.descricao} (categoria inteira)`, rotuloDaLinha(c.linha), c.porMesCents);
+    for (const [codigo, porMes] of ex.fornecedorPorCategoria) {
+      const c = d.dre.categorias.find((x) => x.codigo === codigo && x.linha !== "DESPESA_SALARIOS_CORPORATIVO");
+      if (!c || !Object.values(mapa).flat().includes(c.linha)) continue;
+      escreverLinha(rotuloDoIndireto(INDIRETO_FORA), `${ex.nomeFornecedores} em ${c.descricao}`, rotuloDaLinha(c.linha), porMes);
+    }
+    linhaFora = linha;
+  }
+  for (let r = 6; r <= linhaFora; r++) for (let c = C0; c <= colMedia; c++) wc.getRow(r).getCell(c).numFmt = BRL;
   wc.views = [{ state: "frozen", xSplit: 3, ySplit: 4 }];
 
   // ------------------------------------------------ Resumo
@@ -309,6 +344,29 @@ function abasDeLancamentos(wf: ExcelJS.Worksheet, wl: ExcelJS.Worksheet, d: Dado
       wf.getRow(r).getCell(5).numFmt = PCT;
     }
     l++;
+  }
+
+  const excluidos = lancamentos.filter((x) => x.indireto === INDIRETO_FORA && mesesDaMedia.has(x.mes));
+  if (excluidos.length) {
+    const cab = wf.getRow(l++);
+    [rotuloDoIndireto(INDIRETO_FORA), "Fornecedor", "Total nos meses", "Média/mês", "", "Lançamentos", "Categorias"].forEach((t, i) => (cab.getCell(i + 1).value = t));
+    cab.font = { bold: true };
+    const porFornecedor = new Map<string, { total: number; qtd: number; categorias: Set<string> }>();
+    for (const x of excluidos) {
+      const f = porFornecedor.get(x.fornecedor) ?? { total: 0, qtd: 0, categorias: new Set() };
+      f.total += x.valor;
+      f.qtd++;
+      f.categorias.add(x.categoria);
+      porFornecedor.set(x.fornecedor, f);
+    }
+    for (const [fornecedor, f] of [...porFornecedor].sort((a, b) => b[1].total - a[1].total)) {
+      const r = wf.getRow(l);
+      r.values = [null, fornecedor, Math.round(f.total * 100) / 100, { formula: `C${l}/${n}` }, null, f.qtd, [...f.categorias].join("; ")];
+      r.getCell(3).numFmt = BRL;
+      r.getCell(4).numFmt = BRL;
+      l++;
+    }
+    wf.getRow(l++).getCell(2).value = "Não entram na administração central: só para conferir o que saiu.";
   }
 
   wl.columns = [{ width: 30 }, { width: 38 }, { width: 11 }, { width: 9 }, { width: 40 }, { width: 18 }, { width: 22 }, { width: 12 }, { width: 12 }, { width: 15 }, { width: 10 }];

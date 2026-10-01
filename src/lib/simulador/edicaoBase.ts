@@ -28,6 +28,8 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   mot_fretamento_2p: { como: "Motoristas por veículo dos tipos de veículo (padrão 1,2)", unidade: "motoristas/veículo" },
   folha_adm: { como: "Rateio da administração central (soma dos indiretos ÷ faturamento médio)", unidade: "R$/mês" },
   contabilidade: { como: "Rateio da administração central", unidade: "R$/mês" },
+  fornecedores_fora_adm: { como: "Pagamentos a estes fornecedores saem da administração central (não são estrutura e não se rateiam nos contratos). Vários nomes separados por \";\" (padrão: Manoel). Em branco, nenhum" },
+  categorias_fora_adm: { como: "Categorias do Omie cuja descrição contém estes textos saem da administração central — terceirização é custo da operação. Separados por \";\" (padrão: Compra de Serviços). Em branco, nenhuma" },
   contabilidade_fornecedor: { como: "A soma dos pagamentos a estes fornecedores no Omie é o valor de Contabilidade, jurídico. Vários nomes separados por \";\" (padrão: JL Business; Joel)" },
   sistemas: { como: "Rateio da administração central", unidade: "R$/mês" },
   sede_garagem_sp: { como: "Rateio da administração central", unidade: "R$/mês" },

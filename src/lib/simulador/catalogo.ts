@@ -65,6 +65,8 @@ export const CATALOGO_PARAMETROS: DefinicaoParametro[] = [
   // Não vem do Gabarito: o escritório contratado, cujo pagamento no Omie é o
   // valor de "Contabilidade, jurídico" (ver indiretosDoDre.ts).
   p("INDIRETO", "contabilidade_fornecedor", "Fornecedores da contabilidade e do jurídico (nomes no Omie)", "texto", false),
+  p("INDIRETO", "fornecedores_fora_adm", "Fornecedores fora da administração central (nomes no Omie)", "texto", false),
+  p("INDIRETO", "categorias_fora_adm", "Categorias fora da administração central (nomes no Omie)", "texto", false),
   p("INDIRETO", "sistemas", "Sistemas (gestão de motoristas", "numero"),
   p("INDIRETO", "sede_garagem_sp", "Aluguel/IPTU/energia/água da sede", "numero"),
   p("INDIRETO", "oficina", "Oficina própria", "numero"),

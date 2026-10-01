@@ -35,6 +35,38 @@ export const CHAVE_FORNECEDOR_CONTABILIDADE = "contabilidade_fornecedor";
 // por ";". O valor é a soma dos pagamentos a todos.
 export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business; Joel";
 
+// FORA DA ADMINISTRAÇÃO CENTRAL: o que está nas linhas de estrutura do DRE
+// mas não é estrutura — e por isso não se rateia nos contratos. Por
+// FORNECEDOR (pagamentos no Omie, como a contabilidade; padrão: o advogado
+// Manoel) e por CATEGORIA (a descrição da categoria contém o texto; padrão:
+// Compra de Serviços, a terceirização com outras empresas de transporte, que
+// é custo da operação). Nomes separados por ";". Sai do custo e não entra em
+// nenhum outro.
+export const CHAVE_FORNECEDORES_FORA = "fornecedores_fora_adm";
+export const CHAVE_CATEGORIAS_FORA = "categorias_fora_adm";
+export const FORNECEDORES_FORA_PADRAO = "Manoel";
+export const CATEGORIAS_FORA_PADRAO = "Compra de Serviços";
+
+export type ForaDaAdministracao = {
+  // Pagamentos aos fornecedores excluídos, por categoria e mês.
+  fornecedores: PagamentosDoFornecedor | null;
+  // Textos que, contidos na descrição da categoria, a excluem.
+  categorias: string[];
+};
+
+const normalizar = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+
+// As categorias excluídas (fora da linha corporativa de pessoas) e o que os
+// fornecedores excluídos têm nas demais, por categoria e mês (centavos).
+export function exclusoesDoDre(dre: DreDosMeses, fora: ForaDaAdministracao | null | undefined) {
+  const textos = (fora?.categorias ?? []).map(normalizar).filter(Boolean);
+  const categorias = dre.categorias.filter((c) => c.linha !== "DESPESA_SALARIOS_CORPORATIVO" && textos.some((t) => normalizar(c.descricao).includes(t)));
+  const codigos = new Set(categorias.map((c) => c.codigo));
+  const fornecedorPorCategoria = new Map<string, number[]>();
+  for (const [codigo, porMes] of fora?.fornecedores?.porCategoria ?? []) if (!codigos.has(codigo)) fornecedorPorCategoria.set(codigo, porMes);
+  return { categorias, codigos, fornecedorPorCategoria, nomeFornecedores: fora?.fornecedores?.nome ?? null };
+}
+
 export const LINHAS_DOS_INDIRETOS: Record<string, string[]> = {
   folha_adm: ["DESPESA_SALARIOS_CORPORATIVO"],
   // Sem pagamento ao fornecedor na janela, a linha inteira (ver acima).
@@ -85,7 +117,12 @@ const LINHAS_COM_FORNECEDOR: Record<string, string[]> = {
 // o nome dos centros de custo que a formam.
 export type FolhaDaOficina = { centros: string[]; porMes: number[] };
 
-export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornecedor | null, oficina?: FolhaDaOficina | null): Map<string, IndiretoDoDre> {
+export function indiretosDoDre(
+  dre: DreDosMeses,
+  fornecedor?: PagamentosDoFornecedor | null,
+  oficina?: FolhaDaOficina | null,
+  fora?: ForaDaAdministracao | null
+): Map<string, IndiretoDoDre> {
   const resultado = new Map<string, IndiretoDoDre>();
   const receita = dre.linhasDre.RECEITA_BRUTA ?? [];
   const meses = dre.meses.map((_, i) => i).filter((i) => (receita[i] ?? 0) > 0);
@@ -100,9 +137,17 @@ export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornec
   for (const [codigo, porMes] of fornecedor?.porCategoria ?? []) doFornecedor.set(codigo, mediaCents(porMes));
   const totalFornecedor = [...doFornecedor.values()].reduce((a, v) => a + v, 0);
   const comFornecedor = fornecedor != null && totalFornecedor > 0;
-  const linhaDaCategoria = new Map(dre.categorias.filter((c) => !c.codigo.includes("@")).map((c) => [c.codigo, c]));
+  const linhaDaCategoria = new Map(dre.categorias.filter((c) => c.linha !== "DESPESA_SALARIOS_CORPORATIVO").map((c) => [c.codigo, c]));
   const fornecedorNaLinha = (linha: string) => [...doFornecedor].reduce((a, [codigo, v]) => a + (linhaDaCategoria.get(codigo)?.linha === linha ? v : 0), 0);
   const mapa = comFornecedor ? LINHAS_COM_FORNECEDOR : LINHAS_DOS_INDIRETOS;
+  // O que sai da administração: as categorias excluídas inteiras e a parte
+  // dos fornecedores excluídos nas outras.
+  const ex = exclusoesDoDre(dre, fora);
+  const foraPorCategoria = new Map<string, number>();
+  for (const c of ex.categorias) foraPorCategoria.set(c.codigo, mediaCents(c.porMesCents));
+  for (const [codigo, porMes] of ex.fornecedorPorCategoria) foraPorCategoria.set(codigo, (foraPorCategoria.get(codigo) ?? 0) + mediaCents(porMes));
+  const foraNaLinha = (linha: string) => [...foraPorCategoria].reduce((a, [codigo, v]) => a + (linhaDaCategoria.get(codigo)?.linha === linha ? v : 0), 0);
+  const nomesFora = [...ex.categorias.map((c) => c.descricao), ...(ex.fornecedorPorCategoria.size ? [ex.nomeFornecedores ?? ""] : [])].filter(Boolean);
 
   if (comFornecedor) {
     resultado.set("contabilidade", {
@@ -131,17 +176,26 @@ export function indiretosDoDre(dre: DreDosMeses, fornecedor?: PagamentosDoFornec
   for (const [chave, linhas] of Object.entries(mapa)) {
     if (linhas.length === 0) continue;
     const semOficina = chave === "folha_adm" ? oficinaCents : 0;
-    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []) - (comFornecedor ? fornecedorNaLinha(l) : 0), 0) - semOficina;
+    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []) - (comFornecedor ? fornecedorNaLinha(l) : 0) - foraNaLinha(l), 0) - semOficina;
+    const tirouAlgo = linhas.some((l) => foraNaLinha(l) > 0.5);
     if (!(cents > 0.5)) continue;
     // Na composição, a categoria do fornecedor aparece sem a parte dele.
     const composicao = dre.categorias
-      .filter((c) => linhas.includes(c.linha))
-      .map((c) => ({ descricao: c.descricao, valorMes: Math.round(mediaCents(c.porMesCents) - (comFornecedor && !c.codigo.includes("@") ? (doFornecedor.get(c.codigo) ?? 0) : 0)) / 100 }))
+      .filter((c) => linhas.includes(c.linha) && !ex.codigos.has(c.codigo))
+      .map((c) => ({
+        descricao: c.descricao,
+        valorMes:
+          Math.round(
+            mediaCents(c.porMesCents) -
+              (comFornecedor && c.linha !== "DESPESA_SALARIOS_CORPORATIVO" ? (doFornecedor.get(c.codigo) ?? 0) : 0) -
+              (c.linha !== "DESPESA_SALARIOS_CORPORATIVO" ? (foraPorCategoria.get(c.codigo) ?? 0) : 0)
+          ) / 100,
+      }))
       .filter((c) => c.valorMes > 0)
       .sort((a, b) => b.valorMes - a.valorMes);
     resultado.set(chave, {
       valor: Math.round(cents) / 100,
-      fonte: semOficina > 0.5 ? `${fonte}, sem a oficina` : fonte,
+      fonte: `${fonte}${semOficina > 0.5 ? ", sem a oficina" : ""}${tirouAlgo ? `, sem ${nomesFora.join(" e ")} (fora da administração)` : ""}`,
       composicao,
       linhas: linhas.map((l) => LINHAS_DRE.find((x) => x.chave === l)?.rotulo.replace(/^\(-\) |^= /, "") ?? l),
     });
@@ -269,13 +323,29 @@ export function fornecedorDaContabilidade(base: BaseVigente | null): string {
   return texto === undefined || texto === null ? FORNECEDOR_CONTABILIDADE_PADRAO : texto.trim();
 }
 
-// Tudo junto, para as telas: o DRE dos doze meses e o fornecedor.
+// Os textos de "fora da administração" da base, ou os padrões.
+export function textosForaDaAdministracao(texto: (chave: string) => string | null | undefined): { fornecedores: string; categorias: string } {
+  const ou = (v: string | null | undefined, padrao: string) => (v === undefined || v === null ? padrao : v.trim());
+  return { fornecedores: ou(texto(CHAVE_FORNECEDORES_FORA), FORNECEDORES_FORA_PADRAO), categorias: ou(texto(CHAVE_CATEGORIAS_FORA), CATEGORIAS_FORA_PADRAO) };
+}
+
+export async function foraDaAdministracao(companyId: string, dataReferencia: Date, meses: string[], textos: { fornecedores: string; categorias: string }): Promise<ForaDaAdministracao> {
+  return {
+    fornecedores: await pagamentosDoFornecedor(companyId, textos.fornecedores, dataReferencia, meses),
+    categorias: nomesDosFornecedores(textos.categorias),
+  };
+}
+
+// Tudo junto, para as telas: o DRE dos doze meses, o fornecedor da
+// contabilidade, a oficina e o que fica fora da administração.
 export async function indiretosDaEmpresa(companyId: string, dataReferencia: Date, base: BaseVigente | null, dre: DreDosMeses): Promise<Map<string, IndiretoDoDre>> {
-  const [fornecedor, oficina] = await Promise.all([
+  const textos = textosForaDaAdministracao((chave) => base?.parametros.get(chave)?.texto);
+  const [fornecedor, oficina, fora] = await Promise.all([
     pagamentosDoFornecedor(companyId, fornecedorDaContabilidade(base), dataReferencia, dre.meses),
     folhaDaOficina(companyId, dataReferencia, dre),
+    foraDaAdministracao(companyId, dataReferencia, dre.meses, textos),
   ]);
-  return indiretosDoDre(dre, fornecedor, oficina);
+  return indiretosDoDre(dre, fornecedor, oficina, fora);
 }
 
 // A base com os indiretos do DRE onde ela não tem valor. Não grava nada: é a
@@ -300,6 +370,9 @@ export function baseComIndiretosDoDre(base: BaseVigente | null, doDre: Map<strin
 // resto pela linha do DRE da categoria. O que o DRE tem e não é título
 // (movimentos de caixa sem título, ajustes) aparece na planilha como a
 // diferença para o subtotal.
+
+// Os lançamentos excluídos ficam na planilha com este "custo", fora das somas.
+export const INDIRETO_FORA = "fora_da_administracao";
 
 export type LancamentoIndireto = {
   indireto: string;
@@ -341,7 +414,14 @@ export function casaComPadrao(nome: string | null, padrao: string): boolean {
 }
 
 // Pura: decide o indireto de cada título (ou nenhum).
-export function classificarTitulos(titulos: TituloDoIndireto[], dre: DreDosMeses, fornecedores: string[]): LancamentoIndireto[] {
+export function classificarTitulos(
+  titulos: TituloDoIndireto[],
+  dre: DreDosMeses,
+  fornecedores: string[],
+  fora: { fornecedores: string[]; categorias: string[] } = { fornecedores: [], categorias: [] }
+): LancamentoIndireto[] {
+  const padroesFora = fora.fornecedores.map(padraoDoNome).filter((p): p is string => p !== null);
+  const textosFora = fora.categorias.map(normalizar).filter(Boolean);
   const padroes = fornecedores.map(padraoDoNome).filter((p): p is string => p !== null);
   const comFornecedor = padroes.length > 0;
   const mapa = comFornecedor ? LINHAS_COM_FORNECEDOR : LINHAS_DOS_INDIRETOS;
@@ -364,7 +444,9 @@ export function classificarTitulos(titulos: TituloDoIndireto[], dre: DreDosMeses
     } else {
       const linha = linhaDaCategoria.get(t.categoria)?.linha;
       if (!linha) continue;
-      if (comFornecedor && padroes.some((p) => casaComPadrao(t.fornecedor, p)) && indiretoDaLinha.has(linha)) indireto = "contabilidade";
+      const foraPorCategoria = textosFora.some((x) => normalizar(linhaDaCategoria.get(t.categoria)?.descricao ?? "").includes(x));
+      if ((foraPorCategoria || padroesFora.some((p) => casaComPadrao(t.fornecedor, p))) && indiretoDaLinha.has(linha)) indireto = INDIRETO_FORA;
+      else if (comFornecedor && padroes.some((p) => casaComPadrao(t.fornecedor, p)) && indiretoDaLinha.has(linha)) indireto = "contabilidade";
       else indireto = indiretoDaLinha.get(linha) ?? null;
     }
     if (!indireto) continue;
@@ -402,7 +484,13 @@ type LinhaTitulo = {
   corp: boolean;
 };
 
-export async function lancamentosDosIndiretos(companyId: string, dataReferencia: Date, dre: DreDosMeses, fornecedores: string): Promise<LancamentoIndireto[]> {
+export async function lancamentosDosIndiretos(
+  companyId: string,
+  dataReferencia: Date,
+  dre: DreDosMeses,
+  fornecedores: string,
+  fora: { fornecedores: string; categorias: string } = { fornecedores: "", categorias: "" }
+): Promise<LancamentoIndireto[]> {
   const linhasDosIndiretos = new Set([...Object.values(LINHAS_COM_FORNECEDOR), ...Object.values(LINHAS_DOS_INDIRETOS)].flat());
   const codigos = [...new Set(dre.categorias.filter((c) => linhasDosIndiretos.has(c.linha)).map((c) => c.codigo))];
   if (codigos.length === 0 || dre.meses.length === 0) return [];
@@ -449,6 +537,7 @@ export async function lancamentosDosIndiretos(companyId: string, dataReferencia:
       corporativo: Boolean(l.corp),
     })),
     dre,
-    nomesDosFornecedores(fornecedores)
+    nomesDosFornecedores(fornecedores),
+    { fornecedores: nomesDosFornecedores(fora.fornecedores), categorias: nomesDosFornecedores(fora.categorias) }
   );
 }

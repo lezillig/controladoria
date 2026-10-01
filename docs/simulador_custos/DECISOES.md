@@ -322,7 +322,17 @@ conversão para % do custo direto em fórmulas, com lucro, tributos e giro
 editáveis) e aba Categorias por mês (cada categoria do Omie nos doze meses
 fechados, a contabilidade pelos pagamentos à JL/Joel, a oficina pelo centro de
 custo, média só dos meses com receita). `scripts/teste-indiretos-xlsx.ts`
-recalcula no LibreOffice e confere com `indiretosDoDre`.
+recalcula no LibreOffice e confere com `indiretosDoDre`. As abas Por
+fornecedor e Lançamentos abrem cada custo nos títulos do Omie (quem recebeu,
+documento, competência, centro de custo), com a diferença para o DRE
+(movimentos de caixa sem título e ajustes).
+
+**Fora da administração central.** O que está nas linhas de estrutura do DRE
+mas não é estrutura sai do rateio: por fornecedor (`fornecedores_fora_adm`,
+padrão "Manoel", o advogado) e por categoria (`categorias_fora_adm`, padrão
+"Compra de Serviços", a terceirização com outras transportadoras, que é custo
+da operação). Sai do custo e não vai para nenhum outro; a planilha mostra o
+que saiu, fora das somas.
 
 ## 7.1.1 Capital e depreciação nas regras da Azul Mob
 

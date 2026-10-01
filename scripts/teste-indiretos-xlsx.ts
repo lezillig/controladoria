@@ -31,7 +31,10 @@ const categorias = [
   cat("5.01", "Sistemas", "DESPESA_INFORMATICA", mes(900_000)),
   cat("6.01", "Aluguel da sede", "DESPESA_ESTRUTURA", mes(1_200_000)),
   cat("7.01", "Marketing", "DESPESA_COMERCIAL", mes(300_000)),
-  cat("8.01", "Despesas gerais", "DESPESA_GERAL", mes(400_000)),
+  cat("8.01", "Despesas gerais", "DESPESA_GERAL", mes(500_000)),
+  // Fora da administração: a terceirização (categoria inteira) e o advogado
+  // Manoel (R$ 1 mil por mês dentro de "Despesas gerais").
+  cat("8.02", "Compra de Serviços", "DESPESA_GERAL", mes(5_000_000)),
 ];
 const linhasDre: Record<string, number[]> = { RECEITA_BRUTA: mes(50_000_000, true) };
 for (const c of categorias) linhasDre[c.linha] = (linhasDre[c.linha] ?? new Array(12).fill(0)).map((v, i) => v + c.porMesCents[i]);
@@ -43,7 +46,9 @@ const fornecedor: PagamentosDoFornecedor = {
   porNome: new Map([["JL Business", mes(900_000)], ["Joel", mes(300_000)]]),
 };
 const oficina: FolhaDaOficina = { centros: ["Oficina"], porMes: mes(2_500_000) };
-const doDre = indiretosDoDre(dre, fornecedor, oficina);
+const fora = { fornecedores: { nome: "Manoel", porCategoria: new Map([["8.01", mes(100_000)]]) }, categorias: ["Compra de Serviços"] };
+const doDre = indiretosDoDre(dre, fornecedor, oficina, fora);
+const semExclusao = indiretosDoDre(dre, fornecedor, oficina);
 
 // Os títulos que formam o mesmo DRE: um por categoria e mês; a 4.01 dividida
 // entre JL (R$ 9 mil), Joel (R$ 3 mil) e outro escritório (R$ 3 mil); a folha
@@ -65,9 +70,11 @@ meses.forEach((m, i) => {
   titulos.push(titulo("6.01", m, 1_200_000, "Imobiliária"));
   titulos.push(titulo("7.01", m, 300_000, "Agência"));
   titulos.push(titulo("8.01", m, 400_000, "Diversos"));
+  titulos.push(titulo("8.01", m, 100_000, "MANOEL SOCIEDADE DE ADVOGADOS"));
+  titulos.push(titulo("8.02", m, 5_000_000, "Transportadora Parceira"));
   if (i === 0) titulos.push(titulo("8.01", "2024-01", 999_999, "Fora da janela"));
 });
-const lancamentos = classificarTitulos(titulos, dre, ["JL Business", "Joel"]);
+const lancamentos = classificarTitulos(titulos, dre, ["JL Business", "Joel"], { fornecedores: ["Manoel"], categorias: ["Compra de Serviços"] });
 
 async function principal() {
   const soffice = ["soffice", "libreoffice"].find((c) => {
@@ -86,7 +93,18 @@ async function principal() {
   ok("JL e Joel na contabilidade; o outro escritório em gerais", lancamentos.filter((x) => x.indireto === "contabilidade").every((x) => /JL|Joel/.test(x.fornecedor)) && lancamentos.some((x) => x.indireto === "gerais" && x.fornecedor === "Outro Escritório"));
   ok("oficina pelo centro de custo", lancamentos.filter((x) => x.indireto === "oficina").every((x) => x.centroDeCusto === "Oficina"));
 
-  const conteudo = await planilhaDosIndiretos({ dre, fornecedor, oficina, doDre, base: null, premissas: PREMISSAS_PADRAO, empresa: "Grupo teste", geradoEm: new Date(2026, 9, 4), lancamentos });
+  console.log("\nFORA DA ADMINISTRAÇÃO — Compra de Serviços e o advogado Manoel");
+  perto("sem exclusão, gerais teria R$ 51 mil a mais", (semExclusao.get("gerais")?.valor ?? 0) - (doDre.get("gerais")?.valor ?? 0), 51_000);
+  perto("com exclusão, gerais fica nos R$ 12 mil", doDre.get("gerais")?.valor ?? NaN, 12_000);
+  ok("a fonte diz o que saiu", /sem Compra de Serviços e Manoel/.test(doDre.get("gerais")?.fonte ?? ""), doDre.get("gerais")?.fonte);
+  ok("composição sem a Compra de Serviços", !doDre.get("gerais")?.composicao.some((c) => c.descricao === "Compra de Serviços"));
+  ok(
+    "lançamentos excluídos marcados, fora das somas",
+    lancamentos.filter((x) => x.indireto === "fora_da_administracao").map((x) => x.fornecedor).every((f) => /MANOEL|Transportadora/.test(f)) &&
+      lancamentos.some((x) => x.fornecedor === "Transportadora Parceira" && x.indireto === "fora_da_administracao")
+  );
+
+  const conteudo = await planilhaDosIndiretos({ dre, fornecedor, oficina, fora, doDre, base: null, premissas: PREMISSAS_PADRAO, empresa: "Grupo teste", geradoEm: new Date(2026, 9, 4), lancamentos });
   ok("gera um .xlsx", conteudo.subarray(0, 2).toString() === "PK");
   if (!soffice) {
     ok("LibreOffice para recalcular", false, "instale o LibreOffice (soffice): sem recálculo o teste não prova nada");
