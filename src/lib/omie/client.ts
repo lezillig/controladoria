@@ -184,6 +184,14 @@ export const OMIE_ENDPOINTS = {
   // Pode depender de o painel do contador estar habilitado na conta. Recusa
   // aqui é "indisponível": vai para o diagnóstico e para o erro do run, e a
   // fase conclui sem derrubar o ciclo.
+  // CONSULTA DE UM LANÇAMENTO PELO CÓDIGO — a confirmação de exclusão.
+  //
+  // A fase `exclusoes` (sync.ts) só tira um título do espelho quando a Omie,
+  // perguntada por aquele código, responde que ele não existe. Sumir de uma
+  // listagem não basta: um filtro de data que a Omie aplique diferente do
+  // espelho faria uma receita verdadeira desaparecer do DRE.
+  consultarReceber: { path: "financas/contareceber/", call: "ConsultarContaReceber", listKey: [] },
+  consultarPagar: { path: "financas/contapagar/", call: "ConsultarContaPagar", listKey: [] },
   cteDocumentos: {
     path: "contador/xml/",
     call: "ListarDocumentos",

@@ -128,6 +128,19 @@ export default async function SincronizacaoPage() {
     cargaRodando ? Promise.resolve(null) : sobrasEmOutrosEsquemas(),
   ]);
 
+  // Títulos que a fase `exclusoes` confirmou como apagados na Omie. `catch`
+  // pelo motivo do saldo: sem a coluna (migração não aplicada) a tela abre.
+  const excluidos = await prisma.omieTitulo
+    .findMany({
+      where: { companyId: session.companyId, excluidoNaOmieEm: { not: null } },
+      orderBy: [{ excluidoNaOmieEm: "desc" }, { valorDocumentoCents: "desc" }],
+      take: 200,
+      select: {
+        id: true, conexaoApelido: true, natureza: true, parceiroNome: true, numeroDocumento: true, categoriaDescricao: true,
+        dataEmissao: true, dataVencimento: true, valorDocumentoCents: true, valorPagoCents: true, codigoLancamento: true, excluidoNaOmieEm: true,
+      },
+    })
+    .catch(() => []);
   const resumoSaldos = contasCorrentes ? resumirSaldos(contasCorrentes) : null;
   const janelasSemNotas = apenasNotas(janelasRuins);
   // `catch` pelo mesmo motivo do saldo por conta: sem a tabela (migração
@@ -317,7 +330,7 @@ export default async function SincronizacaoPage() {
       {podeSincronizar && (
         <Secao
           titulo="Executar agora"
-          descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → contratos → CT-e → auditoria → relatório."
+          descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → contratos → CT-e → exclusões → auditoria → relatório."
         >
           <SyncButton temExecucaoTravada={travada} emAndamento={Boolean(emAndamento) && !travada} />
 
@@ -539,6 +552,43 @@ export default async function SincronizacaoPage() {
           ])}
         />
       </Secao>
+
+      {/* EXCLUÍDOS NA OMIE — o que a sincronização tirou do espelho porque a
+          Omie, consultada pelo código, respondeu que o título não existe mais
+          (fase `exclusoes`, src/lib/omie/sync.ts). Sai do DRE; fica aqui e no
+          antifraude (FR-TITULO-EXCLUIDO) para alguém ver quem excluiu e por quê. */}
+      {excluidos.length > 0 && (
+        <Secao
+          titulo={`Títulos excluídos na Omie (${excluidos.length}${excluidos.length === 200 ? "+" : ""})`}
+          descricao={
+            `Apagados na Omie depois de sincronizados, confirmados um a um pelo código. Saíram do DRE e dos relatórios: ` +
+            `${fmtBRL(excluidos.filter((t) => t.natureza === "RECEBER").reduce((a, t) => a + t.valorDocumentoCents, 0))} a receber e ` +
+            `${fmtBRL(excluidos.filter((t) => t.natureza === "PAGAR").reduce((a, t) => a + t.valorDocumentoCents, 0))} a pagar.`
+          }
+        >
+          <Tabela
+            colunas={["Empresa", "Natureza", "Cliente / fornecedor", "Documento", "Emissão", "Vencimento", "Valor", "Código na Omie", "Exclusão confirmada"]}
+            alinharDireita={[6]}
+            linhas={excluidos.map((t) => [
+              t.conexaoApelido,
+              t.natureza === "RECEBER" ? "A receber" : "A pagar",
+              <span key="p" className="text-xs">
+                {t.parceiroNome ?? "—"}
+                {t.categoriaDescricao && <span className="block text-slate-400">{t.categoriaDescricao}</span>}
+              </span>,
+              t.numeroDocumento ?? "—",
+              fmtData(t.dataEmissao ?? t.dataVencimento),
+              fmtData(t.dataVencimento),
+              <span key="v" className="text-xs">
+                {fmtBRL(t.valorDocumentoCents)}
+                {t.valorPagoCents > 0 && <span className="block text-amber-700">com {fmtBRL(t.valorPagoCents)} baixado</span>}
+              </span>,
+              <span key="c" className="font-mono text-xs">{t.codigoLancamento}</span>,
+              t.excluidoNaOmieEm ? fmtData(t.excluidoNaOmieEm) : "—",
+            ])}
+          />
+        </Secao>
+      )}
 
       {/* SALDO POR CONTA — a tabela que existe para localizar a diferença.
           A Omie mostra saldo em contas de R$ 2,99 milhões; o módulo mostrava

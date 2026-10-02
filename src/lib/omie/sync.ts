@@ -52,7 +52,9 @@ import type { Prisma } from "@prisma/client";
 // desconhecida) vira erro registrado no run, nunca aborto. Acrescentadas ao
 // FIM da lista de propósito: o cursor persistido em OmieSyncRun.fase é o nome
 // da fase, e uma execução parada em "notas" continua de "notas".
-export const FASES = ["cadastros", "titulos", "movimentos", "notas", "contratos", "cte"] as const;
+// `exclusoes` (títulos apagados na Omie) é a última pelo mesmo motivo, e
+// porque confere o que as fases de título acabaram de gravar.
+export const FASES = ["cadastros", "titulos", "movimentos", "notas", "contratos", "cte", "exclusoes"] as const;
 export type FaseSync = (typeof FASES)[number];
 
 export type ResultadoFase = {
@@ -67,6 +69,8 @@ export type ResultadoFase = {
   erros: string[];
   contratos: number;
   ctes: number;
+  // Títulos cuja exclusão na Omie foi confirmada nesta invocação.
+  excluidos: number;
 };
 
 function vazio(): ResultadoFase {
@@ -82,6 +86,7 @@ function vazio(): ResultadoFase {
     erros: [],
     contratos: 0,
     ctes: 0,
+    excluidos: 0,
   };
 }
 
@@ -664,7 +669,10 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
                 conexaoApelido: ctx.conexaoApelido,
                 ...semBaixas(t),
               },
-              update: { ...semBaixas(t), sincronizadoEm: new Date() },
+              // Título que volta a vir da Omie não está excluído: se uma
+              // varredura o tinha dado por apagado, a marca sai aqui (e o
+              // `cancelado` volta a ser o da Omie, que vem em `t`).
+              update: { ...semBaixas(t), sincronizadoEm: new Date(), excluidoNaOmieEm: null },
               select: { id: true },
             })
           )
@@ -1113,6 +1121,233 @@ async function sincronizarCte(ctx: ContextoFase): Promise<ResultadoFase> {
   return { ...res, faseConcluida: true };
 }
 
+// ---------- Fase 7: exclusões (títulos apagados na Omie) ----------
+//
+// A sincronização só inclui e atualiza: um título APAGADO na Omie nunca mais
+// vem, e o espelho o guardava para sempre. Foi o que fez o DRE de
+// setembro/2026 da Azul ter R$ 9.190,00 a mais que a Omie — um título a
+// receber excluído depois de sincronizado, ainda "a vencer" no espelho.
+//
+// Como se confere, mês a mês e por natureza:
+//   1. lista os títulos do mês na Omie PELA EMISSÃO (todas as páginas) e
+//      marca `vistoNaListagemEm` nos que vieram;
+//   2. os do espelho naquele mês que não vieram são CANDIDATOS — e só isso:
+//      cada um é consultado na Omie pelo código (ConsultarContaReceber /
+//      ConsultarContaPagar). Só a resposta "não existe" tira o título
+//      (cancelado, status "EXCLUÍDO NA OMIE", `excluidoNaOmieEm`) e grava uma
+//      versão "exclusao" no histórico, que o antifraude lê. Se a Omie diz que
+//      existe, o título fica; se a resposta não é clara, fica também.
+//   3. trava de segurança: se os candidatos passam de 30% dos títulos do mês
+//      (e de 30), a listagem não está batendo com o espelho por outro motivo
+//      (filtro de data, conta errada) — nada é consultado nem excluído, e o
+//      erro vai para o run.
+//
+// Quais meses: na primeira execução diária de cada conexão, de jan/2025 (ou
+// do início da base, se for depois) até o mês corrente — a varredura pedida
+// para achar os casos antigos; depois dela (`exclusoesVarridasEm`), só os
+// últimos MESES_REVISAO_EXCLUSAO meses, onde exclusão acontece. Na carga
+// histórica, o mês da janela.
+export const VARREDURA_EXCLUSOES_DESDE = new Date(2025, 0, 1);
+const MESES_REVISAO_EXCLUSAO = 3;
+const LIMITE_CANDIDATOS_PCT = 0.3;
+const LIMITE_CANDIDATOS_MINIMO = 30;
+
+export type MesDeVerificacao = { inicio: Date; fim: Date };
+
+export function mesesDaVerificacao(params: {
+  janelaInicio: Date;
+  janelaFim: Date;
+  backfill: boolean;
+  varridaEm: Date | null;
+  inicioDaBase: Date | null;
+}): MesDeVerificacao[] {
+  const mes = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const ultimo = mes(params.janelaFim);
+  let primeiro: Date;
+  if (params.backfill) primeiro = mes(params.janelaInicio);
+  else if (params.varridaEm) primeiro = new Date(ultimo.getFullYear(), ultimo.getMonth() - (MESES_REVISAO_EXCLUSAO - 1), 1);
+  else {
+    const base = params.inicioDaBase ? mes(params.inicioDaBase) : VARREDURA_EXCLUSOES_DESDE;
+    primeiro = base > VARREDURA_EXCLUSOES_DESDE ? base : VARREDURA_EXCLUSOES_DESDE;
+  }
+  const meses: MesDeVerificacao[] = [];
+  for (let m = primeiro; m <= ultimo; m = new Date(m.getFullYear(), m.getMonth() + 1, 1)) {
+    meses.push({ inicio: m, fim: new Date(m.getFullYear(), m.getMonth() + 1, 0, 23, 59, 59, 999) });
+  }
+  return meses;
+}
+
+// A resposta da consulta de UM lançamento: existe, não existe, ou não dá
+// para dizer. Só "nao_existe" exclui.
+export type Existencia = "existe" | "nao_existe" | "indeterminado";
+const FAULT_NAO_EXISTE =
+  /(lan[çc]amento|conta|t[íi]tulo|registro|c[óo]digo)[^.]{0,80}n[ãa]o (est[áa] )?(cadastrad|encontrad|localizad|exist)|n[ãa]o (h[áa]|existem?) (registro|lan[çc]amento|conta)/i;
+
+export function existenciaDaConsulta(
+  resposta: Record<string, unknown> | null | undefined,
+  erro: unknown,
+  codigoLancamento: string
+): Existencia {
+  if (erro !== undefined && erro !== null) {
+    if (erro instanceof OmieVazioError) return "nao_existe";
+    const mensagem = erro instanceof Error ? erro.message : String(erro);
+    if (/Method\s+"?[^"]*"?\s+not\s+exists/i.test(mensagem)) return "indeterminado";
+    return FAULT_NAO_EXISTE.test(mensagem) ? "nao_existe" : "indeterminado";
+  }
+  // `toleraVazio`: o "não existem registros" da Omie chega como nulo.
+  if (resposta === null) return "nao_existe";
+  if (!resposta) return "indeterminado";
+  const codigo = resposta.codigo_lancamento_omie ?? resposta.nCodTitulo ?? resposta.codigo_lancamento;
+  return codigo !== undefined && String(codigo) === codigoLancamento ? "existe" : "indeterminado";
+}
+
+type CursorExclusoes = {
+  mes: number;
+  natureza: number;
+  pagina: number;
+  // Início da listagem deste mês/natureza: quem não foi visto depois disso
+  // não veio nela.
+  desde: string | null;
+  listado: boolean;
+  // Candidatos sem resposta clara, para não serem consultados de novo no
+  // mesmo mês.
+  pulados: string[];
+};
+
+const NATUREZAS_EXCLUSAO: readonly OmieNatureza[] = ["RECEBER", "PAGAR"];
+
+async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promise<ResultadoFase> {
+  const res = vazio();
+  const conexao = await prisma.omieConexao.findUnique({ where: { id: ctx.conexaoId }, select: { exclusoesVarridasEm: true } });
+  const config = await prisma.controladoriaConfig.findUnique({ where: { companyId: ctx.companyId }, select: { dataInicioBase: true } });
+  const meses = mesesDaVerificacao({
+    janelaInicio: ctx.janelaInicio,
+    janelaFim: ctx.janelaFim,
+    backfill,
+    varridaEm: conexao?.exclusoesVarridasEm ?? null,
+    inicioDaBase: config?.dataInicioBase ?? null,
+  });
+  const c = lerCursor<CursorExclusoes>(ctx.cursor, { mes: 0, natureza: 0, pagina: 1, desde: null, listado: false, pulados: [] });
+  const pausa = () => ({ ...res, proximoCursor: JSON.stringify(c) });
+
+  for (; c.mes < meses.length; c.mes++, c.natureza = 0) {
+    const { inicio, fim } = meses[c.mes];
+    for (; c.natureza < NATUREZAS_EXCLUSAO.length; c.natureza++, c.pagina = 1, c.desde = null, c.listado = false, c.pulados = []) {
+      const natureza = NATUREZAS_EXCLUSAO[c.natureza];
+      const rotulo = `exclusões ${natureza.toLowerCase()} ${String(inicio.getMonth() + 1).padStart(2, "0")}/${inicio.getFullYear()}`;
+      if (!c.desde) c.desde = new Date().toISOString();
+
+      // 1. A listagem do mês, página a página.
+      let listagemFalhou = false;
+      while (!c.listado) {
+        if (acabouOTempo(ctx)) return pausa();
+        let resposta;
+        try {
+          resposta = await omieCall(
+            OMIE_ENDPOINTS.titulos,
+            {
+              nPagina: c.pagina,
+              nRegPorPagina: REGISTROS_POR_PAGINA,
+              cNatureza: natureza === "PAGAR" ? "P" : "R",
+              dDtEmisDe: formatarDataOmie(inicio),
+              dDtEmisAte: formatarDataOmie(fim),
+            },
+            { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true }
+          );
+        } catch (e) {
+          const p = pausaPorFalhaPassageira(res, rotulo, e, c);
+          if (p) return p;
+          res.erros.push(`${rotulo}: ${e instanceof Error ? e.message : "erro desconhecido"} — mês não conferido.`);
+          listagemFalhou = true;
+          break;
+        }
+        await sleep(OMIE_PACE_MS);
+        const codigos = extrairItens(resposta, OMIE_ENDPOINTS.titulos)
+          .map((bruto) => normalizarTitulo(bruto, natureza)?.codigoLancamento)
+          .filter((x): x is string => !!x);
+        if (codigos.length > 0) {
+          await prisma.omieTitulo.updateMany({
+            where: { conexaoId: ctx.conexaoId, natureza, codigoLancamento: { in: codigos } },
+            data: { vistoNaListagemEm: new Date() },
+          });
+        }
+        if (codigos.length === 0 || c.pagina >= extrairTotalPaginas(resposta)) c.listado = true;
+        else c.pagina++;
+      }
+      if (listagemFalhou) continue;
+
+      // 2. Os que não vieram, um a um.
+      const doMes = {
+        conexaoId: ctx.conexaoId,
+        natureza,
+        cancelado: false,
+        OR: [{ dataEmissao: { gte: inicio, lte: fim } }, { dataEmissao: null, dataVencimento: { gte: inicio, lte: fim } }],
+      };
+      const desde = new Date(c.desde);
+      const naoVistos = () => ({
+        ...doMes,
+        AND: [{ OR: [{ vistoNaListagemEm: null }, { vistoNaListagemEm: { lt: desde } }] }, { id: { notIn: c.pulados } }],
+      });
+      const [total, candidatos] = await Promise.all([prisma.omieTitulo.count({ where: doMes }), prisma.omieTitulo.count({ where: naoVistos() })]);
+      if (candidatos > LIMITE_CANDIDATOS_MINIMO && candidatos > total * LIMITE_CANDIDATOS_PCT) {
+        res.erros.push(
+          `${rotulo}: ${candidatos} de ${total} títulos do espelho não vieram na listagem da Omie — acima da trava de segurança; nada foi excluído.`
+        );
+        continue;
+      }
+      for (;;) {
+        if (acabouOTempo(ctx)) return pausa();
+        const t = await prisma.omieTitulo.findFirst({
+          where: naoVistos(),
+          select: { id: true, codigoLancamento: true, status: true },
+          orderBy: { id: "asc" },
+        });
+        if (!t) break;
+        let resposta: Record<string, unknown> | null | undefined;
+        let erro: unknown = null;
+        try {
+          resposta = await omieCall(
+            natureza === "PAGAR" ? OMIE_ENDPOINTS.consultarPagar : OMIE_ENDPOINTS.consultarReceber,
+            { codigo_lancamento_omie: Number(t.codigoLancamento) },
+            { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true }
+          );
+        } catch (e) {
+          const p = pausaPorFalhaPassageira(res, `${rotulo}, lançamento ${t.codigoLancamento}`, e, c);
+          if (p) return p;
+          erro = e;
+        }
+        await sleep(OMIE_PACE_MS);
+        const existencia = existenciaDaConsulta(resposta, erro, t.codigoLancamento);
+        if (existencia === "existe") {
+          // Existe, só não estava na listagem do mês (a data mudou na Omie):
+          // fica, e conta como visto.
+          await prisma.omieTitulo.update({ where: { id: t.id }, data: { vistoNaListagemEm: new Date() } });
+        } else if (existencia === "nao_existe") {
+          const agora = new Date();
+          await prisma.$transaction([
+            prisma.omieTitulo.update({
+              where: { id: t.id },
+              data: { cancelado: true, status: "EXCLUÍDO NA OMIE", excluidoNaOmieEm: agora },
+            }),
+            prisma.omieTituloVersao.create({
+              data: { companyId: ctx.companyId, tituloId: t.id, campo: "exclusao", de: t.status, para: "EXCLUÍDO NA OMIE", vistoEm: agora },
+            }),
+          ]);
+          res.excluidos++;
+        } else {
+          c.pulados.push(t.id);
+          if (erro) res.erros.push(`${rotulo}, lançamento ${t.codigoLancamento}: ${erro instanceof Error ? erro.message : String(erro)} — mantido.`);
+        }
+      }
+    }
+  }
+
+  if (!backfill && !conexao?.exclusoesVarridasEm) {
+    await prisma.omieConexao.update({ where: { id: ctx.conexaoId }, data: { exclusoesVarridasEm: new Date() } });
+  }
+  return { ...res, faseConcluida: true };
+}
+
 export async function executarFase(
   fase: FaseSync,
   ctx: ContextoFase,
@@ -1131,6 +1366,8 @@ export async function executarFase(
       return sincronizarContratos(ctx, backfill);
     case "cte":
       return sincronizarCte(ctx);
+    case "exclusoes":
+      return sincronizarExclusoes(ctx, backfill);
   }
 }
 

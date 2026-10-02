@@ -454,6 +454,25 @@ console.log("\nFR-EDITADO-APOS-BAIXA — o título mudou depois de pago");
   conferir("sem usuário de alteração fica calada", rodarFraude(ctx, "FR-EDITADO-APOS-BAIXA").length, 0);
 }
 
+// ------------------------------------------------------- FR-TITULO-EXCLUIDO
+console.log("\nFR-TITULO-EXCLUIDO — título apagado na Omie depois de sincronizado");
+{
+  // O caso de setembro/2026 da Azul: receita de R$ 9.190,00 sem documento.
+  const receita = titulo({ natureza: "RECEBER", cancelado: true, liquidado: false, status: "EXCLUÍDO NA OMIE", valorDocumentoCents: 9_190_00, valorPagoCents: 0, excluidoNaOmieEm: d("2026-10-02") });
+  const ctx = contexto({ titulos: [...fundo(), receita] });
+  const r = rodarFraude(ctx, "FR-TITULO-EXCLUIDO");
+  conferir("receita excluída na Omie é achado", r.length, 1);
+  conferir("um por título, pela natureza e código", r[0]?.chave, `FR-TITULO-EXCLUIDO|AZUL|RECEBER|${receita.codigoLancamento}`);
+  conferir("receita excluída nunca abaixo de MÉDIA", ["MEDIA", "ALTA", "CRITICA"].includes(r[0]?.severidade ?? ""), true);
+  conferir("diz que não tinha documento", /sem número de documento|Não tinha número/.test(r[0]?.descricao ?? ""), true);
+}
+{
+  const cancelado = titulo({ cancelado: true, status: "CANCELADO", valorDocumentoCents: 9_190_00 });
+  const pequeno = titulo({ cancelado: true, excluidoNaOmieEm: d("2026-10-02"), valorDocumentoCents: 10_00, valorPagoCents: 0 });
+  const ctx = contexto({ titulos: [...fundo(), cancelado, pequeno] });
+  conferir("cancelado na Omie (não excluído) e excluído irrisório não são achado", rodarFraude(ctx, "FR-TITULO-EXCLUIDO").length, 0);
+}
+
 // ------------------------------------------------------ FR-LANCAMENTO-MANUAL
 console.log("\nFR-LANCAMENTO-MANUAL — título digitado à mão, sem documento");
 {

@@ -243,6 +243,7 @@ consultado.
 | `FR-BENFORD` (Nigrini) | Por empresa e grupo de categoria, sem valores fixos recorrentes: MAD > 0,015 (1º dígito, n ≥ 500) ou > 0,0022 (dois dígitos, n ≥ 300) **e** qui-quadrado acima do crítico a 1%; evidência lista os fornecedores nos dígitos em excesso | Amostra pequena, categoria conforme — o teste anterior (8 p.p. num dígito, n ≥ 150) dava falso alarme perto de 1 em 4 |
 | `FR-KICKBACK-CATEGORIA` | Fornecedor que passa de ≤ 40% para ≥ 75% de uma categoria+departamento entre o primeiro e o último trimestre da janela, com o custo subindo ≥ 25% e a receita crescendo menos da metade disso | Menos de 3 fornecedores, receita que acompanha, menos de 6 meses |
 | `FR-CONTA-ALTERADA-REPETIDA` | 2+ trocas de conta bancária em 12 meses, ou volta a uma conta anterior (trocar, receber, voltar) — do histórico append-only do sync; nunca fecha sozinha | Uma troca só (é `FR-CONTA-ALTERADA`) |
+| `FR-TITULO-EXCLUIDO` | Título que a sincronização confirmou como excluído na Omie (consulta pelo código), um achado por título; mais grave se a receber ou com baixa registrada | Exclusão não confirmada pela Omie; títulos abaixo de um quarto da materialidade |
 | `FR-EDITADO-APOS-BAIXA` (com versões) | Além do bloco `info`, dispara quando o sync gravou uma versão do título depois da baixa, e diz o que mudou (fornecedor, valor, categoria, conta, vencimento, documento) | — |
 | `CR-RETENCAO-INDEVIDA` | Tomador privado retendo PCC (Lei 10.833 art. 30 não lista transporte de passageiros); estado/município retendo PCC (IN RFB 2145: só IRRF); órgão federal acima de 7,05% (IN 1234, cód. 6175). Por cliente e trimestre, OPORTUNIDADE (recuperável) | Retenção coerente com o tipo de tomador, abaixo de ¼ da materialidade |
 | `CR-LAPPING` | Baixa cujo valor não é o do título baixado mas é exatamente o de outro título em aberto do mesmo cliente | Baixa no valor do próprio título |
@@ -814,7 +815,7 @@ hoje é a disciplina de tratar, não o valor):
 Uma única rota agendada, como máquina de estados com cursor persistido:
 
 ```
-por empresa:  cadastros → títulos → movimentos → notas → contratos → CT-e
+por empresa:  cadastros → títulos → movimentos → notas → contratos → CT-e → exclusões
 depois:       receita** → auditoria → conciliação da conformidade → relatório*    (grupo inteiro)
 
 * só com "Relatório diário automático" ligado no modelo de gestão — nasce
@@ -859,6 +860,36 @@ quando o canal existir. Regra de decisão pura em `alerta.ts`, testada em
 
 **Carga histórica (backfill)** usa a mesma máquina, mês a mês, por empresa, sem
 gerar relatório (disparar um e-mail por mês carregado seria absurdo).
+
+**Títulos excluídos na Omie** (fase `exclusoes`, `src/lib/omie/sync.ts`). A
+sincronização inclui e atualiza, mas um título APAGADO na Omie nunca mais vem
+— e ficava no espelho para sempre. Foi a diferença do fechamento de
+setembro/2026 da Azul: o DRE tinha R$ 9.190,00 de receita a mais que a
+exportação da Omie, um título a receber excluído depois de sincronizado (o
+cruzamento título a título saiu da planilha de conferência do DRE, que agora
+traz todos os títulos do mês). A fase, por mês e natureza:
+
+1. lista os títulos do mês na Omie pela emissão (todas as páginas) e marca
+   `vistoNaListagemEm` nos que vieram;
+2. consulta UM A UM, pelo código (`ConsultarContaReceber` /
+   `ConsultarContaPagar`), os do espelho que não vieram. Só a resposta "não
+   existe" tira o título: `cancelado`, status "EXCLUÍDO NA OMIE",
+   `excluidoNaOmieEm`, uma versão "exclusao" no histórico e o achado
+   `FR-TITULO-EXCLUIDO`. Se existe (a data mudou na Omie) ou a resposta não é
+   clara, o título fica;
+3. trava: candidatos acima de 30% do mês (e de 30) param o mês sem excluir
+   nada, com o erro no run — a listagem não está batendo com o espelho por
+   outro motivo.
+
+Na primeira execução diária de cada empresa a fase varre de jan/2025 (ou do
+início da base, se depois) até o mês corrente, e grava
+`OmieConexao.exclusoesVarridasEm`; depois, confere os três últimos meses.
+Apagar esse campo refaz a varredura. O resumo mensal dos meses afetados é
+refeito no fim da execução, e um título excluído que volte a vir da Omie deixa
+de estar excluído no upsert. A lista dos excluídos, com empresa, cliente ou
+fornecedor, documento, valor e código na Omie, fica em **Sincronização →
+Títulos excluídos na Omie**. Testes em `teste:exclusoes` (com a Omie simulada
+e, com `TESTE_DATABASE_URL`, contra o banco).
 
 **Auditoria retroativa — auditar o passado** (Sincronização → "Auditar o
 passado", `src/lib/controladoria/retroativa.ts`). O ciclo protege o presente:

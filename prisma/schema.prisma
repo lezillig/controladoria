@@ -222,6 +222,10 @@ model OmieConexao {
   representanteRg    String?
   representanteCpf   String?
   representanteCargo String?
+  // Quando terminou a varredura de exclusões desde jan/2025 (fase
+  // `exclusoes`). Nula: a próxima sincronização do dia varre o histórico;
+  // depois, só os últimos meses. Apagar o valor refaz a varredura.
+  exclusoesVarridasEm DateTime?
   criadoEm      DateTime @default(now())
   atualizadoEm  DateTime @updatedAt
 
@@ -506,6 +510,15 @@ model OmieTitulo {
   contratoCodigo     String?
   ordemServicoCodigo String?
   sincronizadoEm     DateTime  @default(now())
+  // EXCLUSÃO NA OMIE. A sincronização só inclui e atualiza: título apagado
+  // na Omie ficava no espelho para sempre, somando no DRE (setembro/2026 da
+  // Azul: R$ 9.190,00 de receita que a Omie já não tinha). A fase
+  // `exclusoes` (sync.ts) lista os títulos do mês pela emissão, marca os que
+  // vieram em `vistoNaListagemEm` e consulta UM A UM os que não vieram; só a
+  // resposta "não existe" da Omie grava `excluidoNaOmieEm` e tira o título
+  // dos relatórios (cancelado = true). Se ele voltar a vir, o upsert desfaz.
+  vistoNaListagemEm  DateTime?
+  excluidoNaOmieEm   DateTime?
 
   baixas  OmieBaixa[]
   versoes OmieTituloVersao[]

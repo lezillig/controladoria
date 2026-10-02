@@ -11,6 +11,7 @@
     "teste:antifraude": "tsx scripts/teste-antifraude.ts",
     "teste:dre": "tsx scripts/teste-dre.ts",
     "teste:dre-banco": "tsx scripts/teste-dre-banco.ts",
+    "teste:exclusoes": "tsx scripts/teste-exclusoes.ts",
     "teste:engine": "tsx scripts/teste-engine.ts",
     "teste:acessos": "tsx scripts/teste-acessos.ts",
     "teste:historico": "tsx scripts/teste-historico.ts",

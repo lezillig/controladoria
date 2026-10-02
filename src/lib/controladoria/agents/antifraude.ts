@@ -7,6 +7,7 @@ import {
   contaAlteradaRepetida,
   contaBancariaCompartilhada,
   editadoAposBaixa,
+  tituloExcluidoNaOmie,
   lancamentoManualSemDocumento,
   notaRepetida,
   notaSequencial,
@@ -93,6 +94,7 @@ export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   // O operador (bloco `info` da Omie): título alterado depois de pago e
   // lançamento manual sem documento.
   achados.push(...editadoAposBaixa(ctx, materialidade));
+  achados.push(...tituloExcluidoNaOmie(ctx, materialidade));
   achados.push(...lancamentoManualSemDocumento(ctx, materialidade));
   achados.push(...kickbackPorCategoria(ctx, materialidade));
   achados.push(...contaAlteradaRepetida(ctx, materialidade));

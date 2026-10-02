@@ -473,6 +473,63 @@ export function editadoAposBaixa(ctx: ContextoAuditoria, materialidade: number):
   return achados;
 }
 
+// FR-TITULO-EXCLUIDO — título apagado na Omie depois de sincronizado.
+//
+// A fase `exclusoes` da sincronização (src/lib/omie/sync.ts) só marca o
+// título depois de a Omie, consultada pelo código, responder que ele não
+// existe. Excluir não é errado — corrige-se lançamento duplicado assim —, mas
+// é o jeito de fazer uma receita sumir (o recebimento que não entra) ou uma
+// despesa paga perder o rastro. No setembro/2026 da Azul foi uma receita de
+// R$ 9.190,00, sem número de documento, emitida e vencida em setembro.
+// Um achado por título; mais grave quando havia pagamento registrado.
+export function tituloExcluidoNaOmie(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const achados: AchadoNovo[] = [];
+  for (const t of ctx.titulos) {
+    if (!t.excluidoNaOmieEm || t.valorDocumentoCents < materialidade / 4) continue;
+    const receita = t.natureza === "RECEBER";
+    const comBaixa = t.valorPagoCents > 0;
+    const base = severidadePorValor(t.valorDocumentoCents, materialidade);
+    const nome = nomeParceiro(ctx, t);
+    achados.push({
+      regra: "FR-TITULO-EXCLUIDO",
+      tipo: "EVENTO",
+      severidade: comBaixa || receita ? agravar(base) : base,
+      categoria: "FRAUDE",
+      titulo: `${referenciaTitulo(t)} (${nome}) excluído na Omie — ${receita ? "receita" : "despesa"} de ${fmtBRL(t.valorDocumentoCents)}`,
+      descricao:
+        `O título ${receita ? "a receber" : "a pagar"} de ${fmtBRL(t.valorDocumentoCents)}, emitido em ${fmtData(t.dataEmissao ?? t.dataVencimento)} ` +
+        `e com vencimento em ${fmtData(t.dataVencimento)}, não existe mais na Omie (exclusão confirmada pelo código em ${fmtData(t.excluidoNaOmieEm)}).` +
+        (comBaixa ? ` Havia ${fmtBRL(t.valorPagoCents)} de baixa registrada nele.` : "") +
+        (t.numeroDocumento ? "" : " Não tinha número de documento.") +
+        " Saiu do DRE e dos demais relatórios.",
+      recomendacao:
+        "Ver no log de alterações da Omie quem excluiu e por quê. Exclusão para corrigir duplicidade é normal; " +
+        (receita
+          ? "receita excluída sem nota cancelada ou sem o lançamento que a substituiu precisa de explicação — é o caminho de um recebimento desviado."
+          : "despesa paga excluída deixa o pagamento sem rastro no financeiro — conferir o comprovante e o extrato."),
+      valorCents: t.valorDocumentoCents,
+      dataReferencia: t.excluidoNaOmieEm,
+      entidadeTipo: "OmieTitulo",
+      entidadeId: t.id,
+      entidadeRef: referenciaTitulo(t),
+      evidencia: {
+        natureza: receita ? "a receber" : "a pagar",
+        parceiro: nome,
+        emissao: fmtData(t.dataEmissao ?? t.dataVencimento),
+        vencimento: fmtData(t.dataVencimento),
+        valor: t.valorDocumentoCents,
+        pago: t.valorPagoCents,
+        documento: t.numeroDocumento ?? "—",
+        codigoOmie: t.codigoLancamento,
+        incluidoPor: t.usuarioInclusao ?? "—",
+        excluidoConfirmadoEm: fmtData(t.excluidoNaOmieEm),
+      },
+      chave: chaveAchado("FR-TITULO-EXCLUIDO", t.conexaoApelido, t.natureza, t.codigoLancamento),
+    });
+  }
+  return achados;
+}
+
 // FR-LANCAMENTO-MANUAL — título a pagar digitado à mão, sem documento.
 //
 // `cOrigem` diz de onde o título nasceu: NFEP veio de nota, OFXP do extrato,

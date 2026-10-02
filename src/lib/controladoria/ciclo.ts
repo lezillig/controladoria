@@ -175,7 +175,18 @@ export async function executarPasso(params: {
     // interrompida no meio — cada mês carregado já deixa o seu resumo pronto.
     if (novaFase === "concluido") {
       try {
-        const competencias = competenciasDaJanela(run.janelaInicio, run.janelaFim);
+        // Mais os meses dos títulos que a fase `exclusoes` deu por apagados
+        // nesta execução: a varredura volta até jan/2025, bem antes da janela.
+        const excluidos = await prisma.omieTitulo.findMany({
+          where: { conexaoId: conexao.id, excluidoNaOmieEm: { gte: run.iniciadoEm } },
+          select: { dataEmissao: true, dataVencimento: true, dataUltimaBaixa: true },
+        });
+        const competencias = [
+          ...competenciasDaJanela(run.janelaInicio, run.janelaFim),
+          ...excluidos.flatMap((t) =>
+            [t.dataEmissao ?? t.dataVencimento, t.dataUltimaBaixa].filter((d): d is Date => d !== null).flatMap((d) => competenciasDaJanela(d, d))
+          ),
+        ];
         const resumo = await recalcularHistorico(companyId, conexao.id, competencias);
         detalhes.push(
           `[${conexao.apelido}] resumo mensal: ${resumo.linhas} linha(s) em ${resumo.competencias} competência(s).`
@@ -195,7 +206,8 @@ export async function executarPasso(params: {
     detalhes.push(
       `[${conexao.apelido}] ${fase}: ${resultado.titulosPagar} títulos a pagar, ${resultado.titulosReceber} a receber, ` +
         `${resultado.baixas} baixas, ${resultado.movimentos} movimentos, ${resultado.notas} notas, ` +
-        `${resultado.cadastros} cadastros, ${resultado.contratos} contratos, ${resultado.ctes} CT-e.`
+        `${resultado.cadastros} cadastros, ${resultado.contratos} contratos, ${resultado.ctes} CT-e` +
+        (resultado.excluidos > 0 ? `, ${resultado.excluidos} título(s) excluído(s) na Omie retirado(s) do espelho.` : ".")
     );
     for (const erro of resultado.erros) detalhes.push(`[${conexao.apelido}] erro: ${erro}`);
 
