@@ -334,11 +334,12 @@ contá-la também como estrutura cobrava duas vezes, e o valor oscilava de
 R$ 330 mil a R$ 770 mil por mês. No lugar dela entra o **pró-labore fixo**
 `pro_labore_socios` da base de custos, padrão R$ 180 mil/mês. O campo
 `socios_pct_adm` deixou de existir. Parcelamentos de tributos ("1124 -
-Parcelamento Simplificado", "1734 - Parcelamento da Dívida Ativa") e "Baixa
-100% de Desconto" ficam **sempre** fora da administração, junto do que o campo
-`categorias_fora_adm` disser. Na composição do grupo de out/25 a set/26, a
-administração caiu de 14,7% para 10,6% da receita — de 29,8% para 19,8% do
-custo direto. A folha da oficina continua na administração.
+Parcelamento Simplificado", "1734 - Parcelamento da Dívida Ativa"),
+empréstimos ("Devolução Empréstimo", "Pagamento de Empréstimos"), "Baixa 100%
+de Desconto" e "Desconto de Baixa de Título" ficam **sempre** fora da
+administração, junto do que o campo `categorias_fora_adm` disser. Na
+composição do grupo de out/25 a set/26, a administração caiu de 14,7% para
+9,1% da receita — de 29,8% para 16,6% do custo direto. A folha da oficina continua na administração.
 
 **Seguro de vida e carro.** O seguro de vida da Azul (R$ 15 por pessoa/mês)
 entra nos benefícios padrão; vale-transporte fica zero (por estudo). O carro

@@ -29,7 +29,7 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   folha_adm: { como: "Rateio da administração central (soma dos indiretos ÷ faturamento médio)", unidade: "R$/mês" },
   contabilidade: { como: "Rateio da administração central", unidade: "R$/mês" },
   fornecedores_fora_adm: { como: "Pagamentos a estes fornecedores saem da administração central (não são estrutura e não se rateiam nos contratos). Vários nomes separados por \";\" (padrão: Manoel). Em branco, nenhum" },
-  categorias_fora_adm: { como: "Categorias do Omie cuja descrição contém estes textos saem da administração central — terceirização é custo da operação. Separados por \";\" (padrão: Compra de Serviços). Parcelamentos de tributos e \"Baixa 100% de Desconto\" ficam sempre fora" },
+  categorias_fora_adm: { como: "Categorias do Omie cuja descrição contém estes textos saem da administração central — terceirização é custo da operação. Separados por \";\" (padrão: Compra de Serviços). Parcelamentos de tributos, empréstimos, \"Baixa 100% de Desconto\" e \"Desconto de Baixa\" ficam sempre fora" },
   pro_labore_socios: { como: "Pró-labore dos sócios que entra na administração central, valor fixo por mês. As retiradas e a distribuição de lucro do DRE ficam fora: saem do lucro alvo", unidade: "R$/mês", padrao: 180_000 },
   contabilidade_fornecedor: { como: "A soma dos pagamentos a estes fornecedores no Omie é o valor de Contabilidade, jurídico. Vários nomes separados por \";\" (padrão: JL Business; Joel)" },
   sistemas: { como: "Rateio da administração central", unidade: "R$/mês" },

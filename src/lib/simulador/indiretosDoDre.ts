@@ -50,8 +50,11 @@ export const CATEGORIAS_FORA_PADRAO = "Compra de Serviços";
 // parcelamento de tributo é dívida de anos anteriores ("1124 - Parcelamento
 // Simplificado", "1734 - Parcelamento da Dívida Ativa", R$ 50 mil/mês na
 // Azul) e "Baixa 100% de Desconto" é ajuste de título — nenhum dos dois é
-// estrutura que um contrato novo deva carregar.
-export const CATEGORIAS_SEMPRE_FORA = ["Parcelamento", "Baixa 100% de Desconto"] as const;
+// estrutura que um contrato novo deva carregar. Também (mesma data):
+// empréstimo ("Devolução Empréstimo", "Pagamento de Empréstimos", "Empréstimo
+// · MCZ", R$ 90 mil/mês no grupo) é financiamento, e "Desconto de Baixa de
+// Título" é ajuste, como a baixa 100%.
+export const CATEGORIAS_SEMPRE_FORA = ["Parcelamento", "Baixa 100% de Desconto", "Empréstimo", "Desconto de Baixa"] as const;
 // PRÓ-LABORE DOS SÓCIOS: valor fixo por mês na administração central, no
 // lugar das "Despesas com sócios" do DRE (que ficam fora — ver abaixo). O
 // padrão é o informado pela diretoria; a base de custos muda.

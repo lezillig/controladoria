@@ -196,7 +196,10 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
     wc.getRow(linha).getCell(1).value = "FORA DA ADMINISTRAÇÃO (não entra no total — base de custos: fornecedores e categorias fora)";
     wc.getRow(linha).font = { bold: true };
     linha++;
-    for (const c of ex.categorias) escreverLinha(rotuloDoIndireto(INDIRETO_FORA), `${c.descricao} (categoria inteira)`, rotuloDaLinha(c.linha), c.porMesCents);
+    // Só as que estariam na estrutura: a mesma palavra numa linha que nunca
+    // entrou (o "Empréstimo" das despesas financeiras) não é exclusão.
+    const linhasDaEstrutura = new Set(Object.entries(mapa).filter(([k]) => k !== "faturamento_medio").flatMap(([, l]) => l));
+    for (const c of ex.categorias.filter((x) => linhasDaEstrutura.has(x.linha))) escreverLinha(rotuloDoIndireto(INDIRETO_FORA), `${c.descricao} (categoria inteira)`, rotuloDaLinha(c.linha), c.porMesCents);
     for (const [codigo, porMes] of ex.fornecedorPorCategoria) {
       const c = d.dre.categorias.find((x) => x.codigo === codigo && x.linha !== "DESPESA_SALARIOS_CORPORATIVO");
       if (!c || !Object.values(mapa).flat().includes(c.linha)) continue;
