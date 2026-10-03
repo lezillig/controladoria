@@ -4,7 +4,8 @@ import type { BaseVigente } from "./baseDeCustos";
 import { CATALOGO_PARAMETROS, normalizarPct } from "./catalogo";
 import type { DreDosMeses } from "./custosReais";
 import {
-  CHAVE_SOCIOS_PCT,
+  CHAVE_PRO_LABORE,
+  PRO_LABORE_PADRAO,
   exclusoesDoDre,
   INDIRETO_FORA,
   LINHAS_DOS_INDIRETOS,
@@ -46,7 +47,9 @@ export type DadosIndiretos = {
   lancamentos?: LancamentoIndireto[];
 };
 
-export const INDIRETOS_DA_ADMINISTRACAO = ["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais", "socios"] as const;
+// Sem as despesas com sócios: ficam na seção "fora da administração", para
+// conferir (ver LINHAS_DOS_INDIRETOS em indiretosDoDre.ts).
+export const INDIRETOS_DA_ADMINISTRACAO = ["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais", CHAVE_PRO_LABORE] as const;
 
 const BRL = '"R$" #,##0.00;[Red]-"R$" #,##0.00';
 const PCT = "0.00%";
@@ -74,6 +77,7 @@ function valorUsado(d: DadosIndiretos, chave: string): { valor: number; origem: 
     return { valor: Number(digitado.valor), origem: `digitado na base (${digitado.fonte ?? "base"})` };
   const dre = d.doDre.get(chave);
   if (dre) return { valor: dre.valor, origem: dre.fonte };
+  if (chave === CHAVE_PRO_LABORE) return { valor: PRO_LABORE_PADRAO, origem: "valor fixo padrão (R$ 180 mil/mês) — muda na base de custos" };
   return { valor: 0, origem: "sem valor — não entra" };
 }
 
@@ -144,6 +148,8 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
     const primeira = linha;
     if (chave === "contabilidade" && comFornecedor) {
       for (const [fornecedor, porMes] of d.fornecedor?.porNome ?? []) escreverLinha(nome, `Pagamentos a ${fornecedor}`, "por fornecedor, onde estiver classificado", porMes.map(Math.abs));
+    } else if (chave === CHAVE_PRO_LABORE) {
+      escreverLinha(nome, "Valor fixo por mês (base de custos)", "não vem do DRE", new Array(n).fill(Math.round(valorUsado(d, chave).valor * 100)));
     } else if (chave === "oficina") {
       if (d.oficina) escreverLinha(nome, `Folha no centro de custo ${d.oficina.centros.join(", ")}`, rotuloDaLinha("DESPESA_SALARIOS_CORPORATIVO"), d.oficina.porMes);
     } else {
@@ -184,7 +190,8 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   rTot.font = { bold: true };
   // O que saiu da administração, para conferir — fora das somas.
   let linhaFora = linha;
-  if (ex.categorias.length || ex.fornecedorPorCategoria.size) {
+  const doSocios = d.dre.categorias.filter((x) => x.linha === "DESPESA_SOCIOS" && x.porMesCents.some((v) => Math.abs(v) >= 1));
+  if (ex.categorias.length || ex.fornecedorPorCategoria.size || doSocios.length) {
     linha += 2;
     wc.getRow(linha).getCell(1).value = "FORA DA ADMINISTRAÇÃO (não entra no total — base de custos: fornecedores e categorias fora)";
     wc.getRow(linha).font = { bold: true };
@@ -195,6 +202,9 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
       if (!c || !Object.values(mapa).flat().includes(c.linha)) continue;
       escreverLinha(rotuloDoIndireto(INDIRETO_FORA), `${ex.nomeFornecedores} em ${c.descricao}`, rotuloDaLinha(c.linha), porMes);
     }
+    // Retiradas e distribuição de lucro: remuneram o sócio pelo lucro do
+    // preço, não pela administração.
+    for (const c of doSocios) escreverLinha("Sócios (fora: sai do lucro alvo)", c.descricao, rotuloDaLinha(c.linha), c.porMesCents.map(Math.abs));
     linhaFora = linha;
   }
   for (let r = 6; r <= linhaFora; r++) for (let c = C0; c <= colMedia; c++) wc.getRow(r).getCell(c).numFmt = BRL;
@@ -215,10 +225,7 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   const linhaFat = 5 + INDIRETOS_DA_ADMINISTRACAO.length + 1;
   const primeiraR = lr;
   for (const chave of INDIRETOS_DA_ADMINISTRACAO) {
-    const bruto = valorUsado(d, chave);
-    // Sócios: só a parte que a base põe na administração (padrão 100%).
-    const pctSocios = chave === "socios" ? normalizarPct(Number(d.base?.parametros.get(CHAVE_SOCIOS_PCT)?.valor ?? 1)) : 1;
-    const u = chave === "socios" && pctSocios !== 1 ? { valor: bruto.valor * pctSocios, origem: `${(pctSocios * 100).toLocaleString("pt-BR")}% de ${bruto.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} — ${bruto.origem}` } : bruto;
+    const u = valorUsado(d, chave);
     const r = ws.getRow(lr);
     r.getCell(1).value = rotuloDoIndireto(chave);
     r.getCell(2).value = u.valor;

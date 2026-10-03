@@ -1,4 +1,3 @@
-import { CHAVE_SOCIOS_PCT } from "./indiretosDoDre";
 import { CBS_REFERENCIA_PADRAO, IBS_REFERENCIA_PADRAO } from "./reforma";
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B, VR_TRANSFRETUR_DIA } from "./convencoes";
@@ -6,6 +5,7 @@ import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
 import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
+import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO } from "./indiretosDoDre";
 import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, IRPJ_LOCACAO_PADRAO } from "./motor";
 
 // AS PREMISSAS — descrição, padrão e montagem a partir da base de custos.
@@ -301,12 +301,12 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
 
   // Administração central: o rateio REAL (indiretos ÷ faturamento médio)
   // quando a base tem os números; senão, o percentual padrão das regras.
-  // Sócios (pró-labore): a parte que a base diz que é estrutura (padrão 100%).
-  const parteDosSocios = numeroDe(CHAVE_SOCIOS_PCT);
-  const socios = numeroDe("socios");
+  // Despesas com sócios do DRE NÃO entram: retirada e distribuição remuneram
+  // o sócio e já saem do lucro alvo. Entra o PRÓ-LABORE FIXO da base (padrão
+  // R$ 180 mil/mês) — ver LINHAS_DOS_INDIRETOS em indiretosDoDre.ts.
   const indiretos = [
     ...["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"].map(numeroDe),
-    socios === null ? null : socios * (parteDosSocios === null ? 1 : normalizarPct(parteDosSocios)),
+    numeroDe(CHAVE_PRO_LABORE) ?? PRO_LABORE_PADRAO,
   ];
   const faturamento = numeroDe("faturamento_medio");
   if (faturamento && faturamento > 0 && indiretos.some((v) => v !== null)) {

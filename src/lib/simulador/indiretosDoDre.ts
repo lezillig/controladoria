@@ -43,11 +43,21 @@ export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business; Joel";
 // é custo da operação). Nomes separados por ";". Sai do custo e não entra em
 // nenhum outro.
 export const CHAVE_FORNECEDORES_FORA = "fornecedores_fora_adm";
-// A parte das despesas com sócios que entra na administração central.
-export const CHAVE_SOCIOS_PCT = "socios_pct_adm";
 export const CHAVE_CATEGORIAS_FORA = "categorias_fora_adm";
 export const FORNECEDORES_FORA_PADRAO = "Manoel";
 export const CATEGORIAS_FORA_PADRAO = "Compra de Serviços";
+// SEMPRE FORA, qualquer que seja o campo da base (decisão de 03/10/2026):
+// parcelamento de tributo é dívida de anos anteriores ("1124 - Parcelamento
+// Simplificado", "1734 - Parcelamento da Dívida Ativa", R$ 50 mil/mês na
+// Azul) e "Baixa 100% de Desconto" é ajuste de título — nenhum dos dois é
+// estrutura que um contrato novo deva carregar.
+export const CATEGORIAS_SEMPRE_FORA = ["Parcelamento", "Baixa 100% de Desconto"] as const;
+// PRÓ-LABORE DOS SÓCIOS: valor fixo por mês na administração central, no
+// lugar das "Despesas com sócios" do DRE (que ficam fora — ver abaixo). O
+// padrão é o informado pela diretoria; a base de custos muda.
+export const CHAVE_PRO_LABORE = "pro_labore_socios";
+export const PRO_LABORE_PADRAO = 180_000;
+export const comSempreFora = (categorias: string[]) => [...categorias, ...CATEGORIAS_SEMPRE_FORA.filter((x) => !categorias.some((c) => c.toLowerCase() === x.toLowerCase()))];
 
 export type ForaDaAdministracao = {
   // Pagamentos aos fornecedores excluídos, por categoria e mês.
@@ -76,9 +86,13 @@ export const LINHAS_DOS_INDIRETOS: Record<string, string[]> = {
   sistemas: ["DESPESA_INFORMATICA"],
   sede_garagem_sp: ["DESPESA_ESTRUTURA"],
   gerais: ["DESPESA_COMERCIAL", "DESPESA_GERAL"],
-  // Pró-labore e despesas com sócios: estrutura, na parte que a base disser
-  // (CHAVE_SOCIOS_PCT, padrão 100%).
-  socios: ["DESPESA_SOCIOS"],
+  // DESPESAS COM SÓCIOS FICAM FORA (decisão de 03/10/2026); no lugar delas
+  // entra o PRÓ-LABORE FIXO (CHAVE_PRO_LABORE, padrão R$ 180 mil/mês). Retirada e
+  // distribuição de lucro remuneram o sócio e já saem do LUCRO ALVO do preço;
+  // contá-las também como administração cobrava o mesmo dinheiro duas vezes
+  // do cliente — na Azul, de 5% a 11% da receita, oscilando de um mês para o
+  // outro (R$ 330 mil em agosto, R$ 770 mil em setembro de 2026). O
+  // pró-labore é um valor fixo da base de custos, e não o que o mês pagou.
   faturamento_medio: ["RECEITA_BRUTA"],
 };
 
@@ -337,7 +351,7 @@ export function textosForaDaAdministracao(texto: (chave: string) => string | nul
 export async function foraDaAdministracao(companyId: string, dataReferencia: Date, meses: string[], textos: { fornecedores: string; categorias: string }): Promise<ForaDaAdministracao> {
   return {
     fornecedores: await pagamentosDoFornecedor(companyId, textos.fornecedores, dataReferencia, meses),
-    categorias: nomesDosFornecedores(textos.categorias),
+    categorias: comSempreFora(nomesDosFornecedores(textos.categorias)),
   };
 }
 
@@ -546,6 +560,6 @@ export async function lancamentosDosIndiretos(
     })),
     dre,
     nomesDosFornecedores(fornecedores),
-    { fornecedores: nomesDosFornecedores(fora.fornecedores), categorias: nomesDosFornecedores(fora.categorias) }
+    { fornecedores: nomesDosFornecedores(fora.fornecedores), categorias: comSempreFora(nomesDosFornecedores(fora.categorias)) }
   );
 }

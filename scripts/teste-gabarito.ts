@@ -121,7 +121,8 @@ async function principal() {
   {
     // Indiretos ÷ faturamento é % da RECEITA; o motor aplica sobre o custo
     // direto, então a leitura converte: x = a/(d − a), d = divisor do preço.
-    const a = 149500 / 3200000;
+    // + o pró-labore fixo dos sócios, padrão de R$ 180 mil/mês.
+    const a = (149500 + 180000) / 3200000;
     const pr = premissas.preco;
     const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
     ok("administração = indiretos reais ÷ faturamento, convertida para o custo direto", Math.abs(premissas.indiretos.administracaoPct - a / (d - a)) < 1e-9, `${premissas.indiretos.administracaoPct}`);

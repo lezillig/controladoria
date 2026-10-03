@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CategoriaReal, DreDosMeses } from "../src/lib/simulador/custosReais";
 import { planilhaDosIndiretos } from "../src/lib/simulador/exportarIndiretos";
-import { casaComPadrao, classificarTitulos, indiretosDoDre, padraoDoNome, type FolhaDaOficina, type PagamentosDoFornecedor, type TituloDoIndireto } from "../src/lib/simulador/indiretosDoDre";
+import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO, casaComPadrao, comSempreFora, classificarTitulos, indiretosDoDre, padraoDoNome, type FolhaDaOficina, type PagamentosDoFornecedor, type TituloDoIndireto } from "../src/lib/simulador/indiretosDoDre";
 import { PREMISSAS_PADRAO } from "../src/lib/simulador/premissas";
 
 let falhas = 0;
@@ -77,7 +77,7 @@ meses.forEach((m, i) => {
 const lancamentos = classificarTitulos(titulos, dre, ["JL Business", "Joel"], { fornecedores: ["Manoel"], categorias: ["Compra de Serviços"] });
 
 async function principal() {
-  console.log("SÓCIOS NA ADMINISTRAÇÃO — o % ajustável da base");
+  console.log("PRÓ-LABORE FIXO NA ADMINISTRAÇÃO; DESPESAS COM SÓCIOS FORA");
   {
     const { premissasDaBase } = await import("../src/lib/simulador/premissas");
     const base = (parametros: [string, number][]) => ({
@@ -90,9 +90,15 @@ async function principal() {
     const p = premissasDaBase(base([["faturamento_medio", 100_000]]) as never, escolhas).premissas.preco;
     const dv = 1 - p.lucroAlvoPct - p.pis - p.cofins - p.irpj - p.csll - Math.max(p.iss, p.icms) - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
     const x = (a: number) => a / (dv - a);
-    perto("sócios inteiros por padrão (10 mil gerais + 20 mil sócios)", adm([["faturamento_medio", 100_000], ["gerais", 10_000], ["socios", 20_000]]), x(0.3), 1e-9);
-    perto("sócios a 50%", adm([["faturamento_medio", 100_000], ["gerais", 10_000], ["socios", 20_000], ["socios_pct_adm", 0.5]]), x(0.2), 1e-9);
-    perto("sócios a 0% (digitado como 0)", adm([["faturamento_medio", 100_000], ["gerais", 10_000], ["socios", 20_000], ["socios_pct_adm", 0]]), x(0.1), 1e-9);
+    perto("pró-labore padrão de R$ 180 mil (10 mil gerais + 180 mil, sobre 2 milhões)", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000]]), x(190_000 / 2_000_000), 1e-9);
+    perto("pró-labore digitado na base: 50 mil", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000], [CHAVE_PRO_LABORE, 50_000]]), x(60_000 / 2_000_000), 1e-9);
+    perto("pró-labore zero (digitado como 0)", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000], [CHAVE_PRO_LABORE, 0]]), x(10_000 / 2_000_000), 1e-9);
+    perto("despesas com sócios do DRE não entram", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000], [CHAVE_PRO_LABORE, 0], ["socios", 700_000]]), x(10_000 / 2_000_000), 1e-9);
+    ok("padrão de R$ 180 mil", PRO_LABORE_PADRAO === 180_000);
+    const fora = comSempreFora(["Compra de Serviços"]);
+    ok("parcelamentos e baixas 100% sempre fora, junto do que a base diz", fora.join("|") === "Compra de Serviços|Parcelamento|Baixa 100% de Desconto", fora.join("|"));
+    ok("campo da base em branco: continuam fora", comSempreFora([]).length === 2);
+    ok("sem repetir o que a base já tem", comSempreFora(["parcelamento"]).length === 2);
   }
 
   const soffice = ["soffice", "libreoffice"].find((c) => {
@@ -122,7 +128,7 @@ async function principal() {
       lancamentos.some((x) => x.fornecedor === "Transportadora Parceira" && x.indireto === "fora_da_administracao")
   );
 
-  const conteudo = await planilhaDosIndiretos({ dre, fornecedor, oficina, fora, doDre, base: null, premissas: PREMISSAS_PADRAO, empresa: "Grupo teste", geradoEm: new Date(2026, 9, 4), lancamentos });
+  const conteudo = await planilhaDosIndiretos({ dre, fornecedor, oficina, fora, doDre, base: { em: new Date(2026, 9, 1), parametros: new Map([[CHAVE_PRO_LABORE, { valor: 20_000, texto: null, fonte: "teste", vigenciaInicio: new Date(2026, 0, 1) }]]), veiculos: [], funcoes: [], pedagios: [] } as never, premissas: PREMISSAS_PADRAO, empresa: "Grupo teste", geradoEm: new Date(2026, 9, 4), lancamentos });
   ok("gera um .xlsx", conteudo.subarray(0, 2).toString() === "PK");
   if (!soffice) {
     ok("LibreOffice para recalcular", false, "instale o LibreOffice (soffice): sem recálculo o teste não prova nada");
@@ -167,7 +173,8 @@ async function principal() {
     perto("gerais com o resto das administrativas", doDre.get("gerais")?.valor ?? NaN, 12_000);
 
     console.log("\nRESUMO — total, % da receita e conversão");
-    const total = [...["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"]].reduce((a, k) => a + (doDre.get(k)?.valor ?? 0), 0);
+    // Os seis custos do DRE + o pró-labore fixo digitado na base (20 mil).
+    const total = [...["folha_adm", "contabilidade", "sistemas", "sede_garagem_sp", "oficina", "gerais"]].reduce((a, k) => a + (doDre.get(k)?.valor ?? 0), 0) + 20_000;
     perto("total da estrutura", celula("Resumo", "Total da estrutura", "B"), total);
     const a = total / 500_000;
     perto("a = total ÷ faturamento", celula("Resumo", "a —", "B"), a, 1e-9);
