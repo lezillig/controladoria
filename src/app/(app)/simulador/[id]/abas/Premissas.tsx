@@ -4,6 +4,7 @@ import { useState } from "react";
 import { CAMPOS_PREMISSAS, ROTULO_GRUPO, lerCaminho, escreverCaminho, type CampoPremissa, type MapaOrigem } from "@/lib/simulador/premissas";
 import { aplicarIndicadores, ROTULO_CONFIANCA, type IndicadorReal } from "@/lib/simulador/aplicarReais";
 import type { EntradaSimulacao } from "@/lib/simulador/tipos";
+import { ajustadasNoEstudo, diferenteDaBase, perfisAjustados, voltarABase, type DaBase } from "@/lib/simulador/voltarABase";
 import { Cartao, CampoNumero, SeloOrigem, botao, botaoPrimario, selecao } from "../comum";
 import { CalculadoraEncargos } from "./Calculadoras";
 
@@ -32,9 +33,42 @@ const REGIMES: Record<string, { rotulo: string; valores: Record<string, number>;
   },
 };
 
-function Campo({ campo, entrada, origem, alterar, podeEditar }: { campo: CampoPremissa; entrada: EntradaSimulacao; origem: MapaOrigem; alterar: AlterarComOrigem; podeEditar: boolean }) {
+// O valor como a tela o mostra, para o "voltar à base: …".
+function textoDoValor(campo: CampoPremissa, v: unknown): string {
+  if (campo.tipo === "bool") return v ? "Sim" : "Não";
+  if (campo.tipo === "modo") return v === "PERIODO" ? "Período" : "Mensal";
+  if (campo.tipo === "metodoDepreciacao") return v === "LINEAR" ? "Linear" : v === "SOMA_DIGITOS" ? "Soma dos dígitos" : "% ao ano";
+  if (typeof v !== "number") return "—";
+  return campo.tipo === "pct" ? `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}%` : v.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+}
+
+// Volta premissas à base: a origem nova sai de uma cópia, a mudança entra
+// pelo `alterar` (e fica no desfazer como qualquer edição).
+function voltar(entrada: EntradaSimulacao, origem: MapaOrigem, daBase: DaBase, alterar: AlterarComOrigem, caminhos?: string[]) {
+  const r = voltarABase(structuredClone(entrada), origem, daBase, caminhos);
+  alterar((e) => void voltarABase(e, origem, daBase, caminhos), [], r.origem);
+  return r;
+}
+
+function Campo({
+  campo,
+  entrada,
+  origem,
+  alterar,
+  podeEditar,
+  daBase,
+}: {
+  campo: CampoPremissa;
+  entrada: EntradaSimulacao;
+  origem: MapaOrigem;
+  alterar: AlterarComOrigem;
+  podeEditar: boolean;
+  daBase: DaBase | null;
+}) {
   const valor = lerCaminho(entrada.premissas, campo.caminho);
   const o = origem[campo.caminho];
+  const podeVoltar = podeEditar && daBase !== null && diferenteDaBase(entrada, origem, daBase, campo.caminho);
+  const valorDaBase = daBase ? lerCaminho(daBase.premissas, campo.caminho) : undefined;
   const definir = (v: unknown) => alterar((e) => escreverCaminho(e.premissas, campo.caminho, v), [campo.caminho]);
   let controle;
   if (campo.tipo === "bool")
@@ -64,9 +98,21 @@ function Campo({ campo, entrada, origem, alterar, podeEditar }: { campo: CampoPr
     <div className="grid grid-cols-[1fr_120px] items-center gap-x-3 gap-y-1 rounded-lg border border-slate-200 bg-white px-3 py-2" title={campo.ajuda}>
       <label className="text-[13px] text-slate-700">{campo.rotulo}</label>
       {controle}
-      <div className="col-span-2 flex items-center justify-between gap-2 text-[11px] text-slate-500">
+      <div className="col-span-2 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
         <span>{campo.unidade}</span>
-        <SeloOrigem origem={o?.origem} titulo={[o?.fonte, o?.detalhe].filter(Boolean).join(" — ")} />
+        <span className="flex items-center gap-2">
+          {podeVoltar && (
+            <button
+              type="button"
+              className="text-blue-700 hover:underline"
+              title={`Volta ao valor que um estudo novo usaria hoje (${daBase!.origem[campo.caminho]?.fonte ?? "padrão do simulador"})`}
+              onClick={() => voltar(entrada, origem, daBase!, alterar, [campo.caminho])}
+            >
+              voltar à base: {textoDoValor(campo, valorDaBase)}
+            </button>
+          )}
+          <SeloOrigem origem={o?.origem} titulo={[o?.fonte, o?.detalhe].filter(Boolean).join(" — ")} />
+        </span>
       </div>
     </div>
   );
@@ -77,6 +123,7 @@ export default function Premissas({
   origem,
   alterar,
   podeEditar,
+  daBase,
   indicadores,
   lacunas,
 }: {
@@ -84,6 +131,7 @@ export default function Premissas({
   origem: MapaOrigem;
   alterar: AlterarComOrigem;
   podeEditar: boolean;
+  daBase: DaBase | null;
   indicadores: IndicadorReal[];
   lacunas: string[];
 }) {
@@ -106,11 +154,48 @@ export default function Premissas({
     }
     return lerCaminho(entrada.premissas, i.caminho);
   };
+  const ajustadas = daBase ? ajustadasNoEstudo(entrada, origem, daBase) : [];
+  const perfisMudados = daBase ? perfisAjustados(entrada, daBase) : [];
+  const [avisoBase, setAvisoBase] = useState<string | null>(null);
   const formatar = (v: unknown, unidade: string) =>
     typeof v !== "number" ? "—" : unidade.includes("%") ? `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : v.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
 
   return (
     <div className="space-y-4">
+      {daBase && podeEditar && (ajustadas.length > 0 || perfisMudados.length > 0 || avisoBase) && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-900">
+          <p>
+            {ajustadas.length + perfisMudados.length > 0 ? (
+              <>
+                Este estudo está diferente da base de hoje em{" "}
+                <strong>{ajustadas.length === 1 ? "1 premissa" : `${ajustadas.length} premissas`}</strong>
+                {perfisMudados.length > 0 && (
+                  <>
+                    {" "}e <strong>{perfisMudados.length === 1 ? "1 tipo de veículo" : `${perfisMudados.length} tipos de veículo`}</strong>
+                  </>
+                )}
+                . Voltar à base usa os valores que um orçamento novo usaria (Custos base e padrão do simulador); o custo real aplicado fica.
+              </>
+            ) : (
+              avisoBase
+            )}
+          </p>
+          {ajustadas.length + perfisMudados.length > 0 && (
+            <button
+              type="button"
+              className={botao}
+              onClick={() => {
+                const r = voltar(entrada, origem, daBase, alterar);
+                setAvisoBase(
+                  `${r.premissas === 1 ? "1 premissa voltou" : `${r.premissas} premissas voltaram`} à base${r.perfis > 0 ? ` e ${r.perfis === 1 ? "1 tipo de veículo" : `${r.perfis} tipos de veículo`}` : ""}. Desfazer (Ctrl+Z) traz de volta; salve a versão para gravar.`
+                );
+              }}
+            >
+              Voltar tudo à base
+            </button>
+          )}
+        </div>
+      )}
       <Cartao
         titulo="Custos reais da Azul Mob"
         ajuda="Medidos na controladoria nos últimos 12 meses fechados: DRE por categoria da Omie, extrato do cartão de combustível e frota do sistema de gestão. Escolha os que servem a este estudo — a manutenção de uma frota velha não é a de uma frota nova — e aplique; a premissa passa a mostrar a origem 'custo real' com a conta."
@@ -249,7 +334,7 @@ export default function Premissas({
         <Cartao key={grupo} titulo={ROTULO_GRUPO[grupo as keyof typeof ROTULO_GRUPO]}>
           <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
             {campos.map((c) => (
-              <Campo key={c.caminho} campo={c} entrada={entrada} origem={origem} alterar={alterar} podeEditar={podeEditar} />
+              <Campo key={c.caminho} campo={c} entrada={entrada} origem={origem} alterar={alterar} podeEditar={podeEditar} daBase={daBase} />
             ))}
           </div>
           {grupo === "pessoal" && <CalculadoraEncargos entrada={entrada} origem={origem} alterar={alterar} podeEditar={podeEditar} />}

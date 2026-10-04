@@ -364,6 +364,9 @@ export type EntradaInicial = {
   // não tem (vigência, prazo, abrangência): o editor abre marcado como
   // "alterações não salvas".
   pendente?: boolean;
+  // As premissas que um estudo NOVO teria hoje (base vigente + regras do tipo
+  // de serviço), para o "Voltar à base" desfazer os ajustes deste estudo.
+  daBase?: { premissas: Premissas; origem: MapaOrigem };
 };
 
 // A ENTRADA COM QUE O EDITOR ABRE: a da versão pedida (ou da última), com a
@@ -377,13 +380,16 @@ export async function entradaInicial(
 ): Promise<EntradaInicial> {
   const { estudo, itens, rotas } = carregado;
   const versao = versaoId ? estudo.simulacoes.find((s) => s.id === versaoId) : estudo.simulacoes[0];
+  const baseCarregada = base === undefined ? await baseVigente(companyId) : base;
+  const novas = premissasNovasDoEstudo(estudo, baseCarregada);
+  const daBase = { premissas: structuredClone(novas.premissas), origem: { ...novas.origem } };
   if (versao) {
     const snapshot = versao.entrada as unknown as EntradaSimulacao;
     // Abrir uma versão antiga mostra a conta como ela foi: snapshot inteiro.
     // Abrir a última continua a partir da definição corrente.
     const usarSnapshot = Boolean(versaoId);
     const origemSalva = (versao.origem as MapaOrigem | null) ?? {};
-    if (usarSnapshot) return { entrada: snapshot, origem: origemSalva, versaoBase: versao.versao, baseEm: versao.baseEm };
+    if (usarSnapshot) return { entrada: snapshot, origem: origemSalva, versaoBase: versao.versao, baseEm: versao.baseEm, daBase };
     // Vigência e prazo editados nos dados do estudo depois da versão valem ao
     // reabrir: entram como ajuste, e salvar grava a versão nova com eles.
     const entrada: EntradaSimulacao = { ...snapshot, itens: itens.length > 0 ? itens : snapshot.itens, rotas: rotas.length > 0 ? rotas : snapshot.rotas };
@@ -406,9 +412,33 @@ export async function entradaInicial(
       origem,
       versaoBase: versao.versao,
       baseEm: versao.baseEm,
+      daBase,
     };
   }
-  const baseCarregada = base === undefined ? await baseVigente(companyId) : base;
+  const { premissas, origem, vazia } = novas;
+  return {
+    entrada: {
+      premissas,
+      itens,
+      rotas: perfilDasRotasNovas(rotas, premissas.perfis ?? []),
+      criterio: estudo.criterioJulgamento === "LOTE" ? "LOTE" : "ITEM",
+      unidadePreco: (estudo.unidadePreco as UnidadePreco) ?? "KM",
+    },
+    origem,
+    versaoBase: null,
+    baseEm: vazia ? null : (baseCarregada?.em ?? null),
+    daBase,
+  };
+}
+
+// AS PREMISSAS DE UM ESTUDO NOVO: a base vigente (ou o padrão, sem base) com
+// as regras do tipo de serviço e os dados do estudo (vigência, prazo, tipos de
+// veículo). É o ponto de partida de toda simulação nova e o destino do
+// "Voltar à base" no editor.
+export function premissasNovasDoEstudo(
+  estudo: Pick<NonNullable<Awaited<ReturnType<typeof carregarEstudo>>>["estudo"], "esfera" | "tipoServico" | "vigenciaMeses" | "prazoPagamentoDias" | "tiposVeiculo">,
+  baseCarregada: BaseVigente | null
+): { premissas: Premissas; origem: MapaOrigem; vazia: boolean } {
   const vazia = baseCarregada && baseCarregada.parametros.size === 0 && baseCarregada.veiculos.length === 0 && baseCarregada.funcoes.length === 0;
   const { premissas, origem } = premissasDaBase(vazia ? null : baseCarregada, {
     clientePublico: estudo.esfera === "PUBLICO",
@@ -449,18 +479,7 @@ export async function entradaInicial(
   if (estudo.prazoPagamentoDias) premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
   premissas.perfis = perfisDoEstudo(perfisDaBase(vazia ? null : baseCarregada), estudo.tiposVeiculo as TipoVeiculo[]);
   regrasDeCapitalNosPerfis(premissas, origem);
-  return {
-    entrada: {
-      premissas,
-      itens,
-      rotas: perfilDasRotasNovas(rotas, premissas.perfis),
-      criterio: estudo.criterioJulgamento === "LOTE" ? "LOTE" : "ITEM",
-      unidadePreco: (estudo.unidadePreco as UnidadePreco) ?? "KM",
-    },
-    origem,
-    versaoBase: null,
-    baseEm: vazia ? null : (baseCarregada?.em ?? null),
-  };
+  return { premissas, origem, vazia: Boolean(vazia) };
 }
 
 // OS TIPOS DE VEÍCULO DO ESTUDO: os escolhidos ao criar, na ordem escolhida.

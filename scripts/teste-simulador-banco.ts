@@ -121,6 +121,8 @@ async function principal() {
   conferir("sem versão: premissas da base", [ini.versaoBase, ini.entrada.premissas.variaveis.dieselLitro, ini.origem["variaveis.dieselLitro"].origem], [null, 6.49, "BASE"]);
   conferir("perfis de veículo da base (a van do Gabarito)", ini.entrada.premissas.perfis?.map((p) => p.tipo), ["VAN"]);
   conferir("vigência do estudo", ini.entrada.premissas.contrato.vigenciaMeses, 24);
+  conferir("voltar à base: o destino do estudo novo é a própria premissa inicial", JSON.stringify(ini.daBase?.premissas) === JSON.stringify(ini.entrada.premissas), true);
+  conferir("voltar à base: estudo com versão também traz a base de hoje", [reaberto.daBase?.premissas.variaveis.dieselLitro, reaberto.daBase?.origem["variaveis.dieselLitro"]?.origem], [6.49, "BASE"]);
   conferir("unidade do estudo", ini.entrada.unidadePreco, "BINOMIA");
   conferir("margens da base", estudos.regrasDeMargem(base), { margemMinima: 0.07, margemAlvo: 0.12 });
   const eventualId = await estudos.criarEstudo(EMPRESA, { tipo: "ORCAMENTO_INTERNO", nome: "Excursão", cliente: "Clube Y", tipoServico: "FRETAMENTO_EVENTUAL", criterioJulgamento: "ITEM", unidadePreco: "DIARIA", vigenciaMeses: 1 }, "teste");

@@ -477,6 +477,27 @@ Mob em Word (`Modelo_Proposta_Azul_Mob.docx`), gerado por `gerar.js` (lib
 tabela de preço ano a ano (2026–2033) é a da aba Reforma. Próximo passo
 possível: o simulador gerar este documento já preenchido com o estudo.
 
+## 7.5 Voltar à base (aba 3. Premissas)
+
+Todo estudo novo já nasce da base vigente (Custos base + padrão do simulador
+onde a base está vazia), e o que se ajusta num estudo fica só nele. Para
+desfazer esses ajustes sem recriar o estudo:
+
+- cada premissa diferente da base mostra **"voltar à base: <valor>"**, que
+  traz o valor e a origem que um estudo novo usaria hoje;
+- **"Voltar tudo à base"** volta todas as premissas ajustadas no estudo ou
+  diferentes da base de hoje (versão salva quando a base era outra — a
+  administração central recalculada, o diesel novo) e os tipos de veículo que
+  a base também tem (salário do motorista, valor, consumo). O **custo real**
+  aplicado de propósito fica.
+
+O destino é `premissasNovasDoEstudo` (estudos.ts), a mesma função que monta o
+estudo novo — com as regras do tipo de serviço (escolar: período e 12 meses;
+eventual: prêmio do motorista) e os dados do estudo (vigência, prazo, tipos de
+veículo). A volta entra pelo desfazer como qualquer edição e só grava ao
+salvar a versão. Testes: `teste:itens` (VOLTAR À BASE) e
+`teste:simulador-banco`.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

@@ -8,6 +8,7 @@ import { lerInicio } from "@/lib/simulador/reforma";
 import type { IndicadorReal } from "@/lib/simulador/aplicarReais";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerCaminho } from "@/lib/simulador/premissas";
+import type { DaBase } from "@/lib/simulador/voltarABase";
 import { ROTULO_UNIDADE, type EntradaSimulacao, type FonteEnergia, type ResultadoSimulacao } from "@/lib/simulador/tipos";
 import { salvarVersao } from "../actions";
 import type { PracaPedagio } from "@/lib/simulador/pedagio";
@@ -50,6 +51,7 @@ export default function EditorEstudo({
   estudo,
   entradaInicial,
   origemInicial,
+  daBase,
   versaoBase,
   versaoAntiga,
   baseEm,
@@ -68,6 +70,8 @@ export default function EditorEstudo({
   estudo: EstudoTela;
   entradaInicial: EntradaSimulacao;
   origemInicial: MapaOrigem;
+  // O que um estudo novo teria hoje, para o "Voltar à base".
+  daBase: DaBase | null;
   versaoBase: number | null;
   versaoAntiga: boolean;
   baseEm: string | null;
@@ -378,7 +382,7 @@ export default function EditorEstudo({
 
       {aba === "operacao" && <Operacao entrada={entrada} alterar={alterar} podeEditar pracas={pracas} />}
       {aba === "veiculos" && <Veiculos entrada={entrada} alterar={alterar} podeEditar precosEnergia={precosEnergia} pracas={pracas} />}
-      {aba === "premissas" && <Premissas entrada={entrada} origem={origem} alterar={alterar} podeEditar indicadores={indicadores} lacunas={lacunas} />}
+      {aba === "premissas" && <Premissas entrada={entrada} origem={origem} alterar={alterar} podeEditar daBase={daBase} indicadores={indicadores} lacunas={lacunas} />}
       {aba === "custos" && resultado && <Custos resultado={resultado} entrada={entrada} />}
       {aba === "cenarios" && resultado && <Cenarios resultado={resultado} entrada={entrada} alterar={alterar} />}
       {aba === "reforma" && resultado && <Reforma entrada={entrada} resultado={resultado} alterar={alterar} inicioPrevisto={estudo.inicioPrevisto} />}

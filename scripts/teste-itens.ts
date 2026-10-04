@@ -2,7 +2,8 @@
 // apontam o perfil do tipo, e a duplicação de um item com as rotas dele.
 import { itensIniciais, perfilDasRotasNovas } from "../src/lib/simulador/estudos";
 import { codigoLivre, duplicarItem } from "../src/lib/simulador/itens";
-import { PERFIS_PADRAO } from "../src/lib/simulador/premissas";
+import { PERFIS_PADRAO, PREMISSAS_PADRAO, type MapaOrigem } from "../src/lib/simulador/premissas";
+import { ajustadasNoEstudo, perfisAjustados, voltarABase } from "../src/lib/simulador/voltarABase";
 import { historicoSaoJoseDosPinhais } from "../src/lib/simulador/historico";
 
 let falhas = 0;
@@ -68,6 +69,47 @@ conferir("as rotas do original são copiadas para o item novo", [e.rotas.length,
 conferir("códigos continuam únicos", new Set(e.itens.map((i) => i.codigo)).size, e.itens.length);
 conferir("índice inexistente não mexe", duplicarItem(e, 99), null);
 conferir("código livre pula os usados", codigoLivre([{ codigo: "1" }, { codigo: "3" }]), "4");
+
+console.log("\nVOLTAR À BASE");
+{
+  const base = structuredClone(historicoSaoJoseDosPinhais().entrada);
+  base.premissas = { ...structuredClone(PREMISSAS_PADRAO), perfis: [structuredClone(PERFIS_PADRAO.find((p) => p.tipo === "VAN")!)] };
+  const daBase = { premissas: base.premissas, origem: { "variaveis.dieselLitro": { origem: "BASE", fonte: "base Azul Mob" } } as MapaOrigem };
+  const estudo = structuredClone(base);
+  estudo.premissas.pessoal.salarioMotorista = 2400;
+  estudo.premissas.preco.lucroAlvoPct = 0.2;
+  estudo.premissas.variaveis.dieselLitro = 7.1;
+  estudo.premissas.contrato.mesesCustoFixo = 12;
+  estudo.premissas.perfis![0].motorista.salario = 2400;
+  const origem: MapaOrigem = {
+    "pessoal.salarioMotorista": { origem: "AJUSTE", fonte: "ajuste no estudo" },
+    "preco.lucroAlvoPct": { origem: "AJUSTE", fonte: "ajuste no estudo" },
+    "variaveis.dieselLitro": { origem: "REAL", fonte: "cartão de combustível" },
+    "contrato.mesesCustoFixo": { origem: "PADRAO", fonte: "padrão do simulador" },
+  };
+  conferir(
+    "todas: ajustadas e diferentes da base; o custo real fica",
+    ajustadasNoEstudo(estudo, origem, daBase).sort(),
+    ["contrato.mesesCustoFixo", "pessoal.salarioMotorista", "preco.lucroAlvoPct"]
+  );
+  conferir("tipo de veículo com salário mudado", perfisAjustados(estudo, daBase), [PERFIS_PADRAO.find((p) => p.tipo === "VAN")!.codigo]);
+  const uma = structuredClone(estudo);
+  const r1 = voltarABase(uma, origem, daBase, ["preco.lucroAlvoPct"]);
+  conferir(
+    "uma premissa: só ela volta, com a origem da base (sem origem, sai do mapa)",
+    [uma.premissas.preco.lucroAlvoPct, uma.premissas.pessoal.salarioMotorista, r1.premissas, "preco.lucroAlvoPct" in r1.origem, uma.premissas.perfis![0].motorista.salario],
+    [PREMISSAS_PADRAO.preco.lucroAlvoPct, 2400, 1, false, 2400]
+  );
+  const todas = structuredClone(estudo);
+  const r2 = voltarABase(todas, origem, daBase);
+  conferir(
+    "todas: premissas e tipos voltam; diesel do custo real fica",
+    [todas.premissas.pessoal.salarioMotorista, todas.premissas.contrato.mesesCustoFixo, todas.premissas.variaveis.dieselLitro, todas.premissas.perfis![0].motorista.salario, r2.premissas, r2.perfis, r2.origem["variaveis.dieselLitro"].origem],
+    [PREMISSAS_PADRAO.pessoal.salarioMotorista, 1, 7.1, PERFIS_PADRAO.find((p) => p.tipo === "VAN")!.motorista.salario, 3, 1, "REAL"]
+  );
+  conferir("depois de voltar, nada mais a voltar", [ajustadasNoEstudo(todas, r2.origem, daBase), perfisAjustados(todas, daBase)], [[], []]);
+  conferir("a base não é alterada", daBase.premissas.pessoal.salarioMotorista, PREMISSAS_PADRAO.pessoal.salarioMotorista);
+}
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);
