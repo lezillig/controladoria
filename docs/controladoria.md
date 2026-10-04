@@ -110,6 +110,20 @@ com a tela filtrada, e a classificação gravada no código puro vale para as
 duas até alguém classificar cada uma. A tela de Custos e DRE lista os códigos
 repetidos.
 
+### Sem as provisões futuras (a vencer fora do resultado)
+
+Desde 04/10/2026, no regime de competência, o título continua no mês da
+emissão, mas o **a vencer** (em aberto, com vencimento de hoje em diante)
+fica fora do DRE, da planilha de conferência, da análise de custos e da base
+de custos do simulador. Entram o pago/recebido e o **em atraso**. O caso que
+motivou: os PJs do apoio administrativo com o pagamento do mês seguinte
+lançado como a vencer ao lado do pago. Consequência: o mês corrente aparece
+com a receita que ainda vai vencer de fora. Mês em formação, previsão de
+caixa, aging, conferências fiscal e de CT-e, auditoria, a composição por
+categoria e os cartões do painel continuam com todos os títulos. Regra em
+`competencia.ts` (`semProvisaoFuturaSql` / `naoEhProvisaoFutura`), testada
+em `teste:dre-banco`.
+
 ### Outras receitas operacionais
 
 `OUTRAS_RECEITAS`, **"(+) Outras receitas operacionais"** (venda de veículo,

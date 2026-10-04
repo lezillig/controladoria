@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
-import { competenciaSql } from "@/lib/controladoria/competencia";
+import { competenciaSql, semProvisaoFuturaSql } from "@/lib/controladoria/competencia";
 import { Prisma } from "@prisma/client";
 import { categoriaSql, ehCorporativoSql, filtroConexaoTitulo, naJanela } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
@@ -311,6 +311,7 @@ async function pagamentosDeUmFornecedor(companyId: string, nome: string, dataRef
        AND t.natureza = 'PAGAR'
        AND t.cancelado = false
        AND translate(upper(COALESCE(t."parceiroNome", '')), 'ÁÀÂÃÉÊÍÓÔÕÚÇ', 'AAAAEEIOOOUC') LIKE ${padrao}
+       AND ${semProvisaoFuturaSql("t")}
        AND ${competenciaSql("t")} >= ${inicio}
        AND ${competenciaSql("t")} <= ${fechado.fim}
        ${filtroConexaoTitulo(null, companyId)}
@@ -348,6 +349,7 @@ export async function folhaDaOficina(companyId: string, dataReferencia: Date, dr
        AND d.descricao ILIKE '%oficina%'
        AND ${ehCorporativoSql(companyId)}
        AND ${categoriaSql()} IN (${Prisma.join(categorias)})
+       AND ${semProvisaoFuturaSql("t")}
        AND ${competenciaSql("t")} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
        AND ${competenciaSql("t")} <= ${fechado.fim}
        ${filtroConexaoTitulo(null, companyId)}
@@ -563,6 +565,7 @@ export async function lancamentosDosIndiretos(
      WHERE t."companyId" = ${companyId}
        AND t.cancelado = false
        AND ${categoriaSql()} IN (${Prisma.join(codigos)})
+       AND ${semProvisaoFuturaSql("t")}
        AND ${competenciaSql("t")} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
        AND ${competenciaSql("t")} <= ${fechado.fim}
        ${filtroConexaoTitulo(null, companyId)}

@@ -1,7 +1,7 @@
 import { categoriasEmColisao, categoriasPorChave, classificacaoDaChave, descricoesPorChave } from "./chaveCategoria";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
-import { competenciaSql } from "./competencia";
+import { competenciaSql, semProvisaoFuturaSql } from "./competencia";
 import { categoriaSql, filtroConexaoTitulo, naJanela, type EscopoSql } from "./escopoSql";
 import {
   analisarEstrategiaDeSeries,
@@ -46,6 +46,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
        WHERE t."companyId" = ${escopo.companyId}
          AND t.cancelado = false
          AND t.natureza = 'PAGAR'
+         AND ${semProvisaoFuturaSql("t")}
          AND ${competenciaSql("t")} >= ${primeiroMes}
          AND ${competenciaSql("t")} <= ${fim}
          ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
@@ -60,6 +61,7 @@ export async function seriesMensaisNoBanco(escopo: EscopoSql, dataReferencia: Da
        WHERE t."companyId" = ${escopo.companyId}
          AND t.cancelado = false
          AND t.natureza = 'RECEBER'
+         AND ${semProvisaoFuturaSql("t")}
          AND ${competenciaSql("t")} >= ${primeiroMes}
          AND ${competenciaSql("t")} <= ${fim}
          ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}

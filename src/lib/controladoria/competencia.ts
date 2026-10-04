@@ -43,3 +43,43 @@ export function dataDeCompetencia(titulo: { dataEmissao: Date | null; dataVencim
 // critério enquanto a tela diz outro é como se perde a confiança num relatório.
 export const CRITERIO_COMPETENCIA =
   "Competência pela DATA DE EMISSÃO do título — é o critério que bate com a declaração de faturamento da contabilidade.";
+
+// SEM AS PROVISÕES FUTURAS NO RESULTADO (decisão de 04/10/2026).
+//
+// No regime de competência, o título continua no mês da EMISSÃO, mas o
+// título A VENCER — em aberto, com vencimento de hoje em diante — fica fora
+// do resultado (DRE e sua planilha de conferência, análise de custos e base
+// de custos do simulador). Entram o pago/recebido (`liquidado`) e o EM ATRASO: atraso é
+// custo ou receita que já devia ter acontecido. Em setembro/2026, os PJs do
+// apoio administrativo tinham o pagamento do mês seguinte lançado como a
+// vencer ao lado do pago, e somar a provisão dobrava o custo do mês.
+//
+// O preço disso, dito na tela: o mês corrente aparece com a receita que
+// ainda vai vencer de fora. Quem precisa do que está EM ABERTO — mês em
+// formação, previsão de caixa, aging, conferência fiscal e de CT-e, auditoria
+// — continua lendo todos os títulos, e também a composição por categoria e os
+// cartões do painel, que mostram o mês inteiro como a Omie o tem.
+//
+// "Hoje" é o início do dia em que a leitura roda, o mesmo para a soma no
+// banco e a montagem em memória (o teste diferencial exige as duas iguais).
+// Os testes fixam o "hoje" (a base de teste tem datas fixas; sem isso, um
+// título que vence em 10/10/2026 mudaria de lado conforme o dia em que o teste
+// roda).
+let hojeFixo: Date | null = null;
+export function fixarHojeParaTeste(d: Date | null): void {
+  hojeFixo = d;
+}
+
+export function inicioDeHoje(agora = hojeFixo ?? new Date()): Date {
+  return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0, 0);
+}
+
+export function semProvisaoFuturaSql(alias = "t", hoje = inicioDeHoje()): Prisma.Sql {
+  return Prisma.sql`(${Prisma.raw(`${alias}.liquidado`)} = true OR ${Prisma.raw(`${alias}."dataVencimento"`)} < ${hoje})`;
+}
+
+export function naoEhProvisaoFutura(titulo: { liquidado: boolean; dataVencimento: Date }, hoje = inicioDeHoje()): boolean {
+  return titulo.liquidado === true || titulo.dataVencimento < hoje;
+}
+
+export const CRITERIO_SEM_PROVISAO = "Sem as provisões futuras: título em aberto com vencimento de hoje em diante fica fora até ser pago; pagos e em atraso entram.";

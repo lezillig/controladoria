@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
-import { competenciaSql } from "@/lib/controladoria/competencia";
+import { competenciaSql, semProvisaoFuturaSql } from "@/lib/controladoria/competencia";
 import { categoriaSql, ehCorporativoSql, filtroConexaoTitulo, naJanela, type EscopoSql } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE, RETENCOES_ZERADAS, montarDreDeInsumos, type Retencoes } from "@/lib/controladoria/dre";
 import { categoriasDoEscopo, movimentoPorCategoria, retencoes } from "@/lib/controladoria/dreNoBanco";
@@ -898,6 +898,7 @@ export async function carregarDreDosMeses(companyId: string, conexaoId: string |
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
+         AND ${semProvisaoFuturaSql("t")}
          AND ${competenciaSql("t")} >= ${inicio}
          AND ${competenciaSql("t")} <= ${fim}
          ${filtroConexaoTitulo(conexaoId, companyId)}

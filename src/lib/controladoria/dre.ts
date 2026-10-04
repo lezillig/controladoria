@@ -1,7 +1,7 @@
 import { categoriasEmColisao, categoriasPorChave, chaveDaCategoria, classificacaoDaChave, partesDaChave } from "./chaveCategoria";
 import type { Periodo } from "./periodos";
 import { dentro } from "./periodos";
-import { dataDeCompetencia } from "./competencia";
+import { dataDeCompetencia, naoEhProvisaoFutura } from "./competencia";
 import { titulosAtivos, somar } from "./agents/comum";
 import { entraNoResultado } from "./intercompany";
 import type { ContextoAuditoria } from "./types";
@@ -492,7 +492,7 @@ function retencoesDoPeriodo(
               };
             });
         })()
-      : titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo) && fica(t));
+      : titulosAtivos(ctx, "RECEBER").filter((t) => dentro(dataDeCompetencia(t), periodo) && naoEhProvisaoFutura(t) && fica(t));
   const soma = (campo: (t: (typeof receber)[number]) => number) => somar(receber, campo);
 
   const issCents = soma((t) => t.retencaoIssCents);
@@ -652,7 +652,7 @@ export function insumosDoContexto(
 
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
       for (const t of titulosAtivos(ctx, natureza)) {
-        if (!dentro(dataDeCompetencia(t), p) || !fica(t)) continue;
+        if (!dentro(dataDeCompetencia(t), p) || !naoEhProvisaoFutura(t) || !fica(t)) continue;
         const chave = chaveDe(t);
         mapa.set(chave, (mapa.get(chave) ?? 0) + t.valorDocumentoCents);
         if (ehCorporativo(t)) corp.set(chave, (corp.get(chave) ?? 0) + t.valorDocumentoCents);
@@ -714,7 +714,7 @@ export function insumosDoContexto(
   } else {
     for (const natureza of ["RECEBER", "PAGAR"] as const) {
     for (const t of titulosAtivos(ctx, natureza)) {
-      if (!dentro(dataDeCompetencia(t), periodo) || !fica(t)) continue;
+      if (!dentro(dataDeCompetencia(t), periodo) || !naoEhProvisaoFutura(t) || !fica(t)) continue;
       const chave = chaveDe(t);
       const lista = titulosPorCategoria.get(chave) ?? [];
       lista.push({

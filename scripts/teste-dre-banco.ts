@@ -59,6 +59,11 @@ async function limpar() {
 }
 
 async function principal() {
+  // O "hoje" da regra das provisões futuras (competencia.ts) fica fixo e
+  // DEPOIS de todo vencimento da base: os casos abaixo não dependem do dia em
+  // que o teste roda. A regra tem caso próprio, com o "hoje" na referência.
+  const { fixarHojeParaTeste } = await import("../src/lib/controladoria/competencia");
+  fixarHojeParaTeste(new Date(2027, 0, 1));
   const { carregarContexto } = await import("../src/lib/controladoria/contexto");
   const { montarDre, montarDreAnual, LINHAS_DRE } = await import("../src/lib/controladoria/dre");
   const LINHAS_DRE_ROTULOS: string[] = LINHAS_DRE.map((l) => l.rotulo);
@@ -416,6 +421,16 @@ async function principal() {
 
       if (!conexaoId) {
         conferir("grupo: receita da MCZ contra a Azul não é receita", item(dre, "R1"), 900_100 + 450_200);
+        // PROVISÕES FUTURAS FORA: com o "hoje" na referência (22/09), A1
+        // (900_100, a receber, vence em 10/10) é a vencer e sai; A2 (pago)
+        // fica. Memória e banco iguais com o mesmo "hoje".
+        fixarHojeParaTeste(REFERENCIA);
+        const dreHoje = await montarDreNoBanco(escopo, mes, janelas.mesAnterior, classificacoes, { regime: "competencia" });
+        conferir("provisão futura fora: R1 só com o pago", item(dreHoje, "R1"), 450_200);
+        const { montarDre: montarDreMemoria } = await import("../src/lib/controladoria/dre");
+        const memoriaHoje = montarDreMemoria(ctx, mes, janelas.mesAnterior, classificacoes, { regime: "competencia" });
+        conferir("provisão futura fora: memória igual ao banco", item(memoriaHoje as unknown as typeof dre, "R1"), 450_200);
+        fixarHojeParaTeste(new Date(2027, 0, 1));
         conferir("grupo: pagamento da Azul à MCZ não é custo", item(dre, "D1@AZ"), 310_300 - 15_800);
         // No caixa até o dia 22: A3 (18/09); o estorno A9 é baixado dia 24.
         conferir("grupo: nem no caixa", item(dreCaixa, "D1@AZ"), 310_300);

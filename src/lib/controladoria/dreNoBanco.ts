@@ -2,7 +2,7 @@ import { categoriasEmColisao, categoriasPorChave, descreverColisoes } from "./ch
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
-import { competenciaSql } from "./competencia";
+import { competenciaSql, semProvisaoFuturaSql } from "./competencia";
 import {
   categoriaSql,
   ehCorporativoSql,
@@ -138,6 +138,7 @@ async function somaPorCategoriaCompetencia(escopo: EscopoDre, periodo: Periodo):
       FROM ${tabela("OmieTitulo")} t
      WHERE t."companyId" = ${escopo.companyId}
        AND t.cancelado = false
+       AND ${semProvisaoFuturaSql("t")}
        AND ${competenciaSql("t")} >= ${periodo.inicio}
        AND ${competenciaSql("t")} <= ${periodo.fim}
        ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
@@ -203,6 +204,7 @@ export async function intercompanyEliminado(
             FROM ${tabela("OmieTitulo")} t
            WHERE t."companyId" = ${escopo.companyId}
              AND t.cancelado = false
+             AND ${semProvisaoFuturaSql("t")}
              AND ${competenciaSql("t")} >= ${periodo.inicio}
              AND ${competenciaSql("t")} <= ${periodo.fim}
              AND ${ehInterna}
@@ -264,6 +266,7 @@ async function retencoesCompetencia(escopo: EscopoDre, periodo: Periodo): Promis
      WHERE t."companyId" = ${escopo.companyId}
        AND t.cancelado = false
        AND t.natureza = 'RECEBER'
+       AND ${semProvisaoFuturaSql("t")}
        AND ${competenciaSql("t")} >= ${periodo.inicio}
        AND ${competenciaSql("t")} <= ${periodo.fim}
        ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
@@ -354,6 +357,7 @@ async function drillCompetencia(escopo: EscopoDre, periodo: Periodo) {
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${escopo.companyId}
          AND t.cancelado = false
+         AND ${semProvisaoFuturaSql("t")}
          AND ${competenciaSql("t")} >= ${periodo.inicio}
          AND ${competenciaSql("t")} <= ${periodo.fim}
          ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
@@ -459,6 +463,7 @@ export async function titulosDaConferencia(escopo: EscopoDre, periodo: Periodo, 
             FROM ${tabela("OmieTitulo")} t
            WHERE t."companyId" = ${escopo.companyId}
              AND t.cancelado = false
+             AND ${semProvisaoFuturaSql("t")}
              AND ${competenciaSql("t")} >= ${periodo.inicio}
              AND ${competenciaSql("t")} <= ${periodo.fim}
              ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
@@ -671,6 +676,7 @@ async function somaPorCategoriaPorMes(
             FROM ${tabela("OmieTitulo")} t
            WHERE t."companyId" = ${escopo.companyId}
              AND t.cancelado = false
+             AND ${semProvisaoFuturaSql("t")}
              AND ${competenciaSql("t")} >= ${inicio}
              AND ${competenciaSql("t")} <= ${fim}
              ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
@@ -890,6 +896,7 @@ export async function pessoasCorporativoPorCentroDeCusto(
             ${departamento}
            WHERE t."companyId" = ${escopo.companyId}
              AND t.cancelado = false
+             AND ${semProvisaoFuturaSql("t")}
              AND ${competenciaSql("t")} >= ${desde}
              AND ${competenciaSql("t")} <= ${ate}
              AND ${ehCorporativoSql(escopo.companyId)}
@@ -976,6 +983,7 @@ export async function receitaBrutaPorDocumento(
             FROM ${tabela("OmieTitulo")} t
            WHERE t."companyId" = ${escopo.companyId}
              AND t.cancelado = false
+             AND ${semProvisaoFuturaSql("t")}
              AND ${competenciaSql("t")} >= ${desde}
              AND ${competenciaSql("t")} <= ${ate}
              AND ${categoriaSql()} IN (${Prisma.join(chaves)})

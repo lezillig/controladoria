@@ -6,7 +6,7 @@ import { entraNoResultado } from "./intercompany";
 import type { ContextoAuditoria } from "./types";
 // Custo POR MÊS é competência: a despesa pertence ao mês em que foi incorrida,
 // não ao mês em que a fatura vence. Ver competencia.ts.
-import { dataDeCompetencia } from "./competencia";
+import { dataDeCompetencia, naoEhProvisaoFutura } from "./competencia";
 
 // ESTRATÉGIA DE REDUÇÃO DE CUSTO — onde cortar, e por quê.
 //
@@ -162,7 +162,7 @@ function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
   const porCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "PAGAR")) {
     const competencia = dataDeCompetencia(t);
-    if (competencia < primeiroMes || competencia > fim || !fica(t)) continue;
+    if (competencia < primeiroMes || competencia > fim || !naoEhProvisaoFutura(t) || !fica(t)) continue;
     const categoria = chaveDaCategoria(t.categoriaCodigo, t.conexaoApelido, colisoes);
     const mes = chaveMes(competencia);
     const serie = porCategoria.get(categoria) ?? new Map<string, number>();
@@ -173,7 +173,7 @@ function seriesMensais(ctx: ContextoAuditoria): SeriesDeCusto {
   const receitaPorCategoria = new Map<string, Map<string, number>>();
   for (const t of titulosAtivos(ctx, "RECEBER")) {
     const competencia = dataDeCompetencia(t);
-    if (competencia < primeiroMes || competencia > fim || !fica(t)) continue;
+    if (competencia < primeiroMes || competencia > fim || !naoEhProvisaoFutura(t) || !fica(t)) continue;
     const categoria = chaveDaCategoria(t.categoriaCodigo, t.conexaoApelido, colisoes);
     const mes = chaveMes(competencia);
     const serie = receitaPorCategoria.get(categoria) ?? new Map<string, number>();
