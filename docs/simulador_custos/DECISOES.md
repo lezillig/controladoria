@@ -337,9 +337,16 @@ R$ 330 mil a R$ 770 mil por mês. No lugar dela entra o **pró-labore fixo**
 Parcelamento Simplificado", "1734 - Parcelamento da Dívida Ativa"),
 empréstimos ("Devolução Empréstimo", "Pagamento de Empréstimos"), "Baixa 100%
 de Desconto" e "Desconto de Baixa de Título" ficam **sempre** fora da
-administração, junto do que o campo `categorias_fora_adm` disser. Na
-composição do grupo de out/25 a set/26, a administração caiu de 14,7% para
-9,1% da receita — de 29,8% para 16,6% do custo direto. A folha da oficina continua na administração.
+administração, junto do que o campo `categorias_fora_adm` disser. Em
+04/10/2026 entraram na mesma lista, por estarem em "despesas gerais" sem ser
+estrutura: blindagem, adesivos, rastreador e comissão na venda de veículo
+(custo do veículo), pagamentos incorretos e adiantamento a fornecedor (não
+são despesa), PCC 5952 (tributo retido), seguro-garantia (já cobrado sobre o
+preço), Uber (deslocamento de motorista) e PLR (benefício do motorista; a da
+folha corporativa continua). Na composição do grupo de out/25 a set/26, a
+administração caiu de 14,7% para 8,2% da receita — de 29,8% para 14,7% do
+custo direto. Advogados ficam fora (decisão da diretoria); a oficina entra
+pela folha da MCZ. A folha da oficina continua na administração.
 
 **Seguro de vida e carro.** O seguro de vida da Azul (R$ 15 por pessoa/mês)
 entra nos benefícios padrão; vale-transporte fica zero (por estudo). O carro

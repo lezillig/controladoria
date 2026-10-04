@@ -53,8 +53,31 @@ export const CATEGORIAS_FORA_PADRAO = "Compra de Serviços";
 // estrutura que um contrato novo deva carregar. Também (mesma data):
 // empréstimo ("Devolução Empréstimo", "Pagamento de Empréstimos", "Empréstimo
 // · MCZ", R$ 90 mil/mês no grupo) é financiamento, e "Desconto de Baixa de
-// Título" é ajuste, como a baixa 100%.
-export const CATEGORIAS_SEMPRE_FORA = ["Parcelamento", "Baixa 100% de Desconto", "Empréstimo", "Desconto de Baixa"] as const;
+// Título" é ajuste, como a baixa 100%. E (04/10/2026), em "despesas gerais":
+// custo de veículo que o estudo já calcula (blindagem, adesivos, rastreador,
+// comissão na venda de veículo); acertos e adiantamentos, que não são despesa
+// (pagamento incorreto, adiantamento a fornecedor); tributo retido (PCC
+// 5952); o seguro-garantia, que o estudo já cobra sobre o preço; Uber/táxi,
+// deslocamento de motorista; e PLR, que o estudo cobra no benefício do
+// motorista. A PLR da folha corporativa continua (a exclusão nunca toca a
+// linha "pessoas — corporativo").
+export const CATEGORIAS_SEMPRE_FORA = [
+  "Parcelamento",
+  "Baixa 100% de Desconto",
+  "Empréstimo",
+  "Desconto de Baixa",
+  "Blindagem",
+  "Adesivos",
+  "Rastreador",
+  "Comissão sobre Venda de Veículo",
+  "Pagamento Incorreto",
+  "Pagamentos Incorretos",
+  "Adiantamento a Fornecedor",
+  "PCC - 5952",
+  "Seguro Garantia",
+  "Uber",
+  "PLR",
+] as const;
 // PRÓ-LABORE DOS SÓCIOS: valor fixo por mês na administração central, no
 // lugar das "Despesas com sócios" do DRE (que ficam fora — ver abaixo). O
 // padrão é o informado pela diretoria; a base de custos muda.

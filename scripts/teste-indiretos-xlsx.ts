@@ -96,9 +96,10 @@ async function principal() {
     perto("despesas com sócios do DRE não entram", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000], [CHAVE_PRO_LABORE, 0], ["socios", 700_000]]), x(10_000 / 2_000_000), 1e-9);
     ok("padrão de R$ 180 mil", PRO_LABORE_PADRAO === 180_000);
     const fora = comSempreFora(["Compra de Serviços"]);
-    ok("parcelamentos e baixas 100% sempre fora, junto do que a base diz", fora.join("|") === "Compra de Serviços|Parcelamento|Baixa 100% de Desconto|Empréstimo|Desconto de Baixa", fora.join("|"));
-    ok("campo da base em branco: continuam fora", comSempreFora([]).length === 4);
-    ok("sem repetir o que a base já tem", comSempreFora(["parcelamento"]).length === 4);
+    ok("os sempre fora vêm junto do que a base diz", fora[0] === "Compra de Serviços" && ["Parcelamento", "Empréstimo", "Uber", "PLR", "Seguro Garantia", "PCC - 5952"].every((x) => fora.includes(x)), fora.join("|"));
+    const sempre = comSempreFora([]).length;
+    ok("campo da base em branco: continuam fora", sempre === 15, String(sempre));
+    ok("sem repetir o que a base já tem", comSempreFora(["parcelamento"]).length === sempre);
   }
 
   const soffice = ["soffice", "libreoffice"].find((c) => {
