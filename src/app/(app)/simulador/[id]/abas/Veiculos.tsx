@@ -153,7 +153,7 @@ export default function Veiculos({
                     onChange={(ev) =>
                       alterar((e) => {
                         const x = e.premissas.perfis![k];
-                        e.premissas.perfis![k] = trocarEnergia(x, ev.target.value as FonteEnergia, precosEnergia, e.premissas.variaveis.arlaKm);
+                        e.premissas.perfis![k] = trocarEnergia(x, ev.target.value as FonteEnergia, precosEnergia, e.premissas.variaveis.arlaKm, e.premissas.variaveis.oleoLavagemKm);
                       })
                     }
                   >

@@ -32,8 +32,12 @@ ok("elétrico: preço por kWh", perto(vanEletrica.variaveis.dieselLitro, PRECO_E
 ok("elétrico: sem ARLA", vanEletrica.variaveis.arlaKm === 0);
 ok("elétrico: consumo em km/kWh da categoria", perto(vanEletrica.variaveis.consumoAsfaltoKmL, 3.3));
 ok("original não muda", van.energia === "DIESEL" && van.variaveis.arlaKm > 0);
-const deVolta = trocarEnergia(vanEletrica, "DIESEL", PRECO_ENERGIA_PADRAO, 0.04);
+ok("elétrico: sem troca de óleo (só lavagem, R$ 0,02/km)", perto(vanEletrica.variaveis.oleoLavagemKm, 0.02));
+ok("elétrico: manutenção sem óleo, filtros, embreagem (70%)", perto(vanEletrica.variaveis.manutencaoAsfaltoKm, van.variaveis.manutencaoAsfaltoKm * 0.7) && perto(vanEletrica.variaveis.manutencaoTerraKm, van.variaveis.manutencaoTerraKm * 0.7));
+ok("pneus continuam", perto(vanEletrica.variaveis.pneusAsfaltoKm, van.variaveis.pneusAsfaltoKm));
+const deVolta = trocarEnergia(vanEletrica, "DIESEL", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
 ok("de volta ao diesel: ARLA volta", perto(deVolta.variaveis.arlaKm, 0.04));
+ok("de volta ao diesel: óleo e manutenção a combustão voltam", perto(deVolta.variaveis.oleoLavagemKm, 0.06) && perto(deVolta.variaveis.manutencaoAsfaltoKm, van.variaveis.manutencaoAsfaltoKm));
 
 console.log("\nFrota da base");
 const base: BaseVigente = {
@@ -48,6 +52,7 @@ ok("modelo elétrico da base vira perfil elétrico", daBase.energia === "ELETRIC
 ok("tarifa da recarga vem da base", perto(daBase.variaveis.dieselLitro, 0.82));
 ok("consumo da frota em km/kWh", perto(daBase.variaveis.consumoAsfaltoKmL, 3.1));
 ok("sem ARLA", daBase.variaveis.arlaKm === 0);
+ok("sem troca de óleo e com a manutenção do elétrico", perto(daBase.variaveis.oleoLavagemKm, 0.02) && perto(daBase.variaveis.manutencaoAsfaltoKm, van.variaveis.manutencaoAsfaltoKm * 0.7));
 
 console.log("\nCusto real não se aplica ao elétrico");
 const r = aplicarIndicadores(historicoSaoJoseDosPinhais().entrada.premissas, [vanEletrica, van], [

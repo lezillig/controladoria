@@ -37,6 +37,10 @@ conferir("rota do item 1: km, km/dia em 22 dias, motoristas pelo tipo", [quatro.
 conferir("sem tipo na linha: o principal do estudo", quatro.rotas[1].perfilVeiculo, "VAN");
 const locacao = itensIniciais({ nome: "L", tipoServico: "LOCACAO_SM", itens: [{ descricao: "a", km: 1000, veiculos: 2 }] });
 conferir("locação sem motorista: item e rota sem motoristas", [locacao.itens[0].comMotorista, locacao.rotas[0].motoristas], [false, 0]);
+const franquia = itensIniciais({ nome: "L", tipoServico: "LOCACAO_SM", itens: [{ descricao: "carro", km: null, veiculos: 1 }] });
+conferir("locação sem km informado: nasce com a franquia de 2.000 km/mês", franquia.rotas.map((r) => r.kmReferencia), [2000]);
+const semFranquia = itensIniciais({ nome: "F", tipoServico: "FRETAMENTO", itens: [{ descricao: "linha", km: null, veiculos: 1 }] });
+conferir("com motorista e sem km: sem rota (como antes)", semFranquia.rotas.length, 0);
 
 console.log("\nPERFIL DAS ROTAS NOVAS");
 const rotaBase = historicoSaoJoseDosPinhais().entrada.rotas[0];

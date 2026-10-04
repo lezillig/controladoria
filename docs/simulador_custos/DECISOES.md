@@ -498,6 +498,27 @@ veículo). A volta entra pelo desfazer como qualquer edição e só grava ao
 salvar a versão. Testes: `teste:itens` (VOLTAR À BASE) e
 `teste:simulador-banco`.
 
+## 7.6 Capital sobre o valor médio, locação sem motorista e elétrico
+
+- **Remunerar só o valor não depreciado** passa a ser o padrão de todo estudo
+  novo (`remuneracaoSobreValorMedio: true`): o capital rende sobre o valor
+  médio do veículo nos anos do contrato (GEIPOT), não sobre o valor cheio —
+  a depreciação devolve o capital ao longo do contrato.
+- **Locação sem motorista** (tipo de serviço LOCACAO_SM) nasce com reserva
+  técnica 0, km improdutivo 0, utilização 100%, capital sobre o valor médio e
+  administração central reduzida: o parâmetro `adm_pct_locacao` da base
+  (Custos base → Regras), padrão **4% do custo direto**, no lugar do rateio —
+  locação não tem equipe, escala nem supervisão. Item sem km informado nasce
+  com a franquia de **2.000 km/mês**.
+- **Elétrico** não tem troca de óleo e filtros, ARLA, embreagem, correia nem
+  escapamento, e o freio regenerativo poupa pastilhas: óleo e lavagem vira só
+  lavagem (R$ 0,02/km) e a manutenção por km fica em 70% da do mesmo tipo a
+  combustão. Vale ao trocar a energia na aba Veículos e para os modelos
+  elétricos da base (a manutenção da base, quando informada, prevalece).
+  Voltar para a combustão devolve óleo e manutenção.
+
+Testes: `teste:energia`, `teste:itens`, `teste:simulador-banco`.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

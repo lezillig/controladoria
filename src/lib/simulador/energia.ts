@@ -32,11 +32,31 @@ export function energiaDoTexto(texto: string | null | undefined): FonteEnergia |
 
 export const energiaDoPerfil = (p: PerfilVeiculo): FonteEnergia => p.energia ?? "DIESEL";
 
+// O QUE O ELÉTRICO NÃO TEM: troca de óleo e filtros, ARLA, embreagem, correia,
+// velas e escapamento; o freio regenerativo poupa pastilhas e discos. Óleo e
+// lavagem vira só lavagem e consumíveis; a manutenção por km perde a parte
+// desses itens. ESTIMATIVAS (out/2026), ajustáveis no tipo de veículo.
+export const OLEO_LAVAGEM_ELETRICO_KM = 0.02;
+export const FATOR_MANUTENCAO_ELETRICO = 0.7;
+
+const arredondar = (v: number) => Number(v.toFixed(4));
+
+// Tira do tipo elétrico o que ele não tem (sobre os valores a combustão).
+export function semOQueOEletricoNaoTem(v: PerfilVeiculo["variaveis"]): PerfilVeiculo["variaveis"] {
+  return {
+    ...v,
+    arlaKm: 0,
+    oleoLavagemKm: Math.min(v.oleoLavagemKm, OLEO_LAVAGEM_ELETRICO_KM),
+    manutencaoAsfaltoKm: arredondar(v.manutencaoAsfaltoKm * FATOR_MANUTENCAO_ELETRICO),
+    manutencaoTerraKm: arredondar(v.manutencaoTerraKm * FATOR_MANUTENCAO_ELETRICO),
+  };
+}
+
 // Trocar a energia de um tipo de veículo: o preço passa a ser o da nova fonte;
-// ARLA só existe no diesel; no elétrico, o consumo vira km/kWh da categoria.
-// O que a pessoa já tinha ajustado em manutenção, pneus e óleo fica — ela
-// decide se o elétrico gasta menos ali.
-export function trocarEnergia(p: PerfilVeiculo, energia: FonteEnergia, precos: Record<FonteEnergia, number>, arlaDiesel: number): PerfilVeiculo {
+// ARLA só existe no diesel; no elétrico, o consumo vira km/kWh da categoria e
+// sai o que o elétrico não tem (óleo, filtros, parte da manutenção). Voltar
+// do elétrico para a combustão devolve o óleo e a manutenção a combustão.
+export function trocarEnergia(p: PerfilVeiculo, energia: FonteEnergia, precos: Record<FonteEnergia, number>, arlaDiesel: number, oleoCombustao?: number): PerfilVeiculo {
   const novo = structuredClone(p);
   const antes = energiaDoPerfil(p);
   novo.energia = energia;
@@ -44,8 +64,14 @@ export function trocarEnergia(p: PerfilVeiculo, energia: FonteEnergia, precos: R
   novo.variaveis.arlaKm = energia === "DIESEL" ? (antes === "DIESEL" ? p.variaveis.arlaKm : arlaDiesel) : 0;
   if (energia === "ELETRICO" && antes !== "ELETRICO") {
     const km = CONSUMO_ELETRICO_PADRAO[CATEGORIA_DO_TIPO[p.tipo]];
+    novo.variaveis = semOQueOEletricoNaoTem(novo.variaveis);
     novo.variaveis.consumoAsfaltoKmL = km;
     novo.variaveis.consumoTerraKmL = Number((km * 0.85).toFixed(2));
+  }
+  if (antes === "ELETRICO" && energia !== "ELETRICO") {
+    if (oleoCombustao !== undefined) novo.variaveis.oleoLavagemKm = oleoCombustao;
+    novo.variaveis.manutencaoAsfaltoKm = arredondar(p.variaveis.manutencaoAsfaltoKm / FATOR_MANUTENCAO_ELETRICO);
+    novo.variaveis.manutencaoTerraKm = arredondar(p.variaveis.manutencaoTerraKm / FATOR_MANUTENCAO_ELETRICO);
   }
   return novo;
 }

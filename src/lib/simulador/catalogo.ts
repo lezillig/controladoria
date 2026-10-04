@@ -121,6 +121,7 @@ export const CATALOGO_PARAMETROS: DefinicaoParametro[] = [
   p("REGRA_AZUL", "margem_alvo", "Margem líquida alvo", "pct"),
   p("REGRA_AZUL", "contingencia_pct", "Contingência/risco padrão", "pct"),
   p("REGRA_AZUL", "adm_pct", "Administração central padrão", "pct", false),
+  p("REGRA_AZUL", "adm_pct_locacao", "Administração central — locação sem motorista", "pct", false),
   p("REGRA_AZUL", "passo_lance", "Passo mínimo de lance", "texto", false),
   p("REGRA_AZUL", "reserva_tecnica", "Reserva técnica — van / micro / ônibus", "texto"),
   p("REGRA_AZUL", "idade_max", "Idade máxima de veículo", "numero"),

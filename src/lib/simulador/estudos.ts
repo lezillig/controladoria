@@ -8,6 +8,7 @@ import { precoDoConjunto } from "./decisao";
 import { baseVigente, paraNumero, type BaseVigente } from "./baseDeCustos";
 import { PERFIS_PADRAO, perfisDaBase, premissasDaBase, problemasNasPremissas, regrasDeCapitalNosPerfis, type MapaOrigem } from "./premissas";
 import { simulacoesHistoricas, FONTE_HISTORICO } from "./historico";
+import { normalizarPct } from "./catalogo";
 import type { CriterioJulgamento, EntradaSimulacao, Item, PerfilVeiculo, Premissas, ResultadoSimulacao, Rota, TipoVeiculo, UnidadePreco } from "./tipos";
 import type { RealizadoMes } from "./calibracao";
 
@@ -103,6 +104,14 @@ export type ItemNovo = {
   horarioFim?: string | null;
 };
 
+// LOCAÇÃO SEM MOTORISTA — o que o estudo novo já traz: o carro fica com o
+// cliente (sem km improdutivo, sem reserva técnica — a substituição sai da
+// frota), o capital rende sobre o valor médio no contrato, a administração
+// central é a reduzida da base (sem equipe, escala nem supervisão; padrão 4%
+// do custo direto) e o item sem km informado nasce com a franquia mensal.
+export const ADM_LOCACAO_PADRAO = 0.04;
+export const FRANQUIA_LOCACAO_KM = 2000;
+
 // Dias de referência para o km por dia da rota inicial: 22 no mês, 200 no
 // ano letivo (escolar, contrato por período). A pessoa ajusta na Operação.
 const DIAS_ROTA_INICIAL = { MENSAL: 22, PERIODO: 200 } as const;
@@ -128,7 +137,7 @@ export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | 
   // horário da operação — o resto se ajusta na aba Operação.
   const rotas = lista.flatMap((i, k) => {
     const jornada = jornadaDoHorario(i.horarioInicio, i.horarioFim);
-    const km = i.km && i.km > 0 ? i.km : 0;
+    const km = i.km && i.km > 0 ? i.km : !comMotorista && i.administrativo !== true ? FRANQUIA_LOCACAO_KM : 0;
     if (km === 0 && i.administrativo !== true && !jornada) return [];
     const tipo = i.tipoVeiculo ?? dados.tiposVeiculo?.[0] ?? null;
     const veiculos = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;
@@ -475,10 +484,30 @@ export function premissasNovasDoEstudo(
     premissas.pessoal.horaExtraPct = 0;
     origem["pessoal.horaExtraPct"] = { origem: "PADRAO", fonte: "CCT TRANSFRETUR × SINDIFRETUR 2026/2028, cláusula 9ª", detalhe: "o prêmio da viagem compensa horas extras e adicional noturno" };
   }
+  if (estudo.tipoServico === "LOCACAO_SM") {
+    const regra = (caminho: string, detalhe: string) => (origem[caminho] = { origem: "PADRAO", fonte: "regra da locação sem motorista", detalhe });
+    premissas.contrato.reservaTecnicaPct = 0;
+    regra("contrato.reservaTecnicaPct", "a substituição do carro sai da frota da empresa");
+    premissas.contrato.kmMortoPct = 0;
+    regra("contrato.kmMortoPct", "o carro fica com o cliente: não há km improdutivo da empresa");
+    premissas.contrato.utilizacao = 1;
+    regra("contrato.utilizacao", "a franquia de km é paga inteira");
+    premissas.veiculo.remuneracaoSobreValorMedio = true;
+    regra("veiculo.remuneracaoSobreValorMedio", "o capital rende sobre o valor médio do carro no contrato");
+    const adm = baseCarregada?.parametros.get("adm_pct_locacao")?.valor;
+    if (adm !== null && adm !== undefined) {
+      premissas.indiretos.administracaoPct = normalizarPct(adm);
+      origem["indiretos.administracaoPct"] = { origem: "BASE", fonte: "base Azul Mob", detalhe: "adm_pct_locacao" };
+    } else {
+      premissas.indiretos.administracaoPct = ADM_LOCACAO_PADRAO;
+      regra("indiretos.administracaoPct", "sem equipe, escala nem supervisão: 4% do custo direto (Custos base: Administração central — locação sem motorista)");
+    }
+  }
   if (estudo.vigenciaMeses) premissas.contrato.vigenciaMeses = estudo.vigenciaMeses;
   if (estudo.prazoPagamentoDias) premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
   premissas.perfis = perfisDoEstudo(perfisDaBase(vazia ? null : baseCarregada), estudo.tiposVeiculo as TipoVeiculo[]);
   regrasDeCapitalNosPerfis(premissas, origem);
+  if (estudo.tipoServico === "LOCACAO_SM") for (const perfil of premissas.perfis) perfil.veiculo.remuneracaoSobreValorMedio = true;
   return { premissas, origem, vazia: Boolean(vazia) };
 }
 

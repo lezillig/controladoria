@@ -122,6 +122,16 @@ async function principal() {
   conferir("perfis de veículo da base (a van do Gabarito)", ini.entrada.premissas.perfis?.map((p) => p.tipo), ["VAN"]);
   conferir("vigência do estudo", ini.entrada.premissas.contrato.vigenciaMeses, 24);
   conferir("voltar à base: o destino do estudo novo é a própria premissa inicial", JSON.stringify(ini.daBase?.premissas) === JSON.stringify(ini.entrada.premissas), true);
+  const locId = await estudos.criarEstudo(EMPRESA, { tipo: "LICITACAO", nome: "Locação de carro", tipoServico: "LOCACAO_SM", criterioJulgamento: "ITEM", unidadePreco: "VEICULO_MES", vigenciaMeses: 30, tiposVeiculo: ["CARRO"], itens: [{ descricao: "Carro", km: null, veiculos: 1 }] }, "teste");
+  const loc = await estudos.entradaInicial(EMPRESA, (await estudos.carregarEstudo(EMPRESA, locId))!);
+  const lp = loc.entrada.premissas;
+  conferir(
+    "locação sem motorista: reserva 0, sem km improdutivo, utilização 100%, capital no valor médio, administração 4%",
+    [lp.contrato.reservaTecnicaPct, lp.contrato.kmMortoPct, lp.contrato.utilizacao, lp.veiculo.remuneracaoSobreValorMedio, lp.perfis?.every((p) => p.veiculo.remuneracaoSobreValorMedio), lp.indiretos.administracaoPct, loc.origem["indiretos.administracaoPct"].fonte],
+    [0, 0, 1, true, true, 0.04, "regra da locação sem motorista"]
+  );
+  conferir("locação sem motorista: rota com a franquia de 2.000 km", loc.entrada.rotas.map((r) => r.kmReferencia), [2000]);
+  conferir("estudo com motorista não muda a administração", ini.entrada.premissas.indiretos.administracaoPct !== 0.04, true);
   conferir("voltar à base: estudo com versão também traz a base de hoje", [reaberto.daBase?.premissas.variaveis.dieselLitro, reaberto.daBase?.origem["variaveis.dieselLitro"]?.origem], [6.49, "BASE"]);
   conferir("unidade do estudo", ini.entrada.unidadePreco, "BINOMIA");
   conferir("margens da base", estudos.regrasDeMargem(base), { margemMinima: 0.07, margemAlvo: 0.12 });

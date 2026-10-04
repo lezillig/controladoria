@@ -38,6 +38,7 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   gerais: { como: "Rateio da administração central", unidade: "R$/mês" },
   faturamento_medio: { como: "Divisor do rateio da administração central", unidade: "R$/mês" },
   adm_pct: { caminho: "indiretos.administracaoPct", como: "Administração central, quando não há rateio pelos indiretos" },
+  adm_pct_locacao: { como: "Administração central dos estudos de locação sem motorista (sem equipe, escala nem supervisão), no lugar do rateio", unidadePadrao: "% do custo direto", padrao: 0.04 },
   contingencia_pct: { caminho: "indiretos.contingenciaPct", como: "Contingência sobre o custo direto" },
   margem_alvo: { caminho: "preco.lucroAlvoPct", como: "Lucro líquido alvo do preço" },
   capital_proprio_aa: { caminho: "veiculo.custoCapitalProprioAa", como: "Remuneração do capital da frota (parte própria), em todos os tipos de veículo", unidade: "% a.a." },

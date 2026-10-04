@@ -2,7 +2,7 @@ import { CBS_REFERENCIA_PADRAO, IBS_REFERENCIA_PADRAO } from "./reforma";
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B, VR_TRANSFRETUR_DIA } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
-import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO } from "./energia";
+import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO, semOQueOEletricoNaoTem } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO } from "./indiretosDoDre";
@@ -189,7 +189,7 @@ export const PREMISSAS_PADRAO: Premissas = {
     fracaoFinanciada: 0.8,
     taxaFinanciamentoAa: 0.18,
     custoCapitalProprioAa: 0.12,
-    remuneracaoSobreValorMedio: false,
+    remuneracaoSobreValorMedio: true,
   },
   variaveis: {
     dieselLitro: 6.15,
@@ -635,13 +635,15 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
       },
       energia,
       variaveis: {
-        ...padrao.variaveis,
+        // Elétrico sobre um padrão a combustão: sai o que ele não tem (óleo,
+        // filtros, parte da manutenção). A manutenção da base, quando houver, vale.
+        ...(energia === "ELETRICO" && energiaDoPerfil(padrao) !== "ELETRICO" ? semOQueOEletricoNaoTem(padrao.variaveis) : padrao.variaveis),
         // Preço da energia do modelo (diesel, gasolina, etanol ou kWh), da
         // base quando houver; ARLA só no diesel.
         dieselLitro: base.parametros.get(CHAVE_PRECO_ENERGIA[energia])?.valor ?? (energia === energiaDoPerfil(padrao) ? padrao.variaveis.dieselLitro : PRECO_ENERGIA_PADRAO[energia]),
         arlaKm: energia === "DIESEL" ? padrao.variaveis.arlaKm : 0,
         consumoAsfaltoKmL: n(v, "consumoKmL") ?? (energia === "ELETRICO" && energiaDoPerfil(padrao) !== "ELETRICO" ? CONSUMO_ELETRICO_PADRAO[CATEGORIA_DO_TIPO[tipo]] : padrao.variaveis.consumoAsfaltoKmL),
-        manutencaoAsfaltoKm: n(v, "manutencaoKm") ?? padrao.variaveis.manutencaoAsfaltoKm,
+        manutencaoAsfaltoKm: n(v, "manutencaoKm") ?? (energia === "ELETRICO" && energiaDoPerfil(padrao) !== "ELETRICO" ? semOQueOEletricoNaoTem(padrao.variaveis).manutencaoAsfaltoKm : padrao.variaveis.manutencaoAsfaltoKm),
         pneusAsfaltoKm: qtde && preco && vidaPneu ? (qtde * preco) / vidaPneu : padrao.variaveis.pneusAsfaltoKm,
       },
     };
