@@ -34,10 +34,10 @@ ok("elétrico: consumo em km/kWh da categoria", perto(vanEletrica.variaveis.cons
 ok("original não muda", van.energia === "DIESEL" && van.variaveis.arlaKm > 0);
 ok("elétrico: sem troca de óleo (só lavagem, R$ 0,02/km)", perto(vanEletrica.variaveis.oleoLavagemKm, 0.02));
 ok("elétrico: manutenção sem óleo, filtros, embreagem (70%)", perto(vanEletrica.variaveis.manutencaoAsfaltoKm, van.variaveis.manutencaoAsfaltoKm * 0.7) && perto(vanEletrica.variaveis.manutencaoTerraKm, van.variaveis.manutencaoTerraKm * 0.7));
-ok("pneus continuam", perto(vanEletrica.variaveis.pneusAsfaltoKm, van.variaveis.pneusAsfaltoKm));
+ok("elétrico: pneus gastam 20% a mais (peso e torque)", perto(vanEletrica.variaveis.pneusAsfaltoKm, van.variaveis.pneusAsfaltoKm * 1.2));
 const deVolta = trocarEnergia(vanEletrica, "DIESEL", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
 ok("de volta ao diesel: ARLA volta", perto(deVolta.variaveis.arlaKm, 0.04));
-ok("de volta ao diesel: óleo e manutenção a combustão voltam", perto(deVolta.variaveis.oleoLavagemKm, 0.06) && perto(deVolta.variaveis.manutencaoAsfaltoKm, van.variaveis.manutencaoAsfaltoKm));
+ok("de volta ao diesel: óleo, manutenção e pneus a combustão voltam", perto(deVolta.variaveis.oleoLavagemKm, 0.06) && perto(deVolta.variaveis.manutencaoAsfaltoKm, van.variaveis.manutencaoAsfaltoKm) && perto(deVolta.variaveis.pneusAsfaltoKm, van.variaveis.pneusAsfaltoKm));
 
 console.log("\nFrota da base");
 const base: BaseVigente = {
@@ -60,7 +60,7 @@ const carro = PERFIS_PADRAO.find((p) => p.tipo === "CARRO")!;
 const carroHibrido = trocarEnergia(carro, "HIBRIDO", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
 ok("carro híbrido: gasolina, sem ARLA", perto(carroHibrido.variaveis.dieselLitro, PRECO_ENERGIA_PADRAO.GASOLINA) && carroHibrido.variaveis.arlaKm === 0);
 ok("carro híbrido: rende 45% a mais por litro", perto(carroHibrido.variaveis.consumoAsfaltoKmL, carro.variaveis.consumoAsfaltoKmL * 1.45));
-ok("carro híbrido: óleo continua, freio gasta menos (90%)", perto(carroHibrido.variaveis.oleoLavagemKm, carro.variaveis.oleoLavagemKm) && perto(carroHibrido.variaveis.manutencaoAsfaltoKm, carro.variaveis.manutencaoAsfaltoKm * 0.9));
+ok("carro híbrido: óleo continua, manutenção de dois sistemas (+35%)", perto(carroHibrido.variaveis.oleoLavagemKm, carro.variaveis.oleoLavagemKm) && perto(carroHibrido.variaveis.manutencaoAsfaltoKm, carro.variaveis.manutencaoAsfaltoKm * 1.35));
 const vanHibrida = trocarEnergia(van, "HIBRIDO", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
 ok("van híbrida: diesel, com ARLA, 20% a mais por litro", perto(vanHibrida.variaveis.dieselLitro, PRECO_ENERGIA_PADRAO.DIESEL) && vanHibrida.variaveis.arlaKm > 0 && perto(vanHibrida.variaveis.consumoAsfaltoKmL, van.variaveis.consumoAsfaltoKmL * 1.2));
 const carroDeVolta = trocarEnergia(carroHibrido, "GASOLINA", PRECO_ENERGIA_PADRAO, 0.04, 0.06);

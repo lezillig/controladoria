@@ -515,7 +515,19 @@ salvar a versão. Testes: `teste:itens` (VOLTAR À BASE) e
   lavagem (R$ 0,02/km) e a manutenção por km fica em 70% da do mesmo tipo a
   combustão. Vale ao trocar a energia na aba Veículos e para os modelos
   elétricos da base (a manutenção da base, quando informada, prevalece).
-  Voltar para a combustão devolve óleo e manutenção.
+  Voltar para a combustão devolve óleo e manutenção. Pneus gastam **20% a
+  mais** (peso e torque; troca a cada 40–50 mil km contra 60 mil).
+- **Híbrido** (fonte de energia HIBRIDO; "híbrido", HEV, PHEV, plug-in, DM-i
+  na frota da base): abastece com o combustível da categoria (carro a
+  gasolina; van, micro e ônibus a diesel, com ARLA), rende mais por litro
+  **sem recarga** (carro +45% — King DM-i 16,8 km/l só gasolina; pesados
+  +20%) e a manutenção é **35% mais cara** (dois sistemas; revisão BYD de
+  King/Song R$ 0,13–0,15/km contra R$ 0,07 de Onix Plus/HB20S). O plug-in
+  recarregado todo dia gasta menos combustível: ajuste o consumo no tipo.
+  Custo real do cartão de combustível não se aplica a elétrico nem híbrido.
+
+Pesquisa de mercado (BYD Mais/Arval, MG, Geely Energeely,
+calculadoracarroeletrico, FIPE, IPVA SP) em `ELETRICOS.md`.
 
 Testes: `teste:energia`, `teste:itens`, `teste:simulador-banco`.
 

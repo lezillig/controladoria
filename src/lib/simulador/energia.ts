@@ -12,7 +12,8 @@ import { CATEGORIA_DO_TIPO, type CategoriaVeiculo, type FonteEnergia, type Perfi
 //
 // Híbrido: abastece com o combustível da categoria (carro a gasolina; van,
 // micro e ônibus a diesel) e rende mais por litro — o motor elétrico recupera
-// a energia da frenagem. Tem motor a combustão: óleo e filtros continuam.
+// a energia da frenagem. Tem motor a combustão: óleo e filtros continuam, e a
+// manutenção é a de dois sistemas.
 
 // O HIBRIDO aqui é o carro (gasolina); o pesado híbrido usa o diesel — ver
 // combustivelDoHibrido.
@@ -36,13 +37,18 @@ export function precoDaEnergia(energia: FonteEnergia, categoria: CategoriaVeicul
   return energia === "HIBRIDO" ? precos[combustivelDoHibrido(categoria)] : precos[energia];
 }
 
-// Quanto o híbrido rende a mais por litro que o mesmo veículo a combustão:
-// carro ~45% (11 → 16 km/l, híbrido pleno); pesados ~20% (ônibus urbano
-// híbrido). ESTIMATIVAS (out/2026), a calibrar com a frota.
+// Quanto o híbrido rende a mais por litro que o mesmo veículo a combustão,
+// sem recarga na tomada: carro ~45% (11 → 16 km/l; King DM-i 16,8 km/l só
+// gasolina, Inmetro); pesados ~20% (ônibus urbano híbrido). ESTIMATIVAS
+// (out/2026), a calibrar com a frota.
 export const FATOR_CONSUMO_HIBRIDO: Record<CategoriaVeiculo, number> = { CARRO: 1.45, VAN: 1.2, MICRO: 1.2, ONIBUS: 1.2 };
-// Manutenção por km do híbrido: o freio regenerativo poupa pastilhas e discos;
-// o resto do motor a combustão continua.
-export const FATOR_MANUTENCAO_HIBRIDO = 0.9;
+// Manutenção por km do híbrido: MAIS cara que a da combustão — são dois
+// sistemas (motor a combustão + elétrico) e a revisão programada custa o
+// dobro: R$ 0,13–0,15/km no King e no Song DM-i contra R$ 0,07/km de Onix
+// Plus e HB20S (plano de manutenção BYD 2026; Vrum, mar/2026); a Energeely
+// da Geely também dá revisão do EX5 EM-i acima da combustão. Sobre a
+// manutenção toda por km (revisão + desgaste), +35%.
+export const FATOR_MANUTENCAO_HIBRIDO = 1.35;
 
 export const CONSUMO_ELETRICO_PADRAO: Record<CategoriaVeiculo, number> = { CARRO: 6.5, VAN: 3.3, MICRO: 1.6, ONIBUS: 0.85 };
 
@@ -61,9 +67,14 @@ export const energiaDoPerfil = (p: PerfilVeiculo): FonteEnergia => p.energia ?? 
 // O QUE O ELÉTRICO NÃO TEM: troca de óleo e filtros, ARLA, embreagem, correia,
 // velas e escapamento; o freio regenerativo poupa pastilhas e discos. Óleo e
 // lavagem vira só lavagem e consumíveis; a manutenção por km perde a parte
-// desses itens. ESTIMATIVAS (out/2026), ajustáveis no tipo de veículo.
+// desses itens (revisão programada R$ 0,04–0,05/km no Dolphin e no Yuan Pro,
+// R$ 0,02–0,03 na MG, contra R$ 0,07 da combustão). O que ele gasta a MAIS:
+// pneu — o carro é mais pesado e o torque é instantâneo (troca a cada 40–50
+// mil km contra 60 mil: BYD Mais Gold; calculadoracarroeletrico). ESTIMATIVAS
+// (out/2026), ajustáveis no tipo de veículo.
 export const OLEO_LAVAGEM_ELETRICO_KM = 0.02;
 export const FATOR_MANUTENCAO_ELETRICO = 0.7;
+export const FATOR_PNEUS_ELETRICO = 1.2;
 
 const arredondar = (v: number) => Number(v.toFixed(4));
 
@@ -75,11 +86,15 @@ export function semOQueOEletricoNaoTem(v: PerfilVeiculo["variaveis"]): PerfilVei
     oleoLavagemKm: Math.min(v.oleoLavagemKm, OLEO_LAVAGEM_ELETRICO_KM),
     manutencaoAsfaltoKm: arredondar(v.manutencaoAsfaltoKm * FATOR_MANUTENCAO_ELETRICO),
     manutencaoTerraKm: arredondar(v.manutencaoTerraKm * FATOR_MANUTENCAO_ELETRICO),
+    pneusAsfaltoKm: arredondar(v.pneusAsfaltoKm * FATOR_PNEUS_ELETRICO),
+    pneusTerraKm: arredondar(v.pneusTerraKm * FATOR_PNEUS_ELETRICO),
   };
 }
 
-// O híbrido sobre o mesmo veículo a combustão: rende mais por litro, gasta
-// menos freio; ARLA só se o combustível for diesel.
+// O híbrido sobre o mesmo veículo a combustão: rende mais por litro (o
+// consumo SEM recarga na tomada — o plug-in recarregado todo dia roda boa
+// parte no elétrico e gasta menos: ajuste no tipo), a manutenção é mais cara;
+// ARLA só se o combustível for diesel.
 export function doHibrido(v: PerfilVeiculo["variaveis"], categoria: CategoriaVeiculo, arlaDiesel: number): PerfilVeiculo["variaveis"] {
   const f = FATOR_CONSUMO_HIBRIDO[categoria];
   return {
@@ -107,6 +122,8 @@ export function trocarEnergia(p: PerfilVeiculo, energia: FonteEnergia, precos: R
     if (oleoCombustao !== undefined) novo.variaveis.oleoLavagemKm = oleoCombustao;
     novo.variaveis.manutencaoAsfaltoKm = arredondar(p.variaveis.manutencaoAsfaltoKm / FATOR_MANUTENCAO_ELETRICO);
     novo.variaveis.manutencaoTerraKm = arredondar(p.variaveis.manutencaoTerraKm / FATOR_MANUTENCAO_ELETRICO);
+    novo.variaveis.pneusAsfaltoKm = arredondar(p.variaveis.pneusAsfaltoKm / FATOR_PNEUS_ELETRICO);
+    novo.variaveis.pneusTerraKm = arredondar(p.variaveis.pneusTerraKm / FATOR_PNEUS_ELETRICO);
   }
   if (antes === "HIBRIDO") {
     const f = FATOR_CONSUMO_HIBRIDO[categoria];
