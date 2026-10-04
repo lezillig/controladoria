@@ -346,7 +346,12 @@ preço), Uber (deslocamento de motorista) e PLR (benefício do motorista; a da
 folha corporativa continua). Na composição do grupo de out/25 a set/26, a
 administração caiu de 14,7% para 8,2% da receita — de 29,8% para 14,7% do
 custo direto. Advogados ficam fora (decisão da diretoria); a oficina entra
-pela folha da MCZ. A folha da oficina continua na administração.
+pela folha da MCZ. O repasse da Azul à MCZ em "Apoio Administrativo" (R$ 180
+mil em setembro/2026) fica **sempre** fora (`FORNECEDORES_SEMPRE_FORA`): é a
+MCZ cobrando a folha administrativa que já está na linha corporativa. A
+exclusão por fornecedor passou a valer também para categoria classificada
+inteira em "pessoas — corporativo"; só os PJs do apoio (cerca de R$ 79 mil)
+entram, quando a categoria for reclassificada. A folha da oficina continua na administração.
 
 **Seguro de vida e carro.** O seguro de vida da Azul (R$ 15 por pessoa/mês)
 entra nos benefícios padrão; vale-transporte fica zero (por estudo). O carro

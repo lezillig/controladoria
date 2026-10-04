@@ -45,6 +45,18 @@ export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business; Joel";
 export const CHAVE_FORNECEDORES_FORA = "fornecedores_fora_adm";
 export const CHAVE_CATEGORIAS_FORA = "categorias_fora_adm";
 export const FORNECEDORES_FORA_PADRAO = "Manoel";
+// SEMPRE FORA, qualquer que seja o campo da base (decisão de 04/10/2026): o
+// repasse da Azul à MCZ em "Apoio Administrativo" (R$ 180 mil em
+// setembro/2026). É a MCZ cobrando a folha administrativa que ela mesma já
+// tem na linha "pessoas — corporativo": contar os dois dobra a folha. A
+// eliminação das operações entre as empresas (escopoSql.ts) já o tira do
+// consolidado quando o CNPJ da MCZ está em Conexões; esta lista garante o
+// mesmo sem depender do cadastro.
+export const FORNECEDORES_SEMPRE_FORA = ["MCZ Transporte"] as const;
+export const comFornecedoresSempreFora = (nomes: string[]) => [
+  ...nomes,
+  ...FORNECEDORES_SEMPRE_FORA.filter((x) => !nomes.some((n) => n.toLowerCase() === x.toLowerCase())),
+];
 export const CATEGORIAS_FORA_PADRAO = "Compra de Serviços";
 // SEMPRE FORA, qualquer que seja o campo da base (decisão de 03/10/2026):
 // parcelamento de tributo é dívida de anos anteriores ("1124 - Parcelamento
@@ -192,6 +204,12 @@ export function indiretosDoDre(
   for (const c of ex.categorias) foraPorCategoria.set(c.codigo, mediaCents(c.porMesCents));
   for (const [codigo, porMes] of ex.fornecedorPorCategoria) foraPorCategoria.set(codigo, (foraPorCategoria.get(codigo) ?? 0) + mediaCents(porMes));
   const foraNaLinha = (linha: string) => [...foraPorCategoria].reduce((a, [codigo, v]) => a + (linhaDaCategoria.get(codigo)?.linha === linha ? v : 0), 0);
+  // Categoria classificada INTEIRA em "pessoas — corporativo" (o Apoio
+  // Administrativo, pago pela Azul): a parte dos fornecedores fora (o repasse
+  // à MCZ) sai dela também. Nas categorias de pessoal comuns, divididas por
+  // empresa, a linha corporativa é a folha da MCZ e não tem fornecedor fora.
+  const soCorporativas = new Set(dre.categorias.filter((c) => c.linha === "DESPESA_SALARIOS_CORPORATIVO" && !linhaDaCategoria.has(c.codigo)).map((c) => c.codigo));
+  const foraNoCorporativo = [...ex.fornecedorPorCategoria].reduce((a, [codigo, porMes]) => a + (soCorporativas.has(codigo) ? mediaCents(porMes) : 0), 0);
   const nomesFora = [...ex.categorias.map((c) => c.descricao), ...(ex.fornecedorPorCategoria.size ? [ex.nomeFornecedores ?? ""] : [])].filter(Boolean);
 
   if (comFornecedor) {
@@ -221,8 +239,9 @@ export function indiretosDoDre(
   for (const [chave, linhas] of Object.entries(mapa)) {
     if (linhas.length === 0) continue;
     const semOficina = chave === "folha_adm" ? oficinaCents : 0;
-    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []) - (comFornecedor ? fornecedorNaLinha(l) : 0) - foraNaLinha(l), 0) - semOficina;
-    const tirouAlgo = linhas.some((l) => foraNaLinha(l) > 0.5);
+    const doCorporativo = linhas.includes("DESPESA_SALARIOS_CORPORATIVO") ? foraNoCorporativo : 0;
+    const cents = linhas.reduce((a, l) => a + mediaCents(dre.linhasDre[l] ?? []) - (comFornecedor ? fornecedorNaLinha(l) : 0) - foraNaLinha(l), 0) - semOficina - doCorporativo;
+    const tirouAlgo = linhas.some((l) => foraNaLinha(l) > 0.5) || doCorporativo > 0.5;
     if (!(cents > 0.5)) continue;
     // Na composição, a categoria do fornecedor aparece sem a parte dele.
     const composicao = dre.categorias
@@ -233,7 +252,7 @@ export function indiretosDoDre(
           Math.round(
             mediaCents(c.porMesCents) -
               (comFornecedor && c.linha !== "DESPESA_SALARIOS_CORPORATIVO" ? (doFornecedor.get(c.codigo) ?? 0) : 0) -
-              (c.linha !== "DESPESA_SALARIOS_CORPORATIVO" ? (foraPorCategoria.get(c.codigo) ?? 0) : 0)
+              (c.linha !== "DESPESA_SALARIOS_CORPORATIVO" || soCorporativas.has(c.codigo) ? (foraPorCategoria.get(c.codigo) ?? 0) : 0)
           ) / 100,
       }))
       .filter((c) => c.valorMes > 0)
@@ -378,7 +397,7 @@ export function textosForaDaAdministracao(texto: (chave: string) => string | nul
 
 export async function foraDaAdministracao(companyId: string, dataReferencia: Date, meses: string[], textos: { fornecedores: string; categorias: string }): Promise<ForaDaAdministracao> {
   return {
-    fornecedores: await pagamentosDoFornecedor(companyId, textos.fornecedores, dataReferencia, meses),
+    fornecedores: await pagamentosDoFornecedor(companyId, comFornecedoresSempreFora(nomesDosFornecedores(textos.fornecedores)).join("; "), dataReferencia, meses),
     categorias: comSempreFora(nomesDosFornecedores(textos.categorias)),
   };
 }
@@ -489,7 +508,10 @@ export function classificarTitulos(
     // categoria inteira quando ela foi classificada direto no corporativo (só
     // existe na linha corporativa — o PJ pago pela Azul).
     if (corporativas.has(t.categoria) && (t.corporativo || !linhaDaCategoria.has(t.categoria))) {
-      indireto = /oficina/i.test(t.centroDeCusto ?? "") ? "oficina" : "folha_adm";
+      // Categoria inteira no corporativo: o fornecedor fora (o repasse à
+      // MCZ) sai, como em indiretosDoDre.
+      const foraNoCorp = !linhaDaCategoria.has(t.categoria) && padroesFora.some((p) => casaComPadrao(t.fornecedor, p));
+      indireto = foraNoCorp ? INDIRETO_FORA : /oficina/i.test(t.centroDeCusto ?? "") ? "oficina" : "folha_adm";
       descricao = corporativas.get(t.categoria)?.descricao ?? descricao;
     } else {
       const linha = linhaDaCategoria.get(t.categoria)?.linha;
@@ -589,6 +611,6 @@ export async function lancamentosDosIndiretos(
     })),
     dre,
     nomesDosFornecedores(fornecedores),
-    { fornecedores: nomesDosFornecedores(fora.fornecedores), categorias: comSempreFora(nomesDosFornecedores(fora.categorias)) }
+    { fornecedores: comFornecedoresSempreFora(nomesDosFornecedores(fora.fornecedores)), categorias: comSempreFora(nomesDosFornecedores(fora.categorias)) }
   );
 }

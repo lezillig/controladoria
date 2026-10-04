@@ -157,7 +157,10 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
         for (const c of d.dre.categorias.filter((x) => x.linha === l && !ex.codigos.has(x.codigo))) {
           const corp = c.linha === "DESPESA_SALARIOS_CORPORATIVO";
           const tirar = comFornecedor && !corp ? (doFornecedor.get(c.codigo) ?? []) : [];
-          const tirarFora = !corp ? (ex.fornecedorPorCategoria.get(c.codigo) ?? []) : [];
+          // Categoria inteira no corporativo (o Apoio Administrativo): o
+          // fornecedor fora (o repasse à MCZ) sai dela também.
+          const soCorporativa = corp && !d.dre.categorias.some((x) => x.codigo === c.codigo && x.linha !== "DESPESA_SALARIOS_CORPORATIVO");
+          const tirarFora = !corp || soCorporativa ? (ex.fornecedorPorCategoria.get(c.codigo) ?? []) : [];
           const valores = c.porMesCents.map((v, i) => v - (tirar[i] ?? 0) - (tirarFora[i] ?? 0));
           if (valores.every((v) => Math.abs(v) < 1)) continue;
           escreverLinha(
@@ -201,7 +204,9 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
     const linhasDaEstrutura = new Set(Object.entries(mapa).filter(([k]) => k !== "faturamento_medio").flatMap(([, l]) => l));
     for (const c of ex.categorias.filter((x) => linhasDaEstrutura.has(x.linha))) escreverLinha(rotuloDoIndireto(INDIRETO_FORA), `${c.descricao} (categoria inteira)`, rotuloDaLinha(c.linha), c.porMesCents);
     for (const [codigo, porMes] of ex.fornecedorPorCategoria) {
-      const c = d.dre.categorias.find((x) => x.codigo === codigo && x.linha !== "DESPESA_SALARIOS_CORPORATIVO");
+      const c =
+        d.dre.categorias.find((x) => x.codigo === codigo && x.linha !== "DESPESA_SALARIOS_CORPORATIVO") ??
+        d.dre.categorias.find((x) => x.codigo === codigo && x.linha === "DESPESA_SALARIOS_CORPORATIVO");
       if (!c || !Object.values(mapa).flat().includes(c.linha)) continue;
       escreverLinha(rotuloDoIndireto(INDIRETO_FORA), `${ex.nomeFornecedores} em ${c.descricao}`, rotuloDaLinha(c.linha), porMes);
     }

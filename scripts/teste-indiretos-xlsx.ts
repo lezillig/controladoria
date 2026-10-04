@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { CategoriaReal, DreDosMeses } from "../src/lib/simulador/custosReais";
 import { planilhaDosIndiretos } from "../src/lib/simulador/exportarIndiretos";
-import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO, casaComPadrao, comSempreFora, classificarTitulos, indiretosDoDre, padraoDoNome, type FolhaDaOficina, type PagamentosDoFornecedor, type TituloDoIndireto } from "../src/lib/simulador/indiretosDoDre";
+import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO, casaComPadrao, comFornecedoresSempreFora, comSempreFora, classificarTitulos, indiretosDoDre, padraoDoNome, type FolhaDaOficina, type PagamentosDoFornecedor, type TituloDoIndireto } from "../src/lib/simulador/indiretosDoDre";
 import { PREMISSAS_PADRAO } from "../src/lib/simulador/premissas";
 
 let falhas = 0;
@@ -26,6 +26,10 @@ const cat = (codigo: string, descricao: string, linha: string, porMesCents: numb
 const categorias = [
   cat("3.01", "Salários (MCZ)", "DESPESA_SALARIOS_CORPORATIVO", mes(8_000_000)),
   cat("3.02", "Encargos (MCZ)", "DESPESA_SALARIOS_CORPORATIVO", mes(3_000_000)),
+  // Apoio Administrativo, classificado INTEIRO no corporativo e pago pela Azul:
+  // R$ 18 mil de repasse à MCZ (fora: a folha da MCZ já está acima) e R$ 7
+  // mil de um PJ (entra).
+  cat("2.08.98", "Apoio Administrativo", "DESPESA_SALARIOS_CORPORATIVO", mes(2_500_000)),
   cat("4.01", "Serviços contábeis e jurídicos", "DESPESA_ADMINISTRATIVA", mes(1_500_000)),
   cat("4.02", "Material de escritório", "DESPESA_ADMINISTRATIVA", mes(200_000)),
   cat("5.01", "Sistemas", "DESPESA_INFORMATICA", mes(900_000)),
@@ -46,7 +50,10 @@ const fornecedor: PagamentosDoFornecedor = {
   porNome: new Map([["JL Business", mes(900_000)], ["Joel", mes(300_000)]]),
 };
 const oficina: FolhaDaOficina = { centros: ["Oficina"], porMes: mes(2_500_000) };
-const fora = { fornecedores: { nome: "Manoel", porCategoria: new Map([["8.01", mes(100_000)]]) }, categorias: ["Compra de Serviços"] };
+const fora = {
+  fornecedores: { nome: "Manoel e MCZ Transporte", porCategoria: new Map([["8.01", mes(100_000)], ["2.08.98", mes(1_800_000)]]) },
+  categorias: ["Compra de Serviços"],
+};
 const doDre = indiretosDoDre(dre, fornecedor, oficina, fora);
 const semExclusao = indiretosDoDre(dre, fornecedor, oficina);
 
@@ -62,6 +69,8 @@ meses.forEach((m, i) => {
   titulos.push(titulo("3.01", m, 5_500_000, "Folha MCZ", { empresa: "MCZ", corporativo: true }));
   titulos.push(titulo("3.01", m, 2_500_000, "Folha MCZ", { empresa: "MCZ", corporativo: true, centroDeCusto: "Oficina" }));
   titulos.push(titulo("3.02", m, 3_000_000, "INSS", { empresa: "MCZ", corporativo: true }));
+  titulos.push(titulo("2.08.98", m, 1_800_000, "MCZ TRANSPORTE E TURISMO EIRELI"));
+  titulos.push(titulo("2.08.98", m, 700_000, "C CARDOSO PRESTADORA DE SERVICOS LTDA"));
   titulos.push(titulo("4.01", m, 900_000, "JL BUSSINESS LTDA"));
   titulos.push(titulo("4.01", m, 300_000, "Joel Advogados"));
   titulos.push(titulo("4.01", m, 300_000, "Outro Escritório"));
@@ -74,7 +83,7 @@ meses.forEach((m, i) => {
   titulos.push(titulo("8.02", m, 5_000_000, "Transportadora Parceira"));
   if (i === 0) titulos.push(titulo("8.01", "2024-01", 999_999, "Fora da janela"));
 });
-const lancamentos = classificarTitulos(titulos, dre, ["JL Business", "Joel"], { fornecedores: ["Manoel"], categorias: ["Compra de Serviços"] });
+const lancamentos = classificarTitulos(titulos, dre, ["JL Business", "Joel"], { fornecedores: ["Manoel", "MCZ Transporte"], categorias: ["Compra de Serviços"] });
 
 async function principal() {
   console.log("PRÓ-LABORE FIXO NA ADMINISTRAÇÃO; DESPESAS COM SÓCIOS FORA");
@@ -125,7 +134,7 @@ async function principal() {
   ok("composição sem a Compra de Serviços", !doDre.get("gerais")?.composicao.some((c) => c.descricao === "Compra de Serviços"));
   ok(
     "lançamentos excluídos marcados, fora das somas",
-    lancamentos.filter((x) => x.indireto === "fora_da_administracao").map((x) => x.fornecedor).every((f) => /MANOEL|Transportadora/.test(f)) &&
+    lancamentos.filter((x) => x.indireto === "fora_da_administracao").map((x) => x.fornecedor).every((f) => /MANOEL|Transportadora|MCZ TRANSPORTE/.test(f)) &&
       lancamentos.some((x) => x.fornecedor === "Transportadora Parceira" && x.indireto === "fora_da_administracao")
   );
 
@@ -169,7 +178,11 @@ async function principal() {
     perto("faturamento médio só dos meses com receita", celula("Categorias por mês", "Faturamento", colunaMedia), 500_000);
     // Folha: 110 mil − 25 mil de oficina; contabilidade: 12 mil dos pagamentos;
     // gerais: 3 mil de escritório + 3 mil de marketing + 4 mil + 3 mil que sobram da 4.01.
-    perto("folha sem a oficina", doDre.get("folha_adm")?.valor ?? NaN, 85_000);
+    // 80 mil de salários + 30 mil de encargos − 25 mil da oficina + 7 mil do
+    // PJ do apoio (os 18 mil do repasse à MCZ saem).
+    perto("folha sem a oficina e sem o repasse à MCZ", doDre.get("folha_adm")?.valor ?? NaN, 92_000);
+    ok("o repasse à MCZ fica fora nos lançamentos", lancamentos.filter((x) => /MCZ TRANSPORTE/.test(x.fornecedor)).every((x) => x.indireto !== "folha_adm") && lancamentos.some((x) => /C CARDOSO/.test(x.fornecedor) && x.indireto === "folha_adm"));
+    ok("MCZ Transporte sempre fora, junto do que a base diz", comFornecedoresSempreFora(["Manoel"]).join("|") === "Manoel|MCZ Transporte");
     perto("contabilidade pelos pagamentos", doDre.get("contabilidade")?.valor ?? NaN, 12_000);
     perto("gerais com o resto das administrativas", doDre.get("gerais")?.valor ?? NaN, 12_000);
 
