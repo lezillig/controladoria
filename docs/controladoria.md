@@ -113,12 +113,13 @@ repetidos.
 ### Sem as provisões futuras (a vencer fora do resultado)
 
 Desde 04/10/2026, no regime de competência, o título continua no mês da
-emissão, mas o **a vencer** (em aberto, com vencimento de hoje em diante)
-fica fora do DRE, da planilha de conferência, da análise de custos e da base
-de custos do simulador. Entram o pago/recebido e o **em atraso**. O caso que
-motivou: os PJs do apoio administrativo com o pagamento do mês seguinte
-lançado como a vencer ao lado do pago. Consequência: o mês corrente aparece
-com a receita que ainda vai vencer de fora. Mês em formação, previsão de
+emissão, mas a **conta a pagar a vencer** (em aberto, com vencimento de hoje
+em diante) fica fora do DRE, da planilha de conferência, da análise de custos
+e da base de custos do simulador. Entram as pagas e as **em atraso**. O caso
+que motivou: os PJs do apoio administrativo com o pagamento do mês seguinte
+lançado como a vencer ao lado do pago. A **receita** não é provisão: a nota
+emitida entra no mês da emissão mesmo a receber (a primeira versão tirava
+também o a receber, e o mês corrente aparecia com a receita bruta zerada). Mês em formação, previsão de
 caixa, aging, conferências fiscal e de CT-e, auditoria, a composição por
 categoria e os cartões do painel continuam com todos os títulos. Regra em
 `competencia.ts` (`semProvisaoFuturaSql` / `naoEhProvisaoFutura`), testada

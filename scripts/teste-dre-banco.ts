@@ -421,15 +421,18 @@ async function principal() {
 
       if (!conexaoId) {
         conferir("grupo: receita da MCZ contra a Azul não é receita", item(dre, "R1"), 900_100 + 450_200);
-        // PROVISÕES FUTURAS FORA: com o "hoje" na referência (22/09), A1
-        // (900_100, a receber, vence em 10/10) é a vencer e sai; A2 (pago)
-        // fica. Memória e banco iguais com o mesmo "hoje".
+        // PROVISÕES FUTURAS FORA: com o "hoje" na referência (22/09), A5
+        // (D3, 40_500, a pagar, vence em 25/09) é provisão e sai. A1
+        // (900_100, a RECEBER, vence em 10/10) é receita faturada e FICA —
+        // sem isso o mês corrente nascia com a receita zerada. Memória e
+        // banco iguais com o mesmo "hoje".
         fixarHojeParaTeste(REFERENCIA);
         const dreHoje = await montarDreNoBanco(escopo, mes, janelas.mesAnterior, classificacoes, { regime: "competencia" });
-        conferir("provisão futura fora: R1 só com o pago", item(dreHoje, "R1"), 450_200);
+        conferir("provisão futura: a receita faturada a receber fica", item(dreHoje, "R1"), 900_100 + 450_200);
+        conferir("provisão futura: a conta a pagar a vencer sai", [item(dre, "D3"), item(dreHoje, "D3")], [40_500, 0]);
         const { montarDre: montarDreMemoria } = await import("../src/lib/controladoria/dre");
         const memoriaHoje = montarDreMemoria(ctx, mes, janelas.mesAnterior, classificacoes, { regime: "competencia" });
-        conferir("provisão futura fora: memória igual ao banco", item(memoriaHoje as unknown as typeof dre, "R1"), 450_200);
+        conferir("provisão futura: memória igual ao banco", [item(memoriaHoje as unknown as typeof dre, "R1"), item(memoriaHoje as unknown as typeof dre, "D3")], [900_100 + 450_200, 0]);
         fixarHojeParaTeste(new Date(2027, 0, 1));
         conferir("grupo: pagamento da Azul à MCZ não é custo", item(dre, "D1@AZ"), 310_300 - 15_800);
         // No caixa até o dia 22: A3 (18/09); o estorno A9 é baixado dia 24.

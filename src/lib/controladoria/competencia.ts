@@ -74,12 +74,15 @@ export function inicioDeHoje(agora = hojeFixo ?? new Date()): Date {
   return new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0, 0);
 }
 
+// Só a CONTA A PAGAR é provisão: a nota emitida a receber é receita da
+// competência mesmo antes de vencer (sem isso, o mês corrente ficava com a
+// receita zerada — tudo o que se faturou nele vence depois).
 export function semProvisaoFuturaSql(alias = "t", hoje = inicioDeHoje()): Prisma.Sql {
-  return Prisma.sql`(${Prisma.raw(`${alias}.liquidado`)} = true OR ${Prisma.raw(`${alias}."dataVencimento"`)} < ${hoje})`;
+  return Prisma.sql`(${Prisma.raw(`${alias}.natureza`)} = 'RECEBER' OR ${Prisma.raw(`${alias}.liquidado`)} = true OR ${Prisma.raw(`${alias}."dataVencimento"`)} < ${hoje})`;
 }
 
-export function naoEhProvisaoFutura(titulo: { liquidado: boolean; dataVencimento: Date }, hoje = inicioDeHoje()): boolean {
-  return titulo.liquidado === true || titulo.dataVencimento < hoje;
+export function naoEhProvisaoFutura(titulo: { natureza?: string | null; liquidado: boolean; dataVencimento: Date }, hoje = inicioDeHoje()): boolean {
+  return titulo.natureza === "RECEBER" || titulo.liquidado === true || titulo.dataVencimento < hoje;
 }
 
-export const CRITERIO_SEM_PROVISAO = "Sem as provisões futuras: título em aberto com vencimento de hoje em diante fica fora até ser pago; pagos e em atraso entram.";
+export const CRITERIO_SEM_PROVISAO = "Sem as provisões futuras: conta a pagar em aberto com vencimento de hoje em diante fica fora até ser paga; pagas e em atraso entram. A receita faturada entra pela emissão, mesmo a receber.";
