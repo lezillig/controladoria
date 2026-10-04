@@ -54,6 +54,22 @@ ok("consumo da frota em km/kWh", perto(daBase.variaveis.consumoAsfaltoKmL, 3.1))
 ok("sem ARLA", daBase.variaveis.arlaKm === 0);
 ok("sem troca de óleo e com a manutenção do elétrico", perto(daBase.variaveis.oleoLavagemKm, 0.02) && perto(daBase.variaveis.manutencaoAsfaltoKm, van.variaveis.manutencaoAsfaltoKm * 0.7));
 
+console.log("\nHíbrido");
+ok("texto: híbrido, plug-in e DM-i", energiaDoTexto("Song Pro DM-i") === "HIBRIDO" && energiaDoTexto("Híbrido") === "HIBRIDO" && energiaDoTexto("Plug-in hybrid") === "HIBRIDO" && energiaDoTexto("PHEV") === "HIBRIDO");
+const carro = PERFIS_PADRAO.find((p) => p.tipo === "CARRO")!;
+const carroHibrido = trocarEnergia(carro, "HIBRIDO", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
+ok("carro híbrido: gasolina, sem ARLA", perto(carroHibrido.variaveis.dieselLitro, PRECO_ENERGIA_PADRAO.GASOLINA) && carroHibrido.variaveis.arlaKm === 0);
+ok("carro híbrido: rende 45% a mais por litro", perto(carroHibrido.variaveis.consumoAsfaltoKmL, carro.variaveis.consumoAsfaltoKmL * 1.45));
+ok("carro híbrido: óleo continua, freio gasta menos (90%)", perto(carroHibrido.variaveis.oleoLavagemKm, carro.variaveis.oleoLavagemKm) && perto(carroHibrido.variaveis.manutencaoAsfaltoKm, carro.variaveis.manutencaoAsfaltoKm * 0.9));
+const vanHibrida = trocarEnergia(van, "HIBRIDO", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
+ok("van híbrida: diesel, com ARLA, 20% a mais por litro", perto(vanHibrida.variaveis.dieselLitro, PRECO_ENERGIA_PADRAO.DIESEL) && vanHibrida.variaveis.arlaKm > 0 && perto(vanHibrida.variaveis.consumoAsfaltoKmL, van.variaveis.consumoAsfaltoKmL * 1.2));
+const carroDeVolta = trocarEnergia(carroHibrido, "GASOLINA", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
+ok("híbrido de volta à gasolina: consumo e manutenção voltam", perto(carroDeVolta.variaveis.consumoAsfaltoKmL, carro.variaveis.consumoAsfaltoKmL) && perto(carroDeVolta.variaveis.manutencaoAsfaltoKm, carro.variaveis.manutencaoAsfaltoKm));
+const hibridoParaEletrico = trocarEnergia(carroHibrido, "ELETRICO", PRECO_ENERGIA_PADRAO, 0.04, 0.06);
+ok("híbrido para elétrico: manutenção do elétrico sobre a da combustão", perto(hibridoParaEletrico.variaveis.manutencaoAsfaltoKm, carro.variaveis.manutencaoAsfaltoKm * 0.7) && perto(hibridoParaEletrico.variaveis.consumoAsfaltoKmL, 6.5));
+const [daBaseHibrido] = perfisDaBase({ ...base, veiculos: [{ id: "v2", chave: "carro|song|2026", fonte: "teste", vigenciaInicio: new Date(), tipo: "Carro", modelo: "Song Pro DM-i", combustivel: "Híbrido plug-in" }] });
+ok("modelo híbrido da base: gasolina e rendimento do híbrido", daBaseHibrido.energia === "HIBRIDO" && perto(daBaseHibrido.variaveis.dieselLitro, PRECO_ENERGIA_PADRAO.GASOLINA) && perto(daBaseHibrido.variaveis.consumoAsfaltoKmL, carro.variaveis.consumoAsfaltoKmL * 1.45));
+
 console.log("\nCusto real não se aplica ao elétrico");
 const r = aplicarIndicadores(historicoSaoJoseDosPinhais().entrada.premissas, [vanEletrica, van], [
   { caminho: "perfil:VAN:variaveis.dieselLitro", rotulo: "Combustível pago — Van", valor: 6.4, unidade: "R$/l", base: "", periodo: "", amostra: 30, confianca: "ALTA", avisos: [] },

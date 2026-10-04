@@ -2,7 +2,7 @@ import { CBS_REFERENCIA_PADRAO, IBS_REFERENCIA_PADRAO } from "./reforma";
 import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B, VR_TRANSFRETUR_DIA } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
-import { CHAVE_PRECO_ENERGIA, CONSUMO_ELETRICO_PADRAO, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO, semOQueOEletricoNaoTem } from "./energia";
+import { CHAVE_PRECO_ENERGIA, combustivelDoHibrido, CONSUMO_ELETRICO_PADRAO, doHibrido, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO, semOQueOEletricoNaoTem } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO } from "./indiretosDoDre";
@@ -599,6 +599,16 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
     const tipo = tipoDoTexto(String(v.tipo ?? "")) ?? "VAN";
     const padrao = PERFIS_PADRAO.find((p) => p.tipo === tipo)!;
     const energia = energiaDoTexto(String(v.combustivel ?? "")) ?? energiaDoPerfil(padrao);
+    const categoria = CATEGORIA_DO_TIPO[tipo];
+    const fonteDoPreco = energia === "HIBRIDO" ? combustivelDoHibrido(categoria) : energia;
+    const daEnergia =
+      energia === energiaDoPerfil(padrao)
+        ? padrao.variaveis
+        : energia === "ELETRICO"
+          ? { ...semOQueOEletricoNaoTem(padrao.variaveis), consumoAsfaltoKmL: CONSUMO_ELETRICO_PADRAO[categoria], consumoTerraKmL: Number((CONSUMO_ELETRICO_PADRAO[categoria] * 0.85).toFixed(2)) }
+          : energia === "HIBRIDO"
+            ? doHibrido(padrao.variaveis, categoria, PREMISSAS_PADRAO.variaveis.arlaKm)
+            : { ...padrao.variaveis, arlaKm: energia === "DIESEL" ? PREMISSAS_PADRAO.variaveis.arlaKm : 0 };
     // Salário: a função do mesmo tipo ("Motorista de van adaptada"); sem ela,
     // a da mesma categoria ("Motorista de van").
     const motoristas = base.funcoes.filter((f) => /motorista/i.test(String(f.funcao ?? "")));
@@ -635,15 +645,15 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
       },
       energia,
       variaveis: {
-        // Elétrico sobre um padrão a combustão: sai o que ele não tem (óleo,
-        // filtros, parte da manutenção). A manutenção da base, quando houver, vale.
-        ...(energia === "ELETRICO" && energiaDoPerfil(padrao) !== "ELETRICO" ? semOQueOEletricoNaoTem(padrao.variaveis) : padrao.variaveis),
-        // Preço da energia do modelo (diesel, gasolina, etanol ou kWh), da
-        // base quando houver; ARLA só no diesel.
-        dieselLitro: base.parametros.get(CHAVE_PRECO_ENERGIA[energia])?.valor ?? (energia === energiaDoPerfil(padrao) ? padrao.variaveis.dieselLitro : PRECO_ENERGIA_PADRAO[energia]),
-        arlaKm: energia === "DIESEL" ? padrao.variaveis.arlaKm : 0,
-        consumoAsfaltoKmL: n(v, "consumoKmL") ?? (energia === "ELETRICO" && energiaDoPerfil(padrao) !== "ELETRICO" ? CONSUMO_ELETRICO_PADRAO[CATEGORIA_DO_TIPO[tipo]] : padrao.variaveis.consumoAsfaltoKmL),
-        manutencaoAsfaltoKm: n(v, "manutencaoKm") ?? (energia === "ELETRICO" && energiaDoPerfil(padrao) !== "ELETRICO" ? semOQueOEletricoNaoTem(padrao.variaveis).manutencaoAsfaltoKm : padrao.variaveis.manutencaoAsfaltoKm),
+        // O padrão do tipo levado à energia do modelo: o elétrico sem o que
+        // não tem (óleo, filtros, parte da manutenção), o híbrido com o
+        // rendimento e o freio dele. O que a base informa, vale.
+        ...daEnergia,
+        // Preço da energia do modelo (diesel, gasolina, etanol ou kWh; o
+        // híbrido, o do seu combustível), da base quando houver.
+        dieselLitro: base.parametros.get(CHAVE_PRECO_ENERGIA[fonteDoPreco])?.valor ?? (energia === energiaDoPerfil(padrao) ? padrao.variaveis.dieselLitro : PRECO_ENERGIA_PADRAO[fonteDoPreco]),
+        consumoAsfaltoKmL: n(v, "consumoKmL") ?? daEnergia.consumoAsfaltoKmL,
+        manutencaoAsfaltoKm: n(v, "manutencaoKm") ?? daEnergia.manutencaoAsfaltoKm,
         pneusAsfaltoKm: qtde && preco && vidaPneu ? (qtde * preco) / vidaPneu : padrao.variaveis.pneusAsfaltoKm,
       },
     };

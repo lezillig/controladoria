@@ -269,10 +269,10 @@ export function tipoDe(categoria: CategoriaVeiculo, variante: VarianteVeiculo): 
 // preço (variaveis.dieselLitro) é o preço por UNIDADE de energia — litro ou
 // kWh — e o consumo é km por essa unidade. Custo por km = preço ÷ consumo,
 // igual para diesel, gasolina, etanol e elétrico.
-export type FonteEnergia = "DIESEL" | "GASOLINA" | "ETANOL" | "ELETRICO";
-export const FONTES_ENERGIA: FonteEnergia[] = ["DIESEL", "GASOLINA", "ETANOL", "ELETRICO"];
-export const ROTULO_ENERGIA: Record<FonteEnergia, string> = { DIESEL: "Diesel", GASOLINA: "Gasolina", ETANOL: "Etanol", ELETRICO: "Elétrico" };
-export const UNIDADE_ENERGIA: Record<FonteEnergia, "l" | "kWh"> = { DIESEL: "l", GASOLINA: "l", ETANOL: "l", ELETRICO: "kWh" };
+export type FonteEnergia = "DIESEL" | "GASOLINA" | "ETANOL" | "ELETRICO" | "HIBRIDO";
+export const FONTES_ENERGIA: FonteEnergia[] = ["DIESEL", "GASOLINA", "ETANOL", "ELETRICO", "HIBRIDO"];
+export const ROTULO_ENERGIA: Record<FonteEnergia, string> = { DIESEL: "Diesel", GASOLINA: "Gasolina", ETANOL: "Etanol", ELETRICO: "Elétrico", HIBRIDO: "Híbrido" };
+export const UNIDADE_ENERGIA: Record<FonteEnergia, "l" | "kWh"> = { DIESEL: "l", GASOLINA: "l", ETANOL: "l", ELETRICO: "kWh", HIBRIDO: "l" };
 
 // CATEGORIA DE PEDÁGIO: segue os eixos e a rodagem do eixo traseiro, não a
 // lotação. Van de rodagem simples (Master) paga como carro; van de rodagem
