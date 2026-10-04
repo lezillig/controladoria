@@ -381,7 +381,7 @@ export default function EditorEstudo({
       )}
 
       {aba === "operacao" && <Operacao entrada={entrada} alterar={alterar} podeEditar pracas={pracas} />}
-      {aba === "veiculos" && <Veiculos entrada={entrada} alterar={alterar} podeEditar precosEnergia={precosEnergia} pracas={pracas} />}
+      {aba === "veiculos" && <Veiculos entrada={entrada} alterar={alterar} podeEditar precosEnergia={precosEnergia} pracas={pracas} anoInicio={lerInicio(entrada.reforma?.inicio ?? estudo.inicioPrevisto)?.ano ?? new Date().getFullYear()} />}
       {aba === "premissas" && <Premissas entrada={entrada} origem={origem} alterar={alterar} podeEditar daBase={daBase} indicadores={indicadores} lacunas={lacunas} />}
       {aba === "custos" && resultado && <Custos resultado={resultado} entrada={entrada} />}
       {aba === "cenarios" && resultado && <Cenarios resultado={resultado} entrada={entrada} alterar={alterar} />}

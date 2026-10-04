@@ -52,7 +52,7 @@ jobs:
           falhas=0
           # Simulador: as exportações Excel (teste:exportar-xlsx, teste:indiretos-xlsx) ficam de fora — elas
           # recalculam a planilha com LibreOffice ou a biblioteca `formulas`.
-          for t in cte acessos antifraude dre engine historico padroes sql limpeza alerta previsao calibragem frota desvios pessoal contratos receita mapeamento fiscal datas simulador gabarito decisao custos-reais mao-de-obra numeros energia pedagio itens separacao reforma horario mes-em-formacao especialistas simulador-banco exclusoes; do
+          for t in cte acessos antifraude dre engine historico padroes sql limpeza alerta previsao calibragem frota desvios pessoal contratos receita mapeamento fiscal datas simulador gabarito decisao custos-reais mao-de-obra numeros energia pedagio itens separacao reforma manutencao-idade horario mes-em-formacao especialistas simulador-banco exclusoes; do
             echo "::group::teste:$t"
             if ! npm run -s "teste:$t"; then
               echo "::error::teste:$t falhou"

@@ -87,7 +87,8 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("veiculo.metodoDepreciacao", "Método de depreciação", "", "metodoDepreciacao", "Percentual ao ano sobre o valor; linear com valor residual; ou soma dos dígitos (Cole, método GEIPOT), que deprecia mais nos primeiros anos."),
   c("veiculo.vidaUtilAnos", "Vida útil", "anos", "numero", "Linear e soma dos dígitos."),
   c("veiculo.valorResidualPct", "Valor residual ao fim da vida útil", "% do valor", "pct"),
-  c("veiculo.idadeInicialAnos", "Idade do veículo no início do contrato", "anos", "numero", "Com o valor de aquisição do veículo novo em 'Valor do veículo'."),
+  c("veiculo.idadeInicialAnos", "Idade do veículo no início do contrato", "anos", "numero", "Ano do início do contrato menos o ano do veículo. Corrige a manutenção pela curva de idade (ANTP) e entra na depreciação linear e na soma dos dígitos."),
+  c("veiculo.idadeReferenciaManutencao", "Manutenção informada para veículo de", "anos", "numero", "A idade do veículo para a qual a manutenção por km e a fixa valem; o estudo corrige pela idade real com a curva ANTP (6% do preço novo/ano até 2 anos, 12% acima de 10)."),
   c("veiculo.capitalComposto", "Capital composto (financiado + próprio)", "", "bool", "Com ele, o custo do capital é a média ponderada da taxa do financiamento e do custo de oportunidade do capital próprio."),
   c("veiculo.fracaoFinanciada", "Fração financiada", "% do valor", "pct"),
   c("veiculo.taxaFinanciamentoAa", "Taxa do financiamento (CDC, leasing, FINAME)", "% a.a.", "pct"),
@@ -185,6 +186,7 @@ export const PREMISSAS_PADRAO: Premissas = {
     vidaUtilAnos: 8,
     valorResidualPct: 0.2,
     idadeInicialAnos: 0,
+    idadeReferenciaManutencao: 0,
     capitalComposto: false,
     fracaoFinanciada: 0.8,
     taxaFinanciamentoAa: 0.18,
@@ -363,6 +365,13 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     definir("veiculo.rastreadorMes", n("rastreadorMensal"), f);
     definir("variaveis.consumoAsfaltoKmL", n("consumoKmL"), f);
     definir("variaveis.manutencaoAsfaltoKm", n("manutencaoKm"), f);
+    // A idade do modelo da base: corrige a manutenção pela curva ANTP; a
+    // manutenção que a base informa é a desse veículo na idade de hoje.
+    if (ano) {
+      const idade = Math.max(0, base.em.getFullYear() - ano);
+      definir("veiculo.idadeInicialAnos", idade, f, `${base.em.getFullYear()} − ${ano}`);
+      if (n("manutencaoKm") !== null) definir("veiculo.idadeReferenciaManutencao", idade, f, "a manutenção informada é a do veículo desta idade");
+    }
     const qtde = n("pneusQtde");
     const preco = n("pneuPreco");
     const vida = n("pneuVidaKm");
@@ -516,7 +525,7 @@ const PERFIS_BASE: PerfilVeiculo[] = [
     { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95 },
     { consumoAsfaltoKmL: 4.7, consumoTerraKmL: 3.9, arlaKm: 0.05, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0 }),
   perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", PISO_TRANSFRETUR_NIVEL_A, 1.2,
-    { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90 },
+    { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90, idadeInicialAnos: 8, idadeReferenciaManutencao: 8 },
     { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),
 ]
 
@@ -642,6 +651,10 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
         ipvaLicenciamentoAno: n(v, "ipvaLicenciamentoAnual") ?? padrao.veiculo.ipvaLicenciamentoAno,
         laudoVistoriaAno: n(v, "licencasAnual") ?? padrao.veiculo.laudoVistoriaAno,
         rastreadorMes: n(v, "rastreadorMensal") ?? padrao.veiculo.rastreadorMes,
+        // A idade do modelo da base; a manutenção que a base informa é a dele
+        // nessa idade (sem ela, a do padrão do tipo, na idade de referência dele).
+        idadeInicialAnos: ano ? idade : padrao.veiculo.idadeInicialAnos,
+        idadeReferenciaManutencao: ano && n(v, "manutencaoKm") !== null ? idade : padrao.veiculo.idadeReferenciaManutencao,
       },
       energia,
       variaveis: {

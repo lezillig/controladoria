@@ -7,6 +7,7 @@ import { categoriaPedagioDe, tarifaParaPerfil, type PracaPedagio } from "@/lib/s
 import { Cartao, CampoNumero, botao, selecao } from "../comum";
 import type { AlterarComOrigem } from "./Premissas";
 import { CalculadoraFU } from "./Calculadoras";
+import { anoDaIdade, fatorManutencaoPorIdade, idadeDoAno } from "@/lib/simulador/idadeManutencao";
 
 // OS TIPOS DE VEÍCULO DO ESTUDO — um por coluna, lado a lado.
 //
@@ -36,10 +37,13 @@ export default function Veiculos({
   podeEditar,
   precosEnergia,
   pracas = [],
+  anoInicio,
 }: {
   entrada: EntradaSimulacao;
   alterar: AlterarComOrigem;
   podeEditar: boolean;
+  // Ano do início do contrato: ano do veículo = ano do início − idade.
+  anoInicio: number;
   // Preço por unidade de cada fonte (base de custos ou padrão do simulador),
   // para quando a pessoa troca a energia de um tipo de veículo.
   precosEnergia: Record<FonteEnergia, number>;
@@ -52,8 +56,11 @@ export default function Veiculos({
   const valorDo = (p: PerfilVeiculo | null, caminho: string) => {
     const [grupo, campo] = caminho.split(".");
     const alvo = grupo === "veiculo" ? (p?.veiculo ?? entrada.premissas.veiculo) : (p?.variaveis ?? entrada.premissas.variaveis);
-    return (alvo as Record<string, unknown>)[campo] as number;
+    return (alvo as Record<string, unknown>)[campo] as number | null | undefined;
   };
+  const numeroOuTraco = (v: number | null | undefined, pct: boolean) =>
+    typeof v !== "number" ? "—" : pct ? `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : v.toLocaleString("pt-BR", { maximumFractionDigits: 4 });
+  const fatorDo = (p: PerfilVeiculo | null) => fatorManutencaoPorIdade(p?.veiculo ?? entrada.premissas.veiculo, entrada.premissas.contrato.vigenciaMeses);
 
   return (
     <Cartao
@@ -212,6 +219,37 @@ export default function Veiculos({
                 </td>
               ))}
             </tr>
+            <tr className="bg-slate-50/60">
+              <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium" title={`Ano de fabricação/modelo do veículo que vai rodar. Idade no início do contrato = ${anoInicio} − ano.`}>
+                Ano do veículo <span className="text-[11px] font-normal text-slate-500">(início do contrato em {anoInicio})</span>
+              </td>
+              <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums text-slate-600">{anoDaIdade(entrada.premissas.veiculo.idadeInicialAnos, anoInicio)}</td>
+              {perfis.map((p, k) => (
+                <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5">
+                  <CampoNumero
+                    valor={anoDaIdade(p.veiculo.idadeInicialAnos, anoInicio)}
+                    casas={0}
+                    desativado={!podeEditar}
+                    rotulo={`Ano do veículo — ${p.descricao}`}
+                    aoMudar={(v) => v !== null && v > 1950 && v <= anoInicio + 1 && mudarPerfil(k, (x) => void (x.veiculo.idadeInicialAnos = idadeDoAno(v, anoInicio)))}
+                  />
+                </td>
+              ))}
+            </tr>
+            <tr className="bg-slate-50/60">
+              <td
+                className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium"
+                title="Curva ANTP/NTU: peças e reparos crescem com a idade — 6% do preço novo/ano até 2 anos, 7%, 8%, 9%, 10% (8–10 anos) e 12% acima de 10. Média dos anos do contrato (o veículo envelhece), sobre a idade para a qual a manutenção foi informada. Multiplica a manutenção por km e a fixa."
+              >
+                Fator de manutenção pela idade <span className="text-[11px] font-normal text-slate-500">(média do contrato)</span>
+              </td>
+              <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums text-slate-600">{fatorDo(null).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}×</td>
+              {perfis.map((p) => (
+                <td key={p.codigo} className={`border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums ${fatorDo(p) > 1.001 ? "text-amber-800" : "text-slate-600"}`}>
+                  {fatorDo(p).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}×
+                </td>
+              ))}
+            </tr>
             {([
               ["Veículo — custo fixo mensal (capital, seguro, IPVA, garagem…)", CAMPOS_VEICULO_FIXO],
               ["Veículo — custo por km (energia, pneus, manutenção)", CAMPOS_VEICULO_VARIAVEL],
@@ -222,9 +260,7 @@ export default function Veiculos({
                   <td className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5">
                     {c.rotulo} <span className="text-[11px] text-slate-500">({c.unidade})</span>
                   </td>
-                  <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums text-slate-600">
-                    {c.tipo === "pct" ? `${(valorDo(null, c.caminho) * 100).toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%` : valorDo(null, c.caminho).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}
-                  </td>
+                  <td className="border-b border-slate-100 px-2 py-1.5 text-right font-mono tabular-nums text-slate-600">{numeroOuTraco(valorDo(null, c.caminho), c.tipo === "pct")}</td>
                   {perfis.map((p, k) => (
                     <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5">
                       {(c.caminho === "variaveis.dieselLitro" || c.caminho.startsWith("variaveis.consumo")) && (

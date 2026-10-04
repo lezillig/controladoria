@@ -1,3 +1,4 @@
+import { fatorManutencaoPorIdade } from "./idadeManutencao";
 import type {
   Cenarios,
   ComposicaoItem,
@@ -264,13 +265,16 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const garagem = (veiculo.garagemComReserva ? comReserva : r.veiculos) * veiculo.garagemMes;
   const adaptacaoDepreciacao = comReserva * veiculo.adaptacaoValor * dividir(1, veiculo.adaptacaoMesesDepreciacao);
   const adaptacao = adaptacaoDepreciacao + (comReserva * veiculo.adaptacaoValor * cap.taxaCapitalAa) / 12;
-  const manutencaoFixa = comReserva * veiculo.valor * veiculo.manutencaoFixaPctMes;
+  // Manutenção corrigida pela idade do veículo nos anos do contrato (curva
+  // ANTP, idadeManutencao.ts): vale para a fixa e para a por km.
+  const fatorIdade = fatorManutencaoPorIdade(veiculo, contrato.vigenciaMeses);
+  const manutencaoFixa = comReserva * veiculo.valor * veiculo.manutencaoFixaPctMes * fatorIdade;
 
   // Variáveis por km rodado, ponderados entre asfalto e terra.
   const dieselKm =
     variaveis.dieselLitro * (dividir(pctAsfalto, variaveis.consumoAsfaltoKmL) + (pctTerra > 0 ? dividir(pctTerra, variaveis.consumoTerraKmL) : 0));
   const pneusKm = pctAsfalto * variaveis.pneusAsfaltoKm + pctTerra * variaveis.pneusTerraKm;
-  const manutencaoKm = pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm;
+  const manutencaoKm = (pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm) * fatorIdade;
 
   return {
     kmReferencia: r.kmReferencia,

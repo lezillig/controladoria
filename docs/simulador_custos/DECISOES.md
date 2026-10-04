@@ -531,6 +531,22 @@ calculadoracarroeletrico, FIPE, IPVA SP) em `ELETRICOS.md`.
 
 Testes: `teste:energia`, `teste:itens`, `teste:simulador-banco`.
 
+## 7.7 Ano do veículo e manutenção pela idade (curva ANTP)
+
+Cada tipo de veículo do estudo tem o **ano do veículo** (aba Veículos; idade no
+início do contrato = ano do início − ano do veículo) e a **idade para a qual a
+manutenção foi informada**. A manutenção por km e a fixa são corrigidas pela
+curva ANTP/NTU (2017) de peças e acessórios: 6% do preço novo por ano até 2
+anos, 7%, 8%, 9%, 10% (8–10 anos) e 12% acima de 10. O fator é a média, nos
+anos do contrato, do coeficiente da idade no meio de cada ano (o veículo
+envelhece no contrato), sobre o da idade de referência. Padrões: carro, van e
+micro informados para veículo novo (0 anos); ônibus usado de 8 anos. Modelo
+da base com ano: idade pelo ano, e a manutenção da base vale para essa idade.
+Versões salvas antes (sem a idade de referência): fator 1. O Excel reproduz
+o fator em fórmula (aba Perfis). Teste: `teste:manutencao-idade`.
+Pesquisa: `reports/Manutenção de frota por montadora.md` (repositório
+gestao-motoristas).
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

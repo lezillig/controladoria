@@ -115,6 +115,10 @@ export type Premissas = {
     vidaUtilAnos: number;
     valorResidualPct: number;
     idadeInicialAnos: number;
+    // Idade do veículo para a qual a manutenção (por km e fixa) foi informada;
+    // o estudo corrige pela idade real com a curva ANTP (idadeManutencao.ts).
+    // Ausente nas versões salvas antes da curva: fator 1.
+    idadeReferenciaManutencao?: number | null;
     // CAPITAL. Com `capitalComposto`, o custo do capital é a média entre a
     // taxa do financiamento (fração financiada) e o custo de oportunidade do
     // capital próprio (o resto); sem ele, vale `custoCapitalAa`.

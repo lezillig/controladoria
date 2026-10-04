@@ -329,7 +329,15 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("depreciacao", "Depreciação anual (método PERCENTUAL)", v.depreciacaoAa, "% a.a.", "", PCT);
   premissa("vidaUtil", "Vida útil (LINEAR e SOMA_DIGITOS)", v.vidaUtilAnos, "anos", "", NUM);
   premissa("residual", "Valor residual ao fim da vida útil", v.valorResidualPct, "% do valor", "", PCT);
-  premissa("idade", "Idade do veículo no início do contrato", v.idadeInicialAnos, "anos", "", NUM);
+  premissa("idade", "Idade do veículo no início do contrato", v.idadeInicialAnos, "anos", "Ano do início do contrato − ano do veículo. Corrige a manutenção pela curva de idade (aba Perfis).", NUM);
+  premissa(
+    "idRefMan",
+    "Manutenção informada para veículo de",
+    typeof v.idadeReferenciaManutencao === "number" ? v.idadeReferenciaManutencao : "sem curva",
+    "anos",
+    "Idade para a qual a manutenção por km e a fixa valem. O estudo corrige pela idade real nos anos do contrato com a curva ANTP/NTU: peças 6% do preço novo/ano (0–2 anos), 7%, 8%, 9%, 10% (8–10) e 12% (acima de 10). Texto = sem correção.",
+    NUM
+  );
   premissa("capital", "Custo de capital / financiamento", v.custoCapitalAa, "% a.a.", "Taxa usada quando o capital não é composto.", PCT);
   escolha("composto", "Capital composto (financiado + próprio)? (S/N)", sn(v.capitalComposto), ["S", "N"], "S: taxa = fração financiada × taxa do financiamento + resto × custo do capital próprio.");
   premissa("fracaoFin", "Fração financiada", v.fracaoFinanciada, "% do valor", "", PCT);
@@ -464,6 +472,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "vida", rotulo: "Vida útil", unidade: "anos", fmt: NUM, padrao: P.vidaUtil, valor: vv("vidaUtilAnos") },
     { chave: "residual", rotulo: "Valor residual", unidade: "% do valor", fmt: PCT, padrao: P.residual, valor: vv("valorResidualPct") },
     { chave: "idade", rotulo: "Idade no início do contrato", unidade: "anos", fmt: NUM, padrao: P.idade, valor: vv("idadeInicialAnos") },
+    {
+      chave: "idRefMan",
+      rotulo: "Manutenção informada para veículo de (texto = sem curva)",
+      unidade: "anos",
+      fmt: NUM,
+      padrao: P.idRefMan,
+      valor: (pf) => (typeof pf.veiculo.idadeReferenciaManutencao === "number" ? pf.veiculo.idadeReferenciaManutencao : "sem curva"),
+    },
     { chave: "capAa", rotulo: "Custo de capital (taxa única)", unidade: "% a.a.", fmt: PCT, padrao: P.capital, valor: vv("custoCapitalAa") },
     { chave: "composto", rotulo: "Capital composto? (S/N)", padrao: P.composto, valor: vv("capitalComposto"), opcoes: ["S", "N"] },
     { chave: "fracao", rotulo: "Fração financiada", unidade: "% do valor", fmt: PCT, padrao: P.fracaoFin, valor: vv("fracaoFinanciada") },
@@ -536,6 +552,18 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
         `IF(${k}>${c}${F.anos},0,MAX(${c}${F.valor}*IF(${c}${F.metodo}="PERCENTUAL",0,${c}${F.residual}),${c}${F.valor}-${acumulada(c, F)}-${c}${F[`dep${k}`]}/2))`,
     });
   }
+  // MANUTENÇÃO PELA IDADE (curva ANTP/NTU, idadeManutencao.ts): média, nos
+  // anos do contrato, do coeficiente da idade no meio de cada ano, sobre o da
+  // idade de referência.
+  const coefIdade = (a: string) => `IF(${a}<2,0.06,IF(${a}<4,0.07,IF(${a}<6,0.08,IF(${a}<8,0.09,IF(${a}<10,0.1,0.12)))))`;
+  linhasPerfil.push({
+    chave: "fatorMan",
+    rotulo: "Fator de manutenção pela idade (média do contrato, curva ANTP)",
+    unidade: "×",
+    fmt: NUM,
+    formula: (c, F) =>
+      `IF(ISNUMBER(${c}${F.idRefMan}),(${Array.from({ length: ANOS }, (_, i) => `IF(${i + 1}>${c}${F.anos},0,${coefIdade(`MAX(0,${c}${F.idade}+${i + 0.5})`)})`).join("+")})/${c}${F.anos}/${coefIdade(`(${c}${F.idRefMan}+0.5)`)},1)`,
+  });
   linhasPerfil.push(
     { chave: "depAnual", rotulo: "Depreciação anual média no contrato", unidade: "R$/ano", fmt: BRL, formula: (c, F) => `SUM(${c}${F.dep1}:${c}${F[`dep${ANOS}`]})/${c}${F.anos}` },
     { chave: "vMedio", rotulo: "Valor remunerado (médio não depreciado ou cheio)", unidade: "R$", fmt: BRL, formula: (c, F) => `IF(${c}${F.remMedio}="S",SUM(${c}${F.meio1}:${c}${F[`meio${ANOS}`]})/${c}${F.anos},${c}${F.valor})` },
@@ -549,7 +577,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "mHig", rotulo: "Higienização + acessibilidade (por veíc. operacional)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.higien}+${c}${F.acess}` },
     { chave: "mAdDep", rotulo: "Adaptação — depreciação (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `IF(${c}${F.adaptMeses}=0,0,${c}${F.adaptValor}/${c}${F.adaptMeses})` },
     { chave: "mAdCap", rotulo: "Adaptação — capital (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.adaptValor}*${c}${F.taxa}/12` },
-    { chave: "mManF", rotulo: "Manutenção fixa (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.valor}*${c}${F.manFixa}` },
+    { chave: "mManF", rotulo: "Manutenção fixa (por veíc. c/ reserva)", unidade: "R$/mês", fmt: BRL, formula: (c, F) => `${c}${F.valor}*${c}${F.manFixa}*${c}${F.fatorMan}` },
     {
       chave: "mRemP",
       rotulo: "  da remuneração e das adaptações: capital próprio (por veíc. c/ reserva)",
@@ -708,7 +736,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("arla", `${pf("arla")}*${$("kmRod")}`, BRL);
     f("oleo", `${pf("oleo")}*${$("kmRod")}`, BRL);
     f("pneus", `((1-${t})*${pf("pneusAsf")}+${t}*${pf("pneusTerra")})*${$("kmRod")}`, BRL);
-    f("manut", `((1-${t})*${pf("manAsf")}+${t}*${pf("manTerra")})*${$("kmRod")}`, BRL);
+    f("manut", `((1-${t})*${pf("manAsf")}+${t}*${pf("manTerra")})*${pf("fatorMan")}*${$("kmRod")}`, BRL);
     f("veicRes", `${$("veic")}*(1+${P.reserva})`, NUM);
     const vr = $("veicRes");
     f("dep", `${vr}*${pf("mDep")}`, BRL);
