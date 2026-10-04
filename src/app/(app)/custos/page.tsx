@@ -415,6 +415,24 @@ export default async function CustosPage({
       {/* A ELIMINAÇÃO É DITA, com os números. Receita do grupo que "cai" de
           um mês para o outro sem explicação é o que faz alguém desconfiar da
           tela; aqui a pessoa vê quanto saiu e por quê. Só na visão do grupo. */}
+      {/* SEM O CNPJ DE UMA EMPRESA, a eliminação não a reconhece: o que uma
+          paga à outra (a Azul repassando R$ 180 mil/mês à MCZ, setembro/2026)
+          fica no consolidado como receita e despesa. Dito aqui, com o
+          caminho do conserto — a regra não adivinha pelo nome. */}
+      {!escopo.conexaoId && conexoes.some((c) => (c.cnpj ?? "").replace(/\D/g, "").length !== 14) && (
+        <p className="rounded-lg bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <strong>Operações entre as empresas podem estar no consolidado.</strong>{" "}
+          {conexoes
+            .filter((c) => (c.cnpj ?? "").replace(/\D/g, "").length !== 14)
+            .map((c) => c.apelido)
+            .join(", ")}{" "}
+          sem CNPJ cadastrado: o que uma empresa paga à outra só é eliminado do DRE do grupo quando o CNPJ das duas está em{" "}
+          <a href="/conexoes" className="font-medium underline">
+            Conexões
+          </a>
+          .
+        </p>
+      )}
       {!escopo.conexaoId && (eliminado.receitaCents !== 0 || eliminado.despesaCents !== 0) && (
         <p className="rounded-lg bg-slate-50 px-4 py-2 text-xs text-slate-600">
           <strong>Operações entre empresas do grupo eliminadas:</strong> {fmtBRL(Math.abs(eliminado.receitaCents))} de
