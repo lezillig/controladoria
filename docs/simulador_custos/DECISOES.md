@@ -577,6 +577,34 @@ gestao-motoristas).
   rota no lugar do par asfalto/terra, avaria por veículo·ano, índices de
   reajuste separados por insumo.
 
+## 7.9 Elétricos e híbridos pelo relatório da ABVE
+
+- **Híbrido em três tipos** (aba Veículos, sob a energia): pleno/Toyota (HEV),
+  plug-in/BYD DM-i (PHEV) e leve (MHEV, 12–48 V); o tipo vem do texto do
+  cadastro da base ("DM-i", "plug-in" → PHEV; "Bio-Hybrid", "48V" → MHEV).
+  Rendimento sobre a combustão pela ROTA (o ganho é da frenagem e some na
+  estrada): HEV 1,50 urbana / 1,30 mista / 1,07 rodoviária; PHEV sem recarga
+  1,30 / 1,12 / 1,00; MHEV 1,10 / 1,06 / 1,00 (pesados menos). Manutenção:
+  HEV e MHEV iguais à combustão, PHEV ×1,35. Depreciação: HEV ×0,8, PHEV
+  ×1,3 (FIPE 2025–26).
+- **Flex a etanol** no carro híbrido: preço do etanol e 70% do rendimento.
+- **Plug-in com recarga**: % do km no elétrico (0,23 kWh/km); o consumo vira
+  o km/l EQUIVALENTE do custo misto (litro + kWh), sem mudar o motor nem o
+  Excel. Locação sem motorista: deixe 0% (o cliente decide se recarrega).
+- **Elétrico**: preço do kWh = mix de recarga — garagem (tarifa da base;
+  padrão R$ 0,89 = Enel SP tarifa branca fora de ponta com tributos), AC
+  pública R$ 1,15, DC pública R$ 2,10; padrão 90% garagem + 10% DC ≈ R$ 1,01.
+  Carregador por veículo (padrão R$ 7 mil, wallbox AC instalado) somado às
+  adaptações. Depreciação ×1,4 a partir de R$ 200 mil (médio/premium).
+  Ônibus elétrico 0,78 km/kWh (SPTrans 1,19–1,27 kWh/km).
+- **IPVA SP** (linha da aba Veículos): média do contrato, ano a ano — 4%
+  (ônibus e micro 2%), locadora 1%, híbrido flex até R$ 261 mil isento em
+  2026 e 1–2–3% até 2029, elétrico na capital com devolução de metade até
+  R$ 3.642/ano até 2030. Grava no campo "IPVA + licenciamento" (somar a taxa).
+- Configurações guardadas no tipo (`hibrido`, `eletrico`) para desfazer ao
+  trocar de energia ou de tipo; híbridos salvos na versão de um fator só são
+  desfeitos com os fatores antigos.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

@@ -1,8 +1,9 @@
 "use client";
 
 import { CAMPOS_PREMISSAS, PERFIS_PADRAO } from "@/lib/simulador/premissas";
-import { CATEGORIA_DO_TIPO, FONTES_ENERGIA, ROTULO_CATEGORIA_PEDAGIO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, UNIDADE_ENERGIA, type CategoriaPedagio, type EntradaSimulacao, type FonteEnergia, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
-import { energiaDoPerfil, trocarEnergia } from "@/lib/simulador/energia";
+import { CATEGORIA_DO_TIPO, FONTES_ENERGIA, type ConfigEletrico, type ConfigHibrido, type RotaHibrido, type TipoHibrido, ROTULO_CATEGORIA_PEDAGIO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, UNIDADE_ENERGIA, type CategoriaPedagio, type EntradaSimulacao, type FonteEnergia, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
+import { energiaDoPerfil, reconfigurarEletrico, reconfigurarHibrido, tarifaDoMix, trocarEnergia } from "@/lib/simulador/energia";
+import { ipvaSP } from "@/lib/simulador/ipva";
 import { categoriaPedagioDe, tarifaParaPerfil, type PracaPedagio } from "@/lib/simulador/pedagio";
 import { Cartao, CampoNumero, botao, selecao } from "../comum";
 import type { AlterarComOrigem } from "./Premissas";
@@ -170,8 +171,15 @@ export default function Veiculos({
                       </option>
                     ))}
                   </select>
+                  {energiaDoPerfil(p) === "HIBRIDO" && (
+                    <ConfiguracaoHibrido
+                      p={p}
+                      podeEditar={podeEditar}
+                      mudar={(m) => alterar((e) => void (e.premissas.perfis![k] = reconfigurarHibrido(e.premissas.perfis![k], m, precosEnergia, e.premissas.variaveis.arlaKm)))}
+                    />
+                  )}
                   {energiaDoPerfil(p) === "ELETRICO" && (
-                    <span className="mt-1 block text-[11px] leading-tight text-slate-500">Confira valor do veículo, manutenção e IPVA (isento em alguns estados).</span>
+                    <ConfiguracaoEletrico p={p} podeEditar={podeEditar} mudar={(m) => alterar((e) => void (e.premissas.perfis![k] = reconfigurarEletrico(e.premissas.perfis![k], m, precosEnergia)))} />
                   )}
                 </td>
               ))}
@@ -261,6 +269,47 @@ export default function Veiculos({
                 </td>
               ))}
             </tr>
+            <tr className="bg-slate-50/60">
+              <td
+                className="sticky left-0 border-b border-slate-100 bg-white px-2 py-1.5 font-medium"
+                title="IPVA de SP ano a ano do contrato, sobre o valor venal que cai com a depreciação: 4% (ônibus e micro 2%); locadora 1%; híbrido flex até R$ 261 mil isento em 2026 e 1–2–3% de 2027 a 2029; elétrico registrado na capital recebe de volta metade, até R$ 3.642/ano, até 2030. Grava a média no campo 'IPVA + licenciamento' — some a taxa de licenciamento."
+              >
+                IPVA SP <span className="text-[11px] font-normal text-slate-500">(calcular a média do contrato)</span>
+              </td>
+              <td className="border-b border-slate-100 px-2 py-1.5 text-right text-slate-500">—</td>
+              {perfis.map((p, k) => {
+                const calc = (locadora: boolean) =>
+                  ipvaSP({
+                    valor: p.veiculo.valor,
+                    energia: energiaDoPerfil(p),
+                    tipoHibrido: p.hibrido?.tipo ?? null,
+                    hibridoFlex: p.hibrido ? p.hibrido.combustivel !== "DIESEL" : false,
+                    onibusOuMicro: CATEGORIA_DO_TIPO[p.tipo] === "ONIBUS" || CATEGORIA_DO_TIPO[p.tipo] === "MICRO",
+                    anoInicio,
+                    vigenciaMeses: entrada.premissas.contrato.vigenciaMeses,
+                    depreciacaoAa: p.veiculo.depreciacaoAa,
+                    locadora,
+                    capital: true,
+                  }).mediaAnual;
+                const usar = (locadora: boolean) => mudarPerfil(k, (x) => void (x.veiculo.ipvaLicenciamentoAno = Math.round(calc(locadora))));
+                return (
+                  <td key={p.codigo} className="border-b border-slate-100 px-2 py-1.5 text-right text-xs">
+                    {podeEditar ? (
+                      <span className="flex flex-col items-end gap-1">
+                        <button type="button" className="text-blue-700 hover:underline" onClick={() => usar(false)}>
+                          usar {Math.round(calc(false)).toLocaleString("pt-BR")}/ano
+                        </button>
+                        <button type="button" className="text-blue-700 hover:underline" title="Frota de locadora registrada: 1%" onClick={() => usar(true)}>
+                          como locadora: {Math.round(calc(true)).toLocaleString("pt-BR")}/ano
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">{Math.round(calc(false)).toLocaleString("pt-BR")}/ano</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
             {([
               ["Veículo — custo fixo mensal (capital, seguro, IPVA, garagem…)", CAMPOS_VEICULO_FIXO],
               ["Veículo — custo por km (energia, pneus, manutenção)", CAMPOS_VEICULO_VARIAVEL],
@@ -304,5 +353,86 @@ export default function Veiculos({
       {perfis.length === 0 && <p className="text-sm text-slate-500">Nenhum tipo de veículo além do padrão. Adicione carro, van, micro ou ônibus para usar nas rotas.</p>}
       <CalculadoraFU entrada={entrada} alterar={alterar} podeEditar={podeEditar} />
     </Cartao>
+  );
+}
+
+const ROTULO_TIPO_HIBRIDO: Record<TipoHibrido, string> = { HEV: "Híbrido pleno (Toyota)", PHEV: "Plug-in (BYD DM-i)", MHEV: "Leve (12–48 V)" };
+const ROTULO_ROTA: Record<RotaHibrido, string> = { URBANO: "Rota urbana", MISTO: "Rota mista", RODOVIARIO: "Rota rodoviária" };
+const pct = (v: number) => Math.round(v * 100);
+
+// O híbrido: tipo, rota (o ganho é da frenagem e some na estrada),
+// combustível (o flex pode rodar a etanol) e, no plug-in, quanto do km roda
+// no elétrico com recarga na tomada.
+function ConfiguracaoHibrido({ p, podeEditar, mudar }: { p: PerfilVeiculo; podeEditar: boolean; mudar: (m: Partial<ConfigHibrido>) => void }) {
+  const h = p.hibrido;
+  const leve = CATEGORIA_DO_TIPO[p.tipo] === "CARRO";
+  return (
+    <span className="mt-1 flex flex-col items-end gap-1 text-[11px] text-slate-600">
+      <select aria-label={`Tipo de híbrido — ${p.descricao}`} className={selecao} disabled={!podeEditar} value={h?.tipo ?? "HEV"} onChange={(ev) => mudar({ tipo: ev.target.value as TipoHibrido })}>
+        {(Object.keys(ROTULO_TIPO_HIBRIDO) as TipoHibrido[]).map((t) => (
+          <option key={t} value={t}>
+            {ROTULO_TIPO_HIBRIDO[t]}
+          </option>
+        ))}
+      </select>
+      <select aria-label={`Rota — ${p.descricao}`} className={selecao} disabled={!podeEditar} value={h?.rota ?? "URBANO"} onChange={(ev) => mudar({ rota: ev.target.value as RotaHibrido })}>
+        {(Object.keys(ROTULO_ROTA) as RotaHibrido[]).map((r) => (
+          <option key={r} value={r}>
+            {ROTULO_ROTA[r]}
+          </option>
+        ))}
+      </select>
+      {leve && (
+        <select aria-label={`Combustível do híbrido — ${p.descricao}`} className={selecao} disabled={!podeEditar} value={h?.combustivel ?? "GASOLINA"} onChange={(ev) => mudar({ combustivel: ev.target.value as ConfigHibrido["combustivel"] })}>
+          <option value="GASOLINA">Gasolina</option>
+          <option value="ETANOL">Etanol (flex)</option>
+        </select>
+      )}
+      {h?.tipo === "PHEV" && (
+        <label className="flex items-center gap-1" title="Fração do km rodada no elétrico, com recarga na tomada todo dia. 0% = nunca recarrega (locação sem motorista: o cliente decide).">
+          km no elétrico
+          <span className="w-16">
+            <CampoNumero valor={pct(h.pctEletrico)} casas={0} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && v <= 100 && mudar({ pctEletrico: v / 100 })} />
+          </span>
+          %
+        </label>
+      )}
+      {h && <span className="text-slate-500">consumo ×{h.fatorConsumo.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} · manutenção ×{h.fatorManutencao.toLocaleString("pt-BR")} · depreciação ×{h.fatorDepreciacao.toLocaleString("pt-BR")}</span>}
+    </span>
+  );
+}
+
+// O elétrico: onde ele recarrega (o preço do kWh é a mistura) e o carregador
+// por veículo, que vai para as adaptações e se deprecia no prazo delas.
+function ConfiguracaoEletrico({ p, podeEditar, mudar }: { p: PerfilVeiculo; podeEditar: boolean; mudar: (m: Partial<ConfigEletrico>) => void }) {
+  const c = p.eletrico;
+  if (!c) return <span className="mt-1 block text-[11px] leading-tight text-slate-500">Troque a energia e volte ao elétrico para montar o mix de recarga.</span>;
+  const dc = Math.max(0, 1 - c.garagemPct - c.acPct);
+  return (
+    <span className="mt-1 flex flex-col items-end gap-1 text-[11px] text-slate-600">
+      <label className="flex items-center gap-1" title={`Garagem R$ ${c.tarifaGaragem.toLocaleString("pt-BR")}/kWh (recarga noturna; no horário de ponta, 17h30–20h30, passa de R$ 2/kWh)`}>
+        recarga na garagem
+        <span className="w-14">
+          <CampoNumero valor={pct(c.garagemPct)} casas={0} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && v <= 100 && mudar({ garagemPct: v / 100, acPct: Math.min(c.acPct, 1 - v / 100) })} />
+        </span>
+        %
+      </label>
+      <label className="flex items-center gap-1" title={`AC pública R$ ${c.tarifaAc.toLocaleString("pt-BR")}/kWh; o resto é DC pública (rápida) a R$ ${c.tarifaDc.toLocaleString("pt-BR")}/kWh`}>
+        AC pública
+        <span className="w-14">
+          <CampoNumero valor={pct(c.acPct)} casas={0} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && v <= 100 - pct(c.garagemPct) && mudar({ acPct: v / 100 })} />
+        </span>
+        % · DC {pct(dc)}%
+      </label>
+      <label className="flex items-center gap-1" title="Wallbox AC 7–22 kW instalado (R$ 5–13 mil); DC 30–60 kW R$ 87–250 mil, dividido pelos veículos que usam.">
+        carregador/veículo R$
+        <span className="w-20">
+          <CampoNumero valor={c.carregadorPorVeiculo} casas={0} desativado={!podeEditar} aoMudar={(v) => v !== null && v >= 0 && mudar({ carregadorPorVeiculo: v })} />
+        </span>
+      </label>
+      <span className="text-slate-500">
+        R$ {tarifaDoMix(c).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}/kWh · depreciação ×{c.fatorDepreciacao.toLocaleString("pt-BR")}
+      </span>
+    </span>
   );
 }

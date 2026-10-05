@@ -281,6 +281,36 @@ export function tipoDe(categoria: CategoriaVeiculo, variante: VarianteVeiculo): 
 // preço (variaveis.dieselLitro) é o preço por UNIDADE de energia — litro ou
 // kWh — e o consumo é km por essa unidade. Custo por km = preço ÷ consumo,
 // igual para diesel, gasolina, etanol e elétrico.
+// Híbrido pleno (Toyota, recupera a frenagem), plug-in (BYD DM-i, recarrega
+// na tomada) ou leve (12–48 V, Fiat Bio-Hybrid).
+export type TipoHibrido = "HEV" | "PHEV" | "MHEV";
+export type RotaHibrido = "URBANO" | "MISTO" | "RODOVIARIO";
+export type ConfigHibrido = {
+  tipo: TipoHibrido;
+  rota: RotaHibrido;
+  combustivel: "GASOLINA" | "ETANOL" | "DIESEL";
+  // Plug-in: fração do km rodada no elétrico (recarga na tomada) e consumo
+  // elétrico. 0 = sem recarga (o plug-in vira um híbrido pesado).
+  pctEletrico: number;
+  kwhKm: number;
+  tarifaKwh: number;
+  // Fatores aplicados sobre o veículo a combustão (para desfazer).
+  fatorConsumo: number;
+  fatorManutencao: number;
+  fatorDepreciacao: number;
+};
+export type ConfigEletrico = {
+  // Mix de recarga (fração do kWh): garagem, AC pública e DC pública (o resto).
+  garagemPct: number;
+  acPct: number;
+  tarifaGaragem: number;
+  tarifaAc: number;
+  tarifaDc: number;
+  // Carregador por veículo, somado às adaptações (depreciado no prazo delas).
+  carregadorPorVeiculo: number;
+  fatorDepreciacao: number;
+};
+
 export type FonteEnergia = "DIESEL" | "GASOLINA" | "ETANOL" | "ELETRICO" | "HIBRIDO";
 export const FONTES_ENERGIA: FonteEnergia[] = ["DIESEL", "GASOLINA", "ETANOL", "ELETRICO", "HIBRIDO"];
 export const ROTULO_ENERGIA: Record<FonteEnergia, string> = { DIESEL: "Diesel", GASOLINA: "Gasolina", ETANOL: "Etanol", ELETRICO: "Elétrico", HIBRIDO: "Híbrido" };
@@ -307,6 +337,10 @@ export type PerfilVeiculo = {
   categoriaCnh?: string | null;
   // Ausente = diesel (estudos salvos antes de existir o campo).
   energia?: FonteEnergia;
+  // Como o híbrido e o elétrico foram montados sobre o veículo a combustão
+  // (energia.ts): os fatores aplicados ficam guardados para desfazer.
+  hibrido?: ConfigHibrido;
+  eletrico?: ConfigEletrico;
   // Ausente = pela categoria (carro e van: rodagem simples; micro e ônibus:
   // 2 eixos).
   categoriaPedagio?: CategoriaPedagio;

@@ -1,8 +1,8 @@
 import { CBS_REFERENCIA_PADRAO, IBS_REFERENCIA_PADRAO } from "./reforma";
-import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
+import { CATEGORIA_DO_TIPO, tipoDe, type CategoriaVeiculo, type FonteEnergia, type PerfilVeiculo, type Premissas, type TipoVeiculo, type VarianteVeiculo } from "./tipos";
 import { BENEFICIOS_MOTORISTA_TRANSFRETUR, PISO_TRANSFRETUR_NIVEL_A, PISO_TRANSFRETUR_NIVEL_B, VR_TRANSFRETUR_DIA } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
-import { CHAVE_PRECO_ENERGIA, combustivelDoHibrido, CONSUMO_ELETRICO_PADRAO, doHibrido, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO, semOQueOEletricoNaoTem } from "./energia";
+import { CHAVE_PRECO_ENERGIA, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PADRAO, reconfigurarHibrido, tipoHibridoDoTexto, trocarEnergia } from "./energia";
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO } from "./indiretosDoDre";
@@ -635,16 +635,10 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
     const tipo = tipoDoTexto(String(v.tipo ?? "")) ?? "VAN";
     const padrao = PERFIS_PADRAO.find((p) => p.tipo === tipo)!;
     const energia = energiaDoTexto(String(v.combustivel ?? "")) ?? energiaDoPerfil(padrao);
-    const categoria = CATEGORIA_DO_TIPO[tipo];
-    const fonteDoPreco = energia === "HIBRIDO" ? combustivelDoHibrido(categoria) : energia;
-    const daEnergia =
-      energia === energiaDoPerfil(padrao)
-        ? padrao.variaveis
-        : energia === "ELETRICO"
-          ? { ...semOQueOEletricoNaoTem(padrao.variaveis), consumoAsfaltoKmL: CONSUMO_ELETRICO_PADRAO[categoria], consumoTerraKmL: Number((CONSUMO_ELETRICO_PADRAO[categoria] * 0.85).toFixed(2)) }
-          : energia === "HIBRIDO"
-            ? doHibrido(padrao.variaveis, categoria, PREMISSAS_PADRAO.variaveis.arlaKm)
-            : { ...padrao.variaveis, arlaKm: energia === "DIESEL" ? PREMISSAS_PADRAO.variaveis.arlaKm : 0 };
+    // Preço de cada energia: o da base, quando houver; senão o padrão.
+    const precos = Object.fromEntries(
+      (Object.keys(PRECO_ENERGIA_PADRAO) as FonteEnergia[]).map((f) => [f, base.parametros.get(CHAVE_PRECO_ENERGIA[f])?.valor ?? PRECO_ENERGIA_PADRAO[f]])
+    ) as Record<FonteEnergia, number>;
     // Salário: a função do mesmo tipo ("Motorista de van adaptada"); sem ela,
     // a da mesma categoria ("Motorista de van").
     const motoristas = base.funcoes.filter((f) => /motorista/i.test(String(f.funcao ?? "")));
@@ -662,7 +656,12 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
     const qtde = n(v, "pneusQtde");
     const preco = n(v, "pneuPreco");
     const vidaPneu = n(v, "pneuVidaKm");
-    return {
+    // O modelo como o padrão do tipo (a combustão, com os números da base);
+    // depois levado à energia do modelo pelo mesmo caminho da tela (o
+    // elétrico sem o que não tem, com o mix de recarga e o carregador; o
+    // híbrido com tipo, rota e combustível). O que a base informa vale.
+    const doTipo = energiaDoPerfil(padrao);
+    const combustao: PerfilVeiculo = {
       codigo: `BASE-${i + 1}`,
       tipo,
       descricao: `${v.tipo ?? ""} ${v.modelo ?? ""}`.trim(),
@@ -683,19 +682,26 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
         idadeInicialAnos: ano ? idade : padrao.veiculo.idadeInicialAnos,
         idadeReferenciaManutencao: ano && n(v, "manutencaoKm") !== null ? idade : padrao.veiculo.idadeReferenciaManutencao,
       },
-      energia,
+      energia: doTipo,
       variaveis: {
-        // O padrão do tipo levado à energia do modelo: o elétrico sem o que
-        // não tem (óleo, filtros, parte da manutenção), o híbrido com o
-        // rendimento e o freio dele. O que a base informa, vale.
-        ...daEnergia,
-        // Preço da energia do modelo (diesel, gasolina, etanol ou kWh; o
-        // híbrido, o do seu combustível), da base quando houver.
-        dieselLitro: base.parametros.get(CHAVE_PRECO_ENERGIA[fonteDoPreco])?.valor ?? (energia === energiaDoPerfil(padrao) ? padrao.variaveis.dieselLitro : PRECO_ENERGIA_PADRAO[fonteDoPreco]),
-        consumoAsfaltoKmL: n(v, "consumoKmL") ?? daEnergia.consumoAsfaltoKmL,
-        manutencaoAsfaltoKm: n(v, "manutencaoKm") ?? daEnergia.manutencaoAsfaltoKm,
+        ...padrao.variaveis,
+        dieselLitro: precos[doTipo],
         pneusAsfaltoKm: qtde && preco && vidaPneu ? (qtde * preco) / vidaPneu : padrao.variaveis.pneusAsfaltoKm,
       },
     };
+    let convertido = energia === doTipo ? combustao : trocarEnergia(combustao, energia, precos, PREMISSAS_PADRAO.variaveis.arlaKm, padrao.variaveis.oleoLavagemKm);
+    if (energia === "HIBRIDO") {
+      const tipoHibrido = tipoHibridoDoTexto(`${v.combustivel ?? ""} ${v.modelo ?? ""}`);
+      if (tipoHibrido !== convertido.hibrido?.tipo) convertido = reconfigurarHibrido(convertido, { tipo: tipoHibrido }, precos, PREMISSAS_PADRAO.variaveis.arlaKm);
+    }
+    const consumoBase = n(v, "consumoKmL");
+    const manutencaoBase = n(v, "manutencaoKm");
+    if (consumoBase !== null) {
+      // O consumo da base é o real do modelo (km/l, ou km/kWh no elétrico).
+      convertido.variaveis.consumoTerraKmL = Number((convertido.variaveis.consumoTerraKmL * (consumoBase / (convertido.variaveis.consumoAsfaltoKmL || consumoBase))).toFixed(4));
+      convertido.variaveis.consumoAsfaltoKmL = consumoBase;
+    }
+    if (manutencaoBase !== null) convertido.variaveis.manutencaoAsfaltoKm = manutencaoBase;
+    return convertido;
   });
 }
