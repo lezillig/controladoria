@@ -27,8 +27,12 @@ const OBRIGATORIOS = [
 ] as const;
 
 const OPCIONAIS = [
+  ["dividendosAPagar", "Lucros a pagar aos sócios"],
   ["depreciacaoAno", "Depreciação dos 12 meses"],
   ["lucroLiquidoAno", "Lucro líquido dos 12 meses"],
+  ["receitaLiquidaAno", "Receita líquida dos 12 meses"],
+  ["ebitAno", "Resultado antes do financeiro"],
+  ["irCsllAno", "IRPJ e CSLL dos 12 meses"],
   ["kmAno", "Km rodados nos 12 meses"],
 ] as const;
 
@@ -89,8 +93,12 @@ export async function salvarBalanco(formData: FormData): Promise<ResultadoBalanc
     dividaCurtoPrazo: valores.dividaCurtoPrazo!,
     dividaLongoPrazo: valores.dividaLongoPrazo!,
     patrimonioLiquido: valores.patrimonioLiquido!,
+    dividendosAPagar: valores.dividendosAPagar,
     depreciacaoAno: valores.depreciacaoAno,
     lucroLiquidoAno: valores.lucroLiquidoAno,
+    receitaLiquidaAno: valores.receitaLiquidaAno,
+    ebitAno: valores.ebitAno,
+    irCsllAno: valores.irCsllAno,
     kmAno: valores.kmAno,
     custoCapitalAa: new Prisma.Decimal(wacc).div(100),
     frotaVeiculos,

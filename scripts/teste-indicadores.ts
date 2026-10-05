@@ -75,8 +75,12 @@ const balanco: BalancoIndicadores = {
   dividaCurtoPrazoCents: 2_000,
   dividaLongoPrazoCents: 8_000,
   patrimonioLiquidoCents: 10_000,
+  dividendosAPagarCents: 0,
   depreciacaoAnoCents: 1_200,
   lucroLiquidoAnoCents: 1_500,
+  receitaLiquidaAnoCents: null,
+  ebitAnoCents: null,
+  irCsllAnoCents: null,
   custoCapitalAa: 0.18,
   frotaVeiculos: 4,
   kmAno: 48_000,
@@ -110,6 +114,25 @@ const comAnterior = calcularIndicadores({
   balancoAnterior: { ...balanco, patrimonioLiquidoCents: 6_000 },
 });
 ok("com o balanço anterior: capital médio", perto(comAnterior.find((i) => i.chave === "ROIC")?.valor, (nopat / ((capital + capital - 4_000) / 2)) * 100));
+
+// A deliberação de lucros (Lei 15.270/2025): sai do PL e vai para o passivo,
+// sem sair do caixa. Para o retorno, continua sendo capital dos sócios.
+const deliberado = calcularIndicadores({
+  dre, competencias, competenciasDoBalanco: competencias, recebiveis: null, balancoAnterior: null,
+  balanco: { ...balanco, patrimonioLiquidoCents: 4_000, dividendosAPagarCents: 6_000 },
+});
+ok("lucros a pagar aos sócios: ROIC igual ao de antes da deliberação", perto(deliberado.find((i) => i.chave === "ROIC")?.valor, (nopat / capital) * 100));
+ok("lucros a pagar aos sócios: ROE sobre o PL econômico", perto(deliberado.find((i) => i.chave === "ROE")?.valor, 15));
+ok("lucros a pagar aos sócios não são dívida bancária", perto(deliberado.find((i) => i.chave === "DL_EBITDA")?.valor, 9_000 / d.ebitda));
+
+const contabil = calcularIndicadores({
+  dre, competencias, competenciasDoBalanco: competencias, recebiveis: null, balancoAnterior: null,
+  balanco: { ...balanco, ebitAnoCents: 3_000, irCsllAnoCents: 500, receitaLiquidaAnoCents: 10_000 },
+});
+ok("ROIC contábil = (EBIT − IRPJ/CSLL) ÷ capital", perto(contabil.find((i) => i.chave === "ROIC_CONTABIL")?.valor, (2_500 / capital) * 100));
+const gap = ((3_000 + 1_200) / 10_000) * 100 - (d.ebitda / d.receitaLiquida) * 100;
+ok("conciliação: margem EBITDA contábil − gerencial, em p.p.", perto(contabil.find((i) => i.chave === "CONCILIACAO")?.valor, gap), `${contabil.find((i) => i.chave === "CONCILIACAO")?.valor} × ${gap}`);
+ok("sem EBIT contábil: sem ROIC contábil nem conciliação", !lista.some((i) => i.chave === "ROIC_CONTABIL" || i.chave === "CONCILIACAO"));
 
 const semBalanco = calcularIndicadores({ dre, competencias, competenciasDoBalanco: null, balanco: null, balancoAnterior: null, recebiveis: null });
 ok("sem balanço: ROIC sem dado, margens calculadas", semBalanco.find((i) => i.chave === "ROIC")?.farol === "SEM_DADO" && semBalanco.find((i) => i.chave === "MARGEM_EBITDA")?.valor !== null);

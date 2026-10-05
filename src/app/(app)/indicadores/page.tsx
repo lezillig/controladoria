@@ -26,6 +26,8 @@ function formatar(i: Indicador): string {
   switch (i.formato) {
     case "PCT":
       return fmtPercent(i.valor);
+    case "PP":
+      return `${i.valor > 0 ? "+" : ""}${fmtNumero(i.valor, 1)} p.p.`;
     case "VEZES":
       return `${fmtNumero(i.valor, 2)}×`;
     case "DIAS":
@@ -53,7 +55,7 @@ export default async function IndicadoresPage({
   const painel = await painelDeIndicadores({ companyId: session.companyId, conexaoId: escopo.conexaoId }, periodo.dataReferencia);
 
   const porChave = new Map(painel.indicadores.map((i) => [i.chave, i]));
-  const destaque = ["ROIC", "MARGEM_EBITDA", "COBERTURA", "DL_EBITDA"].map((c) => porChave.get(c)).filter((i): i is Indicador => !!i);
+  const destaque = ["ROIC", "MARGEM_EBITDA", "COBERTURA", "LIQUIDEZ"].map((c) => porChave.get(c)).filter((i): i is Indicador => !!i);
   const meses = resultadoPorMes(painel.dre, painel.competencias);
   const total = dreDaJanela(painel.dre, painel.competencias);
   const rotuloEscopo = escopo.apelido ?? "Grupo (todas as empresas)";
@@ -74,8 +76,12 @@ export default async function IndicadoresPage({
         dividaCurtoPrazo: reaisDoBanco(emEdicao.dividaCurtoPrazo),
         dividaLongoPrazo: reaisDoBanco(emEdicao.dividaLongoPrazo),
         patrimonioLiquido: reaisDoBanco(emEdicao.patrimonioLiquido),
+        dividendosAPagar: reaisDoBanco(emEdicao.dividendosAPagar),
         depreciacaoAno: reaisDoBanco(emEdicao.depreciacaoAno),
         lucroLiquidoAno: reaisDoBanco(emEdicao.lucroLiquidoAno),
+        receitaLiquidaAno: reaisDoBanco(emEdicao.receitaLiquidaAno),
+        ebitAno: reaisDoBanco(emEdicao.ebitAno),
+        irCsllAno: reaisDoBanco(emEdicao.irCsllAno),
         custoCapital: String(emEdicao.custoCapitalAa.toNumber() * 100).replace(".", ","),
         frotaVeiculos: emEdicao.frotaVeiculos === null ? "" : String(emEdicao.frotaVeiculos),
         kmAno: emEdicao.kmAno === null ? "" : String(Math.round(emEdicao.kmAno.toNumber())),

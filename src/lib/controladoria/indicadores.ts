@@ -21,7 +21,7 @@
 // empresa — as metas da empresa ficam no BSC.
 
 export type Farol = "VERDE" | "AMARELO" | "VERMELHO" | "SEM_DADO" | "INFO";
-export type Formato = "PCT" | "VEZES" | "DIAS" | "MOEDA" | "NUMERO" | "MOEDA_KM";
+export type Formato = "PCT" | "PP" | "VEZES" | "DIAS" | "MOEDA" | "NUMERO" | "MOEDA_KM";
 
 export type GrupoIndicador = "RETORNO" | "DIVIDA" | "MARGENS" | "CLIENTES" | "FROTA";
 
@@ -86,8 +86,14 @@ export type BalancoIndicadores = {
   dividaCurtoPrazoCents: number;
   dividaLongoPrazoCents: number;
   patrimonioLiquidoCents: number;
+  // Lucros deliberados e não pagos: capital dos sócios ainda no negócio.
+  dividendosAPagarCents: number;
   depreciacaoAnoCents: number | null;
   lucroLiquidoAnoCents: number | null;
+  // DRE contábil dos 12 meses até a data-base (opcionais).
+  receitaLiquidaAnoCents: number | null;
+  ebitAnoCents: number | null;
+  irCsllAnoCents: number | null;
   // Fração ao ano (0,18 = 18%).
   custoCapitalAa: number;
   frotaVeiculos: number | null;
@@ -233,9 +239,15 @@ export function calcularIndicadores(e: EntradaIndicadores): Indicador[] {
       ? `DRE de ${e.competenciasDoBalanco[0]} a ${e.competenciasDoBalanco[11]}`
       : `DRE de ${rotuloJanela} (a base não cobre os 12 meses até a data-base)`;
     const divida = b.dividaCurtoPrazoCents + b.dividaLongoPrazoCents;
-    const capital = (x: BalancoIndicadores) => x.dividaCurtoPrazoCents + x.dividaLongoPrazoCents + x.patrimonioLiquidoCents - x.caixaCents;
+    // PATRIMÔNIO ECONÔMICO: o PL mais os lucros deliberados e ainda não
+    // pagos. A deliberação tira o lucro do PL e o põe no passivo sem mexer
+    // no caixa; até ser pago, é dinheiro dos sócios financiando a operação.
+    // Sem isso, o ROE e o ROIC do ano da deliberação disparam — o da Azul
+    // em 2025 iria de ~60% para mais de 200%.
+    const plEconomico = (x: BalancoIndicadores) => x.patrimonioLiquidoCents + x.dividendosAPagarCents;
+    const capital = (x: BalancoIndicadores) => x.dividaCurtoPrazoCents + x.dividaLongoPrazoCents + plEconomico(x) - x.caixaCents;
     const capitalMedio = media(capital(b), a ? capital(a) : null);
-    const plMedio = media(b.patrimonioLiquidoCents, a ? a.patrimonioLiquidoCents : null);
+    const plMedio = media(plEconomico(b), a ? plEconomico(a) : null);
     const ativoMedio = media(b.ativoTotalCents, a ? a.ativoTotalCents : null);
     const depreciacaoEstimada = b.depreciacaoAnoCents === null;
     const depreciacao = b.depreciacaoAnoCents ?? Math.round(b.imobilizadoLiquidoCents * DEPRECIACAO_ESTIMADA_AA);
@@ -253,8 +265,39 @@ export function calcularIndicadores(e: EntradaIndicadores): Indicador[] {
       formato: "PCT",
       farol: roic === null ? "SEM_DADO" : farolPorFaixa(roic, wacc, wacc - 3, true),
       referencia: `Verde acima do custo do capital (${p1(wacc)}); amarelo até 3 p.p. abaixo. Fretamento bem gerido: 12% a 20%.`,
-      formula: `NOPAT ${reais(nopat)} ÷ capital investido ${reais(capitalMedio)} (${medias}). NOPAT = EBITDA ${reais(ebitdaB)} − depreciação ${reais(depreciacao)}${depreciacaoEstimada ? " (estimada em 12% do imobilizado — informe a do DRE contábil)" : ""} − IRPJ/CSLL ${reais(dB.tributoLucro * anualB)}. Capital investido = dívida + PL − caixa. ${janelaB}.`,
+      formula: `NOPAT ${reais(nopat)} ÷ capital investido ${reais(capitalMedio)} (${medias}). NOPAT = EBITDA gerencial ${reais(ebitdaB)} − depreciação ${reais(depreciacao)}${depreciacaoEstimada ? " (estimada em 12% do imobilizado — informe a do DRE contábil)" : ""} − IRPJ/CSLL do DRE gerencial ${reais(dB.tributoLucro * anualB)}. Capital investido = dívida + PL + lucros a pagar aos sócios − caixa. ${janelaB}.`,
     });
+
+    if (b.ebitAnoCents !== null) {
+      const nopatContabil = b.ebitAnoCents - (b.irCsllAnoCents ?? 0);
+      const roicContabil = pct(nopatContabil, capitalMedio);
+      add({
+        chave: "ROIC_CONTABIL",
+        grupo: "RETORNO",
+        rotulo: "ROIC contábil",
+        valor: roicContabil,
+        formato: "PCT",
+        farol: roicContabil === null ? "SEM_DADO" : farolPorFaixa(roicContabil, wacc, wacc - 3, true),
+        referencia: "O mesmo retorno com o resultado do DRE contábil — o número que banco e investidor leem.",
+        formula: `(EBIT contábil ${reais(b.ebitAnoCents)} − IRPJ/CSLL ${reais(b.irCsllAnoCents ?? 0)}${b.irCsllAnoCents === null ? " (não informado)" : ""}) ÷ capital investido ${reais(capitalMedio)}.`,
+      });
+      if (b.receitaLiquidaAnoCents !== null && b.receitaLiquidaAnoCents > 0 && dB.receitaLiquida > 0) {
+        const margemContabil = ((b.ebitAnoCents + depreciacao) / b.receitaLiquidaAnoCents) * 100;
+        const margemGerencial = (dB.ebitda / dB.receitaLiquida) * 100;
+        const diferenca = margemContabil - margemGerencial;
+        add({
+          chave: "CONCILIACAO",
+          grupo: "RETORNO",
+          rotulo: "Margem EBITDA: contábil − gerencial",
+          valor: diferenca,
+          formato: "PP",
+          farol: farolPorFaixa(Math.abs(diferenca), 3, 7, false),
+          referencia:
+            "As duas leituras do mesmo ano deveriam ficar perto. Verde até 3 p.p.; amarelo até 7. Diferença grande é custo lançado no ativo (adiantamentos, consórcios), receita fora do mês ou classificação diferente — concilie com a contabilidade antes de usar qualquer um dos dois para preço.",
+          formula: `Contábil: (EBIT ${reais(b.ebitAnoCents)} + depreciação ${reais(depreciacao)}) ÷ receita líquida ${reais(b.receitaLiquidaAnoCents)} = ${p1(margemContabil)}. Gerencial: ${p1(margemGerencial)} (${janelaB}). O gerencial trata as retiradas dos sócios como despesa e põe as vendas de veículos em outras receitas.`,
+        });
+      }
+    }
 
     const eva = nopat - b.custoCapitalAa * capitalMedio;
     add({
@@ -280,7 +323,7 @@ export function calcularIndicadores(e: EntradaIndicadores): Indicador[] {
       formula:
         b.lucroLiquidoAnoCents === null
           ? "Informe o lucro líquido contábil dos 12 meses até a data-base."
-          : `Lucro líquido contábil ${reais(b.lucroLiquidoAnoCents)} ÷ PL ${reais(plMedio)} (${medias}).`,
+          : `Lucro líquido contábil ${reais(b.lucroLiquidoAnoCents)} ÷ PL econômico ${reais(plMedio)} (PL + lucros a pagar aos sócios; ${medias}).`,
     });
 
     const roa = b.lucroLiquidoAnoCents === null ? null : pct(b.lucroLiquidoAnoCents, ativoMedio);
@@ -335,16 +378,16 @@ export function calcularIndicadores(e: EntradaIndicadores): Indicador[] {
       formula: `${reais(b.ativoCirculanteCents)} ÷ ${reais(b.passivoCirculanteCents)}.`,
     });
 
-    const endividamento = b.patrimonioLiquidoCents > 0 ? divida / b.patrimonioLiquidoCents : null;
+    const endividamento = plEconomico(b) > 0 ? divida / plEconomico(b) : null;
     add({
       chave: "DIVIDA_PL",
       grupo: "DIVIDA",
       rotulo: "Dívida ÷ patrimônio líquido",
       valor: endividamento,
       formato: "VEZES",
-      farol: b.patrimonioLiquidoCents <= 0 ? "VERMELHO" : farolPorFaixa(endividamento, 1.5, 2.5, false),
-      referencia: "Quanto de dívida para cada real dos sócios. Verde ≤ 1,5×; amarelo até 2,5×.",
-      formula: `Dívida de curto e longo prazo ${reais(divida)} ÷ PL ${reais(b.patrimonioLiquidoCents)}.`,
+      farol: plEconomico(b) <= 0 ? "VERMELHO" : farolPorFaixa(endividamento, 1.5, 2.5, false),
+      referencia: "Quanto de dívida bancária para cada real dos sócios. Verde ≤ 1,5×; amarelo até 2,5×.",
+      formula: `Dívida de curto e longo prazo ${reais(divida)} ÷ PL econômico ${reais(plEconomico(b))} (PL ${reais(b.patrimonioLiquidoCents)} + lucros a pagar aos sócios ${reais(b.dividendosAPagarCents)}).`,
     });
   } else {
     for (const [chave, rotulo, grupo] of [

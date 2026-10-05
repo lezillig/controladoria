@@ -2103,9 +2103,18 @@ model BalancoPatrimonial {
   dividaCurtoPrazo   Decimal  @db.Decimal(18, 2)
   dividaLongoPrazo   Decimal  @db.Decimal(18, 2)
   patrimonioLiquido  Decimal  @db.Decimal(18, 2)
+  // Lucros já deliberados e ainda não pagos aos sócios (passivo). Para o
+  // retorno é capital dos sócios que continua no negócio: entra no capital
+  // investido e no patrimônio econômico (a deliberação da Lei 15.270/2025
+  // tirou R$ 38 mi do PL da Azul em 2025 sem sair um real do caixa).
+  dividendosAPagar   Decimal? @db.Decimal(18, 2)
   // Do DRE contábil dos 12 meses até a data-base.
   depreciacaoAno     Decimal? @db.Decimal(18, 2)
   lucroLiquidoAno    Decimal? @db.Decimal(18, 2)
+  receitaLiquidaAno  Decimal? @db.Decimal(18, 2)
+  // Resultado antes do resultado financeiro e dos tributos sobre o lucro.
+  ebitAno            Decimal? @db.Decimal(18, 2)
+  irCsllAno          Decimal? @db.Decimal(18, 2)
   // Custo do capital (WACC) para o EVA, em fração ao ano.
   custoCapitalAa     Decimal  @default(0.18) @db.Decimal(8, 6)
   // Operação no período: veículos em operação e km rodados nos 12 meses.

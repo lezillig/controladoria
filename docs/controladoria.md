@@ -663,6 +663,19 @@ resultado elas levam.
 | Clientes | Maior cliente e três maiores (pela **raiz do CNPJ**: filiais são um cliente), PMR e PMP ponderados pelo valor, ciclo financeiro, vencido há mais de 30 dias ÷ receita do mês. |
 | Frota | Receita por veículo, imobilizado por veículo, receita e custo operacional por km, km por veículo — com a frota e o km lançados junto do balanço. |
 
+**Lucros deliberados a pagar aos sócios** (campo próprio do balanço) não são
+dívida: são capital dos sócios que continua no negócio até o pagamento. Entram
+no capital investido e no **PL econômico** (PL + lucros a pagar), base do ROE e
+de dívida ÷ PL. A deliberação de R$ 38 mi da Azul em 2025 (Lei 15.270/2025)
+derrubou o PL contábil de R$ 29,6 mi para R$ 10,9 mi sem mexer no caixa — sem o
+ajuste, ROE e ROIC daquele ano passam de 200%.
+
+**ROIC contábil e conciliação.** Com o EBIT, o IRPJ/CSLL e a receita líquida do
+DRE contábil, o painel mostra o ROIC contábil e a diferença, em pontos
+percentuais, entre a margem EBITDA contábil e a gerencial do mesmo período.
+Acima de 7 p.p. o farol fica vermelho: as duas leituras do mesmo ano não podem
+ser usadas para preço antes de conciliadas.
+
 **A receita dos clientes é a do DRE.** O título a receber só conta se a
 categoria dele cai em "Receita bruta" pela mesma regra do DRE
 (`linhaDaCategoria` em dre.ts — classificação gravada ou proposta): empréstimo

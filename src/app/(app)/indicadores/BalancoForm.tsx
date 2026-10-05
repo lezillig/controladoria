@@ -23,8 +23,12 @@ type CampoBalanco =
   | "dividaCurtoPrazo"
   | "dividaLongoPrazo"
   | "patrimonioLiquido"
+  | "dividendosAPagar"
   | "depreciacaoAno"
   | "lucroLiquidoAno"
+  | "receitaLiquidaAno"
+  | "ebitAno"
+  | "irCsllAno"
   | "custoCapital"
   | "frotaVeiculos"
   | "kmAno"
@@ -52,13 +56,27 @@ const BLOCOS: { titulo: string; campos: { campo: CampoBalanco; rotulo: string; a
         ajuda: "Empréstimos, financiamentos, CDC, leasing e consórcios contemplados que vencem em até 12 meses.",
       },
       { campo: "dividaLongoPrazo", rotulo: "Dívida de longo prazo", ajuda: "A mesma dívida, com vencimento após 12 meses." },
+      {
+        campo: "dividendosAPagar",
+        rotulo: "Lucros a pagar aos sócios",
+        opcional: true,
+        ajuda: "Dividendos deliberados e não pagos (ex.: Lei 15.270/2025). Contam como capital dos sócios, não como dívida.",
+      },
       { campo: "patrimonioLiquido", rotulo: "Patrimônio líquido", ajuda: "Pode ser negativo: use o sinal de menos." },
     ],
   },
   {
     titulo: "DRE contábil e operação (12 meses até a data-base)",
     campos: [
+      { campo: "receitaLiquidaAno", rotulo: "Receita líquida", opcional: true },
+      {
+        campo: "ebitAno",
+        rotulo: "Resultado antes do financeiro (EBIT)",
+        opcional: true,
+        ajuda: "Para o ROIC contábil e a conciliação com o gerencial.",
+      },
       { campo: "depreciacaoAno", rotulo: "Depreciação", opcional: true, ajuda: "Sem ela, o painel estima 12% do imobilizado ao ano." },
+      { campo: "irCsllAno", rotulo: "IRPJ e CSLL", opcional: true },
       { campo: "lucroLiquidoAno", rotulo: "Lucro líquido contábil", opcional: true, ajuda: "Para ROE e ROA." },
       { campo: "custoCapital", rotulo: "Custo do capital (% a.a.)", ajuda: "WACC para o ROIC e o EVA. Padrão: 18%." },
       { campo: "frotaVeiculos", rotulo: "Veículos em operação", opcional: true },
