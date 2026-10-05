@@ -636,6 +636,43 @@ traz duas ligações da origem, e a tela de Rentabilidade as publica:
 O que não veio classificado da origem (título sem projeto) fica contado à parte
 como "fora das OS", para a leitura nunca parecer completa quando não é.
 
+### Indicadores de retorno e operação (tela Indicadores)
+
+`src/lib/controladoria/indicadores.ts` (as contas, puras) e
+`indicadoresNoBanco.ts` (a colheita). Permissões `indicadores` (ver) e
+`gerir-indicadores` (lançar balanço).
+
+**Duas fontes.** O DRE gerencial dos 12 meses fechados vem da mesma série do DRE
+anual da tela de Custos e DRE. O **balanço** (`BalancoPatrimonial`, um por
+data-base e por escopo — grupo ou uma empresa) vem da contabilidade e é digitado
+na tela; gravar a mesma data-base de novo substitui. Sem balanço, só os
+indicadores de retorno e alavancagem ficam em branco.
+
+**O DRE gerencial não tem depreciação** — o veículo aparece como parcela, abaixo
+do resultado antes dos investimentos. Para os indicadores, o EBIT da tela é um
+**EBITDA**; o NOPAT desconta a depreciação do balanço (sem ela, 12% do
+imobilizado ao ano, dito como estimativa) e o IRPJ/CSLL do DRE. As retiradas dos
+sócios ficam como despesa (parte é pró-labore); o payout mostra quanto do
+resultado elas levam.
+
+| Grupo | Indicadores |
+|---|---|
+| Retorno | ROIC (NOPAT ÷ dívida + PL − caixa, média do balanço anterior quando há um até 15 meses antes), EVA (NOPAT − custo do capital × capital), ROE e ROA (lucro líquido contábil), giro do ativo. O retorno usa o DRE dos 12 meses até a data-base do balanço, quando a base os cobre. |
+| Dívida e liquidez | Dívida líquida ÷ EBITDA, cobertura do serviço da dívida (EBITDA ÷ despesas financeiras + parcelas), liquidez corrente, dívida ÷ PL, despesas financeiras ÷ receita. |
+| Margens | Receita 12 meses, margem EBITDA, margem líquida (ROS), pessoas, veículos, parcelas da frota e terceiros sobre a receita, retiradas ÷ resultado gerado, meses no vermelho. |
+| Clientes | Maior cliente e três maiores (pela **raiz do CNPJ**: filiais são um cliente), PMR e PMP ponderados pelo valor, ciclo financeiro, vencido há mais de 30 dias ÷ receita do mês. |
+| Frota | Receita por veículo, imobilizado por veículo, receita e custo operacional por km, km por veículo — com a frota e o km lançados junto do balanço. |
+
+**A receita dos clientes é a do DRE.** O título a receber só conta se a
+categoria dele cai em "Receita bruta" pela mesma regra do DRE
+(`linhaDaCategoria` em dre.ts — classificação gravada ou proposta): empréstimo
+recebido não vira cliente, e na visão do grupo a operação entre as empresas sai.
+
+**Faróis são referências de mercado** (fretamento com frota própria, covenants
+usuais de banco), não metas: ROIC acima do custo do capital; cobertura ≥ 1,3×;
+dívida líquida ≤ 2,5× EBITDA; margem EBITDA ≥ 20%; margem líquida ≥ 5%;
+maior cliente ≤ 20%; PMR ≤ 45 dias. As metas da empresa continuam no BSC.
+
 ---
 
 ## 7. Conformidade: o que vem de fora

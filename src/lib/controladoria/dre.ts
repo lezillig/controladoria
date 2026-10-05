@@ -801,6 +801,27 @@ export function subtotaisDoDre(g: (chave: string) => number): Record<string, num
     } as Record<string, number>;
 }
 
+// A LINHA DO DRE DE UMA CATEGORIA: a classificação gravada ou, sem ela, a
+// proposta. Escrita uma vez para o DRE e para quem precisa saber, título a
+// título, o que é receita bruta (os indicadores de clientes): uma segunda
+// regra divergiria do DRE na primeira categoria nova.
+export function linhaDaCategoria(
+  codigo: string,
+  classificacoes: Map<string, Classificacao>,
+  categorias: InsumosDre["categorias"],
+  movimentoPorCategoria: InsumosDre["movimento"]
+): string {
+  const guardada = classificacaoDaChave(classificacoes, codigo);
+  if (guardada) return guardada.linha;
+  const cat = categorias.get(codigo);
+  if (cat) return proporLinha(cat, movimentoPorCategoria.get(codigo));
+  // Categoria que aparece em título e não existe no cadastro: quase sempre
+  // categoria excluída na Omie depois de usada. O lado vem do movimento.
+  return (movimentoPorCategoria.get(codigo)?.receberCents ?? 0) > (movimentoPorCategoria.get(codigo)?.pagarCents ?? 0)
+    ? "RECEITA_BRUTA"
+    : "DESPESA_GERAL";
+}
+
 export function montarDreDeInsumos(
   insumos: InsumosDre,
   classificacoes: Map<string, Classificacao>,
@@ -839,17 +860,7 @@ export function montarDreDeInsumos(
     // (a de antes da separação por empresa).
     const guardada = classificacaoDaChave(classificacoes, codigo);
     const empresaDaChave = partesDaChave(codigo).empresa;
-    const linha =
-      guardada?.linha ??
-      (cat
-        ? proporLinha(cat, movimentoPorCategoria.get(codigo))
-        : // Categoria que aparece em título e não existe no cadastro: quase
-          // sempre categoria excluída na Omie depois de usada. O lado vem do
-          // movimento, pelo mesmo motivo de cima.
-          ((movimentoPorCategoria.get(codigo)?.receberCents ?? 0) >
-          (movimentoPorCategoria.get(codigo)?.pagarCents ?? 0)
-            ? "RECEITA_BRUTA"
-            : "DESPESA_GERAL"));
+    const linha = linhaDaCategoria(codigo, classificacoes, categorias, movimentoPorCategoria);
 
     const confirmada = guardada?.confirmada ?? false;
     if (!confirmada) naoConfirmado += Math.abs(valor);

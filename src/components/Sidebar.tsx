@@ -10,6 +10,7 @@ import {
   CalendarRange,
   Compass,
   FileCheck,
+  Gauge,
   Landmark,
   LayoutDashboard,
   Mail,
@@ -64,6 +65,10 @@ const NAV: NavItem[] = [
   { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote, permissao: "fluxo-caixa" },
   { href: "/resultados", label: "Resultado mês a mês", icon: CalendarRange, permissao: "resultados" },
   { href: "/rentabilidade", label: "Rentabilidade por contrato", icon: PiggyBank, permissao: "rentabilidade" },
+  // O retorno sobre o capital fecha a seção: DRE, caixa e margem respondem
+  // "quanto ganhamos"; os indicadores, "quanto isso rende sobre o que está
+  // posto no negócio".
+  { href: "/indicadores", label: "Indicadores", icon: Gauge, permissao: "indicadores" },
 
   { secao: "Rotina financeira", href: "/titulos", label: "Contas a pagar e receber", icon: Receipt, permissao: "titulos" },
   { href: "/conciliacao", label: "Conciliação bancária", icon: Landmark, permissao: "conciliacao" },

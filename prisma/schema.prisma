@@ -191,12 +191,12 @@ enum ConformidadeStatus {
 // conexão. O `apelido` vai desnormalizado junto, para tela, relatório e chave
 // de achado mostrarem a empresa de origem sem depender de join.
 model OmieConexao {
-  id            String   @id @default(cuid())
-  companyId     String
-  nome          String
+  id                  String    @id @default(cuid())
+  companyId           String
+  nome                String
   // Rótulo curto usado em filtros, listas e chaves de achado ("AZUL", "MCZ").
-  apelido       String
-  cnpj          String?
+  apelido             String
+  cnpj                String?
   // Nome do SUFIXO das variáveis de ambiente que guardam as credenciais:
   // `AZUL` resolve para OMIE_APP_KEY_AZUL / OMIE_APP_SECRET_AZUL.
   //
@@ -204,30 +204,30 @@ model OmieConexao {
   // aqui significaria que um vazamento de banco (backup, dump, acesso de
   // leitura de um terceiro) entregaria acesso ao ERP financeiro do grupo. O
   // banco guarda apenas o NOME da variável de ambiente.
-  credencialRef String
-  ativa         Boolean  @default(true)
-  ordem         Int      @default(0)
+  credencialRef       String
+  ativa               Boolean   @default(true)
+  ordem               Int       @default(0)
   // O PAPEL DA EMPRESA NO GRUPO: OPERACAO (roda os ônibus — a Azul) ou
   // CORPORATIVO (a estrutura administrativa — a MCZ). Decide em qual das duas
   // linhas de "Despesas com pessoas" do DRE cai a folha de cada título:
   // "— operação" ou "— corporativo". Texto, e não enum, como
   // os demais domínios pequenos deste schema; valores fora dos dois são lidos
   // como OPERACAO.
-  papelNoGrupo  String   @default("OPERACAO")
+  papelNoGrupo        String    @default("OPERACAO")
   // DADOS PARA PROPOSTAS: o cabeçalho e a assinatura do orçamento exportado.
   // A cidade dá o "local" de "local e data".
-  endereco           String?
-  cidade             String?
-  representanteNome  String?
-  representanteRg    String?
-  representanteCpf   String?
-  representanteCargo String?
+  endereco            String?
+  cidade              String?
+  representanteNome   String?
+  representanteRg     String?
+  representanteCpf    String?
+  representanteCargo  String?
   // Quando terminou a varredura de exclusões desde jan/2025 (fase
   // `exclusoes`). Nula: a próxima sincronização do dia varre o histórico;
   // depois, só os últimos meses. Apagar o valor refaz a varredura.
   exclusoesVarridasEm DateTime?
-  criadoEm      DateTime @default(now())
-  atualizadoEm  DateTime @updatedAt
+  criadoEm            DateTime  @default(now())
+  atualizadoEm        DateTime  @updatedAt
 
   parceiros       OmieParceiro[]
   categorias      OmieCategoria[]
@@ -2079,4 +2079,42 @@ model SimContratoRealizado {
   criadoEm          DateTime  @default(now())
 
   @@unique([estudoId, competencia])
+}
+
+// BALANÇO POR DATA-BASE — para os indicadores de retorno (ROIC, ROE, ROA,
+// EVA, endividamento, liquidez). O DRE gerencial sai do sistema; o balanço
+// vem da contabilidade e é digitado (ou corrigido) na tela de Indicadores,
+// um por data-base (fim de exercício ou de trimestre). Valores em reais.
+// `escopo`: "GRUPO" ou o id da conexão Omie (uma empresa).
+model BalancoPatrimonial {
+  id                 String   @id @default(cuid())
+  companyId          String
+  escopo             String   @default("GRUPO")
+  dataBase           DateTime @db.Date
+  caixa              Decimal  @db.Decimal(18, 2)
+  contasReceber      Decimal  @db.Decimal(18, 2)
+  ativoCirculante    Decimal  @db.Decimal(18, 2)
+  // Imobilizado líquido de depreciação (frota e demais bens).
+  imobilizadoLiquido Decimal  @db.Decimal(18, 2)
+  ativoTotal         Decimal  @db.Decimal(18, 2)
+  fornecedores       Decimal  @db.Decimal(18, 2)
+  passivoCirculante  Decimal  @db.Decimal(18, 2)
+  // Empréstimos, financiamentos, CDC, leasing e consórcios contemplados.
+  dividaCurtoPrazo   Decimal  @db.Decimal(18, 2)
+  dividaLongoPrazo   Decimal  @db.Decimal(18, 2)
+  patrimonioLiquido  Decimal  @db.Decimal(18, 2)
+  // Do DRE contábil dos 12 meses até a data-base.
+  depreciacaoAno     Decimal? @db.Decimal(18, 2)
+  lucroLiquidoAno    Decimal? @db.Decimal(18, 2)
+  // Custo do capital (WACC) para o EVA, em fração ao ano.
+  custoCapitalAa     Decimal  @default(0.18) @db.Decimal(8, 6)
+  // Operação no período: veículos em operação e km rodados nos 12 meses.
+  frotaVeiculos      Int?
+  kmAno              Decimal? @db.Decimal(18, 2)
+  observacao         String?
+  autorNome          String?
+  criadoEm           DateTime @default(now())
+  atualizadoEm       DateTime @updatedAt
+
+  @@unique([companyId, escopo, dataBase])
 }
