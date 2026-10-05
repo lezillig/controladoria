@@ -125,6 +125,88 @@ export function contaBancariaCompartilhada(ctx: ContextoAuditoria, materialidade
 }
 
 // ---------------------------------------------------------------------------
+// FR-VALOR-REPETIDO — o mesmo valor quebrado, pago várias vezes em poucos dias
+// ---------------------------------------------------------------------------
+// CP-DUPLICIDADE exige o mesmo vencimento; FR-NF-REPETIDA, o mesmo número de
+// nota. Escapa das duas a nota lançada de novo com outro número e outro
+// vencimento — a mesma compra paga duas ou três vezes no mês. O sinal é o
+// valor QUEBRADO (com centavos) idêntico, ao mesmo fornecedor, em títulos
+// pagos com documentos diferentes a até 20 dias um do outro. Valor redondo e
+// categoria de valor fixo (aluguel, consórcio, parcela) ficam de fora: lá
+// repetir é a regra. Caso real: três notas de R$ 57.022,99 no mesmo mês, em
+// "Peças", a um comércio de artigos esportivos.
+const JANELA_VALOR_REPETIDO_DIAS = 20;
+
+export function valorRepetido(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
+  const achados: AchadoNovo[] = [];
+  const pagos = titulosAtivos(ctx, "PAGAR").filter(
+    (t) => t.valorPagoCents > 0 && t.valorDocumentoCents % 100 !== 0 && !CATEGORIA_DE_VALOR_FIXO.test(t.categoriaDescricao ?? "")
+  );
+  for (const [parceiro, doFornecedor] of agrupar(pagos, chaveParceiro)) {
+    if (NUMERA_POR_CONTRATO.test(nomeParceiro(ctx, doFornecedor[0]))) continue;
+    for (const [valor, mesmos] of agrupar(doFornecedor, (t) => String(t.valorDocumentoCents))) {
+      if (mesmos.length < 2) continue;
+      const ordenados = [...mesmos].sort((a, b) => a.dataVencimento.getTime() - b.dataVencimento.getTime());
+      // Grupos de títulos encadeados a até 20 dias um do outro.
+      const grupos: OmieTitulo[][] = [];
+      for (const t of ordenados) {
+        const atual = grupos[grupos.length - 1];
+        if (atual && diasEntre(atual[atual.length - 1].dataVencimento, t.dataVencimento) <= JANELA_VALOR_REPETIDO_DIAS) atual.push(t);
+        else grupos.push([t]);
+      }
+      for (const grupo of grupos) {
+        if (grupo.length < 2) continue;
+        // Mesmo vencimento em todos é CP-DUPLICIDADE; mesmo número de nota é
+        // FR-NF-REPETIDA; parcelas do mesmo documento são carnê.
+        if (new Set(grupo.map((t) => t.dataVencimento.toISOString().slice(0, 10))).size === 1) continue;
+        const notas = grupo.map((t) => numeroDaNota(t.numeroDocumento) ?? `sem:${t.codigoLancamento}`);
+        if (new Set(notas).size < grupo.length) continue;
+        const excedente = somar(grupo.slice(1), (t) => t.valorPagoCents);
+        if (excedente <= 0) continue;
+        const nome = nomeParceiro(ctx, grupo[0]);
+        const valorCents = Number(valor);
+        achados.push({
+          regra: "FR-VALOR-REPETIDO",
+          tipo: "EVENTO",
+          severidade: severidadePorValor(excedente, materialidade),
+          categoria: "PERDA_FINANCEIRA",
+          titulo: `${fmtBRL(valorCents)} pagos ${grupo.length} vezes a ${nome} em ${diasEntre(grupo[0].dataVencimento, grupo[grupo.length - 1].dataVencimento)} dias`,
+          descricao:
+            `${grupo.length} títulos de exatamente ${fmtBRL(valorCents)} (valor com centavos), com documentos diferentes, ` +
+            `vencidos entre ${fmtData(grupo[0].dataVencimento)} e ${fmtData(grupo[grupo.length - 1].dataVencimento)}` +
+            `${grupo[0].categoriaDescricao ? `, em "${grupo[0].categoriaDescricao}"` : ""}. Valor quebrado idêntico repetido em poucos dias ` +
+            `é o sinal da mesma compra lançada mais de uma vez com outro número — as regras de duplicidade exata e de nota ` +
+            `repetida não o pegam. ${fmtBRL(excedente)} a recuperar se for o caso.`,
+          recomendacao:
+            "Abrir os títulos na Omie e conferir as notas e os comprovantes: se for a mesma compra, pedir devolução ou abatimento. " +
+            "Se forem compras distintas (entregas parceladas, mesmo item repetido), conferir também se a categoria está certa.",
+          valorCents: excedente,
+          impactoCents: excedente,
+          dataReferencia: grupo[grupo.length - 1].dataUltimaBaixa ?? ctx.dataReferencia,
+          entidadeTipo: "OmieParceiro",
+          entidadeRef: nome,
+          evidencia: {
+            fornecedor: nome,
+            valor: valorCents,
+            titulos: grupo.map((t) => ({
+              ref: referenciaTitulo(t),
+              empresa: t.conexaoApelido,
+              documento: t.numeroDocumento ?? "",
+              vencimento: fmtData(t.dataVencimento),
+              pagoEm: t.dataUltimaBaixa ? fmtData(t.dataUltimaBaixa) : "—",
+              pago: t.valorPagoCents,
+            })),
+            excedente,
+          },
+          chave: chaveAchado("FR-VALOR-REPETIDO", parceiro, valor, grupo[0].dataVencimento.toISOString().slice(0, 10)),
+        });
+      }
+    }
+  }
+  return achados;
+}
+
+// ---------------------------------------------------------------------------
 // FR-NF-REPETIDA — a mesma nota, paga mais de uma vez
 // ---------------------------------------------------------------------------
 // CP-DUPLICIDADE exige valor e vencimento iguais. Esta olha o NÚMERO da nota:

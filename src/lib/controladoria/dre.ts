@@ -138,7 +138,13 @@ export const LINHAS_DRE = [
   // oficial. Aqui ela passa de propósito, porque esta demonstração responde
   // "quanto sobrou depois de tudo que sai", e a prestação sai. Os juros
   // continuam em despesas financeiras, onde a contabilidade os coloca.
-  { chave: "FINANCIAMENTO_INVESTIMENTO", rotulo: "(-) Financiamentos e consórcios", tipo: "GRUPO", sinal: -1 },
+  //
+  // EMPRÉSTIMOS também ficam aqui (tomado, pago, devolvido, de banco ou de
+  // sócio): o principal é movimento de caixa, não receita nem despesa. Lançado
+  // na receita bruta, o empréstimo do sócio inflava o faturamento; na despesa
+  // financeira, a devolução do principal parecia juro. Os JUROS continuam em
+  // despesas financeiras.
+  { chave: "FINANCIAMENTO_INVESTIMENTO", rotulo: "(-) Financiamentos, consórcios e empréstimos", tipo: "GRUPO", sinal: -1 },
   { chave: "TRIBUTO_SOBRE_LUCRO", rotulo: "(-) IRPJ e CSLL", tipo: "GRUPO", sinal: -1 },
   { chave: "RESULTADO_LIQUIDO", rotulo: "= Resultado líquido do período", tipo: "SUBTOTAL", sinal: 1 },
 ] as const;
@@ -244,6 +250,9 @@ const PADRAO_INFORMATICA =
 // é quase toda a renovação de frota.
 const PADRAO_FINANCIAMENTO =
   /financiamento|cons[óo]rcio|leasing|arrendamento mercantil|presta[çc][ãa]o de ve[íi]culo|finame|cdc\b/i;
+// Empréstimo e mútuo (o principal): tomado, pago ou devolvido. "Juros sobre
+// empréstimos" é pego antes por PADRAO_FINANCEIRA.
+const PADRAO_EMPRESTIMO = /empr[ée]stimo|m[úu]tuo/i;
 const PADRAO_OUTRA_RECEITA =
   /venda de ve[íi]culo|aliena[çc][ãa]o|resgate|cons[óo]rcio|lucros cessantes|reembolso|recupera[çc][ãa]o|indeniza[çc][ãa]o|sinistro|conv[êe]nio m[ée]dico|sobra|doa[çc][ãa]o/i;
 
@@ -290,6 +299,9 @@ export function proporLinha(
     // empresa está apenas recebendo de volta — e inflaria o resultado no mês
     // do resgate.
     if (PADRAO_FINANCIAMENTO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
+    // Empréstimo recebido ou devolvido à empresa não é faturamento nem outra
+    // receita: volta para a linha onde a saída do empréstimo está.
+    if (PADRAO_EMPRESTIMO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
     if (PADRAO_OUTRA_RECEITA.test(d)) return "OUTRAS_RECEITAS";
     return "RECEITA_BRUTA";
   }
@@ -321,6 +333,7 @@ export function proporLinha(
   // financeira, "parcela de financiamento" é investimento.
   if (PADRAO_FINANCEIRA.test(d)) return "DESPESA_FINANCEIRA";
   if (PADRAO_FINANCIAMENTO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
+  if (PADRAO_EMPRESTIMO.test(d)) return "FINANCIAMENTO_INVESTIMENTO";
   if (PADRAO_VEICULOS.test(d)) return "DESPESA_VEICULOS";
   if (PADRAO_SALARIOS.test(d)) return "DESPESA_SALARIOS";
   if (PADRAO_INFORMATICA.test(d)) return "DESPESA_INFORMATICA";

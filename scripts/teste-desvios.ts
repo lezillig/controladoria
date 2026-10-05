@@ -284,6 +284,32 @@ console.log("\nFR-NF-REPETIDA — a mesma nota, paga duas vezes com valor difere
   conferir("quem numera por contrato fica de fora", rodarFraude(ctx, "FR-NF-REPETIDA").length, 0);
 }
 
+// ------------------------------------------------------- FR-VALOR-REPETIDO
+console.log("\nFR-VALOR-REPETIDO — o mesmo valor quebrado pago várias vezes em poucos dias");
+{
+  const loja = { parceiroNome: "UGO COMERCIAL DE ARTIGOS ESPORTIVOS LTDA", parceiroDocumento: "44444444000144", parceiroCodigo: "U1", categoriaDescricao: "Peças, Equipamentos e Acessórios" };
+  const tres = [["101", "2026-06-05"], ["102", "2026-06-12"], ["103", "2026-06-20"]].map(([nota, venc]) =>
+    titulo({ ...loja, numeroDocumento: nota, valorDocumentoCents: 57_022_99, valorPagoCents: 57_022_99, dataVencimento: d(venc), dataUltimaBaixa: d(venc) })
+  );
+  const ctx = contexto({ titulos: [...fundo(), ...tres] });
+  const r = rodarFraude(ctx, "FR-VALOR-REPETIDO");
+  conferir("três notas diferentes de R$ 57.022,99 no mesmo mês são um achado", r.length, 1);
+  conferir("o excedente são os pagamentos além do primeiro", r[0]?.valorCents, 2 * 57_022_99);
+}
+{
+  const loja = { parceiroNome: "AUTO PECAS GAMA", parceiroDocumento: "55555555000155", parceiroCodigo: "G1" };
+  const mensais = [5, 6, 7].map((m) => titulo({ ...loja, numeroDocumento: `${200 + m}`, valorDocumentoCents: 1_499_90, valorPagoCents: 1_499_90, dataVencimento: d(`2026-0${m}-10`) }));
+  conferir("mesmo valor mês a mês (30 dias) não é repetição em poucos dias", rodarFraude(contexto({ titulos: [...fundo(), ...mensais] }), "FR-VALOR-REPETIDO").length, 0);
+  const redondos = ["301", "302"].map((n, k) => titulo({ ...loja, numeroDocumento: n, valorDocumentoCents: 2_000_00, valorPagoCents: 2_000_00, dataVencimento: d(`2026-06-${10 + k * 5}`) }));
+  conferir("valor redondo fica de fora", rodarFraude(contexto({ titulos: [...fundo(), ...redondos] }), "FR-VALOR-REPETIDO").length, 0);
+  const consorcio = ["401", "402"].map((n, k) =>
+    titulo({ ...loja, categoriaDescricao: "Consórcio", numeroDocumento: n, valorDocumentoCents: 3_456_78, valorPagoCents: 3_456_78, dataVencimento: d(`2026-06-${10 + k * 5}`) })
+  );
+  conferir("categoria de valor fixo (consórcio) fica de fora", rodarFraude(contexto({ titulos: [...fundo(), ...consorcio] }), "FR-VALOR-REPETIDO").length, 0);
+  const mesmaNota = ["501", "501"].map((n, k) => titulo({ ...loja, numeroDocumento: n, valorDocumentoCents: 777_77, valorPagoCents: 777_77, dataVencimento: d(`2026-06-${10 + k * 5}`) }));
+  conferir("mesmo número de nota fica com FR-NF-REPETIDA", rodarFraude(contexto({ titulos: [...fundo(), ...mesmaNota] }), "FR-VALOR-REPETIDO").length, 0);
+}
+
 // -------------------------------------------------------- FR-CADASTRO-E-PAGO
 console.log("\nFR-CADASTRO-E-PAGO — cadastrado e pago na mesma semana");
 {

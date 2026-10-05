@@ -440,6 +440,10 @@ console.log("\n6. Proposta automática — conservadora de propósito");
   // A ordem importa: juros de financiamento é despesa financeira, não
   // investimento — é onde a contabilidade os coloca.
   conferir("mas os JUROS ficam em financeiras", p("Juros de financiamento"), "DESPESA_FINANCEIRA");
+  conferir("empréstimo pago (principal) não é despesa financeira", p("Empréstimo"), "FINANCIAMENTO_INVESTIMENTO");
+  conferir("devolução de empréstimo recebida não é faturamento", p("Devolução de empréstimo", true), "FINANCIAMENTO_INVESTIMENTO");
+  conferir("empréstimo recebido do sócio não é outra receita", p("Empréstimo de sócio", true), "FINANCIAMENTO_INVESTIMENTO");
+  conferir("juros sobre empréstimos continuam financeira", p("Juros sobre Empréstimos"), "DESPESA_FINANCEIRA");
   conferir("tarifa bancária é financeira", p("Tarifas Bancárias"), "DESPESA_FINANCEIRA");
   // Combustível vai para VEÍCULOS, não para CUSTO DOS SERVIÇOS: entre veículos
   // e outras despesas o erro não move subtotal; entre custo e despesa, move o

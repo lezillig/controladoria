@@ -110,6 +110,18 @@ com a tela filtrada, e a classificação gravada no código puro vale para as
 duas até alguém classificar cada uma. A tela de Custos e DRE lista os códigos
 repetidos.
 
+### Empréstimos fora do resultado operacional
+
+Desde 05/10/2026 a proposta automática manda **empréstimo e mútuo** (tomado,
+pago ou devolvido; de banco ou de sócio) para a linha **"(-) Financiamentos,
+consórcios e empréstimos"**, abaixo do resultado antes dos investimentos. O
+principal é movimento de caixa: na receita bruta, o empréstimo do sócio
+inflava o faturamento ("Devolução de empréstimo" da LZ Holding, ~R$ 48 mil/mês
+em 2025–26); na despesa financeira, a devolução do principal parecia juro.
+"Juros sobre empréstimos" continua em despesas financeiras. Categorias já
+CONFIRMADAS na tela não mudam: reclassificar à mão as que estiverem em
+receita, outras receitas ou despesas financeiras.
+
 ### Sem as provisões futuras (a vencer fora do resultado)
 
 Desde 04/10/2026, no regime de competência, o título continua no mês da
@@ -233,6 +245,7 @@ o caso legítimo que preserva (`scripts/teste-desvios.ts`):
 |---|---|---|
 | `FR-CONTA-COMPARTILHADA` | Dois cadastros com documentos de raízes diferentes e o mesmo hash de banco/agência/conta (dentro e entre as empresas); CRÍTICA quando um deles é CPF da folha | Matriz e filial, o mesmo CNPJ nas duas contas Omie, factoring/FIDC/cooperativa |
 | `FR-NF-REPETIDA` | O mesmo número de nota do mesmo fornecedor pago mais de uma vez com valor ou vencimento diferentes — inclusive Azul e MCZ | Parcelas de carnê, duplicidade exata (é de `CP-DUPLICIDADE`), quem numera por contrato (banco, DETRAN, telefonia…), "número" que se repete todo mês |
+| `FR-VALOR-REPETIDO` | O mesmo valor com centavos, ao mesmo fornecedor, pago em títulos de documentos diferentes a até 20 dias um do outro (a mesma compra relançada com outro número) | Valor redondo, categoria de valor fixo (aluguel, consórcio, parcela, empréstimo…), quem numera por contrato, mesmo vencimento (é de `CP-DUPLICIDADE`), mesmo número de nota (é de `FR-NF-REPETIDA`) |
 | `FR-CADASTRO-E-PAGO` | Fornecedor criado na Omie (`info.dInc`) e pago em até 3 dias, valor ≥ metade da materialidade; PF, sem nota, sem e-mail/cidade e categoria de serviço agravam | Sem data real de cadastro (a carga histórica cria cadastro e título juntos), motorista da folha |
 | `FR-VALOR-REDONDO` | Fornecedor PJ com 6+ títulos, 70%+ múltiplos de R$ 100 (e 3× a taxa da base), metade ou mais sem nota | Aluguel, folha, diária, consórcio, honorário fixo, mesmo valor todo mês |
 | `FR-NOTA-SEQUENCIAL` | 4+ notas numeradas quase sem intervalo ao longo de 60+ dias: somos praticamente o único cliente | Quem numera por contrato, PF, sequência curta demais no tempo |

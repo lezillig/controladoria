@@ -10,6 +10,7 @@ import {
   tituloExcluidoNaOmie,
   lancamentoManualSemDocumento,
   notaRepetida,
+  valorRepetido,
   notaSequencial,
   valoresRedondos,
 } from "./antifraudeFornecedor";
@@ -88,6 +89,7 @@ export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   // numeração de nota que só anda conosco.
   achados.push(...contaBancariaCompartilhada(ctx, materialidade));
   achados.push(...notaRepetida(ctx, materialidade));
+  achados.push(...valorRepetido(ctx, materialidade));
   achados.push(...cadastradoEPago(ctx, materialidade));
   achados.push(...valoresRedondos(ctx, materialidade));
   achados.push(...notaSequencial(ctx, materialidade));

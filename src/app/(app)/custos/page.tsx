@@ -387,7 +387,7 @@ export default async function CustosPage({
         <Kpi
           rotulo="Investimentos"
           valor={fmtBRL(valorDaLinha("FINANCIAMENTO_INVESTIMENTO"))}
-          apoio={`Financiamentos e consórcios · ${fmtPercent(linhaDaTela("FINANCIAMENTO_INVESTIMENTO")?.percentReceitaLiquida ?? null)} da receita líquida`}
+          apoio={`Financiamentos, consórcios e empréstimos · ${fmtPercent(linhaDaTela("FINANCIAMENTO_INVESTIMENTO")?.percentReceitaLiquida ?? null)} da receita líquida`}
         />
         <Kpi
           rotulo="Resultado líquido do período"
