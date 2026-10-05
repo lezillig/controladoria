@@ -49,3 +49,25 @@ export function fatorManutencaoPorIdade(
 // Ano do veículo ↔ idade no início do contrato.
 export const idadeDoAno = (anoVeiculo: number, anoInicio: number) => Math.max(0, anoInicio - anoVeiculo);
 export const anoDaIdade = (idade: number, anoInicio: number) => anoInicio - Math.round(idade);
+
+// GARANTIA E CORRETIVA. A corretiva (reparo de falha) é paga só fora da
+// garantia da montadora, que acaba pelo que vier primeiro: o prazo (meses
+// desde o 0 km) ou a quilometragem. O km do veículo no início do contrato é
+// estimado com o mesmo uso mensal da rota (idade × 12 × km/mês). Sem prazo
+// nem km de garantia, o veículo está fora dela o contrato todo. Devolve a
+// fração dos meses do contrato FORA da garantia (0 a 1).
+export function fracaoForaDaGarantia(
+  veiculo: Pick<Premissas["veiculo"], "idadeInicialAnos" | "garantiaMeses" | "garantiaKm">,
+  vigenciaMeses: number,
+  kmPorMes: number
+): number {
+  const vigencia = Math.max(1, vigenciaMeses);
+  const temPrazo = typeof veiculo.garantiaMeses === "number" && veiculo.garantiaMeses > 0;
+  const temKm = typeof veiculo.garantiaKm === "number" && veiculo.garantiaKm > 0;
+  if (!temPrazo && !temKm) return 1;
+  const idadeMeses = Math.max(0, veiculo.idadeInicialAnos ?? 0) * 12;
+  const pelosMeses = temPrazo ? veiculo.garantiaMeses! - idadeMeses : Infinity;
+  const pelosKm = temKm ? (kmPorMes > 0 ? (veiculo.garantiaKm! - idadeMeses * kmPorMes) / kmPorMes : Infinity) : Infinity;
+  const restantes = Math.min(vigencia, Math.max(0, Math.min(pelosMeses, pelosKm)));
+  return 1 - restantes / vigencia;
+}

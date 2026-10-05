@@ -66,7 +66,7 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   gasolina_rs_l: { como: "Preço da gasolina — tipos de veículo a gasolina e carro híbrido", unidade: "R$/l", padrao: PRECO_ENERGIA_PADRAO.GASOLINA },
   etanol_rs_l: { como: "Preço do etanol — tipos de veículo a etanol", unidade: "R$/l", padrao: PRECO_ENERGIA_PADRAO.ETANOL },
   energia_rs_kwh: { como: "Tarifa da recarga — tipos de veículo elétricos (consumo em km/kWh)", unidade: "R$/kWh", padrao: PRECO_ENERGIA_PADRAO.ELETRICO },
-  oleo_rs_km: { caminho: "variaveis.oleoLavagemKm", como: "Óleo e filtros por km", unidade: "R$/km" },
+  oleo_rs_km: { caminho: "variaveis.oleoLavagemKm", como: "Lavagem e consumíveis por km (o óleo e os filtros das revisões já estão na manutenção)", unidade: "R$/km" },
   arla: { caminho: "variaveis.arlaKm", como: "ARLA por km (preço × % do diesel ÷ consumo)", unidadePadrao: "R$/km (já calculado)" },
 };
 

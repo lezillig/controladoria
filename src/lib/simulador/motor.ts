@@ -1,4 +1,4 @@
-import { fatorManutencaoPorIdade } from "./idadeManutencao";
+import { fatorManutencaoPorIdade, fracaoForaDaGarantia } from "./idadeManutencao";
 import type {
   Cenarios,
   ComposicaoItem,
@@ -274,7 +274,11 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const dieselKm =
     variaveis.dieselLitro * (dividir(pctAsfalto, variaveis.consumoAsfaltoKmL) + (pctTerra > 0 ? dividir(pctTerra, variaveis.consumoTerraKmL) : 0));
   const pneusKm = pctAsfalto * variaveis.pneusAsfaltoKm + pctTerra * variaveis.pneusTerraKm;
-  const manutencaoKm = (pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm) * fatorIdade;
+  // Corretiva: só nos meses do contrato fora da garantia (o km/mês da rota
+  // estima quando a garantia por km acaba), também pela idade.
+  const kmPorMes = contrato.modo === "MENSAL" ? kmRodado : dividir(kmRodado, contrato.mesesCustoFixo);
+  const corretivaKm = (variaveis.corretivaKm ?? 0) * fatorIdade * fracaoForaDaGarantia(veiculo, contrato.vigenciaMeses, kmPorMes);
+  const manutencaoKm = (pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm) * fatorIdade + corretivaKm;
 
   return {
     kmReferencia: r.kmReferencia,

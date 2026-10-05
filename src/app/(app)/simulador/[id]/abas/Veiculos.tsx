@@ -1,7 +1,7 @@
 "use client";
 
 import { CAMPOS_PREMISSAS, PERFIS_PADRAO } from "@/lib/simulador/premissas";
-import { FONTES_ENERGIA, ROTULO_CATEGORIA_PEDAGIO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, UNIDADE_ENERGIA, type CategoriaPedagio, type EntradaSimulacao, type FonteEnergia, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
+import { CATEGORIA_DO_TIPO, FONTES_ENERGIA, ROTULO_CATEGORIA_PEDAGIO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, UNIDADE_ENERGIA, type CategoriaPedagio, type EntradaSimulacao, type FonteEnergia, type PerfilVeiculo, type TipoVeiculo } from "@/lib/simulador/tipos";
 import { energiaDoPerfil, trocarEnergia } from "@/lib/simulador/energia";
 import { categoriaPedagioDe, tarifaParaPerfil, type PracaPedagio } from "@/lib/simulador/pedagio";
 import { Cartao, CampoNumero, botao, selecao } from "../comum";
@@ -186,11 +186,22 @@ export default function Veiculos({
                     className={selecao}
                     disabled={!podeEditar}
                     value={categoriaPedagioDe(p)}
-                    title="Pelos eixos e pela rodagem do eixo traseiro, não pela lotação: van Master é rodagem simples; Sprinter 516 é rodagem dupla."
+                    title="Pelos eixos e pela rodagem do eixo traseiro, não pela lotação: van Master é rodagem simples; Sprinter 516 é rodagem dupla. No micro e no ônibus, trocar 2 ↔ 3 eixos ajusta os pneus por km (6 ↔ 8 pneus)."
                     onChange={(ev) =>
                       alterar((e) => {
                         const x = e.premissas.perfis![k];
-                        x.categoriaPedagio = ev.target.value as CategoriaPedagio;
+                        // Micro e ônibus: 2 eixos têm 6 pneus, 3 eixos têm 8 — o
+                        // custo de pneus por km acompanha.
+                        const pneusDe = (c: CategoriaPedagio) => (c === "TRES_EIXOS" ? 8 : 6);
+                        const pesado = CATEGORIA_DO_TIPO[x.tipo] === "MICRO" || CATEGORIA_DO_TIPO[x.tipo] === "ONIBUS";
+                        const antes = categoriaPedagioDe(x);
+                        const depois = ev.target.value as CategoriaPedagio;
+                        if (pesado && antes !== "RODAGEM_SIMPLES" && depois !== "RODAGEM_SIMPLES" && antes !== depois) {
+                          const f = pneusDe(depois) / pneusDe(antes);
+                          x.variaveis.pneusAsfaltoKm = Number((x.variaveis.pneusAsfaltoKm * f).toFixed(4));
+                          x.variaveis.pneusTerraKm = Number((x.variaveis.pneusTerraKm * f).toFixed(4));
+                        }
+                        x.categoriaPedagio = depois;
                         // As rotas desse tipo com praça escolhida passam à tarifa da nova categoria.
                         for (const r of e.rotas) {
                           if (r.perfilVeiculo !== x.codigo || !r.pracaPedagio) continue;

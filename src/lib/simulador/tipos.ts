@@ -119,6 +119,11 @@ export type Premissas = {
     // o estudo corrige pela idade real com a curva ANTP (idadeManutencao.ts).
     // Ausente nas versões salvas antes da curva: fator 1.
     idadeReferenciaManutencao?: number | null;
+    // Garantia da montadora: acaba pelo que vier primeiro, prazo desde o 0 km
+    // ou km. Fora dela, entra a corretiva (variaveis.corretivaKm). Ausentes:
+    // sem garantia no contrato.
+    garantiaMeses?: number | null;
+    garantiaKm?: number | null;
     // CAPITAL. Com `capitalComposto`, o custo do capital é a média entre a
     // taxa do financiamento (fração financiada) e o custo de oportunidade do
     // capital próprio (o resto); sem ele, vale `custoCapitalAa`.
@@ -140,6 +145,9 @@ export type Premissas = {
     pneusTerraKm: number;
     manutencaoAsfaltoKm: number;
     manutencaoTerraKm: number;
+    // Corretiva (reparo de falha) por km, paga só fora da garantia e
+    // corrigida pela idade como a manutenção. Ausente nas versões antigas: 0.
+    corretivaKm?: number;
   };
   indiretos: {
     administracaoPct: number;

@@ -88,6 +88,8 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("veiculo.vidaUtilAnos", "Vida útil", "anos", "numero", "Linear e soma dos dígitos."),
   c("veiculo.valorResidualPct", "Valor residual ao fim da vida útil", "% do valor", "pct"),
   c("veiculo.idadeInicialAnos", "Idade do veículo no início do contrato", "anos", "numero", "Ano do início do contrato menos o ano do veículo. Corrige a manutenção pela curva de idade (ANTP) e entra na depreciação linear e na soma dos dígitos."),
+  c("veiculo.garantiaMeses", "Garantia da montadora — prazo", "meses", "numero", "Desde o 0 km. Com prazo e km, a garantia acaba pelo que vier primeiro; 0 = sem prazo. Fora dela entra a corretiva."),
+  c("veiculo.garantiaKm", "Garantia da montadora — km", "km", "numero", "0 = sem limite de km (Sprinter: 2 anos com km ilimitado)."),
   c("veiculo.idadeReferenciaManutencao", "Manutenção informada para veículo de", "anos", "numero", "A idade do veículo para a qual a manutenção por km e a fixa valem; o estudo corrige pela idade real com a curva ANTP (6% do preço novo/ano até 2 anos, 12% acima de 10)."),
   c("veiculo.capitalComposto", "Capital composto (financiado + próprio)", "", "bool", "Com ele, o custo do capital é a média ponderada da taxa do financiamento e do custo de oportunidade do capital próprio."),
   c("veiculo.fracaoFinanciada", "Fração financiada", "% do valor", "pct"),
@@ -98,11 +100,12 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("variaveis.consumoAsfaltoKmL", "Consumo em asfalto", "km por litro (ou kWh)", "numero"),
   c("variaveis.consumoTerraKmL", "Consumo em terra", "km por litro (ou kWh)", "numero"),
   c("variaveis.arlaKm", "ARLA 32", "R$/km", "moeda"),
-  c("variaveis.oleoLavagemKm", "Óleo, filtros, lavagem", "R$/km", "moeda"),
+  c("variaveis.oleoLavagemKm", "Lavagem e consumíveis", "R$/km", "moeda", "Só lavagem e consumíveis: o óleo e os filtros das revisões já estão na manutenção (carro, van e micro). No ônibus, a linha leva também os lubrificantes, como na ANTP."),
   c("variaveis.pneusAsfaltoKm", "Pneus — asfalto", "R$/km", "moeda"),
   c("variaveis.pneusTerraKm", "Pneus — terra", "R$/km", "moeda"),
   c("variaveis.manutencaoAsfaltoKm", "Manutenção — asfalto", "R$/km", "moeda"),
   c("variaveis.manutencaoTerraKm", "Manutenção — terra", "R$/km", "moeda"),
+  c("variaveis.corretivaKm", "Corretiva fora da garantia", "R$/km", "moeda", "Reparo de falha: entra só nos meses do contrato fora da garantia da montadora, corrigida pela idade como a manutenção. Zero quando a manutenção já a inclui (veículo usado, sem garantia)."),
   c("indiretos.administracaoPct", "Administração central", "% do custo direto", "pct"),
   c("indiretos.contingenciaPct", "Contingência / risco", "% do custo direto", "pct"),
   c("preco.lucroAlvoPct", "Lucro líquido alvo", "% do preço", "pct"),
@@ -187,6 +190,9 @@ export const PREMISSAS_PADRAO: Premissas = {
     valorResidualPct: 0.2,
     idadeInicialAnos: 0,
     idadeReferenciaManutencao: 0,
+    // Van: Sprinter com 2 anos de garantia e km ilimitado (MB, fev/2024).
+    garantiaMeses: 24,
+    garantiaKm: null,
     capitalComposto: false,
     fracaoFinanciada: 0.8,
     taxaFinanciamentoAa: 0.18,
@@ -195,14 +201,23 @@ export const PREMISSAS_PADRAO: Premissas = {
   },
   variaveis: {
     dieselLitro: 6.15,
-    consumoAsfaltoKmL: 8.7,
-    consumoTerraKmL: 7.2,
-    arlaKm: 0.03,
-    oleoLavagemKm: 0.06,
+    // Van em fretamento urbano/pendular: Master Minibus no Inmetro, 7,3 km/l
+    // na cidade e 7,8 na estrada (vazia; lotada e com ar, menos). ARLA
+    // acompanha os litros de diesel (~4%).
+    consumoAsfaltoKmL: 7.3,
+    consumoTerraKmL: 6.1,
+    arlaKm: 0.036,
+    // Só lavagem e consumíveis: o óleo está na revisão (preço fixo inclui
+    // óleo e filtros), que está na manutenção.
+    oleoLavagemKm: 0.02,
     pneusAsfaltoKm: 0.115,
     pneusTerraKm: 0.16,
-    manutencaoAsfaltoKm: 0.42,
-    manutencaoTerraKm: 0.59,
+    // Revisão R$ 0,12/km (Master/Ducato, concessionária, out/2026) + desgaste
+    // = 0,34; a corretiva (0,08, estimativa) só fora da garantia — 0,42 no
+    // total depois dela, como antes.
+    manutencaoAsfaltoKm: 0.34,
+    manutencaoTerraKm: 0.48,
+    corretivaKm: 0.08,
   },
   indiretos: { administracaoPct: 0.07, contingenciaPct: 0.03 },
   preco: {
@@ -324,16 +339,6 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     definir("indiretos.administracaoPct", x, fonteDe("faturamento_medio"), `indiretos da aba 4 ÷ faturamento médio = ${(a * 100).toFixed(2)}% da receita, convertido para ${(x * 100).toFixed(2)}% do custo direto`);
   } else deParam("indiretos.administracaoPct", "adm_pct");
 
-  // ARLA: "R$ 4,20; 4,5%" → R$/l × % do diesel ÷ km/l, quando há consumo.
-  const arla = param("arla")?.texto;
-  if (arla) {
-    const [preco, pct] = todosOsNumeros(arla);
-    if (preco && pct) {
-      const consumo = premissas.variaveis.consumoAsfaltoKmL;
-      definir("variaveis.arlaKm", (preco * normalizarPct(pct)) / consumo, fonteDe("arla"), `${arla} ÷ ${consumo} km/l`);
-    }
-  }
-
   // Reserva técnica: "10% / 10% / 15%" (van / micro / ônibus) → pela do tipo.
   const veiculo = base.veiculos.find((v) => v.id === escolhas.veiculoId) ?? null;
   const reservas = param("reserva_tecnica")?.texto;
@@ -377,6 +382,17 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     const vida = n("pneuVidaKm");
     if (qtde && preco && vida) definir("variaveis.pneusAsfaltoKm", (qtde * preco) / vida, f, `${qtde} × ${preco} ÷ ${vida} km`);
     definir("contrato.reservaTecnicaPct", n("reservaTecnicaPct"), f);
+  }
+
+  // ARLA: "R$ 4,20; 4,5%" → R$/l × % do diesel ÷ km/l, quando há consumo.
+  // DEPOIS do veículo: o consumo é o do modelo escolhido, não o padrão.
+  const arla = param("arla")?.texto;
+  if (arla) {
+    const [preco, pct] = todosOsNumeros(arla);
+    if (preco && pct) {
+      const consumo = premissas.variaveis.consumoAsfaltoKmL;
+      definir("variaveis.arlaKm", (preco * normalizarPct(pct)) / consumo, fonteDe("arla"), `${arla} ÷ ${consumo} km/l`);
+    }
   }
 
   // Funções (aba 2).
@@ -517,16 +533,27 @@ const PERFIS_BASE: PerfilVeiculo[] = [
   // Carro: SINDILOCADESP, com o padrão da TRANSFRETUR Nível B até a convenção
   // do carro ser informada (convencoes.ts).
   perfil("CARRO", "CARRO", "Carro executivo (sedã/SUV)", 4, "B", PISO_TRANSFRETUR_NIVEL_B, 1.2,
-    { valor: 140000, seguroMes: 350, ipvaLicenciamentoAno: 5200, laudoVistoriaAno: 300, rastreadorMes: 80 },
-    { dieselLitro: 6.3, consumoAsfaltoKmL: 11, consumoTerraKmL: 9, arlaKm: 0, pneusAsfaltoKm: 0.05, pneusTerraKm: 0.07, manutencaoAsfaltoKm: 0.18, manutencaoTerraKm: 0.25 }),
+    // Garantia de 3 anos / 100 mil km (acaba pelo km em ~2 anos no fretamento).
+    { valor: 140000, seguroMes: 350, ipvaLicenciamentoAno: 5200, laudoVistoriaAno: 300, rastreadorMes: 80, garantiaMeses: 36, garantiaKm: 100000 },
+    // Manutenção 0,18 = revisão em uso severo (óleo a cada 5 mil km) 0,11 +
+    // desgaste 0,07; corretiva 0,04 fora da garantia (0,22 no total).
+    { dieselLitro: 6.3, consumoAsfaltoKmL: 11, consumoTerraKmL: 9, arlaKm: 0, pneusAsfaltoKm: 0.05, pneusTerraKm: 0.07, manutencaoAsfaltoKm: 0.18, manutencaoTerraKm: 0.25, corretivaKm: 0.04 }),
   // Van e micro (até 32 lugares): Nível B da TRANSFRETUR; ônibus: Nível A.
   perfil("VAN", "VAN", "Van 15–19 lugares", 19, "D", PISO_TRANSFRETUR_NIVEL_B, 1.2, {}, {}),
   perfil("MICRO", "MICRO", "Micro-ônibus 25–33 lugares", 30, "D", PISO_TRANSFRETUR_NIVEL_B, 1.2,
-    { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95 },
-    { consumoAsfaltoKmL: 4.7, consumoTerraKmL: 3.9, arlaKm: 0.05, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0 }),
+    // Manutenção informada para micro de 6–8 anos (sem garantia: a corretiva
+    // está nela); o novo sai mais barato pela curva de idade.
+    { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95, idadeReferenciaManutencao: 6, garantiaMeses: null, garantiaKm: null },
+    // Consumo urbano/pendular: ANTP 3,4–4,2 km/l (4,7 só no rodoviário).
+    { consumoAsfaltoKmL: 4.0, consumoTerraKmL: 3.3, arlaKm: 0.059, oleoLavagemKm: 0.03, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0, corretivaKm: 0 }),
   perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", PISO_TRANSFRETUR_NIVEL_A, 1.2,
-    { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90, idadeInicialAnos: 8, idadeReferenciaManutencao: 8 },
-    { dieselLitro: 6.2, consumoAsfaltoKmL: 2.9, consumoTerraKmL: 2.4, arlaKm: 0.07, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 0.95, manutencaoTerraKm: 1.35 }),
+    { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90, idadeInicialAnos: 8, idadeReferenciaManutencao: 8, garantiaMeses: null, garantiaKm: null },
+    // Fretamento urbano/pendular em SP com ar: 2,3 km/l (ANTP 2,22–2,70 sem
+    // ar; COPPE com ar 1,98–2,22; 2,6 no rodoviário). Manutenção de 8–10 anos
+    // em serviço severo (ANTP): 1,15 (0,95 no rodoviário de estrada). Pneus de
+    // 2 eixos (6 pneus): 3 eixos ×8/6 na aba Veículos. Óleo fica nesta linha
+    // (lubrificantes da ANTP).
+    { dieselLitro: 6.2, consumoAsfaltoKmL: 2.3, consumoTerraKmL: 1.9, arlaKm: 0.088, oleoLavagemKm: 0.09, pneusAsfaltoKm: 0.24, pneusTerraKm: 0.34, manutencaoAsfaltoKm: 1.15, manutencaoTerraKm: 1.63, corretivaKm: 0 }),
 ]
 
 // Carro roda a gasolina; van, micro e ônibus, a diesel. Elétrico se escolhe

@@ -330,6 +330,9 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("vidaUtil", "Vida útil (LINEAR e SOMA_DIGITOS)", v.vidaUtilAnos, "anos", "", NUM);
   premissa("residual", "Valor residual ao fim da vida útil", v.valorResidualPct, "% do valor", "", PCT);
   premissa("idade", "Idade do veículo no início do contrato", v.idadeInicialAnos, "anos", "Ano do início do contrato − ano do veículo. Corrige a manutenção pela curva de idade (aba Perfis).", NUM);
+  const garantia = (g: number | null | undefined) => (typeof g === "number" && g > 0 ? g : "sem");
+  premissa("garMeses", "Garantia da montadora — prazo", garantia(v.garantiaMeses), "meses desde o 0 km", "Texto = sem prazo. Com prazo e km, acaba pelo que vier primeiro.", INT);
+  premissa("garKm", "Garantia da montadora — km", garantia(v.garantiaKm), "km", "Texto = sem limite de km.", INT);
   premissa(
     "idRefMan",
     "Manutenção informada para veículo de",
@@ -369,6 +372,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("pneusTerra", "Pneus — terra", x.pneusTerraKm, "R$/km", "", BRL4);
   premissa("manutAsfalto", "Manutenção — asfalto", x.manutencaoAsfaltoKm, "R$/km", "", BRL4);
   premissa("manutTerra", "Manutenção — terra", x.manutencaoTerraKm, "R$/km", "", BRL4);
+  premissa("corretiva", "Corretiva fora da garantia", x.corretivaKm ?? 0, "R$/km", "Reparo de falha: só nos meses do contrato fora da garantia (prazo ou km, o que vier primeiro); corrigida pela idade como a manutenção.", BRL4);
 
   novaSecao("6. INDIRETOS, TRIBUTOS E LUCRO");
   premissa("adm", "Administração central", p.indiretos.administracaoPct, "% s/ custo direto", "", PCT);
@@ -458,7 +462,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     const val = pf.veiculo[k];
     return typeof val === "boolean" ? sn(val) : (val as string | number);
   };
-  const xv = (k: keyof Premissas["variaveis"]) => (pf: PerfilVeiculo) => pf.variaveis[k];
+  const xv = (k: keyof Premissas["variaveis"]) => (pf: PerfilVeiculo) => pf.variaveis[k] ?? 0;
   const linhasPerfil: LinhaPerfil[] = [
     { rotulo: "Descrição", padrao: "Veículo padrão", valor: (pf) => pf.descricao },
     { rotulo: "Tipo · energia", padrao: "Diesel", valor: (pf) => `${ROTULO_TIPO_VEICULO[pf.tipo] ?? pf.tipo} · ${ROTULO_ENERGIA[pf.energia ?? "DIESEL"]}` },
@@ -472,6 +476,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "vida", rotulo: "Vida útil", unidade: "anos", fmt: NUM, padrao: P.vidaUtil, valor: vv("vidaUtilAnos") },
     { chave: "residual", rotulo: "Valor residual", unidade: "% do valor", fmt: PCT, padrao: P.residual, valor: vv("valorResidualPct") },
     { chave: "idade", rotulo: "Idade no início do contrato", unidade: "anos", fmt: NUM, padrao: P.idade, valor: vv("idadeInicialAnos") },
+    { chave: "garMeses", rotulo: "Garantia — prazo (texto = sem)", unidade: "meses", fmt: INT, padrao: P.garMeses, valor: (pf) => garantia(pf.veiculo.garantiaMeses) },
+    { chave: "garKm", rotulo: "Garantia — km (texto = sem)", unidade: "km", fmt: INT, padrao: P.garKm, valor: (pf) => garantia(pf.veiculo.garantiaKm) },
     {
       chave: "idRefMan",
       rotulo: "Manutenção informada para veículo de (texto = sem curva)",
@@ -509,6 +515,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "pneusTerra", rotulo: "Pneus — terra", unidade: "R$/km", fmt: BRL4, padrao: P.pneusTerra, valor: xv("pneusTerraKm") },
     { chave: "manAsf", rotulo: "Manutenção — asfalto", unidade: "R$/km", fmt: BRL4, padrao: P.manutAsfalto, valor: xv("manutencaoAsfaltoKm") },
     { chave: "manTerra", rotulo: "Manutenção — terra", unidade: "R$/km", fmt: BRL4, padrao: P.manutTerra, valor: xv("manutencaoTerraKm") },
+    { chave: "corr", rotulo: "Corretiva fora da garantia", unidade: "R$/km", fmt: BRL4, padrao: P.corretiva, valor: xv("corretivaKm") },
     { rotulo: "CAPITAL E DEPRECIAÇÃO (anos de vida que o contrato ocupa)", secao: true },
     { chave: "taxa", rotulo: "Taxa de capital aplicada", unidade: "% a.a.", fmt: PCT2, formula: (c, F) => `IF(${c}${F.composto}="S",${c}${F.fracao}*${c}${F.taxaFin}+(1-${c}${F.fracao})*${c}${F.proprio},${c}${F.capAa})` },
     {
@@ -736,7 +743,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("arla", `${pf("arla")}*${$("kmRod")}`, BRL);
     f("oleo", `${pf("oleo")}*${$("kmRod")}`, BRL);
     f("pneus", `((1-${t})*${pf("pneusAsf")}+${t}*${pf("pneusTerra")})*${$("kmRod")}`, BRL);
-    f("manut", `((1-${t})*${pf("manAsf")}+${t}*${pf("manTerra")})*${pf("fatorMan")}*${$("kmRod")}`, BRL);
+    // Corretiva só nos meses fora da garantia (prazo ou km, o que vier antes;
+    // km do veículo no início = idade × 12 × km/mês da rota).
+    const kmMes = `IF(${P.modo}="MENSAL",${$("kmRod")},IF(${P.meses}=0,0,${$("kmRod")}/${P.meses}))`;
+    const gm = pf("garMeses");
+    const gk = pf("garKm");
+    const idadeMeses = `MAX(0,${pf("idade")})*12`;
+    const fora = `IF(AND(NOT(ISNUMBER(${gm})),NOT(ISNUMBER(${gk}))),1,1-MIN(MAX(1,${P.vigencia}),MAX(0,MIN(IF(ISNUMBER(${gm}),${gm}-${idadeMeses},1E+12),IF(ISNUMBER(${gk}),IF(${kmMes}>0,(${gk}-${idadeMeses}*${kmMes})/${kmMes},1E+12),1E+12))))/MAX(1,${P.vigencia}))`;
+    f("manut", `(((1-${t})*${pf("manAsf")}+${t}*${pf("manTerra")})+${pf("corr")}*${fora})*${pf("fatorMan")}*${$("kmRod")}`, BRL);
     f("veicRes", `${$("veic")}*(1+${P.reserva})`, NUM);
     const vr = $("veicRes");
     f("dep", `${vr}*${pf("mDep")}`, BRL);

@@ -547,6 +547,36 @@ o fator em fórmula (aba Perfis). Teste: `teste:manutencao-idade`.
 Pesquisa: `reports/Manutenção de frota por montadora.md` (repositório
 gestao-motoristas).
 
+## 7.8 Ajustes do relatório de manutenção
+
+- **Óleo em uma linha só.** O preço fixo da revisão já inclui óleo e filtros;
+  "Lavagem e consumíveis" passa a ser só isso (carro e van R$ 0,02/km, micro
+  0,03). No ônibus a linha continua com os lubrificantes (0,09), como na ANTP.
+  Se a base da Azul tiver `oleo_rs_km` com o óleo, revise o valor.
+- **Consumos urbanos/pendulares** (o fretamento da Azul em SP): van 7,3 km/l
+  (Master Minibus Inmetro, cidade; 7,8 na estrada), micro 4,0 (ANTP 3,4–4,2;
+  4,7 só rodoviário), ônibus com ar 2,3 (ANTP 2,22–2,70 sem ar, COPPE
+  1,98–2,22 com ar; 2,6 rodoviário). ARLA acompanha (~4% dos litros de
+  diesel): van 0,036, micro 0,059, ônibus 0,088 R$/km.
+- **ARLA da base** passa a ser calculado depois do veículo escolhido (usava o
+  consumo padrão, não o do modelo).
+- **Corretiva fora da garantia** (`variaveis.corretivaKm`, R$/km): só nos meses
+  do contrato fora da garantia da montadora (`veiculo.garantiaMeses` e
+  `garantiaKm`, o que vier primeiro; km inicial = idade × 12 × km/mês da
+  rota), corrigida pela idade. Carro: 3 anos/100 mil km, manutenção 0,18 +
+  corretiva 0,04 (0,22 fora da garantia). Van: 2 anos com km ilimitado
+  (Sprinter), manutenção 0,34 (revisão 0,12 + desgaste) + corretiva 0,08
+  (estimativa) = 0,42 depois da garantia. Micro e ônibus: sem garantia, a
+  corretiva já está na manutenção.
+- **Micro**: manutenção informada para veículo de 6 anos (curva ANTP).
+- **Ônibus**: manutenção 1,15/km (8–10 anos, serviço severo urbano/pendular,
+  ANTP); 0,95 continua valendo para rodoviário de estrada (ajuste no tipo).
+- **Pneus por eixos**: no micro e no ônibus, trocar a categoria de 2 para 3
+  eixos (aba Veículos) multiplica os pneus por km por 8/6.
+- Ficaram para depois (precisam dos dados da Azul): fator de severidade por
+  rota no lugar do par asfalto/terra, avaria por veículo·ano, índices de
+  reajuste separados por insumo.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com
