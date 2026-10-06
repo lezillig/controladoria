@@ -193,7 +193,7 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   rTot.font = { bold: true };
   // O que saiu da administração, para conferir — fora das somas.
   let linhaFora = linha;
-  const doSocios = d.dre.categorias.filter((x) => x.linha === "DESPESA_SOCIOS" && x.porMesCents.some((v) => Math.abs(v) >= 1));
+  const doSocios = d.dre.categorias.filter((x) => (x.linha === "DESPESA_SOCIOS" || x.linha === "DISTRIBUICAO_LUCROS") && x.porMesCents.some((v) => Math.abs(v) >= 1));
   if (ex.categorias.length || ex.fornecedorPorCategoria.size || doSocios.length) {
     linha += 2;
     wc.getRow(linha).getCell(1).value = "FORA DA ADMINISTRAÇÃO (não entra no total — base de custos: fornecedores e categorias fora)";

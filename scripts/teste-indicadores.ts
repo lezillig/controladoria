@@ -62,6 +62,9 @@ const sub = subtotaisDoDre(g);
 ok("EBITDA = EBIT da demonstração (mesma conta)", d.ebitda === sub.EBIT, `${d.ebitda} × ${sub.EBIT}`);
 ok("resultado = resultado líquido da demonstração", d.resultado === sub.RESULTADO_LIQUIDO, `${d.resultado} × ${sub.RESULTADO_LIQUIDO}`);
 ok("receita líquida 11×900 + 270", d.receitaLiquida === 11 * 900 + 270);
+const comDistribuicao = subtotaisDoDre((c) => (c === "DISTRIBUICAO_LUCROS" ? 1_000 : g(c)));
+ok("distribuição aos sócios fica abaixo do resultado: o resultado não muda", comDistribuicao.RESULTADO_LIQUIDO === sub.RESULTADO_LIQUIDO);
+ok("resultado retido = resultado − distribuição", comDistribuicao.RESULTADO_RETIDO === sub.RESULTADO_LIQUIDO - 1_000);
 
 const balanco: BalancoIndicadores = {
   dataBase: new Date("2026-08-31T00:00:00Z"),

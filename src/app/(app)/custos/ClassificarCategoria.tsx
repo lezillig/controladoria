@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { LINHAS_CLASSIFICAVEIS, rotuloDeClassificacao } from "@/lib/controladoria/dre";
+import { NATUREZAS, subgruposDaLinha } from "@/lib/controladoria/subgrupos";
 import { classificarCategoria } from "./actions";
 
 // Classificação inline, na própria linha do DRE.
@@ -30,6 +31,7 @@ export default function ClassificarCategoria({
   subgruposConhecidos: string[];
 }) {
   const [aberto, setAberto] = useState(false);
+  const [linha, setLinha] = useState(linhaAtual);
   const [erro, setErro] = useState<string | null>(null);
   const [pendente, iniciar] = useTransition();
   const router = useRouter();
@@ -65,7 +67,8 @@ export default function ClassificarCategoria({
         // A linha classificada (gravada ou proposta) — não a linha em que o
         // item aparece: pessoas divididas pela empresa aparecem na corporativa
         // e estão gravadas como DESPESA_SALARIOS.
-        defaultValue={linhaAtual}
+        value={linha}
+        onChange={(e) => setLinha(e.target.value)}
         className="rounded-md border border-slate-300 px-2 py-1 text-xs"
         aria-label="Linha do DRE"
       >
@@ -85,13 +88,18 @@ export default function ClassificarCategoria({
         className="w-40 rounded-md border border-slate-300 px-2 py-1 text-xs"
         aria-label="Subgrupo"
       />
-      {/* Os subgrupos JÁ USADOS viram sugestão. Sem isto, "Frota", "frota" e
-          "Frotas" viram três subtotais diferentes na mesma tela, e o usuário
-          descobre isso depois de classificar cinquenta categorias. */}
+      {/* O CATÁLOGO DA LINHA ESCOLHIDA vem primeiro, com a natureza de custo
+          (ver subgrupos.ts); depois os já usados que não estão nele. Sem lista,
+          "Frota", "frota" e "Frotas" viram três subtotais diferentes. */}
       <datalist id={`subgrupos-${categoriaCodigo}`}>
-        {subgruposConhecidos.map((s) => (
-          <option key={s} value={s} />
+        {subgruposDaLinha(linha).map((c) => (
+          <option key={c.nome} value={c.nome} label={NATUREZAS[c.natureza].rotulo} />
         ))}
+        {subgruposConhecidos
+          .filter((s) => !subgruposDaLinha(linha).some((c) => c.nome === s))
+          .map((s) => (
+            <option key={s} value={s} />
+          ))}
       </datalist>
 
       <button

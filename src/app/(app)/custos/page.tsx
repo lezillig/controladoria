@@ -227,7 +227,7 @@ export default async function CustosPage({
   // venda de veículo e resgate de consórcio engordando a base, e a
   // participação de todo fornecedor saindo menor do que é.
   const totalDespesa = dre.linhas
-    .filter((l) => l.tipo === "GRUPO" && (LINHAS_DRE.find((d) => d.chave === l.chave)?.sinal ?? 1) < 0)
+    .filter((l) => l.tipo === "GRUPO" && l.chave !== "DISTRIBUICAO_LUCROS" && (LINHAS_DRE.find((d) => d.chave === l.chave)?.sinal ?? 1) < 0)
     .reduce((a, l) => a + l.valorCents, 0);
 
   // O QUE A VISÃO DO GRUPO ELIMINOU — operação entre as empresas (ver
@@ -336,6 +336,9 @@ export default async function CustosPage({
           <a href={urlDaPlanilha} className={secondaryButtonClass}>
             Composição por categoria
           </a>
+          <Link href={`/custos/reclassificar${escopo.conexaoId ? `?empresa=${escopo.conexaoId}` : ""}`} className={secondaryButtonClass}>
+            Reclassificações sugeridas
+          </Link>
         </div>
       </div>
 

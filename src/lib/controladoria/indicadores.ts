@@ -184,7 +184,9 @@ export function dreDaJanela(dre: SerieDre, competencias: Competencia[]) {
     pessoas,
     veiculos: g("DESPESA_VEICULOS") + g("CUSTO_SERVICO"),
     terceiros: g("DESPESA_SERVICOS_TERCEIROS"),
-    socios: g("DESPESA_SOCIOS"),
+    // Retiradas: o pró-labore (acima do resultado) e a distribuição (abaixo).
+    socios: g("DESPESA_SOCIOS") + g("DISTRIBUICAO_LUCROS"),
+    proLabore: g("DESPESA_SOCIOS"),
     despesasOperacionais,
     ebitda,
     despesaFinanceira: g("DESPESA_FINANCEIRA"),
@@ -504,7 +506,8 @@ export function calcularIndicadores(e: EntradaIndicadores): Indicador[] {
     referencia: "Agregados e subcontratação. Não tem faixa certa: compare com a margem dos contratos que eles atendem.",
     formula: `${reais(d.terceiros)} ÷ ${reais(d.receitaLiquida)}.`,
   });
-  const geradoAntesDosSocios = d.resultado + d.socios;
+  // A distribuição já está abaixo do resultado; o pró-labore, acima.
+  const geradoAntesDosSocios = d.resultado + d.proLabore;
   const payout = geradoAntesDosSocios > 0 ? (d.socios / geradoAntesDosSocios) * 100 : d.socios > 0 ? Infinity : null;
   add({
     chave: "PAYOUT",
@@ -517,7 +520,7 @@ export function calcularIndicadores(e: EntradaIndicadores): Indicador[] {
     formula:
       payout === Infinity
         ? `Retiradas ${reais(d.socios)} com resultado antes delas negativo (${reais(geradoAntesDosSocios)}).`
-        : `Retiradas ${reais(d.socios)} ÷ (resultado ${reais(d.resultado)} + retiradas).`,
+        : `Retiradas e pró-labore ${reais(d.socios)} ÷ (resultado ${reais(d.resultado)} + pró-labore ${reais(d.proLabore)}).`,
   });
   const meses = resultadoPorMes(e.dre, e.competencias);
   const negativos = meses.filter((m) => m.resultado < 0).length;

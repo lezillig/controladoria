@@ -4,6 +4,7 @@ import { Fragment, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { fmtBRL, fmtPercent } from "@/lib/controladoria/format";
 import type { LinhaDreCalculada } from "@/lib/controladoria/dre";
+import { NATUREZAS, naturezaDoSubgrupo } from "@/lib/controladoria/subgrupos";
 import { Variacao } from "../_componentes";
 import LinhaCategoria from "./LinhaCategoria";
 
@@ -156,7 +157,10 @@ export default function TabelaDre({
                   {aberta &&
                     linha.subgrupos.map((s) => (
                       <tr key={`${linha.chave}:${s.nome}`} className="border-b border-slate-50 text-xs text-slate-600">
-                        <td className="py-1.5 pl-8 pr-3 font-medium">{s.nome}</td>
+                        <td className="py-1.5 pl-8 pr-3 font-medium">
+                          {s.nome}
+                          <SiglaNatureza linha={linha.chave} subgrupo={s.nome} />
+                        </td>
                         <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtBRL(s.valorCents)}</td>
                         <td className="px-3 py-1.5"></td>
                         <td className="px-3 py-1.5 text-right tabular-nums">{fmtBRL(s.valorAnteriorCents)}</td>
@@ -185,5 +189,18 @@ export default function TabelaDre({
         </table>
       </div>
     </>
+  );
+}
+
+// A natureza de custo do subgrupo (catálogo em subgrupos.ts), em sigla: V, F,
+// M, T, I, N, K. Subgrupo fora do catálogo não tem.
+function SiglaNatureza({ linha, subgrupo }: { linha: string; subgrupo: string }) {
+  const natureza = naturezaDoSubgrupo(linha, subgrupo);
+  if (!natureza) return null;
+  const n = NATUREZAS[natureza];
+  return (
+    <span title={`${n.rotulo}: ${n.explicacao}`} className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">
+      {n.sigla}
+    </span>
   );
 }

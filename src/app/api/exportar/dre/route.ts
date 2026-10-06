@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { garantirConfig } from "@/lib/controladoria/contexto";
 import { LINHA_PESSOAS_CORPORATIVO, LINHAS_DRE, ROTULO_LINHA } from "@/lib/controladoria/dre";
+import { NATUREZAS, naturezaDoSubgrupo } from "@/lib/controladoria/subgrupos";
 import { montarDreNoBanco, recorteMensalDoDre, titulosDaConferencia } from "@/lib/controladoria/dreNoBanco";
 import { cabecalhoDeContexto, montarCsv, nomeDoArquivo } from "@/lib/controladoria/exportarCsv";
 import { fmtData } from "@/lib/controladoria/format";
@@ -115,6 +116,7 @@ export async function GET(req: NextRequest) {
       "Ordem",
       "Linha do DRE",
       "Subgrupo",
+      "Natureza de custo",
       "Categoria (código)",
       "Categoria (descrição)",
       "Omie: codigo_dre",
@@ -159,6 +161,7 @@ export async function GET(req: NextRequest) {
       "",
       "",
       "",
+      "",
       calculada.valorCents / 100,
       calculada.valorAnteriorCents / 100,
       "",
@@ -172,6 +175,10 @@ export async function GET(req: NextRequest) {
         ordem,
         `    ${ROTULO_LINHA[def.chave] ?? def.chave}`,
         item.subgrupo ?? "",
+        (() => {
+          const n = naturezaDoSubgrupo(def.chave, item.subgrupo);
+          return n ? NATUREZAS[n].rotulo : "";
+        })(),
         item.categoriaCodigo,
         item.descricao,
         cat?.codigoDre ?? "",
@@ -193,6 +200,7 @@ export async function GET(req: NextRequest) {
     linhas.push([
       "",
       "FORA DA DEMONSTRAÇÃO — títulos sem categoria na Omie",
+      "",
       "",
       "",
       "O conserto destes é na Omie: sem categoria, não há linha do DRE a que pertençam.",

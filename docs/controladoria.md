@@ -158,6 +158,56 @@ A tela de Custos abre a linha corporativa por **centro de custo** (o
 departamento da Omie de cada título; título rateado conta inteiro no
 primeiro departamento), no mesmo recorte da demonstração.
 
+### Distribuição de lucros abaixo do resultado
+
+`DISTRIBUICAO_LUCROS`, **"(-) Distribuição de lucros aos sócios"**, depois do
+resultado líquido, seguida do subtotal **"= Resultado retido na empresa"**.
+Retirada e distribuição (ou antecipação) de lucro não são despesa: são
+destinação do resultado. Em "(-) Pró-labore e despesas dos sócios" (a chave
+`DESPESA_SOCIOS`, acima do EBIT) fica só o pró-labore e o gasto do sócio a
+serviço da empresa. Nenhuma margem nem o resultado líquido mudam com a
+distribuição; o resultado retido negativo é retirada maior que o resultado.
+A proposta automática já manda "retirada", "distribuição de lucro" e
+"dividendo" (do lado das saídas) para a linha nova.
+
+### Subgrupos com natureza de custo
+
+`src/lib/controladoria/subgrupos.ts`. Cada linha tem um **catálogo fixo de
+subgrupos** — o de um especialista em custo de transporte de passageiros — e
+cada subgrupo uma **natureza de custo**: **V** variável por km, **F** fixo por
+veículo, **M** mão de obra direta, **T** frota de terceiros, **I** indireto
+(administração central), **N** não recorrente/controlável, **K** capital. A
+classificação oferece o catálogo da linha escolhida; texto livre continua
+aceito, sem natureza. A tabela do DRE mostra a sigla ao lado do subtotal do
+subgrupo, e a planilha de conferência traz a coluna "Natureza de custo". Na
+linha "pessoas — corporativo" todo subgrupo é indireto (a mesma categoria de
+folha é mão de obra direta na operação).
+
+### Reclassificações sugeridas
+
+Tela **Custos e DRE → Reclassificações sugeridas** (`/custos/reclassificar`),
+regras em `src/lib/controladoria/reclassificacoes.ts` (a revisão de custos de
+out/2026). Sobre as categorias com movimento nos 12 meses fechados, lista:
+
+- **de → para** de cada categoria que muda de linha (linha e subgrupo de
+  origem, linha e subgrupo de destino, valor de 12 meses e o motivo) — receita
+  que não é serviço, empréstimo e capital de giro, venda de veículo,
+  retiradas dos sócios, adequação de frota, descontos concedidos,
+  parcelamentos, jurídico, comercial, garagem;
+- o **subgrupo do catálogo** para cada categoria sem subgrupo;
+- as categorias que pedem **ação no Omie** (cartão de crédito, "Compra de
+  Serviços", receita sem segmento): misturam naturezas e nenhuma linha está
+  certa para elas inteiras.
+
+Nada muda sem confirmação: quem tem `classificar-dre` marca e grava, e cada
+categoria vira classificação CONFIRMADA em nome de quem gravou; a trilha
+guarda o lote com o antes e o depois.
+
+Com os advogados em "Despesas administrativas", o honorário de êxito
+tributário (Tributtax) passou a ser excluído da administração central por
+padrão (`fornecedores_fora_adm`, padrão "Manoel; Tributtax"): é custo da
+recuperação do crédito, não estrutura que todo contrato deva carregar.
+
 ### O mês se formando (painel e relatório diário)
 
 Ver o resultado enquanto ainda dá para agir (`mesEmFormacao.ts`):

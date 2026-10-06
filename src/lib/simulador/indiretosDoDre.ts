@@ -44,7 +44,12 @@ export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business; Joel";
 // nenhum outro.
 export const CHAVE_FORNECEDORES_FORA = "fornecedores_fora_adm";
 export const CHAVE_CATEGORIAS_FORA = "categorias_fora_adm";
-export const FORNECEDORES_FORA_PADRAO = "Manoel";
+// Tributtax (06/10/2026): honorário de ÊXITO sobre crédito tributário
+// recuperado (~R$ 75 mil/mês). É custo da recuperação, não estrutura
+// recorrente — no preço, encareceria todo contrato por um ganho que não se
+// repete. Com os advogados em "Despesas administrativas" (reclassificação da
+// revisão de custos), sem esta exclusão ele entraria na administração central.
+export const FORNECEDORES_FORA_PADRAO = "Manoel; Tributtax";
 // SEMPRE FORA, qualquer que seja o campo da base (decisão de 04/10/2026): o
 // repasse da Azul à MCZ em "Apoio Administrativo" (R$ 180 mil em
 // setembro/2026). É a MCZ cobrando a folha administrativa que ela mesma já

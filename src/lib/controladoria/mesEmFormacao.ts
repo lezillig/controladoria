@@ -190,7 +190,7 @@ export function margemEmQueda(serie: SerieDoDre): MargemEmQueda | null {
   if (receita(ultimo) < receitaMedia * 0.98 || margemAgora > margemMedia - QUEDA_MINIMA_DE_MARGEM) return null;
 
   const pct = (chave: string, i: number) => Math.abs(v(chave, i)) / receita(i);
-  const culpados = GRUPOS.filter((c) => (LINHAS_DRE.find((l) => l.chave === c)?.sinal ?? -1) < 0 && c !== "DEDUCOES")
+  const culpados = GRUPOS.filter((c) => (LINHAS_DRE.find((l) => l.chave === c)?.sinal ?? -1) < 0 && c !== "DEDUCOES" && c !== "DISTRIBUICAO_LUCROS")
     .map((c) => ({ chave: c, rotulo: ROTULO.get(c) ?? c, pctAgora: pct(c, ultimo), pctAntes: anteriores.reduce((a, i) => a + pct(c, i), 0) / 3 }))
     .filter((c) => c.pctAgora - c.pctAntes > 0.005)
     .sort((a, b) => b.pctAgora - b.pctAntes - (a.pctAgora - a.pctAntes))

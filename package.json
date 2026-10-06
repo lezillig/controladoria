@@ -50,6 +50,7 @@
     "teste:reforma": "tsx scripts/teste-reforma.ts",
     "teste:manutencao-idade": "tsx scripts/teste-manutencao-idade.ts",
     "teste:indicadores": "tsx scripts/teste-indicadores.ts",
+    "teste:reclassificacoes": "tsx scripts/teste-reclassificacoes.ts",
     "teste:horario": "tsx scripts/teste-horario.ts",
     "teste:mes-em-formacao": "tsx scripts/teste-mes-em-formacao.ts",
     "postinstall": "prisma generate"

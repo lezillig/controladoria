@@ -93,14 +93,16 @@ export const LINHAS_DRE = [
   // administrativo PJ pago pela Azul).
   { chave: "DESPESA_SALARIOS", rotulo: "(-) Despesas com pessoas — operação", tipo: "GRUPO", sinal: -1 },
   { chave: "DESPESA_SALARIOS_CORPORATIVO", rotulo: "(-) Despesas com pessoas — corporativo", tipo: "GRUPO", sinal: -1 },
-  // SÓCIOS em linha própria porque a pergunta que ela responde é de governança,
-  // não de operação: quanto a sociedade retira. Misturada na administrativa,
-  // some — e é justamente o número que um sócio quer achar em dez segundos.
-  //
-  // Ressalva: pró-labore é despesa, DISTRIBUIÇÃO DE LUCRO não é — é destinação
-  // do resultado, e fica abaixo dele na contabilidade. Se as duas estiverem na
-  // mesma categoria da Omie, esta linha mistura as duas coisas.
-  { chave: "DESPESA_SOCIOS", rotulo: "(-) Despesas com sócios", tipo: "GRUPO", sinal: -1 },
+  // SÓCIOS: aqui fica só o que é DESPESA — o pró-labore (a remuneração do
+  // trabalho de quem dirige) e o gasto do sócio a serviço da empresa. A
+  // RETIRADA e a DISTRIBUIÇÃO DE LUCRO não são despesa: são destinação do
+  // resultado, e vão para "Distribuição de lucros aos sócios", abaixo do
+  // resultado líquido (decisão de 06/10/2026). Misturadas aqui, R$ 4,6 mi de
+  // retiradas em 12 meses tiravam 5,6 pontos da margem operacional e o DRE
+  // deixava de comparar com o da contabilidade, que tem R$ 54 mil de
+  // pró-labore no ano. A chave continua DESPESA_SOCIOS: é a gravada nas
+  // classificações já feitas.
+  { chave: "DESPESA_SOCIOS", rotulo: "(-) Pró-labore e despesas dos sócios", tipo: "GRUPO", sinal: -1 },
   // ESTRUTURA: o que a empresa paga para existir, independente de rodar —
   // aluguel, energia, sistemas, escritório. É o custo fixo, e separá-lo do
   // resto é o que torna visível quanto a operação precisa faturar só para
@@ -147,6 +149,12 @@ export const LINHAS_DRE = [
   { chave: "FINANCIAMENTO_INVESTIMENTO", rotulo: "(-) Financiamentos, consórcios e empréstimos", tipo: "GRUPO", sinal: -1 },
   { chave: "TRIBUTO_SOBRE_LUCRO", rotulo: "(-) IRPJ e CSLL", tipo: "GRUPO", sinal: -1 },
   { chave: "RESULTADO_LIQUIDO", rotulo: "= Resultado líquido do período", tipo: "SUBTOTAL", sinal: 1 },
+  // ABAIXO DO RESULTADO: o que os sócios retiraram dele. Não muda o resultado
+  // nem nenhuma margem — mostra quanto do que a operação gerou ficou na
+  // empresa para renovar a frota e quanto saiu. Resultado retido negativo é a
+  // retirada maior que o resultado: paga com caixa de antes ou com dívida.
+  { chave: "DISTRIBUICAO_LUCROS", rotulo: "(-) Distribuição de lucros aos sócios", tipo: "GRUPO", sinal: -1 },
+  { chave: "RESULTADO_RETIDO", rotulo: "= Resultado retido na empresa", tipo: "SUBTOTAL", sinal: 1 },
 ] as const;
 
 export type ChaveDre = (typeof LINHAS_DRE)[number]["chave"];
@@ -203,7 +211,10 @@ export const ROTULO_LINHA: Record<string, string> = Object.fromEntries(
 const PADRAO_TRIBUTO_FATURAMENTO = /\b(iss|pis|cofins|icms)\b|simples nacional|\bsimples\b|\bdas\s*[-–]/i;
 const PADRAO_TRIBUTO_LUCRO = /\b(irpj|csll|imposto de renda|contribui[çc][ãa]o social)\b/i;
 const PADRAO_FINANCEIRA = /juros|multa|tarifa|banc[áa]ri|iof|encargo financeiro|desconto concedido/i;
-const PADRAO_RECEITA_FINANCEIRA = /rendimento|juros recebidos|receita financeira/i;
+const PADRAO_RECEITA_FINANCEIRA = /rendimento|juros recebidos|receita financeira|dividendos? recebidos?/i;
+// Retirada e distribuição de lucro: destinação do resultado, não despesa.
+// Testado ANTES de sócios, que fica com o pró-labore.
+const PADRAO_DISTRIBUICAO = /distribui[çc][ãa]o de (lucro|resultado)|retirada|dividendo|antecipa[çc][ãa]o de lucro/i;
 // Entrada que NÃO é faturamento de serviço. Cada uma destas apareceu dentro da
 // receita operacional bruta na primeira leitura real da tela — somadas ao
 // faturamento, deslocam a base de todo percentual do DRE.
@@ -327,6 +338,7 @@ export function proporLinha(
   // classificar uma categoria nela continua possível a qualquer momento.
   if (PADRAO_TRIBUTO_LUCRO.test(d)) return "DEDUCOES";
   if (PADRAO_TRANSITO.test(d)) return "DESPESA_VEICULOS";
+  if (PADRAO_DISTRIBUICAO.test(d)) return "DISTRIBUICAO_LUCROS";
   if (PADRAO_SOCIOS.test(d)) return "DESPESA_SOCIOS";
   // Juros e tarifas ficam em despesa FINANCEIRA — é onde a contabilidade os
   // coloca, e o teste vem antes por isso: "juros de financiamento" é despesa
@@ -798,6 +810,7 @@ export function subtotaisDoDre(g: (chave: string) => number): Record<string, num
       EBIT: ebit,
       LAIR: lair,
       RESULTADO_LIQUIDO: lair - g("FINANCIAMENTO_INVESTIMENTO") - g("TRIBUTO_SOBRE_LUCRO"),
+      RESULTADO_RETIDO: lair - g("FINANCIAMENTO_INVESTIMENTO") - g("TRIBUTO_SOBRE_LUCRO") - g("DISTRIBUICAO_LUCROS"),
     } as Record<string, number>;
 }
 

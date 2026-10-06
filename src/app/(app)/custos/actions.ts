@@ -82,3 +82,66 @@ export async function classificarCategoria(formData: FormData): Promise<Resultad
   revalidatePath("/custos");
   return { ok: true };
 }
+
+// RECLASSIFICAÇÕES EM LOTE — as sugestões marcadas na tela de reclassificações
+// (reclassificacoes.ts). Cada uma é a mesma decisão de classificarCategoria,
+// gravada como CONFIRMADA em nome de quem marcou; a trilha guarda o lote
+// inteiro, com o antes e o depois de cada categoria.
+const MAX_LOTE = 1000;
+
+export async function aplicarReclassificacoes(json: string): Promise<{ erro?: string; aplicadas?: number }> {
+  const session = await exigirPermissao("classificar-dre");
+
+  let itens: { codigo: string; linha: string; subgrupo: string | null }[];
+  try {
+    const bruto = JSON.parse(json) as unknown;
+    if (!Array.isArray(bruto)) return { erro: "Lista inválida." };
+    itens = bruto.map((x) => {
+      const o = (x ?? {}) as Record<string, unknown>;
+      return {
+        codigo: String(o.codigo ?? "").trim(),
+        linha: String(o.linha ?? "").trim(),
+        subgrupo: typeof o.subgrupo === "string" && o.subgrupo.trim() ? o.subgrupo.trim().slice(0, MAX_SUBGRUPO) : null,
+      };
+    });
+  } catch {
+    return { erro: "Lista inválida." };
+  }
+  if (itens.length === 0) return { erro: "Nenhuma sugestão marcada." };
+  if (itens.length > MAX_LOTE) return { erro: `No máximo ${MAX_LOTE} por vez.` };
+  const invalida = itens.find((i) => !i.codigo || !(LINHAS_CLASSIFICAVEIS as readonly string[]).includes(i.linha));
+  if (invalida) return { erro: `Classificação inválida para ${invalida.codigo || "categoria sem código"}.` };
+
+  const anteriores = await prisma.dreClassificacao.findMany({
+    where: { companyId: session.companyId, categoriaCodigo: { in: itens.map((i) => i.codigo) } },
+    select: { categoriaCodigo: true, linha: true, subgrupo: true, origem: true },
+  });
+  const antes = new Map(anteriores.map((a) => [a.categoriaCodigo, a]));
+
+  await prisma.$transaction(
+    itens.map((i) =>
+      prisma.dreClassificacao.upsert({
+        where: { companyId_categoriaCodigo: { companyId: session.companyId, categoriaCodigo: i.codigo } },
+        create: { companyId: session.companyId, categoriaCodigo: i.codigo, linha: i.linha, subgrupo: i.subgrupo, origem: "CONFIRMADA", userNome: session.name },
+        update: { linha: i.linha, subgrupo: i.subgrupo, origem: "CONFIRMADA", userNome: session.name },
+      })
+    )
+  );
+
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "DRE_RECLASSIFICACAO_EM_LOTE",
+    entidadeTipo: "DreClassificacao",
+    entidadeId: "lote",
+    descricao: `${itens.length} categoria(s) reclassificada(s) pelas sugestões da revisão de custos.`,
+    antes: itens.map((i) => ({ codigo: i.codigo, ...(antes.get(i.codigo) ?? { linha: null, subgrupo: null, origem: "PROPOSTA" }) })),
+    depois: itens,
+  });
+
+  revalidatePath("/custos");
+  revalidatePath("/custos/reclassificar");
+  return { aplicadas: itens.length };
+}
