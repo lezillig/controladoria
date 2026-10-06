@@ -59,7 +59,9 @@ export const FORNECEDORES_FORA_PADRAO = "Manoel";
 // estrutura recorrente: no preço, encareceriam todo contrato. Com os
 // advogados em "Despesas administrativas" (reclassificação da revisão de
 // custos), sem esta exclusão as duas entrariam na administração central.
-export const FORNECEDORES_SEMPRE_FORA = ["MCZ Transporte", "Tributtax", "Valestra"] as const;
+// FREITAS JUNIOR (advocacia, ~R$ 16 mil/mês) segue a mesma regra, também por
+// decisão da diretoria (06/10/2026).
+export const FORNECEDORES_SEMPRE_FORA = ["MCZ Transporte", "Tributtax", "Valestra", "Freitas Junior"] as const;
 export const comFornecedoresSempreFora = (nomes: string[]) => [
   ...nomes,
   ...FORNECEDORES_SEMPRE_FORA.filter((x) => !nomes.some((n) => n.toLowerCase() === x.toLowerCase())),

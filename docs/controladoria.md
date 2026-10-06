@@ -176,7 +176,8 @@ A proposta automática já manda "retirada", "distribuição de lucro" e
 subgrupos** — o de um especialista em custo de transporte de passageiros — e
 cada subgrupo uma **natureza de custo**: **V** variável por km, **F** fixo por
 veículo, **M** mão de obra direta, **T** frota de terceiros, **I** indireto
-(administração central), **N** não recorrente/controlável, **K** capital. A
+(administração central), **N** não recorrente/controlável, **K** capital,
+**C** custo direto de contrato (pertence a um contrato só). A
 classificação oferece o catálogo da linha escolhida; texto livre continua
 aceito, sem natureza. A tabela do DRE mostra a sigla ao lado do subtotal do
 subgrupo, e a planilha de conferência traz a coluna "Natureza de custo". Na
@@ -204,14 +205,16 @@ categoria vira classificação CONFIRMADA em nome de quem gravou; a trilha
 guarda o lote com o antes e o depois.
 
 Com os advogados em "Despesas administrativas", **Tributtax** (honorário de
-êxito tributário, ~R$ 75 mil/mês) e **Valestra** (assessoria fiscal, ~R$ 31 mil/mês) ficam
+êxito tributário, ~R$ 75 mil/mês) **Valestra** (assessoria fiscal, ~R$ 31 mil/mês) e **Freitas Junior**
+(advocacia, ~R$ 16 mil/mês) ficam
 **sempre fora** da administração central, ao lado da MCZ Transporte
 (`FORNECEDORES_SEMPRE_FORA`, decisão de 06/10/2026), qualquer que seja o campo
 `fornecedores_fora_adm` da base. Multas e GRU judicial também ficam sempre
 fora. "Aluguel Garagem" (guarda do veículo por pessoas físicas) vai para
-Despesas com veículos, e "Comissão" (contrato da Enforce, paga à Bessa) vai para Serviços de
-terceiros como custo direto daquele contrato — nenhum dos dois entra na
-administração.
+Despesas com veículos, e "Comissão" (contrato da Enforce, paga à Bessa), "Toldos e Coberturas" e
+"Aluguel de Gerador" (ligados a contratos específicos) vão para "Custo dos
+serviços prestados", subgrupo "Custo direto de contrato específico" (natureza
+**C**) — nenhum deles entra na administração central.
 
 ### O mês se formando (painel e relatório diário)
 

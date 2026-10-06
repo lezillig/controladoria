@@ -14,6 +14,7 @@ import { LINHA_PESSOAS_CORPORATIVO, type ChaveDre } from "./dre";
 //   I  indireto             administração central: sede, folha administrativa
 //   N  não recorrente       multas, juros de mora, parcelamentos, descontos
 //   K  capital              consórcio, financiamento, compra e venda de veículo
+//   C  direto de contrato   custo de um contrato só: vai no preço dele, fora do rateio
 //
 // Com a natureza, "quanto custa um km" deixa de depender de adivinhar pela
 // descrição da categoria, a administração central fica só com o que é
@@ -23,7 +24,7 @@ import { LINHA_PESSOAS_CORPORATIVO, type ChaveDre } from "./dre";
 // Texto livre continua aceito — a empresa pode precisar de um eixo que o
 // catálogo não tem —, mas sem natureza.
 
-export type Natureza = "RECEITA" | "TRIBUTO" | "V" | "F" | "M" | "T" | "I" | "N" | "K" | "DESTINACAO";
+export type Natureza = "RECEITA" | "TRIBUTO" | "V" | "F" | "M" | "T" | "I" | "N" | "K" | "C" | "DESTINACAO";
 
 export const NATUREZAS: Record<Natureza, { rotulo: string; sigla: string; explicacao: string }> = {
   RECEITA: { rotulo: "Receita", sigla: "R", explicacao: "Receita de serviço, por segmento." },
@@ -35,6 +36,7 @@ export const NATUREZAS: Record<Natureza, { rotulo: string; sigla: string; explic
   I: { rotulo: "Indireto (administração central)", sigla: "I", explicacao: "Estrutura rateada nos contratos." },
   N: { rotulo: "Não recorrente / controlável", sigla: "N", explicacao: "Não entra no preço; meta de redução." },
   K: { rotulo: "Capital", sigla: "K", explicacao: "Investimento e financiamento da frota." },
+  C: { rotulo: "Custo direto de contrato", sigla: "C", explicacao: "Pertence a um contrato: entra no preço dele, fora do rateio." },
   DESTINACAO: { rotulo: "Destinação do resultado", sigla: "D", explicacao: "O que sai do lucro para os sócios." },
 };
 
@@ -67,7 +69,8 @@ export const CATALOGO_SUBGRUPOS: SubgrupoCatalogo[] = [
   s("OUTRAS_RECEITAS", "Venda de sucata e materiais", "N", /venda de (pneu|[óo]leo|sucata|material)|sucata/i),
   s("OUTRAS_RECEITAS", "Recuperações e reembolsos", "N", /reembolso|recupera|devolu|estorno|repasse|cr[ée]dito n[ãa]o utilizado|n[ãa]o identificad|confraterniza/i),
 
-  s("CUSTO_SERVICO", "Custo direto do serviço", "V"),
+  s("CUSTO_SERVICO", "Custo direto de contrato específico", "C", /^comiss[ãa]o$|toldos|gerador/i),
+  s("CUSTO_SERVICO", "Custo direto do serviço", "C"),
 
   s("DESPESA_VEICULOS", "Combustível", "V", /combust|diesel|gasolina|etanol|abastec|carga el[ée]trica|recarga/i),
   s("DESPESA_VEICULOS", "ARLA, óleo e lubrificantes", "V", /arla|[óo]leo|lubrific|filtro/i),
@@ -86,7 +89,6 @@ export const CATALOGO_SUBGRUPOS: SubgrupoCatalogo[] = [
 
   s("DESPESA_SERVICOS_TERCEIROS", "Fretamento terceirizado (agregados)", "T", /compra de servi[çc]o|agregad|terceiriz|subcontrat/i),
   s("DESPESA_SERVICOS_TERCEIROS", "Locação de veículos de terceiros", "T", /subloca|(aluguel|loca[çc][ãa]o) de ve[íi]culo/i),
-  s("DESPESA_SERVICOS_TERCEIROS", "Comissão de contrato específico", "T", /^comiss[ãa]o$/i),
   s("DESPESA_SERVICOS_TERCEIROS", "Tributos retidos de terceiros", "I", /pcc|5952|1708|ir servi[çc]o|retid/i),
   s("DESPESA_SERVICOS_TERCEIROS", "Serviços diversos (a abrir)", "I", /presta[çc][ãa]o de servi|adiantamento a fornecedor/i),
 

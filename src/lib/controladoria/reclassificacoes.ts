@@ -72,18 +72,20 @@ export const REGRAS_RECLASSIFICACAO: RegraReclassificacao[] = [
     "Despesa administrativa: a linha estava vazia e o que é dela estava em estrutura e terceiros."),
   r(/marketing|seguro garantia|comiss[õo]es clientes|a[çc][ãa]o comercial|kit lanche|coffee|brindes clientes|licita[çc][õo]es|patroc/i, ["DESPESA_SERVICOS_TERCEIROS", "DESPESA_GERAL", "DESPESA_SALARIOS", "DESPESA_VEICULOS"], "DESPESA_COMERCIAL",
     "Custo de ganhar e manter contrato: comercial."),
+  // CUSTO DIRETO DE CONTRATO ESPECÍFICO (decisões de 06/10/2026): a
   // "Comissão" (≈ R$ 12 mil/mês, quase toda à Bessa Transportes) é do
-  // contrato da Enforce (decisão de 06/10/2026): custo direto daquele
-  // contrato. Em comercial entraria na administração central e se ratearia em
-  // todos; em serviços de terceiros, não.
-  r(/^comiss[ãa]o$/i, ["DESPESA_VEICULOS", "DESPESA_COMERCIAL", "DESPESA_GERAL"], "DESPESA_SERVICOS_TERCEIROS",
-    "Comissão do contrato da Enforce: custo direto daquele contrato, não se rateia nos demais. Vincule a categoria ao contrato em Rentabilidade por contrato.", "Comissão de contrato específico"),
+  // contrato da Enforce; "Toldos e Coberturas" e "Aluguel de Gerador" também
+  // estão ligados a contratos específicos. Vão para "Custo dos serviços
+  // prestados", que não entra na administração central: em comercial ou em
+  // estrutura, se ratearia em todos os contratos.
+  r(/^comiss[ãa]o$|toldos|aluguel de gerador/i, ["DESPESA_VEICULOS", "DESPESA_ESTRUTURA", "DESPESA_COMERCIAL", "DESPESA_GERAL", "DESPESA_SERVICOS_TERCEIROS"], "CUSTO_SERVICO",
+    "Ligado a um contrato específico: custo direto daquele contrato, fora do rateio da administração central. Vincule a categoria ao contrato em Rentabilidade por contrato.", "Custo direto de contrato específico"),
   r(/coordena[çc][ãa]o/i, ["DESPESA_SERVICOS_TERCEIROS"], "DESPESA_SALARIOS", "Coordenação da operação é mão de obra direta, mesmo contratada como PJ.", "Supervisão e coordenação"),
   r(/aluguel de ve[íi]culo/i, ["DESPESA_VEICULOS"], "DESPESA_SERVICOS_TERCEIROS",
     "Veículo alugado é frota de terceiros: lido junto da sublocação e dos agregados, permite comparar frota própria com terceirizada.", "Locação de veículos de terceiros"),
 
   // ---------------- Veículos e pessoas: o que é sede
-  r(/toldos|aluguel de gerador|vistoria de garagem|manuten[çc][ãa]o predial/i, ["DESPESA_VEICULOS", "DESPESA_SALARIOS"], "DESPESA_ESTRUTURA",
+  r(/vistoria de garagem|manuten[çc][ãa]o predial/i, ["DESPESA_VEICULOS", "DESPESA_SALARIOS"], "DESPESA_ESTRUTURA",
     "Garagem e prédio são estrutura, não custo do veículo nem da folha."),
   // "Aluguel Garagem" na Azul são dezenas de pagamentos pequenos a pessoas
   // físicas — a guarda do veículo perto de onde o motorista mora. É custo do

@@ -182,7 +182,7 @@ export function dreDaJanela(dre: SerieDre, competencias: Competencia[]) {
     receitaBruta,
     receitaLiquida,
     pessoas,
-    veiculos: g("DESPESA_VEICULOS") + g("CUSTO_SERVICO"),
+    veiculos: g("DESPESA_VEICULOS"),
     terceiros: g("DESPESA_SERVICOS_TERCEIROS"),
     // Retiradas: o pró-labore (acima do resultado) e a distribuição (abaixo).
     socios: g("DESPESA_SOCIOS") + g("DISTRIBUICAO_LUCROS"),
@@ -481,7 +481,7 @@ export function calcularIndicadores(e: EntradaIndicadores): Indicador[] {
     valor: veiculos,
     formato: "PCT",
     farol: farolPorFaixa(veiculos, 30, 35, false),
-    referencia: "Combustível, manutenção, pneus, seguro, IPVA e custo do serviço. Verde ≤ 30%; amarelo até 35%.",
+    referencia: "Combustível, manutenção, pneus, seguro e IPVA. Verde ≤ 30%; amarelo até 35%.",
     formula: `${reais(d.veiculos)} ÷ ${reais(d.receitaLiquida)}.`,
   });
   const parcelas = pct(d.parcelas, d.receitaLiquida);
