@@ -16,6 +16,7 @@
 import { fmtData, fmtDataHora, fmtDiaDoInstante } from "../src/lib/controladoria/format";
 import { inicioDoDia, fimDoMes, inicioDoMes, montarJanelas } from "../src/lib/controladoria/periodos";
 import { dataReferenciaPadrao } from "../src/lib/controladoria/ciclo";
+import { periodoLivre } from "../src/lib/controladoria/detalhamento";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -79,6 +80,15 @@ console.log("\n4. Mês anterior, mesmo mês e acumulado do ano anterior: sempre 
   conferir("acumulado do ano anterior: jan a set/2025, meses fechados", [fmtData(j.anoAnterior.inicio), fmtData(j.anoAnterior.fim)], ["01/01/2025", "30/09/2025"]);
   const marco = montarJanelas(new Date(2026, 2, 31));
   conferir("de 31/03, o anterior é fevereiro inteiro", [fmtData(marco.mesAnterior.inicio), fmtData(marco.mesAnterior.fim)], ["01/02/2026", "28/02/2026"]);
+}
+
+console.log("\nPERÍODO LIVRE DO DETALHAMENTO (juros e multa)");
+{
+  const p = periodoLivre("2026-01-01", "2026-10-06");
+  conferir("01/01 a 06/10, com o dia final inteiro", p && [p.inicio.getHours(), p.fim.getHours(), p.fim.getMinutes(), fmtData(p.inicio), fmtData(p.fim), p.rotulo], [0, 23, 59, "01/01/2026", "06/10/2026", "01/01/2026 a 06/10/2026"]);
+  conferir("de depois de até não vale", periodoLivre("2026-10-06", "2026-01-01"), null);
+  conferir("formato errado não vale", periodoLivre("01/01/2026", "2026-10-06"), null);
+  conferir("sem as duas datas não vale", periodoLivre(undefined, "2026-10-06"), null);
 }
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTodos os testes passaram.");

@@ -33,6 +33,8 @@ export type LinhaDetalhe = {
   parceiro: string | null;
   descricao: string | null;
   valorCents: number;
+  // Colunas a mais antes do valor (ver `Detalhamento.extras`), em centavos.
+  extrasCents?: number[];
 };
 
 export type Detalhamento = {
@@ -46,6 +48,10 @@ export type Detalhamento = {
   quantidade: number;
   linhas: LinhaDetalhe[];
   limite: number;
+  // Rótulos das colunas a mais (juros e multa, separados, antes do total).
+  extras?: string[];
+  // Soma de cada coluna a mais, sobre TODAS as linhas.
+  totaisExtrasCents?: number[];
 };
 
 // Teto de linhas por consulta. Uma tela de investigação não precisa de dez mil
@@ -210,6 +216,21 @@ const COMPONENTES = {
 
 export type ComponenteDePerda = keyof typeof COMPONENTES;
 
+// Período livre na querystring (de=AAAA-MM-DD&ate=AAAA-MM-DD). Fora do
+// formato, ou "de" depois de "ate", não vale — a tela cai no mês, como antes.
+export function periodoLivre(de: string | undefined, ate: string | undefined): Periodo | null {
+  const casa = (x: string | undefined) => (x && /^\d{4}-\d{2}-\d{2}$/.test(x) ? x : null);
+  const d = casa(de);
+  const a = casa(ate);
+  if (!d || !a || d > a) return null;
+  const [ad, md, dd] = d.split("-").map(Number);
+  const [aa, ma, da] = a.split("-").map(Number);
+  const inicio = new Date(ad, md - 1, dd, 0, 0, 0, 0);
+  const fim = new Date(aa, ma - 1, da, 23, 59, 59, 999);
+  const br = (x: string) => `${x.slice(8, 10)}/${x.slice(5, 7)}/${x.slice(0, 4)}`;
+  return { inicio, fim, rotulo: `${br(d)} a ${br(a)}` };
+}
+
 export function ehComponenteDePerda(valor: string | undefined | null): valor is ComponenteDePerda {
   return valor === "juros" || valor === "multa" || valor === "tarifa" || valor === "desconto";
 }
@@ -271,6 +292,65 @@ export async function detalharPerdas(params: {
     },
     limite
   );
+}
+
+// JUROS E MULTA JUNTOS — os títulos A PAGAR baixados com atraso num período
+// livre (de/até), com juros e multa lado a lado e o total. É a lista para
+// cobrar de quem atrasou e para medir o que o atraso custou: o painel mostra
+// os dois separados e só no mês; a pergunta "quanto pagamos de atraso no ano,
+// e em quê?" pede os dois juntos e o período inteiro.
+export const LIMITE_JUROS_E_MULTA = 5000;
+
+type LinhaJurosMulta = LinhaBruta & { juros: bigint; multa: bigint; total_juros: bigint; total_multa: bigint };
+
+export async function detalharJurosEMulta(params: {
+  companyId: string;
+  conexaoId?: string | null;
+  periodo: Periodo;
+  limite?: number;
+}): Promise<Detalhamento> {
+  const { companyId, conexaoId, periodo, limite = LIMITE_JUROS_E_MULTA } = params;
+  const linhas = await prisma.$queryRaw<LinhaJurosMulta[]>`
+    SELECT b.id,
+           b."dataBaixa" AS data,
+           t."conexaoApelido" AS empresa,
+           t."numeroDocumento" AS documento,
+           t."parceiroNome" AS parceiro,
+           COALESCE(NULLIF(TRIM(t."categoriaDescricao"), ''), NULLIF(TRIM(b.observacao), '')) AS descricao,
+           b."jurosCents"::bigint AS juros,
+           b."multaCents"::bigint AS multa,
+           (b."jurosCents" + b."multaCents")::bigint AS valor,
+           SUM(b."jurosCents" + b."multaCents") OVER ()::bigint AS total_valor,
+           SUM(b."jurosCents") OVER ()::bigint AS total_juros,
+           SUM(b."multaCents") OVER ()::bigint AS total_multa,
+           COUNT(*) OVER ()::bigint AS total_linhas
+      FROM ${tabela("OmieBaixa")} b
+      LEFT JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
+     WHERE b."companyId" = ${companyId}
+       AND b."dataBaixa" >= ${periodo.inicio}
+       AND b."dataBaixa" <= ${periodo.fim}
+       AND (b."jurosCents" <> 0 OR b."multaCents" <> 0)
+       AND t.natureza::text = 'PAGAR'
+       ${filtroConexaoBaixa(conexaoId, companyId)}
+     ORDER BY (b."jurosCents" + b."multaCents") DESC, b."dataBaixa" ASC
+     LIMIT ${limite}
+  `;
+  const base = montar(
+    linhas,
+    {
+      titulo: `Juros e multa por atraso — ${periodo.rotulo}`,
+      criterio: `Baixas de títulos A PAGAR com data de ${periodo.rotulo} e juros ou multa diferente de zero: o que a empresa pagou a mais por atraso.`,
+      rotuloData: "Data da baixa",
+      rotuloValor: "Juros + multa",
+    },
+    limite
+  );
+  return {
+    ...base,
+    extras: ["Juros", "Multa"],
+    totaisExtrasCents: [Number(linhas[0]?.total_juros ?? 0), Number(linhas[0]?.total_multa ?? 0)],
+    linhas: base.linhas.map((l, i) => ({ ...l, extrasCents: [Number(linhas[i].juros), Number(linhas[i].multa)] })),
+  };
 }
 
 // ---------------------------------------------------------------------------

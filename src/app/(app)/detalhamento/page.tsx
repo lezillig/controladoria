@@ -4,14 +4,16 @@ import { montarJanelas } from "@/lib/controladoria/periodos";
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import {
   detalharConta,
+  detalharJurosEMulta,
   detalharPerdas,
   detalharTitulos,
   ehComponenteDePerda,
+  periodoLivre,
   type Detalhamento,
 } from "@/lib/controladoria/detalhamento";
 import { exigirPermissao, resolverEscopo, resolverPeriodo } from "../_dados";
 import { AvisoVazio, Secao, Tabela } from "../_componentes";
-import { larguraPainel } from "@/lib/ui";
+import { inputClass, larguraPainel, secondaryButtonClass } from "@/lib/ui";
 
 // DETALHAMENTO — o último degrau do painel.
 //
@@ -37,6 +39,10 @@ type Params = {
   empresa?: string;
   competencia?: string;
   volta?: string;
+  // Período livre (AAAA-MM-DD), só para as perdas: juros, multa, tarifa,
+  // desconto e juros + multa juntos.
+  de?: string;
+  ate?: string;
 };
 
 export default async function DetalhamentoPage({ searchParams }: { searchParams: Promise<Params> }) {
@@ -53,12 +59,18 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
   let dados: Detalhamento | null = null;
   let saldoInicialCents = 0;
 
-  if (params.fonte === "titulos") {
+  const livre = periodoLivre(params.de, params.ate);
+  const periodoDasPerdas = livre ?? mes;
+  const ehPerda = params.fonte === "perda" && (params.parte === "juros_multa" || ehComponenteDePerda(params.parte));
+
+  if (params.fonte === "perda" && params.parte === "juros_multa") {
+    dados = await detalharJurosEMulta({ ...base, periodo: periodoDasPerdas });
+  } else if (params.fonte === "titulos") {
     const natureza = params.natureza === "RECEBER" ? "RECEBER" : "PAGAR";
     const dimensao = params.dimensao === "tipo" ? "tipo" : params.dimensao === "categoria" ? "categoria" : null;
     dados = await detalharTitulos({ ...base, natureza, dimensao, valor: params.valor ?? null });
   } else if (params.fonte === "perda" && ehComponenteDePerda(params.parte)) {
-    dados = await detalharPerdas({ ...base, componente: params.parte });
+    dados = await detalharPerdas({ ...base, periodo: periodoDasPerdas, componente: params.parte });
   } else if (params.fonte === "caixa" && params.conta) {
     // `conexaoId:codigo` — o código da conta é único por conexão, não no grupo.
     const corte = params.conta.indexOf(":");
@@ -91,6 +103,14 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
   }
 
   const cortou = dados.quantidade > dados.linhas.length;
+  const extras = dados.extras ?? [];
+  const dataIso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const consulta = new URLSearchParams({
+    parte: params.parte ?? "",
+    de: dataIso(periodoDasPerdas.inicio),
+    ate: dataIso(periodoDasPerdas.fim),
+    ...(params.empresa ? { empresa: params.empresa } : {}),
+  });
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -101,10 +121,49 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
         <p className="mt-1 text-sm text-slate-600">{dados.criterio}</p>
       </div>
 
+      {ehPerda && (
+        // O PERÍODO DAS PERDAS É LIVRE: "quanto pagamos de juros e multa no
+        // ano?" não cabe num mês. GET simples — o endereço vira o filtro, e
+        // dá para mandar o link.
+        <form method="get" className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+          <input type="hidden" name="fonte" value="perda" />
+          {params.empresa && <input type="hidden" name="empresa" value={params.empresa} />}
+          <div>
+            <label className="block text-xs font-medium text-slate-600">O quê</label>
+            <select name="parte" defaultValue={params.parte} className={`${inputClass} w-56`}>
+              <option value="juros_multa">Juros e multa por atraso</option>
+              <option value="juros">Só juros por atraso</option>
+              <option value="multa">Só multa por atraso</option>
+              <option value="tarifa">Tarifa bancária</option>
+              <option value="desconto">Desconto concedido a cliente</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600">De</label>
+            <input type="date" name="de" defaultValue={dataIso(periodoDasPerdas.inicio)} className={`${inputClass} w-40`} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600">Até</label>
+            <input type="date" name="ate" defaultValue={dataIso(periodoDasPerdas.fim)} className={`${inputClass} w-40`} />
+          </div>
+          <button type="submit" className={secondaryButtonClass}>
+            Aplicar
+          </button>
+          <a href={`/api/exportar/perdas?${consulta}`} className="text-sm font-medium text-blue-700 hover:underline">
+            Baixar planilha (todas as linhas)
+          </a>
+        </form>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
           <p className="text-xs font-medium text-slate-500">Soma das linhas</p>
           <p className="mt-1 text-xl font-semibold text-slate-900">{fmtBRL(dados.totalCents)}</p>
+          {extras.length > 0 && (
+            <p className="mt-0.5 text-xs text-slate-500">
+              {extras.map((r, i) => `${r} ${fmtBRL(dados.totaisExtrasCents?.[i] ?? 0)}`).join(" · ")}
+            </p>
+          )}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
           <p className="text-xs font-medium text-slate-500">Registros</p>
@@ -128,8 +187,8 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
 
       <Secao titulo="Linha a linha" descricao="Da maior para a menor. Cada linha é um registro do espelho da Omie.">
         <Tabela
-          colunas={[dados.rotuloData, "Empresa", "Documento", "Parceiro", "Classificação", dados.rotuloValor]}
-          alinharDireita={[5]}
+          colunas={[dados.rotuloData, "Empresa", "Documento", "Parceiro", "Classificação", ...extras, dados.rotuloValor]}
+          alinharDireita={Array.from({ length: extras.length + 1 }, (_, i) => 5 + i)}
           vazio="Nenhum registro com este filtro."
           linhas={dados.linhas.map((l) => [
             <span key="d" className="whitespace-nowrap text-slate-600">
@@ -147,6 +206,11 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
             <span key="c" className="text-slate-500">
               {l.descricao ?? "—"}
             </span>,
+            ...(l.extrasCents ?? []).map((v, i) => (
+              <span key={`x${i}`} className="tabular-nums text-slate-600">
+                {fmtBRL(v)}
+              </span>
+            )),
             <span key="v" className={`tabular-nums ${l.valorCents < 0 ? "text-red-700" : "text-slate-900"}`}>
               {fmtBRL(l.valorCents)}
             </span>,
