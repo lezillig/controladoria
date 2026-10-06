@@ -72,14 +72,19 @@ export const REGRAS_RECLASSIFICACAO: RegraReclassificacao[] = [
     "Despesa administrativa: a linha estava vazia e o que é dela estava em estrutura e terceiros."),
   r(/marketing|seguro garantia|comiss[õo]es clientes|a[çc][ãa]o comercial|kit lanche|coffee|brindes clientes|licita[çc][õo]es|patroc/i, ["DESPESA_SERVICOS_TERCEIROS", "DESPESA_GERAL", "DESPESA_SALARIOS", "DESPESA_VEICULOS"], "DESPESA_COMERCIAL",
     "Custo de ganhar e manter contrato: comercial."),
-  r(/^comiss[ãa]o\b/i, ["DESPESA_VEICULOS"], "DESPESA_COMERCIAL", "Comissão de venda não é custo de rodar o veículo.", "Comissões"),
   r(/coordena[çc][ãa]o/i, ["DESPESA_SERVICOS_TERCEIROS"], "DESPESA_SALARIOS", "Coordenação da operação é mão de obra direta, mesmo contratada como PJ.", "Supervisão e coordenação"),
   r(/aluguel de ve[íi]culo/i, ["DESPESA_VEICULOS"], "DESPESA_SERVICOS_TERCEIROS",
     "Veículo alugado é frota de terceiros: lido junto da sublocação e dos agregados, permite comparar frota própria com terceirizada.", "Locação de veículos de terceiros"),
 
   // ---------------- Veículos e pessoas: o que é sede
-  r(/toldos|aluguel de gerador|vistoria de garagem|aluguel garagem|manuten[çc][ãa]o predial/i, ["DESPESA_VEICULOS", "DESPESA_SALARIOS"], "DESPESA_ESTRUTURA",
+  r(/toldos|aluguel de gerador|vistoria de garagem|manuten[çc][ãa]o predial/i, ["DESPESA_VEICULOS", "DESPESA_SALARIOS"], "DESPESA_ESTRUTURA",
     "Garagem e prédio são estrutura, não custo do veículo nem da folha."),
+  // "Aluguel Garagem" na Azul são dezenas de pagamentos pequenos a pessoas
+  // físicas — a guarda do veículo perto de onde o motorista mora. É custo do
+  // VEÍCULO, por veículo, e não a garagem da sede: na estrutura, entraria na
+  // administração central e se ratearia em todo contrato.
+  r(/aluguel garagem|pernoite|guarda de ve[íi]culo/i, ["DESPESA_SALARIOS", "DESPESA_ESTRUTURA"], "DESPESA_VEICULOS",
+    "Guarda do veículo perto do motorista é custo fixo do veículo, não estrutura da sede nem folha.", "Pernoite e guarda de veículos"),
   r(/doa[çc][ãa]o/i, ["DESPESA_VEICULOS"], "DESPESA_GERAL", "Doação não é custo do veículo.", "Despesas diversas"),
   r(/^m[ãa]o de obra$/i, ["DESPESA_SALARIOS"], "DESPESA_VEICULOS", "Mão de obra de oficina contratada é manutenção do veículo.", "Manutenção e peças"),
   r(/uber|t[áa]xi/i, ["DESPESA_GERAL"], "DESPESA_SALARIOS", "Deslocamento de motorista é custo da mão de obra direta.", "Viagens e deslocamento"),
@@ -96,6 +101,7 @@ export const ABRIR_NO_OMIE: { padrao: RegExp; motivo: string }[] = [
   { padrao: /^cart[ãa]o de cr[ée]dito$/i, motivo: "A fatura do cartão é pagamento de compras (combustível, pedágio, sistemas, viagens), não juro. Lance a fatura rateada pelas categorias de natureza." },
   { padrao: /^compra de servi[çc]os?$/i, motivo: "Separe agregados e fretamento terceirizado (custo direto) de serviços administrativos: é o segundo maior custo variável e hoje não se sabe de qual contrato é." },
   { padrao: /^presta[çc][ãa]o de servi[çc]o$/i, motivo: "Categoria genérica: abra pela natureza do serviço." },
+  { padrao: /^comiss[ãa]o$/i, motivo: "Quase toda paga a uma transportadora (Bessa). Se é comissão de um contrato específico, é custo direto daquele contrato; em comercial, entraria na administração central e se ratearia em todos." },
   { padrao: /adiantamento a fornecedor/i, motivo: "Adiantamento não é despesa: apropriar na categoria da nota quando ela chegar." },
   { padrao: /clientes - servi[çc]os prestados/i, motivo: "Abra a receita por segmento (fretamento contínuo, escolar, eventual, locação, terceirização) para medir a margem de cada um." },
 ];

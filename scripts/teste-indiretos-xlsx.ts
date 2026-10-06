@@ -107,7 +107,7 @@ async function principal() {
     const fora = comSempreFora(["Compra de Serviços"]);
     ok("os sempre fora vêm junto do que a base diz", fora[0] === "Compra de Serviços" && ["Parcelamento", "Empréstimo", "Uber", "PLR", "Seguro Garantia", "PCC - 5952"].every((x) => fora.includes(x)), fora.join("|"));
     const sempre = comSempreFora([]).length;
-    ok("campo da base em branco: continuam fora", sempre === 15, String(sempre));
+    ok("campo da base em branco: continuam fora", sempre === 17, String(sempre));
     ok("sem repetir o que a base já tem", comSempreFora(["parcelamento"]).length === sempre);
   }
 

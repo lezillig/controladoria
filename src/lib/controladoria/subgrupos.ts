@@ -80,6 +80,7 @@ export const CATALOGO_SUBGRUPOS: SubgrupoCatalogo[] = [
   s("DESPESA_VEICULOS", "Pedágio e estacionamento", "V", /ped[áa]gio|estacionamento|zona azul/i),
   s("DESPESA_VEICULOS", "Limpeza e higienização", "V", /limpeza|lavagem|higieniza|dedetiza/i),
   s("DESPESA_VEICULOS", "Seguro de frota", "F", /seguro/i),
+  s("DESPESA_VEICULOS", "Pernoite e guarda de veículos", "F", /aluguel garagem|pernoite|guarda de ve[íi]culo/i),
   s("DESPESA_VEICULOS", "Regulatório e inspeções", "F", /emtu|artesp|antt|\bdtp\b|tac[óo]grafo|inspe[çc][ãa]o|vistoria|cadastro|fretado|turismo|visto na declara|inclus[ãa]o ou altera/i),
   s("DESPESA_VEICULOS", "Caracterização e adequação", "F", /adesivo|insulfilm|pel[íi]cula|transforma[çc][ãa]o|blindagem|adapta/i),
 

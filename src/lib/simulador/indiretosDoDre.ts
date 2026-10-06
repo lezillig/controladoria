@@ -94,6 +94,12 @@ export const CATEGORIAS_SEMPRE_FORA = [
   "Seguro Garantia",
   "Uber",
   "PLR",
+  // (06/10/2026) Multas e custas judiciais: com a reclassificação, "Outras
+  // Multas", "Multa da CLT" e "GRU Judicial" passam a cair em linhas da
+  // estrutura. São penalidade e contingência — meta de zerar, não custo que
+  // um contrato novo deva carregar.
+  "Multa",
+  "GRU Judicial",
 ] as const;
 // PRÓ-LABORE DOS SÓCIOS: valor fixo por mês na administração central, no
 // lugar das "Despesas com sócios" do DRE (que ficam fora — ver abaixo). O
