@@ -55,7 +55,7 @@ console.log("\nO QUE NÃO MUDA");
 ok("juros sobre empréstimos continuam despesa financeira", para("Juros sobre Empréstimos", "DESPESA_FINANCEIRA") === "DESPESA_FINANCEIRA");
 ok("cartão de crédito não muda de linha (pede ação no Omie)", para("Cartão de Crédito", "DESPESA_FINANCEIRA") === "DESPESA_FINANCEIRA");
 ok("receita de serviço continua receita", para("Clientes - Serviços Prestados", "RECEITA_BRUTA") === "RECEITA_BRUTA");
-ok("comissão em veículos não vai sozinha para comercial (pede verificação)", para("Comissão · AZUL", "DESPESA_VEICULOS") === "DESPESA_VEICULOS");
+ok("comissão do contrato da Enforce vai para terceiros, não para comercial (não se rateia)", para("Comissão · AZUL", "DESPESA_VEICULOS") === "DESPESA_SERVICOS_TERCEIROS");
 ok("pró-labore continua em sócios", para("Pró-labore", "DESPESA_SOCIOS") === "DESPESA_SOCIOS");
 ok("regra só vale para a linha de origem dela: combustível em veículos fica", para("Combustível", "DESPESA_VEICULOS") === "DESPESA_VEICULOS");
 ok("venda de veículo já em financiamentos não gera sugestão", regraPara({ descricao: "Venda de Veículos", linha: "FINANCIAMENTO_INVESTIMENTO" }) === null);

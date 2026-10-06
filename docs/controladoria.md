@@ -203,10 +203,15 @@ Nada muda sem confirmação: quem tem `classificar-dre` marca e grava, e cada
 categoria vira classificação CONFIRMADA em nome de quem gravou; a trilha
 guarda o lote com o antes e o depois.
 
-Com os advogados em "Despesas administrativas", o honorário de êxito
-tributário (Tributtax) passou a ser excluído da administração central por
-padrão (`fornecedores_fora_adm`, padrão "Manoel; Tributtax"): é custo da
-recuperação do crédito, não estrutura que todo contrato deva carregar.
+Com os advogados em "Despesas administrativas", **Tributtax** (honorário de
+êxito tributário, ~R$ 75 mil/mês) e **Valestra** (assessoria fiscal, ~R$ 31 mil/mês) ficam
+**sempre fora** da administração central, ao lado da MCZ Transporte
+(`FORNECEDORES_SEMPRE_FORA`, decisão de 06/10/2026), qualquer que seja o campo
+`fornecedores_fora_adm` da base. Multas e GRU judicial também ficam sempre
+fora. "Aluguel Garagem" (guarda do veículo por pessoas físicas) vai para
+Despesas com veículos, e "Comissão" (contrato da Enforce, paga à Bessa) vai para Serviços de
+terceiros como custo direto daquele contrato — nenhum dos dois entra na
+administração.
 
 ### O mês se formando (painel e relatório diário)
 

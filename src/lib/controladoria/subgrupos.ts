@@ -86,6 +86,7 @@ export const CATALOGO_SUBGRUPOS: SubgrupoCatalogo[] = [
 
   s("DESPESA_SERVICOS_TERCEIROS", "Fretamento terceirizado (agregados)", "T", /compra de servi[çc]o|agregad|terceiriz|subcontrat/i),
   s("DESPESA_SERVICOS_TERCEIROS", "Locação de veículos de terceiros", "T", /subloca|(aluguel|loca[çc][ãa]o) de ve[íi]culo/i),
+  s("DESPESA_SERVICOS_TERCEIROS", "Comissão de contrato específico", "T", /^comiss[ãa]o$/i),
   s("DESPESA_SERVICOS_TERCEIROS", "Tributos retidos de terceiros", "I", /pcc|5952|1708|ir servi[çc]o|retid/i),
   s("DESPESA_SERVICOS_TERCEIROS", "Serviços diversos (a abrir)", "I", /presta[çc][ãa]o de servi|adiantamento a fornecedor/i),
 

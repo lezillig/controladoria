@@ -44,12 +44,7 @@ export const FORNECEDOR_CONTABILIDADE_PADRAO = "JL Business; Joel";
 // nenhum outro.
 export const CHAVE_FORNECEDORES_FORA = "fornecedores_fora_adm";
 export const CHAVE_CATEGORIAS_FORA = "categorias_fora_adm";
-// Tributtax (06/10/2026): honorário de ÊXITO sobre crédito tributário
-// recuperado (~R$ 75 mil/mês). É custo da recuperação, não estrutura
-// recorrente — no preço, encareceria todo contrato por um ganho que não se
-// repete. Com os advogados em "Despesas administrativas" (reclassificação da
-// revisão de custos), sem esta exclusão ele entraria na administração central.
-export const FORNECEDORES_FORA_PADRAO = "Manoel; Tributtax";
+export const FORNECEDORES_FORA_PADRAO = "Manoel";
 // SEMPRE FORA, qualquer que seja o campo da base (decisão de 04/10/2026): o
 // repasse da Azul à MCZ em "Apoio Administrativo" (R$ 180 mil em
 // setembro/2026). É a MCZ cobrando a folha administrativa que ela mesma já
@@ -57,7 +52,14 @@ export const FORNECEDORES_FORA_PADRAO = "Manoel; Tributtax";
 // eliminação das operações entre as empresas (escopoSql.ts) já o tira do
 // consolidado quando o CNPJ da MCZ está em Conexões; esta lista garante o
 // mesmo sem depender do cadastro.
-export const FORNECEDORES_SEMPRE_FORA = ["MCZ Transporte"] as const;
+//
+// TRIBUTTAX E VALESTRA (decisão de 06/10/2026): a Tributtax é honorário de
+// ÊXITO sobre crédito tributário recuperado (~R$ 75 mil/mês) e a Valestra
+// (~R$ 31 mil/mês) é assessoria fiscal como ela, por decisão da diretoria. Nenhuma é
+// estrutura recorrente: no preço, encareceriam todo contrato. Com os
+// advogados em "Despesas administrativas" (reclassificação da revisão de
+// custos), sem esta exclusão as duas entrariam na administração central.
+export const FORNECEDORES_SEMPRE_FORA = ["MCZ Transporte", "Tributtax", "Valestra"] as const;
 export const comFornecedoresSempreFora = (nomes: string[]) => [
   ...nomes,
   ...FORNECEDORES_SEMPRE_FORA.filter((x) => !nomes.some((n) => n.toLowerCase() === x.toLowerCase())),

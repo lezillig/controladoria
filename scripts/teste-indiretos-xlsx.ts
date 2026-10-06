@@ -182,7 +182,7 @@ async function principal() {
     // PJ do apoio (os 18 mil do repasse à MCZ saem).
     perto("folha sem a oficina e sem o repasse à MCZ", doDre.get("folha_adm")?.valor ?? NaN, 92_000);
     ok("o repasse à MCZ fica fora nos lançamentos", lancamentos.filter((x) => /MCZ TRANSPORTE/.test(x.fornecedor)).every((x) => x.indireto !== "folha_adm") && lancamentos.some((x) => /C CARDOSO/.test(x.fornecedor) && x.indireto === "folha_adm"));
-    ok("MCZ Transporte sempre fora, junto do que a base diz", comFornecedoresSempreFora(["Manoel"]).join("|") === "Manoel|MCZ Transporte");
+    ok("MCZ Transporte, Tributtax e Valestra sempre fora, junto do que a base diz", comFornecedoresSempreFora(["Manoel"]).join("|") === "Manoel|MCZ Transporte|Tributtax|Valestra");
     perto("contabilidade pelos pagamentos", doDre.get("contabilidade")?.valor ?? NaN, 12_000);
     perto("gerais com o resto das administrativas", doDre.get("gerais")?.valor ?? NaN, 12_000);
 
