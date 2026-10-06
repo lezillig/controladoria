@@ -1,11 +1,13 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { Fragment, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { fmtBRL } from "@/lib/controladoria/format";
 import { rotuloDeClassificacao } from "@/lib/controladoria/dre";
 import { NATUREZAS, naturezaDoSubgrupo } from "@/lib/controladoria/subgrupos";
 import type { Sugestao } from "@/lib/controladoria/reclassificacoes";
+import type { ComposicaoCategoria } from "@/lib/controladoria/composicaoCategoria";
+import DetalheCategoria from "./DetalheCategoria";
 import { primaryButtonClass } from "@/lib/ui";
 import { aplicarReclassificacoes } from "../actions";
 
@@ -34,7 +36,23 @@ function Destino({ linha, subgrupo, apagado }: { linha: string; subgrupo: string
   );
 }
 
-export default function ListaSugestoes({ sugestoes, podeClassificar }: { sugestoes: Sugestao[]; podeClassificar: boolean }) {
+export default function ListaSugestoes({
+  sugestoes,
+  podeClassificar,
+  composicoes,
+}: {
+  sugestoes: Sugestao[];
+  podeClassificar: boolean;
+  composicoes: Record<string, ComposicaoCategoria>;
+}) {
+  const [abertas, setAbertas] = useState<Set<string>>(() => new Set());
+  const abrir = (codigo: string) =>
+    setAbertas((m) => {
+      const n = new Set(m);
+      if (n.has(codigo)) n.delete(codigo);
+      else n.add(codigo);
+      return n;
+    });
   // Todas marcadas de início: a lista já é a revisão; quem discorda desmarca.
   const [marcadas, setMarcadas] = useState<Set<string>>(() => new Set(sugestoes.map((s) => s.codigo)));
   const [erro, setErro] = useState<string | null>(null);
@@ -100,9 +118,10 @@ export default function ListaSugestoes({ sugestoes, podeClassificar }: { sugesto
           <tbody>
             {sugestoes.map((s, i) => {
               const primeiraDeSubgrupo = s.tipo === "SUBGRUPO" && (i === 0 || sugestoes[i - 1].tipo === "LINHA");
+              const aberta = abertas.has(s.codigo);
               return (
+                <Fragment key={s.codigo}>
                 <tr
-                  key={s.codigo}
                   className={`border-b border-slate-100 align-top ${primeiraDeSubgrupo ? "border-t-2 border-t-slate-300" : ""} ${marcadas.has(s.codigo) ? "" : "opacity-50"}`}
                 >
                   {podeClassificar && (
@@ -119,6 +138,14 @@ export default function ListaSugestoes({ sugestoes, podeClassificar }: { sugesto
                     <span className="font-medium text-slate-900">{s.descricao}</span>
                     <span className="ml-1 text-xs text-slate-400">{s.codigo}</span>
                     {!s.de.confirmada && <span className="ml-1 text-xs text-amber-700">(proposta automática)</span>}
+                    <button
+                      type="button"
+                      onClick={() => abrir(s.codigo)}
+                      aria-expanded={aberta}
+                      className="mt-0.5 block text-xs font-medium text-blue-700 hover:underline"
+                    >
+                      {aberta ? "fechar detalhe" : "ver o que é"}
+                    </button>
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{fmtBRL(s.valorCents)}</td>
                   <td className="px-3 py-2.5 text-xs">
@@ -129,6 +156,14 @@ export default function ListaSugestoes({ sugestoes, podeClassificar }: { sugesto
                   </td>
                   <td className="max-w-md px-3 py-2.5 text-xs text-slate-600">{s.motivo}</td>
                 </tr>
+                {aberta && (
+                  <tr className="border-b border-slate-200 bg-slate-50/70">
+                    <td colSpan={podeClassificar ? 6 : 5} className="px-3 py-3">
+                      <DetalheCategoria composicao={composicoes[s.codigo]} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             })}
           </tbody>

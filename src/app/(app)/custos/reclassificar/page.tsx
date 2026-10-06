@@ -6,9 +6,11 @@ import { rotuloDeClassificacao } from "@/lib/controladoria/dre";
 import { montarDreNoBanco } from "@/lib/controladoria/dreNoBanco";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import { acoesNoOmie, sugestoesDeReclassificacao, type CategoriaParaRevisao } from "@/lib/controladoria/reclassificacoes";
+import { composicaoDasCategorias } from "@/lib/controladoria/composicaoCategoria";
 import { escopoDaPagina, podeAcao } from "../../_dados";
-import { Kpi, Secao, SeletorEmpresa, Tabela } from "../../_componentes";
+import { Kpi, Secao, SeletorEmpresa } from "../../_componentes";
 import ListaSugestoes from "./ListaSugestoes";
+import DetalheCategoria from "./DetalheCategoria";
 
 // RECLASSIFICAÇÕES SUGERIDAS.
 //
@@ -67,6 +69,14 @@ export default async function ReclassificarPage({ searchParams }: { searchParams
   const deLinha = sugestoes.filter((s) => s.tipo === "LINHA");
   const deSubgrupo = sugestoes.filter((s) => s.tipo === "SUBGRUPO");
   const noOmie = acoesNoOmie(categorias);
+  // O detalhe (quem recebeu, maiores lançamentos) de toda categoria listada.
+  const composicoes = await composicaoDasCategorias(
+    { companyId: session.companyId, conexaoId: escopo.conexaoId, janela: { desde: inicio, ate: null } },
+    doze,
+    [...new Set([...sugestoes.map((s) => s.codigo), ...noOmie.map((c) => c.codigo)])]
+  );
+  const rotuloLinha = (linha: string) =>
+    rotuloDeClassificacao(linha).replace(/^\([+-]\)\s*/, "").replace(/ \(operação ou corporativo, pela empresa\)$/, "");
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -86,42 +96,66 @@ export default async function ReclassificarPage({ searchParams }: { searchParams
         <SeletorEmpresa conexoes={conexoes} ativa={escopo.conexaoId} rota="/custos/reclassificar" />
       </div>
 
+      {/* Os cartões levam à lista que contam. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Kpi
-          rotulo="Mudam de linha"
-          valor={String(deLinha.length)}
-          apoio={`${fmtBRL(deLinha.reduce((a, s) => a + s.valorCents, 0))} em 12 meses`}
-          tom={deLinha.length ? "atencao" : "bom"}
-        />
-        <Kpi rotulo="Ganham subgrupo do catálogo" valor={String(deSubgrupo.length)} apoio="mesma linha, subgrupo com natureza de custo" />
-        <Kpi rotulo="Pedem ação no Omie" valor={String(noOmie.length)} apoio="categoria que mistura naturezas" />
+        <a href="#de-para" className="block rounded-2xl hover:ring-2 hover:ring-blue-200">
+          <Kpi
+            rotulo="Mudam de linha"
+            valor={String(deLinha.length)}
+            apoio={`${fmtBRL(deLinha.reduce((a, s) => a + s.valorCents, 0))} em 12 meses`}
+            tom={deLinha.length ? "atencao" : "bom"}
+          />
+        </a>
+        <a href="#de-para" className="block rounded-2xl hover:ring-2 hover:ring-blue-200">
+          <Kpi rotulo="Ganham subgrupo do catálogo" valor={String(deSubgrupo.length)} apoio="mesma linha, subgrupo com natureza de custo" />
+        </a>
+        <a href="#omie" className="block rounded-2xl hover:ring-2 hover:ring-blue-200">
+          <Kpi rotulo="Pedem ação no Omie" valor={String(noOmie.length)} apoio="categoria que mistura naturezas · ver abaixo" tom={noOmie.length ? "atencao" : "bom"} />
+        </a>
       </div>
 
+      <div id="de-para" className="scroll-mt-4">
       <Secao
         titulo="De → para"
         descricao="Marque o que aceita e grave. As mudanças de linha vêm primeiro, da maior para a menor; depois os subgrupos."
       >
-        <ListaSugestoes sugestoes={sugestoes} podeClassificar={podeClassificar} />
+        <ListaSugestoes sugestoes={sugestoes} podeClassificar={podeClassificar} composicoes={composicoes} />
       </Secao>
+      </div>
 
       {noOmie.length > 0 && (
-        <Secao
-          titulo="Ação no Omie"
-          descricao="Categorias que misturam naturezas: nenhuma linha do DRE está certa para elas inteiras. O conserto é abrir a categoria no Omie."
-        >
-          <Tabela
-            colunas={["Categoria", "Está em", "12 meses", "O que fazer"]}
-            alinharDireita={[2]}
-            linhas={noOmie.map((c) => [
-              c.descricao,
-              rotuloDeClassificacao(c.linha).replace(/^\([+-]\)\s*/, "").replace(/ \(operação ou corporativo, pela empresa\)$/, ""),
-              fmtBRL(c.valorCents),
-              <span key="m" className="text-xs text-slate-600">
-                {c.motivo}
-              </span>,
-            ])}
-          />
-        </Secao>
+        <div id="omie" className="scroll-mt-4">
+          <Secao
+            titulo="Ação no Omie"
+            descricao="Categorias que misturam naturezas: nenhuma linha do DRE está certa para elas inteiras. Abra cada uma para ver quem recebeu e os maiores lançamentos — é o que diz como separá-la em categorias no Omie."
+          >
+            <ul className="divide-y divide-slate-100">
+              {noOmie.map((c, i) => (
+                <li key={c.codigo} className="py-3">
+                  <details open={i === 0}>
+                    <summary className="flex cursor-pointer flex-wrap items-baseline justify-between gap-2">
+                      <span>
+                        <span className="text-sm font-medium text-slate-900">{c.descricao}</span>
+                        <span className="ml-2 text-xs text-slate-500">em {rotuloLinha(c.linha)}</span>
+                      </span>
+                      <span className="text-sm tabular-nums text-slate-900">
+                        {fmtBRL(c.valorCents)} em 12 meses
+                        <span className="ml-2 text-xs font-medium text-blue-700">ver quem recebeu ▾</span>
+                      </span>
+                    </summary>
+                    <p className="mt-2 text-xs text-slate-600">
+                      <span className="font-semibold text-slate-700">O que fazer: </span>
+                      {c.motivo}
+                    </p>
+                    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                      <DetalheCategoria composicao={composicoes[c.codigo]} />
+                    </div>
+                  </details>
+                </li>
+              ))}
+            </ul>
+          </Secao>
+        </div>
       )}
     </div>
   );

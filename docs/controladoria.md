@@ -200,6 +200,12 @@ out/2026). Sobre as categorias com movimento nos 12 meses fechados, lista:
   Serviços", receita sem segmento): misturam naturezas e nenhuma linha está
   certa para elas inteiras.
 
+Cada categoria abre o **detalhe** ("ver o que é"; em "Ação no Omie", "ver quem
+recebeu"): os dez favorecidos que mais receberam nela em 12 meses, com valor e
+quantidade de títulos, e os dez maiores lançamentos com data, empresa, número
+do documento e observação do Omie (`composicaoCategoria.ts`, mesmo recorte do
+DRE). É o que diz o que um nome genérico paga e como separá-lo no Omie.
+
 Nada muda sem confirmação: quem tem `classificar-dre` marca e grava, e cada
 categoria vira classificação CONFIRMADA em nome de quem gravou; a trilha
 guarda o lote com o antes e o depois.
