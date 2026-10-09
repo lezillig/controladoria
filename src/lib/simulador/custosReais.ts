@@ -65,6 +65,9 @@ export type CategoriaReal = {
   // proposta automaticamente (`confirmada` diz qual das duas).
   linha: string;
   confirmada: boolean;
+  // O subgrupo do DRE (catálogo de subgrupos). Com ele, a categoria entra no
+  // indicador pelo subgrupo; sem ele, pelo nome (as expressões abaixo).
+  subgrupo?: string | null;
   // Centavos por mês, alinhados a `DadosReais.meses`, JÁ com o sinal que a
   // categoria tem dentro da linha: positivo engorda a linha, negativo (um
   // estorno, um reembolso) a reduz. É o mesmo sinal da demonstração.
@@ -79,6 +82,9 @@ export type AbastecimentoReal = {
   // Km desde o abastecimento anterior, como o extrato do cartão informa.
   kmRodados: number | null;
   combustivel: string | null;
+  // A placa como o extrato do cartão traz: liga ao cadastro o abastecimento
+  // que ainda não tem veículo vinculado.
+  placa?: string | null;
 };
 
 export type VeiculoReal = { id: string; placa: string; modelo: string; tipo: string; status: string; ano?: number | null };
@@ -172,7 +178,7 @@ const PADRAO_MANUTENCAO = /manutenc|\bpecas?\b|autopec|oficina|mecanic|funilaria
 const PADRAO_PNEU = /pneu|recap|recauch|borrach/;
 // "Óleo diesel" é combustível, não troca de óleo — por isso a exclusão.
 const PADRAO_OLEO = /\boleo\b|lubrific|filtro|lavagem|lava.?rapido/;
-const EXCLUI_OLEO = /diesel|combust/;
+const EXCLUI_OLEO = /diesel|combust|\barla\b/;
 // "Seguro de vida" e "seguro saúde" são benefício; "seguro predial" é sede.
 const PADRAO_SEGURO = /seguro/;
 const EXCLUI_SEGURO = /vida|saude|pessoal|funcionari|colaborador|predial|imovel|empresarial|garantia/;
@@ -280,10 +286,14 @@ type Selecao = {
   foraDasLinhas: CategoriaReal[];
 };
 
-function selecionar(dados: DadosReais, linhas: string[], padrao: RegExp, exclui?: RegExp): Selecao {
+// Categoria com subgrupo entra pelo subgrupo (o que a pessoa classificou);
+// sem subgrupo, pelo nome. A exclusão vale nos dois (ARLA no subgrupo de óleo).
+function selecionar(dados: DadosReais, linhas: string[], padrao: RegExp, exclui?: RegExp, subgrupos?: string[]): Selecao {
   const casa = (c: CategoriaReal) => {
     const d = normalizar(c.descricao);
-    return padrao.test(d) && !(exclui && exclui.test(d));
+    if (exclui && exclui.test(d)) return false;
+    if (c.subgrupo && subgrupos) return subgrupos.includes(c.subgrupo);
+    return padrao.test(d);
   };
   const comValor = dados.categorias.filter((c) => c.porMesCents.some((v) => v !== 0));
   return {
@@ -380,6 +390,22 @@ function lerCartao(abastecimentos: AbastecimentoReal[], veiculos: Map<string, Ve
   return r;
 }
 
+const normalizarPlaca = (p: string | null | undefined) => (p ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+function vincularPelaPlaca(abastecimentos: AbastecimentoReal[], veiculos: VeiculoReal[]): { abastecimentos: AbastecimentoReal[]; pelaPlaca: number } {
+  const ids = new Set(veiculos.map((v) => v.id));
+  const porPlaca = new Map(veiculos.filter((v) => normalizarPlaca(v.placa)).map((v) => [normalizarPlaca(v.placa), v.id]));
+  let pelaPlaca = 0;
+  const lista = abastecimentos.map((a) => {
+    if (a.vehicleId && ids.has(a.vehicleId)) return a;
+    const id = porPlaca.get(normalizarPlaca(a.placa));
+    if (!id) return a;
+    pelaPlaca++;
+    return { ...a, vehicleId: id };
+  });
+  return { abastecimentos: lista, pelaPlaca };
+}
+
 type KmDaFrota = {
   fonte: "CARTAO" | "USO";
   descricaoFonte: string;
@@ -466,10 +492,16 @@ export function indicadoresReais(dados: DadosReais): IndicadorReal[] {
   return analisarCustosReais(dados).indicadores;
 }
 
-export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
+export function analisarCustosReais(dadosOriginais: DadosReais): AnaliseCustosReais {
   const indicadores: IndicadorReal[] = [];
-  const lacunas: string[] = [...dados.avisos];
-  const veiculos = new Map(dados.veiculos.map((v) => [v.id, v]));
+  const lacunas: string[] = [...dadosOriginais.avisos];
+  const veiculos = new Map(dadosOriginais.veiculos.map((v) => [v.id, v]));
+  // Abastecimento sem veículo vinculado, mas com a placa do cadastro no
+  // extrato: liga pela placa. Antes ele saía do km da frota sem rebaixar a
+  // confiança — e o R$/km de manutenção, pneus e óleo saía inflado.
+  const { abastecimentos, pelaPlaca } = vincularPelaPlaca(dadosOriginais.abastecimentos, dadosOriginais.veiculos);
+  const dados: DadosReais = { ...dadosOriginais, abastecimentos };
+  if (pelaPlaca > 0) lacunas.push(`${fmtNumero(pelaPlaca)} abastecimento(s) sem veículo vinculado no cartão foram ligados ao cadastro pela placa do extrato.`);
   const periodoDre = periodoDosMeses(dados.meses);
   const avisoDeEscopo = dados.conexaoFiltrada
     ? ["O DRE está filtrado por uma empresa do grupo, e a frota e as pessoas da gestão são do grupo inteiro: a divisão mistura escopos."]
@@ -612,8 +644,8 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
   const km = kmDaFrota(dados, cartao);
   if (!km && !semGestao) lacunas.push("Sem km da frota (nem no extrato do cartão, nem no uso de veículo): os custos por km não foram medidos.");
 
-  const custoPorKm = (caminho: string, rotulo: string, padrao: RegExp, exclui: RegExp | undefined, nomeDoPadrao: string) => {
-    const sel = selecionar(dados, LINHAS_DO_VEICULO, padrao, exclui);
+  const custoPorKm = (caminho: string, rotulo: string, padrao: RegExp, exclui: RegExp | undefined, nomeDoPadrao: string, subgrupos: string[]) => {
+    const sel = selecionar(dados, LINHAS_DO_VEICULO, padrao, exclui, subgrupos);
     if (sel.usadas.length === 0) {
       const fora = sel.foraDasLinhas.length > 0 ? ` (há ${listaDeNomes(sel.foraDasLinhas.map((c) => `${c.descricao} em ${c.linha}`))} — classificar em Despesas com veículos resolve)` : "";
       lacunas.push(`${rotulo}: nenhuma categoria de ${nomeDoPadrao} entre as despesas com veículos e o custo do serviço no DRE${fora}.`);
@@ -661,15 +693,15 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
     });
   };
 
-  custoPorKm("variaveis.manutencaoAsfaltoKm", "Manutenção real por km", PADRAO_MANUTENCAO, PADRAO_PNEU, "manutenção");
-  custoPorKm("variaveis.pneusAsfaltoKm", "Pneus reais por km", PADRAO_PNEU, undefined, "pneus");
-  custoPorKm("variaveis.oleoLavagemKm", "Óleo, filtros e lavagem reais por km", PADRAO_OLEO, EXCLUI_OLEO, "óleo, filtros ou lavagem");
+  custoPorKm("variaveis.manutencaoAsfaltoKm", "Manutenção real por km", PADRAO_MANUTENCAO, PADRAO_PNEU, "manutenção", ["Manutenção e peças"]);
+  custoPorKm("variaveis.pneusAsfaltoKm", "Pneus reais por km", PADRAO_PNEU, undefined, "pneus", ["Pneus"]);
+  custoPorKm("variaveis.oleoLavagemKm", "Óleo, filtros e lavagem reais por km", PADRAO_OLEO, EXCLUI_OLEO, "óleo, filtros ou lavagem", ["ARLA, óleo e lubrificantes", "Limpeza e higienização"]);
 
   // ---- 4. Seguro e IPVA por veículo ----
   const cobertos = mesesCobertos(dados);
   const ativos = dados.veiculos.filter(veiculoAtivo);
-  const porVeiculo = (caminho: string, rotulo: string, padrao: RegExp, exclui: RegExp | undefined, nomeDoPadrao: string, anual: boolean) => {
-    const sel = selecionar(dados, LINHAS_DO_VEICULO, padrao, exclui);
+  const porVeiculo = (caminho: string, rotulo: string, padrao: RegExp, exclui: RegExp | undefined, nomeDoPadrao: string, anual: boolean, subgrupos: string[]) => {
+    const sel = selecionar(dados, LINHAS_DO_VEICULO, padrao, exclui, subgrupos);
     if (sel.usadas.length === 0) {
       lacunas.push(`${rotulo}: nenhuma categoria de ${nomeDoPadrao} entre as despesas com veículos no DRE.`);
       return;
@@ -705,8 +737,8 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
       avisos,
     });
   };
-  porVeiculo("veiculo.seguroMes", "Seguro real por veículo", PADRAO_SEGURO, EXCLUI_SEGURO, "seguro de veículo", false);
-  porVeiculo("veiculo.ipvaLicenciamentoAno", "IPVA e licenciamento reais por veículo", PADRAO_IPVA, undefined, "IPVA/licenciamento", true);
+  porVeiculo("veiculo.seguroMes", "Seguro real por veículo", PADRAO_SEGURO, EXCLUI_SEGURO, "seguro de veículo", false, ["Seguro de frota"]);
+  porVeiculo("veiculo.ipvaLicenciamentoAno", "IPVA e licenciamento reais por veículo", PADRAO_IPVA, undefined, "IPVA/licenciamento", true, ["IPVA, licenciamento e despachante"]);
 
   // ---- 5. Mão de obra: custo por pessoa e peso dos encargos ----
   const doPessoal: Selecao = (() => {
@@ -1014,6 +1046,7 @@ export async function carregarDreDosMeses(companyId: string, conexaoId: string |
             descricao: item.descricao,
             linha: linha.chave,
             confirmada: item.confirmada,
+            subgrupo: item.subgrupo,
             porMesCents: new Array<number>(12).fill(0),
           } satisfies CategoriaReal);
         c.porMesCents[i] += item.ehReceita === linhaEhReceita ? Math.abs(item.valorCents) : -Math.abs(item.valorCents);
@@ -1100,6 +1133,7 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
         volumeLitros: Number(a.volumeLitros),
         kmRodados: a.kmRodados === null ? null : Number(a.kmRodados),
         combustivel: a.combustivel,
+        placa: a.placaOriginal,
       })),
     veiculos: veiculosGestao.map((v) => ({ id: v.id, placa: v.plate, modelo: v.model, tipo: v.type, status: v.status, ano: v.year })),
     pessoas: motoristasGestao.map((m) => ({ id: m.id, ativo: m.active, funcao: m.funcao })),

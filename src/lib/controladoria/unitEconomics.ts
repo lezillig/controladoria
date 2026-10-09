@@ -4,6 +4,9 @@ import type { Periodo } from "./periodos";
 import { dentro } from "./periodos";
 import { categoriasDeCombustivel, ehTituloDeCombustivel, somar } from "./agents/comum";
 import { dataDeCompetencia } from "./competencia";
+import { chaveDaCategoria, classificacaoDaChave } from "./chaveCategoria";
+import { proporLinha } from "./dre";
+import { entraNoResultado } from "./intercompany";
 
 // UNIT ECONOMICS — custo por contrato, por veiculo e por funcionario.
 //
@@ -47,7 +50,24 @@ export type ResultadoRateio<T> = {
   // do cartão de frota já representa esse dinheiro no período (ver
   // custosDoPeriodo). Zero quando não há extrato no período.
   combustivelDescontadoCents: number;
+  // Títulos a pagar que NÃO são custo de operação e ficaram fora do total:
+  // investimento e financiamento (compra de veículo, principal de empréstimo),
+  // distribuição e retirada de sócios, IR/CSLL e as operações entre as
+  // empresas do grupo. Opcional: as leituras antigas não o têm.
+  foraDoCustoCents?: number;
 };
+
+// As linhas do DRE cujo dinheiro não é custo de rodar o contrato.
+const LINHAS_FORA_DO_CUSTO = new Set(["FINANCIAMENTO_INVESTIMENTO", "DISTRIBUICAO_LUCROS", "DESPESA_SOCIOS", "TRIBUTO_SOBRE_LUCRO", "DEDUCOES"]);
+
+function linhaDoTitulo(ctx: ContextoAuditoria, t: OmieTitulo, colisoes: ReadonlySet<string>): string | null {
+  if (!t.categoriaCodigo) return null;
+  const chave = chaveDaCategoria(t.categoriaCodigo, t.conexaoApelido, colisoes);
+  const guardada = ctx.classificacoesDre ? classificacaoDaChave(ctx.classificacoesDre, chave) : undefined;
+  if (guardada) return guardada.linha;
+  const cat = ctx.categorias.find((c) => c.codigo === t.categoriaCodigo && c.conexaoApelido === t.conexaoApelido);
+  return cat ? proporLinha(cat, { receberCents: 0, pagarCents: Math.abs(t.valorDocumentoCents) }) : null;
+}
 
 type Destino = { clienteId?: string; vehicleId?: string; driverId?: string; percentual: number; origem: string };
 
@@ -157,12 +177,23 @@ type CustosDoPeriodo = {
   titulos: OmieTitulo[];
   abastecimentos: ContextoAuditoria["abastecimentos"];
   combustivelDescontadoCents: number;
+  foraDoCustoCents: number;
 };
 
 export function custosDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo): CustosDoPeriodo {
   const abastecimentos = ctx.abastecimentos.filter((a) => dentro(a.dataHora, periodo));
-  const pagar = titulosDoPeriodo(ctx, periodo, "PAGAR");
-  if (abastecimentos.length === 0) return { titulos: pagar, abastecimentos, combustivelDescontadoCents: 0 };
+  // Só o que é custo de operação: fora o investimento, o financiamento, a
+  // distribuição aos sócios, o IR/CSLL e as operações entre as empresas.
+  const colisoes = new Set(ctx.categoriasEmColisao ?? []);
+  const fica = entraNoResultado(ctx);
+  let foraDoCusto = 0;
+  const pagar = titulosDoPeriodo(ctx, periodo, "PAGAR").filter((t) => {
+    const linha = linhaDoTitulo(ctx, t, colisoes);
+    if (fica(t) && !(linha && LINHAS_FORA_DO_CUSTO.has(linha))) return true;
+    foraDoCusto += t.valorDocumentoCents;
+    return false;
+  });
+  if (abastecimentos.length === 0) return { titulos: pagar, abastecimentos, combustivelDescontadoCents: 0, foraDoCustoCents: foraDoCusto };
 
   const categorias = categoriasDeCombustivel(ctx);
   const titulos: OmieTitulo[] = [];
@@ -171,7 +202,7 @@ export function custosDoPeriodo(ctx: ContextoAuditoria, periodo: Periodo): Custo
     if (ehTituloDeCombustivel(t, categorias)) descontado += t.valorDocumentoCents;
     else titulos.push(t);
   }
-  return { titulos, abastecimentos, combustivelDescontadoCents: descontado };
+  return { titulos, abastecimentos, combustivelDescontadoCents: descontado, foraDoCustoCents: foraDoCusto };
 }
 
 // ---------- Custo e receita por contrato (Cliente) ----------
@@ -208,7 +239,8 @@ export function rentabilidadePorContrato(
     naoAlocado += Math.max(0, titulo.valorDocumentoCents - alocado);
   }
 
-  for (const titulo of titulosDoPeriodo(ctx, periodo, "RECEBER")) {
+  const naoEhIntragrupo = entraNoResultado(ctx);
+  for (const titulo of titulosDoPeriodo(ctx, periodo, "RECEBER").filter(naoEhIntragrupo)) {
     const destinos = resolverDestinos(ctx, titulo).filter((d) => d.clienteId);
     for (const d of destinos) {
       const parcela = Math.round((titulo.valorDocumentoCents * d.percentual) / 100);
@@ -257,6 +289,7 @@ export function rentabilidadePorContrato(
     totalCents: total,
     coberturaPercent: total > 0 ? ((total - naoAlocado) / total) * 100 : 0,
     combustivelDescontadoCents: custosPeriodo.combustivelDescontadoCents,
+    foraDoCustoCents: custosPeriodo.foraDoCustoCents,
   };
 }
 
@@ -320,6 +353,7 @@ export function custoPorVeiculo(ctx: ContextoAuditoria, periodo: Periodo): Resul
     totalCents: total,
     coberturaPercent: total > 0 ? ((total - naoAlocado) / total) * 100 : 0,
     combustivelDescontadoCents: custosPeriodo.combustivelDescontadoCents,
+    foraDoCustoCents: custosPeriodo.foraDoCustoCents,
   };
 }
 
@@ -381,6 +415,7 @@ export function custoPorFuncionario(ctx: ContextoAuditoria, periodo: Periodo): R
     totalCents: total,
     coberturaPercent: total > 0 ? ((total - naoAlocado) / total) * 100 : 0,
     combustivelDescontadoCents: custosPeriodo.combustivelDescontadoCents,
+    foraDoCustoCents: custosPeriodo.foraDoCustoCents,
   };
 }
 

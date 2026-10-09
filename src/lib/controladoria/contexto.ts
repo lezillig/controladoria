@@ -289,6 +289,10 @@ export async function carregarContexto(
     ...categoriasEmColisao(conexaoId ? await prisma.omieCategoria.findMany({ where: { companyId }, select: { codigo: true, descricao: true } }) : categorias),
   ];
 
+  const classificacoesDre = new Map(
+    (await prisma.dreClassificacao.findMany({ where: { companyId }, select: { categoriaCodigo: true, linha: true } })).map((c) => [c.categoriaCodigo, { linha: c.linha }])
+  );
+
   // Só os CNPJs que este contexto conhece — os agentes não têm o que fazer
   // com a consulta de um fornecedor fora do recorte (outra empresa, inativo).
   const cnpjsDoContexto = new Set(parceiros.map((p) => p.documento).filter((d): d is string => Boolean(d)));
@@ -309,6 +313,7 @@ export async function carregarContexto(
     raizesCnpjDoGrupo: raizesDoGrupo(conexoesDoGrupo),
     conexoesCorporativas: conexoesDoGrupo.filter((c) => c.papelNoGrupo === "CORPORATIVO").map((c) => c.id),
     categoriasEmColisao: colisoesDeCategoria,
+    classificacoesDre,
     notas,
     parceiros,
     categorias,

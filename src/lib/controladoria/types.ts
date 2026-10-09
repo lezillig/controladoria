@@ -104,6 +104,10 @@ export type ContextoAuditoria = {
   // diferentes (chaveCategoria.ts) — apurados sobre TODAS as categorias, não
   // só as da visão filtrada.
   categoriasEmColisao?: string[];
+  // A linha do DRE gravada para cada categoria (pela chave de chaveCategoria):
+  // é o que separa custo de operação de investimento, financiamento e
+  // distribuição na rentabilidade. Opcional: sem ela, vale o palpite pelo nome.
+  classificacoesDre?: Map<string, { linha: string }>;
   notas: OmieNota[];
   parceiros: OmieParceiro[];
   categorias: OmieCategoria[];

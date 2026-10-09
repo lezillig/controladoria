@@ -313,6 +313,39 @@ console.log("\nAUSÊNCIA — sem cartão, só uso de veículo; gestão fora do a
   ok("DRE de uma empresa × frota do grupo: avisa", !!achar(filtrado, "veiculo.seguroMes")?.avisos.some((a) => a.includes("mistura escopos")));
 }
 
+console.log("\nSUBGRUPO DO DRE manda; o nome é o plano B");
+{
+  const base = montarDados();
+  const antes = achar(analisarCustosReais(base).indicadores, "variaveis.manutencaoAsfaltoKm")!.valor;
+  const d = montarDados();
+  // "Guincho" casa com o nome de manutenção, mas está em Sinistros e socorro
+  // (natureza N): fica fora. "Serviços diversos" não casa com o nome, mas a
+  // pessoa o pôs em Manutenção e peças: entra.
+  d.categorias.push({ ...categoria("4.90", "Guincho", "DESPESA_VEICULOS", doze(100_000)), subgrupo: "Sinistros e socorro" });
+  d.categorias.push({ ...categoria("4.91", "Serviços diversos", "DESPESA_VEICULOS", doze(50_000)), subgrupo: "Manutenção e peças" });
+  const depois = achar(analisarCustosReais(d).indicadores, "variaveis.manutencaoAsfaltoKm")!.valor;
+  perto("guincho fora, serviços diversos dentro: + R$ 6.000 no ano ÷ km", depois - antes, (12 * 500) / KM_TOTAL);
+  const arla = montarDados();
+  arla.categorias.push({ ...categoria("4.92", "ARLA 32", "DESPESA_VEICULOS", doze(80_000)), subgrupo: "ARLA, óleo e lubrificantes" });
+  conferir("ARLA no subgrupo de óleo não entra no óleo por km (vem do cartão)", achar(analisarCustosReais(arla).indicadores, "variaveis.oleoLavagemKm")?.valor, achar(analisarCustosReais(base).indicadores, "variaveis.oleoLavagemKm")?.valor);
+}
+
+console.log("\nCARTÃO SEM VEÍCULO VINCULADO: liga pela placa do extrato");
+{
+  // O mesmo extrato, mas os abastecimentos das vans chegam sem vehicleId e com
+  // a placa (com traço e minúscula): o km da frota tem de ser o mesmo.
+  const comId = montarDados();
+  const semId = montarDados();
+  semId.abastecimentos = semId.abastecimentos.map((a) => {
+    const v = VEICULOS.find((x) => x.id === a.vehicleId);
+    return v && v.tipo === "Van" ? { ...a, vehicleId: null, placa: `${v.placa.slice(0, 3).toLowerCase()}-${v.placa.slice(3)}` } : a;
+  });
+  const a = analisarCustosReais(comId);
+  const b = analisarCustosReais(semId);
+  perto("manutenção por km igual com o vínculo pela placa", achar(b.indicadores, "variaveis.manutencaoAsfaltoKm")?.valor, achar(a.indicadores, "variaveis.manutencaoAsfaltoKm")!.valor);
+  ok("diz quantos foram ligados pela placa", b.lacunas.some((l) => l.includes("ligados ao cadastro pela placa")), JSON.stringify(b.lacunas));
+}
+
 console.log("\nAPLICAR os indicadores escolhidos");
 {
   const { premissas: base, origem: origemBase } = premissasDaBase(null, { clientePublico: false, escolar: false, baseLocal: false });

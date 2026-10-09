@@ -192,5 +192,21 @@ console.log("\nPERÍODO — extrato de outro mês não desconta a fatura deste")
   conferir("título cancelado nunca entra", custoTotalPeriodo(contexto({ titulos: [titulo({ cancelado: true })] }), AGOSTO), 0);
 }
 
+console.log("\nSÓ CUSTO DE OPERAÇÃO — investimento, financiamento, sócios e o grupo ficam fora");
+{
+  const compraVeiculo = titulo({ categoriaCodigo: "5.01", categoriaDescricao: "Aquisição de veículos", valorDocumentoCents: 50_000_00 });
+  const emprestimo = titulo({ categoriaCodigo: "5.02", categoriaDescricao: "Pagamento de empréstimo", valorDocumentoCents: 20_000_00 });
+  const repasseMcz = titulo({ categoriaCodigo: "2.01", parceiroDocumento: "11222333000144", valorDocumentoCents: 9_000_00 });
+  const classificacoesDre = new Map([
+    ["5.01", { linha: "FINANCIAMENTO_INVESTIMENTO" }],
+    ["5.02", { linha: "FINANCIAMENTO_INVESTIMENTO" }],
+  ]);
+  const ctx = { ...contexto({ titulos: [manutencao(), compraVeiculo, emprestimo, repasseMcz] }), classificacoesDre, raizesCnpjDoGrupo: ["11222333"], conexaoId: null } as ContextoAuditoria;
+  const c = custosDoPeriodo(ctx, AGOSTO);
+  conferir("só a manutenção fica no custo", c.titulos.length, 1);
+  conferir("o que saiu é dito", c.foraDoCustoCents, 79_000_00);
+  conferir("visão de uma empresa: o repasse ao grupo é custo dela", custosDoPeriodo({ ...ctx, conexaoId: "x" }, AGOSTO).foraDoCustoCents, 70_000_00);
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

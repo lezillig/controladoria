@@ -705,6 +705,16 @@ ser o contratado inteiro). Ônibus: veículo-mês de R$ 50.804 para R$ 47.539.
   desvio por razão de somas; sugestão só com 3 meses ou mais; outros custos
   diretos (frota de terceiros, custo do contrato) lançáveis e margem
   realizada × prevista.
+- **Abastecimento sem veículo vinculado liga pela placa do extrato**: antes
+  saía do km da frota sem rebaixar a confiança, inflando o R$/km.
+- **Subgrupo do DRE manda no custo real**: categoria com subgrupo entra no
+  indicador pelo subgrupo (guincho em "Sinistros e socorro" não é
+  manutenção; "Serviços diversos" em "Manutenção e peças" é); sem subgrupo,
+  pelo nome. ARLA fica fora do óleo por km (vem do cartão).
+- **Rentabilidade por contrato só com custo de operação**: saem do custo os
+  títulos de investimento e financiamento, distribuição e retirada de sócios,
+  IR/CSLL e deduções, e as operações entre as empresas (custo e receita) na
+  visão do grupo. O valor que saiu aparece na tela.
 
 ## 8. O que ainda não existe
 
