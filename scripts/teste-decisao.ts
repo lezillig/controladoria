@@ -58,6 +58,14 @@ console.log("\nPREMISSAS ESTIMADAS — as decisivas aparecem");
   const p = montarPainel(e, r, { margemMinima: 0.05, margemAlvo: 0.09, origem });
   conferir("duas de três estimadas", [p.premissasEstimadas.estimadas, p.premissasEstimadas.total], [2, 3]);
   ok("utilização (decisiva) listada", p.premissasEstimadas.principais.includes("Utilização do km"), JSON.stringify(p.premissasEstimadas.principais));
+  // Medido com confiança BAIXA continua estimativa; ALTA não.
+  const comReal = {
+    ...origem,
+    "variaveis.manutencaoAsfaltoKm": { origem: "REAL" as const, fonte: "custo real", confianca: "BAIXA" as const },
+    "variaveis.pneusAsfaltoKm": { origem: "REAL" as const, fonte: "custo real", confianca: "ALTA" as const },
+  };
+  const p2 = montarPainel(e, r, { margemMinima: 0.05, margemAlvo: 0.09, origem: comReal });
+  conferir("REAL de confiança baixa conta como estimada; alta não", [p2.premissasEstimadas.estimadas, p2.premissasEstimadas.total], [3, 5]);
 }
 
 console.log("\nHOLAMBRA — por item, sem teto; linhas 03 e 09 caras mas lançáveis");
@@ -87,6 +95,7 @@ console.log("\nCALIBRAÇÃO — realizado × previsto");
   const c = calibrar(r, 1, [
     { competencia: "2027-01", kmRealizado: kmPrev * 1.1, faturamento: 300000, custos: { combustivel: comb * 1.21, folha } },
     { competencia: "2027-02", kmRealizado: kmPrev * 1.1, faturamento: 310000, custos: { combustivel: comb * 1.21, folha } },
+    { competencia: "2027-03", kmRealizado: kmPrev * 1.1, faturamento: 305000, custos: { combustivel: comb * 1.21, folha } },
   ]);
   const lc = c.linhas.find((l) => l.natureza === "combustivel")!;
   ok("combustível previsto ajustado ao km (+10%)", Math.abs(lc.previstoAjustado - comb * 1.1) < 1e-6);
@@ -95,6 +104,23 @@ console.log("\nCALIBRAÇÃO — realizado × previsto");
   ok("utilização real = 110% × 85%", Math.abs((c.utilizacaoReal ?? 0) - 0.935) < 1e-9, `${c.utilizacaoReal}`);
   ok("sugere revisar consumo e utilização", c.sugestoes.some((s) => s.startsWith("Combustível")) && c.sugestoes.some((s) => s.startsWith("Km realizado")), c.sugestoes.join(" | "));
   conferir("sem dado de manutenção: sem desvio", c.linhas.find((l) => l.natureza === "manutencao")!.realizadoMedio, null);
+  // Dois meses só: o desvio aparece, mas a sugestão é esperar.
+  const c2 = calibrar(r, 1, [
+    { competencia: "2027-01", kmRealizado: kmPrev * 1.1, faturamento: 300000, custos: { combustivel: comb * 1.21, folha } },
+    { competencia: "2027-02", kmRealizado: kmPrev * 1.1, faturamento: 310000, custos: { combustivel: comb * 1.21, folha } },
+  ]);
+  ok("com 2 meses: não sugere mudar consumo, sugere aguardar", !c2.sugestoes.some((s) => s.startsWith("Combustível")) && c2.sugestoes.some((s) => s.includes("aguardar")), c2.sugestoes.join(" | "));
+  // Mês a mês: o combustível de cada mês contra o km DAQUELE mês.
+  const c3 = calibrar(r, 1, [
+    { competencia: "2027-01", kmRealizado: kmPrev, faturamento: null, custos: { combustivel: comb } },
+    { competencia: "2027-02", kmRealizado: kmPrev * 1.2, faturamento: null, custos: {} },
+    { competencia: "2027-03", kmRealizado: kmPrev * 0.8, faturamento: null, custos: { combustivel: comb * 0.8 } },
+  ]);
+  ok("mês a mês: consumo igual ao previsto não vira desvio", Math.abs(c3.linhas.find((l) => l.natureza === "combustivel")!.desvioPct ?? 1) < 1e-9, `${c3.linhas.find((l) => l.natureza === "combustivel")!.desvioPct}`);
+  // Outros custos e margem realizada.
+  const c4 = calibrar(r, 1, [{ competencia: "2027-01", kmRealizado: null, faturamento: 100000, custos: { folha: 50000, veiculo: 20000, outros: 10000 } }]);
+  ok("outros custos não previstos viram sugestão", c4.sugestoes.some((s) => s.startsWith("Outros custos diretos")));
+  ok("margem realizada = (100 − 80) ÷ 100", Math.abs((c4.margemRealizada ?? 0) - 0.2) < 1e-12, `${c4.margemRealizada}`);
   const esc = historicoHolambra().entrada;
   const ce = calibrar(simular(esc), 12, []);
   ok("escolar: previsto mensal = período ÷ 12", Math.abs(ce.kmPrevistoMes - simular(esc).totais.kmUtil / 12) < 1e-6);
@@ -136,7 +162,7 @@ console.log("\nALERTAS DA PESQUISA — depreciação, ARLA, reforma tributária"
   const e3 = structuredClone(e2);
   e3.premissas.variaveis.arlaKm = e3.premissas.variaveis.dieselLitro / e3.premissas.variaveis.consumoAsfaltoKmL;
   ok("ARLA do tamanho do diesel é apontada", titulos(montarPainel(e3, simular(e3), { inicioContrato: new Date(2026, 0, 1) })).includes("ARLA acima do usual"));
-  ok("o padrão do simulador deprecia 15% a.a.", Math.abs(PREMISSAS_PADRAO.veiculo.depreciacaoAa - 0.15) < 1e-12);
+  ok("o padrão do simulador deprecia 15,57% a.a. (revenda de 10% líquida do IR sobre o ganho)", Math.abs(PREMISSAS_PADRAO.veiculo.depreciacaoAa - 0.1557) < 1e-12);
 }
 
 console.log("\nREGIME TRIBUTÁRIO — imposto em dobro e adicional do IRPJ");

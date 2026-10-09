@@ -441,6 +441,14 @@ const casos: Caso[] = [
     e.rotas[1] = { ...e.rotas[1], perfilVeiculo: "VAN", horarioInicio: "04:30", horarioFim: "13:00", motoristas: 1 };
     e.rotas[2] = { ...e.rotas[2], perfilVeiculo: "VAN", horarioInicio: "06:00", horarioFim: "18:00" };
   }),
+  variar("Holambra (escolar) com piso de peças ANTP", HOL, (e) => {
+    e.premissas.veiculo.pisoPecasAntp = true;
+    e.premissas.veiculo.idadeInicialAnos = 3;
+    e.premissas.veiculo.manutencaoFixaPctMes = 0.0005;
+    e.premissas.perfis = perfisPadrao();
+    e.premissas.perfis.find((p) => p.codigo === "VAN")!.veiculo.pisoPecasAntp = true;
+    e.rotas[0].perfilVeiculo = "VAN";
+  }),
   variar("SJP taxa real do capital + giro pelo prazo líquido", SJP, (e) => {
     e.premissas.contrato.inflacaoAa = 0.045;
     e.premissas.preco.prazoPagamentoCustosDias = 25;

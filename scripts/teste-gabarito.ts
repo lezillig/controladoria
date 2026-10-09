@@ -95,8 +95,10 @@ async function principal() {
   });
   conferir("valor do veículo = FIPE", premissas.veiculo.valor, 285000);
   conferir("… com origem na base", origem["veiculo.valor"].origem, "BASE");
-  // 2023, vende com 6 anos a 90% da FIPE: em 2026 faltam 3 anos → 10% ÷ 3.
-  ok("depreciação econômica = (1 − 90%) ÷ 3 anos", Math.abs(premissas.veiculo.depreciacaoAa - 0.1 / 3) < 1e-9, `${premissas.veiculo.depreciacaoAa}`);
+  // 2023, vende com 6 anos a 90% da FIPE: em 2026 faltam 3 anos. Com 6 anos o
+  // veículo está zerado no fisco (25% a.a.): a venda inteira é ganho de
+  // capital, 34% de IR/CSLL — volta 90% × 0,66 = 59,4%. (1 − 0,594) ÷ 3.
+  ok("depreciação econômica = (1 − 90% × 0,66) ÷ 3 anos", Math.abs(premissas.veiculo.depreciacaoAa - (1 - 0.9 * 0.66) / 3) < 1e-9, `${premissas.veiculo.depreciacaoAa}`);
   conferir("seguro mensal = anual ÷ 12", premissas.veiculo.seguroMes, 650);
   ok("pneus = 6 × 1.150 ÷ 60.000", Math.abs(premissas.variaveis.pneusAsfaltoKm - 0.115) < 1e-9);
   conferir("benefícios = VR + cesta + VT + plano + seguro", premissas.pessoal.beneficiosPorFuncionario, 660 + 210 + 190 + 0 + 12);

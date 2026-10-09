@@ -887,7 +887,7 @@ export async function gravarRealizado(companyId: string, estudoId: string, dados
 }
 
 export function realizadosParaCalibracao(
-  linhas: { competencia: string; kmRealizado: unknown; faturamento: unknown; custoFolha: unknown; custoCombustivel: unknown; custoManutencao: unknown; custoVeiculo: unknown; custoPedagio: unknown; custoIndiretos: unknown }[]
+  linhas: { competencia: string; kmRealizado: unknown; faturamento: unknown; custoFolha: unknown; custoCombustivel: unknown; custoManutencao: unknown; custoVeiculo: unknown; custoPedagio: unknown; custoIndiretos: unknown; custoOutros?: unknown }[]
 ): RealizadoMes[] {
   return linhas.map((l) => ({
     competencia: l.competencia,
@@ -900,6 +900,7 @@ export function realizadosParaCalibracao(
       veiculo: paraNumero(l.custoVeiculo),
       pedagio: paraNumero(l.custoPedagio),
       indiretos: paraNumero(l.custoIndiretos),
+      outros: paraNumero(l.custoOutros),
     },
   }));
 }

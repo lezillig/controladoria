@@ -289,6 +289,31 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
   conferir("escolar: os tipos de veículo com 1,07 motorista por veículo", escolarP.premissas.perfis?.find((x) => x.tipo === "VAN")?.motorista.motoristasPorVeiculo, 1.07);
   ok("… com a origem da regra", escolarP.origem["perfil:VAN:motorista.motoristasPorVeiculo"]?.fonte === "regra do transporte escolar");
 
+  console.log("\n  Piso de peças pela idade (ANTP)");
+  {
+    const pr = structuredClone(base.premissas);
+    pr.perfis = structuredClone(PERFIS_PADRAO.filter((x) => x.codigo === "VAN"));
+    const van = pr.perfis[0].veiculo;
+    van.pisoPecasAntp = true;
+    van.idadeInicialAnos = 0;
+    van.manutencaoFixaPctMes = 0;
+    pr.contrato.vigenciaMeses = 12;
+    const rota = { item: "1", nome: "R", kmDia: 100, kmTerraDia: 0, diasMes: 22, veiculos: 1, motoristas: 1.2, monitoras: 0, noturno: false, passagensPedagioMes: 0, tarifaPedagio: 0, perfilVeiculo: "VAN" };
+    const it = (km: number, p = pr) => simular({ ...base, premissas: p, itens: [{ codigo: "1", descricao: "x", shareIntermunicipal: 0 }], rotas: [{ ...rota, kmReferencia: km }] } as unknown as EntradaSimulacao).itens[0];
+    // Piso: 285.000 × 6% ÷ 12 = 1.425/mês. Com 1.000 km/mês a manutenção
+    // por km não chega lá: o piso completa como custo fixo.
+    const pouco = it(1000);
+    perto("km baixo: manutenção do mês = piso de 6% a.a. do valor", pouco.manutencao + pouco.manutencaoFixa, (van.valor * 0.06) / 12, "total");
+    const muito = it(8000);
+    conferir("km alto: o piso não entra", muito.manutencaoFixa, 0);
+    const semPiso = structuredClone(pr);
+    semPiso.perfis![0].veiculo.pisoPecasAntp = false;
+    conferir("sem o piso: só o R$/km", it(1000, semPiso).manutencaoFixa, 0);
+    const eletrico = structuredClone(pr);
+    eletrico.perfis![0].energia = "ELETRICO";
+    conferir("elétrico: sem piso", it(1000, eletrico).manutencaoFixa, 0);
+  }
+
   console.log("\n  VR por posto, horas noturnas pelo horário, DSR");
   {
     const pr = structuredClone(base.premissas);

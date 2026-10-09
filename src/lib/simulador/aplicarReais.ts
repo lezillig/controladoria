@@ -92,7 +92,7 @@ export function aplicarIndicadores(
       }
       for (const p of alvos) {
         grupoDe(p)[chave] = ind.valor;
-        origem[`perfil:${p.codigo}:${campo}`] = { origem: "REAL", fonte, detalhe: ind.base };
+        origem[`perfil:${p.codigo}:${campo}`] = { origem: "REAL", fonte, detalhe: ind.base, confianca: ind.confianca };
       }
       aplicados.push(caminho);
       continue;
@@ -104,7 +104,7 @@ export function aplicarIndicadores(
       continue;
     }
     escreverCaminho(novas, caminho, ind.valor);
-    origem[caminho] = { origem: "REAL", fonte, detalhe: ind.base };
+    origem[caminho] = { origem: "REAL", fonte, detalhe: ind.base, confianca: ind.confianca };
     aplicados.push(caminho);
 
     // A manutenção medida é a de uma frota com a idade dela e já traz a
@@ -113,10 +113,10 @@ export function aplicarIndicadores(
     // e somava a corretiva por cima.
     if (caminho === "variaveis.manutencaoAsfaltoKm") {
       novas.variaveis.corretivaKm = 0;
-      origem["variaveis.corretivaKm"] = { origem: "REAL", fonte, detalhe: "zerada: a manutenção medida já inclui a corretiva da frota" };
+      origem["variaveis.corretivaKm"] = { origem: "REAL", fonte, detalhe: "zerada: a manutenção medida já inclui a corretiva da frota", confianca: ind.confianca };
       if (ind.idadeDaFrota !== undefined) {
         novas.veiculo.idadeReferenciaManutencao = ind.idadeDaFrota;
-        origem["veiculo.idadeReferenciaManutencao"] = { origem: "REAL", fonte, detalhe: `idade média da frota ativa: ${ind.idadeDaFrota.toLocaleString("pt-BR")} anos` };
+        origem["veiculo.idadeReferenciaManutencao"] = { origem: "REAL", fonte, detalhe: `idade média da frota ativa: ${ind.idadeDaFrota.toLocaleString("pt-BR")} anos`, confianca: ind.confianca };
       }
     }
   }

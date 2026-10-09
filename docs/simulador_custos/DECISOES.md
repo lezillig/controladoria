@@ -684,6 +684,28 @@ ser o contratado inteiro). Ônibus: veículo-mês de R$ 50.804 para R$ 47.539.
   edital. **LC 224/2025** (Presumido acima de R$ 5 milhões): não aplicada,
   depende da confirmação do contador.
 
+## 7.13 Custo real, calibração e aprendizados da planilha EMDEC (out/2026)
+
+- **Piso de peças pela idade** (`veiculo.pisoPecasAntp`, padrão ligado): a
+  manutenção do mês dos veículos operacionais não fica abaixo de valor ×
+  coeficiente ANTP médio da idade no contrato ÷ 12 (6% a 12% a.a.); a
+  diferença entra na manutenção fixa. Com pouco km (escolar) o R$/km sozinho
+  cobria metade das peças. Fora no elétrico.
+- **Revenda líquida de IR/CSLL** (`revendaLiquidaDeIr`): o veículo de 10+
+  lugares está zerado no fisco em 4 anos (25% a.a.); a venda depois disso é
+  toda ganho de capital, 34%. A depreciação da base usa revenda × 0,66 nesse
+  caso (planilha EMDEC faz o mesmo). Padrão: 15,57% a.a. (era 15%).
+- **Administração central real do DRE vira referência** (`referencia:
+  administracaoBrutaPct`): era a soma bruta das linhas e, aplicada, apagava o
+  rateio da aba 4 (que tira assessorias fiscais, parcelamentos, multas,
+  empréstimos e o repasse à MCZ e soma o pró-labore). Uma fonte só.
+- **Confiança do REAL na origem**: o painel de decisão trata o medido com
+  confiança BAIXA como estimativa.
+- **Calibração mês a mês**: cada mês contra o previsto no km daquele mês,
+  desvio por razão de somas; sugestão só com 3 meses ou mais; outros custos
+  diretos (frota de terceiros, custo do contrato) lançáveis e margem
+  realizada × prevista.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

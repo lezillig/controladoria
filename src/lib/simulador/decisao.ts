@@ -160,7 +160,9 @@ export function montarPainel(
   // PREMISSAS ESTIMADAS: o que ainda não é dado da empresa.
   const origem = opcoes.origem ?? {};
   const entradasOrigem = Object.entries(origem);
-  const estimadas = entradasOrigem.filter(([, o]) => o.origem === "PADRAO" || o.origem === "HISTORICO");
+  // Medido com confiança BAIXA (poucos meses, classificação só proposta) ainda
+  // é estimativa: não sai do alerta só por ter vindo do custo real.
+  const estimadas = entradasOrigem.filter(([, o]) => o.origem === "PADRAO" || o.origem === "HISTORICO" || (o.origem === "REAL" && o.confianca === "BAIXA"));
   const pesoSensivel = new Set(sensibilidade.slice(0, 4).map((s) => s.caminho));
   const principaisEstimadas = estimadas.filter(([c]) => pesoSensivel.has(c)).map(([c]) => SENSIVEIS.find((s) => s.caminho === c)?.rotulo ?? c);
 

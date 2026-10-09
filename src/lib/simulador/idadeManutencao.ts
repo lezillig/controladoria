@@ -46,6 +46,15 @@ export function fatorManutencaoPorIdade(
   return soma / anos / coeficienteDaIdade(referencia + 0.5);
 }
 
+// O coeficiente médio da curva nos anos do contrato (% do valor ao ano): o
+// piso de peças por veículo.
+export function coeficienteMedioDoContrato(veiculo: Pick<Premissas["veiculo"], "idadeInicialAnos">, vigenciaMeses: number): number {
+  const anos = anosDoContrato(vigenciaMeses);
+  let soma = 0;
+  for (let k = 1; k <= anos; k++) soma += coeficienteDaIdade((veiculo.idadeInicialAnos ?? 0) + k - 0.5);
+  return soma / anos;
+}
+
 // Ano do veículo ↔ idade no início do contrato.
 export const idadeDoAno = (anoVeiculo: number, anoInicio: number) => Math.max(0, anoInicio - anoVeiculo);
 export const anoDaIdade = (idade: number, anoInicio: number) => anoInicio - Math.round(idade);

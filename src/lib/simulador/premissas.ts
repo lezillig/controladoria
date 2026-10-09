@@ -86,6 +86,7 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("veiculo.adaptacaoValor", "Adaptações (elevador, ar, divisória)", "R$ por veículo", "moeda"),
   c("veiculo.adaptacaoMesesDepreciacao", "Prazo de depreciação das adaptações", "meses", "numero"),
   c("veiculo.manutencaoFixaPctMes", "Manutenção fixa", "% do valor ao mês", "pct", "Método de locação; soma-se à manutenção por km."),
+  c("veiculo.pisoPecasAntp", "Piso de peças pela idade (ANTP)", "", "bool", "A manutenção do ano não fica abaixo do valor do veículo × coeficiente ANTP da idade (6% a 12% a.a.). Com pouco km (escolar), o R$/km sozinho não paga as peças que o tempo consome: a diferença entra como custo fixo."),
   c("veiculo.metodoDepreciacao", "Método de depreciação", "", "metodoDepreciacao", "Percentual ao ano sobre o valor; linear com valor residual; ou soma dos dígitos (Cole, método GEIPOT), que deprecia mais nos primeiros anos."),
   c("veiculo.vidaUtilAnos", "Vida útil", "anos", "numero", "Linear e soma dos dígitos."),
   c("veiculo.valorResidualPct", "Valor residual ao fim da vida útil", "% do valor", "pct"),
@@ -142,6 +143,18 @@ export function escreverCaminho(p: Premissas, caminho: string, valor: unknown): 
 
 // O PADRÃO — os exemplos do próprio Gabarito (coluna "Exemplo" e linha 6),
 // para uma van em fretamento contínuo. É estimativa e aparece como tal.
+// REVENDA LÍQUIDA DE IMPOSTO. Para o fisco o veículo de passageiros (10 ou
+// mais lugares) deprecia 25% a.a. e está zerado em 4 anos: a venda depois
+// disso é toda ganho de capital, tributado a 34% (IRPJ 15% + adicional 10% +
+// CSLL 9%, também no Presumido). O que volta para renovar a frota é a
+// revenda menos esse imposto (planilha EMDEC: residual × 0,66).
+export const IR_CSLL_GANHO_DE_CAPITAL = 0.34;
+export const DEPRECIACAO_FISCAL_AA = 0.25;
+export function revendaLiquidaDeIr(revenda: number, idadeVenda: number): number {
+  const contabil = Math.max(0, 1 - DEPRECIACAO_FISCAL_AA * idadeVenda);
+  return revenda - IR_CSLL_GANHO_DE_CAPITAL * Math.max(0, revenda - contabil);
+}
+
 export const FONTE_PADRAO = "padrão do simulador (exemplos do Gabarito — estimativa)";
 
 export const PREMISSAS_PADRAO: Premissas = {
@@ -176,8 +189,9 @@ export const PREMISSAS_PADRAO: Premissas = {
   },
   veiculo: {
     valor: 285000,
-    // (1 − 10% de revenda) ÷ 6 anos até a venda = 15% a.a.
-    depreciacaoAa: (1 - 0.1) / 6,
+    // (1 − 10% de revenda) ÷ 6 anos até a venda, com a revenda líquida do
+    // IR/CSLL sobre o ganho (6,6%): 15,6% a.a.
+    depreciacaoAa: Number(((1 - revendaLiquidaDeIr(0.1, 6)) / 6).toFixed(4)),
     custoCapitalAa: 0.18,
     seguroMes: 650,
     ipvaLicenciamentoAno: 3900,
@@ -192,6 +206,7 @@ export const PREMISSAS_PADRAO: Premissas = {
     adaptacaoValor: 0,
     adaptacaoMesesDepreciacao: 60,
     manutencaoFixaPctMes: 0,
+    pisoPecasAntp: true,
     metodoDepreciacao: "PERCENTUAL",
     vidaUtilAnos: 8,
     valorResidualPct: 0.2,
@@ -265,7 +280,9 @@ export const PREMISSAS_PADRAO: Premissas = {
 // cadastro da gestão) — ver custosReais.ts. Difere de BASE, que é o número
 // que alguém escreveu no Gabarito: REAL é o que o caixa e o cartão registraram.
 // A `fonte` diz qual indicador e o `detalhe`, a conta com os números.
-export type OrigemPremissa = { origem: "BASE" | "PADRAO" | "AJUSTE" | "HISTORICO" | "REAL"; fonte: string; detalhe?: string };
+// `confianca`: só no REAL — a do indicador medido (um número de 2 meses é
+// medido, mas ainda é estimativa para o painel de decisão).
+export type OrigemPremissa = { origem: "BASE" | "PADRAO" | "AJUSTE" | "HISTORICO" | "REAL"; fonte: string; detalhe?: string; confianca?: "ALTA" | "MEDIA" | "BAIXA" };
 export type MapaOrigem = Record<string, OrigemPremissa>;
 
 export type EscolhasDaBase = {
@@ -383,7 +400,13 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     if (idadeVenda && revenda !== null) {
       const idadeAtual = ano ? Math.max(0, base.em.getFullYear() - ano) : 0;
       const anosRestantes = Math.max(1, idadeVenda - idadeAtual);
-      definir("veiculo.depreciacaoAa", (1 - revenda) / anosRestantes, f, `(1 − ${revenda}) ÷ ${anosRestantes} anos até a venda`);
+      const liquida = revendaLiquidaDeIr(revenda, idadeVenda);
+      definir(
+        "veiculo.depreciacaoAa",
+        (1 - liquida) / anosRestantes,
+        f,
+        `(1 − ${revenda} de revenda, ${(liquida * 100).toFixed(1).replace(".", ",")}% líquida do IR/CSLL sobre o ganho) ÷ ${anosRestantes} anos até a venda`
+      );
     }
     definir("veiculo.seguroMes", n("seguroAnual") === null ? null : n("seguroAnual")! / 12, f);
     definir("veiculo.ipvaLicenciamentoAno", n("ipvaLicenciamentoAnual"), f);

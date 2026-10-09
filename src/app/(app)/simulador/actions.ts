@@ -298,6 +298,7 @@ export async function lancarRealizado(estudoId: string, formData: FormData): Pro
       custoVeiculo: numero(formData, "custoVeiculo") ?? undefined,
       custoPedagio: numero(formData, "custoPedagio") ?? undefined,
       custoIndiretos: numero(formData, "custoIndiretos") ?? undefined,
+      custoOutros: numero(formData, "custoOutros") ?? undefined,
     },
     "lançamento manual",
     session.name

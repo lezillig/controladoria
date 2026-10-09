@@ -1,5 +1,5 @@
 import { horasNoturnasDoHorario } from "./horario";
-import { fatorManutencaoPorIdade, fracaoForaDaGarantia } from "./idadeManutencao";
+import { coeficienteMedioDoContrato, fatorManutencaoPorIdade, fracaoForaDaGarantia } from "./idadeManutencao";
 import type {
   Cenarios,
   ComposicaoItem,
@@ -296,7 +296,7 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   // Manutenção corrigida pela idade do veículo nos anos do contrato (curva
   // ANTP, idadeManutencao.ts): vale para a fixa e para a por km.
   const fatorIdade = fatorManutencaoPorIdade(veiculo, contrato.vigenciaMeses);
-  const manutencaoFixa = comReserva * veiculo.valor * veiculo.manutencaoFixaPctMes * fatorIdade;
+  const manutencaoFixaPct = comReserva * veiculo.valor * veiculo.manutencaoFixaPctMes * fatorIdade;
 
   // Variáveis por km rodado, ponderados entre asfalto e terra.
   const dieselKm =
@@ -307,6 +307,12 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const kmPorMes = dividir(contrato.modo === "MENSAL" ? kmRodado : dividir(kmRodado, contrato.mesesCustoFixo), r.veiculos);
   const corretivaKm = (variaveis.corretivaKm ?? 0) * fatorIdade * fracaoForaDaGarantia(veiculo, contrato.vigenciaMeses, kmPorMes);
   const manutencaoKm = (pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm) * fatorIdade + corretivaKm;
+  // PISO DE PEÇAS: no mês, a manutenção dos veículos operacionais não fica
+  // abaixo de valor × coeficiente ANTP da idade ÷ 12; a diferença é custo fixo.
+  const mesesNaApuracao = contrato.modo === "MENSAL" ? 1 : Math.max(1, contrato.mesesCustoFixo);
+  const pisoPecasMes = veiculo.pisoPecasAntp && perfil?.energia !== "ELETRICO" ? (r.veiculos * veiculo.valor * coeficienteMedioDoContrato(veiculo, contrato.vigenciaMeses)) / 12 : 0;
+  const complementoPecas = Math.max(0, pisoPecasMes - (manutencaoKm * kmRodado) / mesesNaApuracao - manutencaoFixaPct);
+  const manutencaoFixa = manutencaoFixaPct + complementoPecas;
 
   return {
     kmReferencia: r.kmReferencia,

@@ -363,6 +363,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("adaptValor", "Adaptações (elevador, ar, divisória, adesivagem)", v.adaptacaoValor, "R$ por veíc.", "Depreciadas no prazo abaixo e remuneradas à taxa de capital.", BRL);
   premissa("adaptMeses", "Prazo de depreciação das adaptações", v.adaptacaoMesesDepreciacao, "meses", "", INT);
   premissa("manutFixa", "Manutenção fixa", v.manutencaoFixaPctMes, "% do valor ao mês", "Método de locação; soma-se à manutenção por km.", PCT2);
+  escolha("pisoPecas", "Piso de peças pela idade (ANTP)? (S/N)", sn(v.pisoPecasAntp === true), ["S", "N"], "S: a manutenção do ano não fica abaixo do valor × coeficiente ANTP da idade (6% a 12% a.a.); a diferença entra como custo fixo.");
 
   novaSecao("5. INSUMOS VARIÁVEIS DO VEÍCULO PADRÃO (por km rodado)");
   const x = p.variaveis;
@@ -511,6 +512,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "adaptValor", rotulo: "Adaptações", unidade: "R$", fmt: BRL, padrao: P.adaptValor, valor: vv("adaptacaoValor") },
     { chave: "adaptMeses", rotulo: "Prazo de depreciação das adaptações", unidade: "meses", fmt: INT, padrao: P.adaptMeses, valor: vv("adaptacaoMesesDepreciacao") },
     { chave: "manFixa", rotulo: "Manutenção fixa", unidade: "% do valor ao mês", fmt: PCT2, padrao: P.manutFixa, valor: vv("manutencaoFixaPctMes") },
+    { chave: "pisoPecas", rotulo: "Piso de peças pela idade (ANTP)? (S/N)", padrao: P.pisoPecas, valor: (pf) => sn(pf.veiculo.pisoPecasAntp === true && pf.energia !== "ELETRICO"), opcoes: ["S", "N"] },
     { rotulo: "INSUMOS POR KM RODADO", secao: true },
     { chave: "diesel", rotulo: "Combustível / energia", unidade: "R$ por litro (kWh no elétrico)", fmt: BRL, padrao: P.diesel, valor: xv("dieselLitro") },
     { chave: "consAsf", rotulo: "Consumo em asfalto", unidade: "km por litro (kWh no elétrico)", fmt: NUM, padrao: P.consAsfalto, valor: xv("consumoAsfaltoKmL") },
@@ -584,6 +586,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     fmt: NUM,
     formula: (c, F) =>
       `IF(ISNUMBER(${c}${F.idRefMan}),(${Array.from({ length: ANOS }, (_, i) => `IF(${i + 1}>${c}${F.anos},0,${coefIdade(`MAX(0,${c}${F.idade}+${i + 0.5})`)})`).join("+")})/${c}${F.anos}/${coefIdade(`(${c}${F.idRefMan}+0.5)`)},1)`,
+  });
+  linhasPerfil.push({
+    chave: "pisoMes",
+    rotulo: "Piso de peças (ANTP) por veículo operacional",
+    unidade: "R$/mês",
+    fmt: BRL,
+    formula: (c, F) =>
+      `IF(${c}${F.pisoPecas}="S",${c}${F.valor}*(${Array.from({ length: ANOS }, (_, i) => `IF(${i + 1}>${c}${F.anos},0,${coefIdade(`MAX(0,${c}${F.idade}+${i + 0.5})`)})`).join("+")})/${c}${F.anos}/12,0)`,
   });
   linhasPerfil.push(
     { chave: "depAnual", rotulo: "Depreciação anual média no contrato", unidade: "R$/ano", fmt: BRL, formula: (c, F) => `SUM(${c}${F.dep1}:${c}${F[`dep${ANOS}`]})/${c}${F.anos}` },
@@ -683,7 +693,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     ["gar", "Garagem (R$/mês)", 11],
     ["adDep", "Adaptação — depreciação (R$/mês)", 12],
     ["adCap", "Adaptação — capital (R$/mês)", 12],
-    ["manF", "Manutenção fixa (R$/mês)", 12],
+    ["manF", "Manutenção fixa + piso de peças (R$/mês)", 12],
     ["remP", "Capital próprio — não dedutível (R$/mês)", 12],
     ["dias", `Dias de operação no ${apuracao}`, 10],
     ["diarias", "Diárias (veículo × dia)", 10],
@@ -785,7 +795,9 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("gar", `IF(${pf("garReserva")}="S",${vr},${$("veic")})*${pf("garagem")}`, BRL);
     f("adDep", `${vr}*${pf("mAdDep")}`, BRL);
     f("adCap", `${vr}*${pf("mAdCap")}`, BRL);
-    f("manF", `${vr}*${pf("mManF")}`, BRL);
+    // Manutenção fixa + o que faltar para o piso de peças (ANTP) no mês.
+    const mesesApur = `IF(${P.modo}="MENSAL",1,MAX(1,${P.meses}))`;
+    f("manF", `${vr}*${pf("mManF")}+MAX(0,${$("veic")}*${pf("pisoMes")}-${$("manut")}/${mesesApur}-${vr}*${pf("mManF")})`, BRL);
     f("remP", `${vr}*${pf("mRemP")}`, BRL);
     const pelaDistancia = `IF(${$("kmDia")}>0,${$("kmRef")}/${$("kmDia")},0)`;
     f("dias", `IF(${P.modo}="MENSAL",IF(${$("diasMes")}="",${pelaDistancia},${$("diasMes")}),IF(${pelaDistancia}<>0,${pelaDistancia},N(${$("diasMes")})*${P.meses}))`, NUM);

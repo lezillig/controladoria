@@ -117,6 +117,12 @@ export type Premissas = {
     // Manutenção como fração mensal do valor do veículo — o método de locação.
     // Soma-se à manutenção por km; use um dos dois, ou os dois com critério.
     manutencaoFixaPctMes: number;
+    // PISO DE PEÇAS (ANTP/NTU): a manutenção do veículo no ano não fica abaixo
+    // do coeficiente da curva de idade × valor (6% a 12% a.a.) — com pouco km
+    // (escolar), o R$/km sozinho não paga as peças que o tempo consome. O que
+    // faltar entra como custo fixo. Fora no elétrico. Ausente nas versões
+    // salvas antes dele: sem piso.
+    pisoPecasAntp?: boolean;
     // DEPRECIAÇÃO. PERCENTUAL: `depreciacaoAa` sobre o valor (o das planilhas
     // de referência). LINEAR: (valor − residual) ÷ vida útil. SOMA_DIGITOS: o
     // método de Cole do GEIPOT, que deprecia mais nos primeiros anos. Nos dois

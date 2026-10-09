@@ -238,12 +238,13 @@ console.log("\nMÃO DE OBRA");
 
 console.log("\nADMINISTRAÇÃO E CARGA TRIBUTÁRIA");
 {
-  const adm = achar(ind, "indiretos.administracaoPct");
+  const adm = achar(ind, "referencia:administracaoBrutaPct");
   perto("administração = (50+200+30+50) ÷ custo direto 2.670 ≈ 12,4% (sobre a receita seria 7,5%)", adm?.valor, 330 / 2670);
   conferir("administração: unidade é o custo direto, onde o motor a aplica", adm?.unidade, "% do custo direto");
   ok("administração: converte para o custo direto no aviso", !!adm?.avisos.some((a) => a.includes("CUSTO DIRETO")));
   ok("administração: avisa categoria não confirmada", !!adm?.avisos.some((a) => a.includes("apenas proposta")));
   conferir("administração: não confirmado pequeno não rebaixa", adm?.confianca, "ALTA");
+  ok("administração bruta é só referência: o estudo usa o rateio da base", !!adm?.avisos.some((a) => a.includes("Uma fonte só")));
   perto("carga tributária = 600 ÷ 5.000 = 12%", achar(ind, "referencia:cargaTributariaPct")?.valor, 0.12);
 }
 
@@ -271,7 +272,7 @@ console.log("\nCONFIANÇA — classificação só proposta, base curta");
   conferir("IPVA de base curta é BAIXA", ipva?.confianca, "BAIXA");
   ok("IPVA de base curta avisa a sazonalidade", !!ipva?.avisos.some((a) => a.includes("começo do ano")));
   conferir("manutenção com 4 meses de km é BAIXA", achar(r, "variaveis.manutencaoAsfaltoKm")?.confianca, "BAIXA");
-  conferir("administração com 4 meses de receita é BAIXA", achar(r, "indiretos.administracaoPct")?.confianca, "BAIXA");
+  conferir("administração com 4 meses de receita é BAIXA", achar(r, "referencia:administracaoBrutaPct")?.confianca, "BAIXA");
 }
 
 console.log("\nAUSÊNCIA — sem cartão, só uso de veículo; gestão fora do ar");
@@ -299,7 +300,7 @@ console.log("\nAUSÊNCIA — sem cartão, só uso de veículo; gestão fora do a
   conferir(
     "gestão fora: só os indicadores do DRE",
     fora.indicadores.map((x) => x.caminho).sort(),
-    ["indiretos.administracaoPct", "pessoal.encargosPct", "referencia:cargaTributariaPct"]
+    ["pessoal.encargosPct", "referencia:administracaoBrutaPct", "referencia:cargaTributariaPct"]
   );
 
   const semSeparar = montarDados();

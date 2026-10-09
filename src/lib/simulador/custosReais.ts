@@ -816,10 +816,11 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
         ...avisosDoDre,
         `Sobre a receita líquida (${deCents(receitaLiquida)}) a administração é ${pct(adm / receitaLiquida)}; o simulador a aplica sobre o CUSTO DIRETO, por isso o número oferecido é a razão sobre o custo direto do DRE.`,
         "A folha da empresa corporativa (Despesas com pessoas — corporativo) entra na administração; a da operação fica no custo direto. Despesas com sócios ficam fora.",
+        "É a referência BRUTA das linhas do DRE e não vai para o estudo: a administração do estudo vem do rateio da base (aba 4 de Custos base), que tira o que não é estrutura (assessorias fiscais, parcelamentos, multas, empréstimos, repasse à MCZ) e soma o pró-labore fixo. Uma fonte só.",
       ];
       indicadores.push({
-        caminho: "indiretos.administracaoPct",
-        rotulo: "Administração central real",
+        caminho: "referencia:administracaoBrutaPct",
+        rotulo: "Administração central bruta do DRE (referência)",
         valor: adm / custoDireto,
         unidade: "% do custo direto",
         base: `(${partes}) = ${deCents(adm)} ÷ custo direto de ${deCents(custoDireto)} (custo do serviço + veículos + pessoas).`,

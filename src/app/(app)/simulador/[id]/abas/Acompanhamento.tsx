@@ -306,6 +306,7 @@ export default function Acompanhamento({
               ["custoVeiculo", "Veículo"],
               ["custoPedagio", "Pedágio"],
               ["custoIndiretos", "Indiretos"],
+              ["custoOutros", "Outros diretos"],
             ].map(([nome, rotulo]) => (
               <label key={nome} className="space-y-1">
                 <span className={rotuloCampo}>{rotulo}</span>
@@ -328,7 +329,7 @@ export default function Acompanhamento({
         )}
         {calibracao && calibracao.meses.length > 0 ? (
           <>
-            <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-5">
               <div>
                 <p className="text-xs text-slate-500">Km previsto / mês</p>
                 <p className="font-mono">{num(calibracao.kmPrevistoMes)}</p>
@@ -345,6 +346,12 @@ export default function Acompanhamento({
                 <p className="text-xs text-slate-500">Faturamento realizado × previsto</p>
                 <p className="font-mono">
                   {brl(calibracao.faturamentoRealizadoMedio, 0)} / {brl(calibracao.faturamentoPrevistoMes, 0)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500">Margem realizada × prevista</p>
+                <p className="font-mono">
+                  {pct(calibracao.margemRealizada)} / {pct(calibracao.margemPrevista)}
                 </p>
               </div>
             </div>
