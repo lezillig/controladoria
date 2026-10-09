@@ -638,6 +638,29 @@ refeitas à mão. Corrigidos (com teste que falha na versão anterior):
 - **Locação sem motorista nascia com o combustível da contratada.** O item
   nasce com o combustível por conta do cliente; a caixa da Operação desfaz.
 
+## 7.11 Premissas de preço revistas (out/2026, decisão da diretoria)
+
+A margem embutida no preço da van passava de 40% de EBITDA, contra 23–24% da
+operação: lucro, capital, contingência e utilização se somavam. Mudou:
+
+- **Lucro alvo 7% do preço e contingência 1%** (eram 12% e 3%). Padrão do
+  simulador e base de custos (migração `premissas_varredura`: nova vigência,
+  só baixa; a margem mínima vai a 3,5% quando passaria do alvo).
+- **Taxa de capital real.** `contrato.inflacaoAa` (padrão 4,5%, base
+  `inflacao_aa`): o capital rende (1 + taxa)/(1 + inflação) − 1, porque o
+  reajuste anual por índice devolve a inflação. No capital composto, cada
+  parte deflaciona. Zero para preço fixo sem reajuste. Versões salvas antes
+  não têm o campo e seguem nominais.
+- **Utilização abaixo de 100% só em registro de preços.** A `utilizacao_srp`
+  da base vale nos estudos SRP; nos de km fixo o km contratado é pago inteiro.
+- **Capital de giro pelo prazo líquido.** `preco.prazoPagamentoCustosDias`
+  (padrão 25, base `prazo_pagamento_custos`): giro = taxa × (recebimento −
+  pagamento) ÷ 30. A conversão da administração e o Excel usam o mesmo.
+
+Efeito (10 vans, 3.500 km/mês cada, fretamento de km fixo): veículo-mês de
+R$ 35.336 para R$ 31.180 (−11,8%); R$/km de 11,88 para 8,91 (o km pago passa a
+ser o contratado inteiro). Ônibus: veículo-mês de R$ 50.804 para R$ 47.539.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

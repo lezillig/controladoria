@@ -101,7 +101,7 @@ async function principal() {
     const c = pb.indiretos.contingenciaPct;
     // Divisor com o ISS (transporte municipal), e a contingência, que o motor
     // soma à administração sobre o custo direto: x = a·(1 + c)/(d − a).
-    const dv = 1 - p.lucroAlvoPct - p.pis - p.cofins - p.irpj - p.csll - p.iss - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
+    const dv = 1 - p.lucroAlvoPct - p.pis - p.cofins - p.irpj - p.csll - p.iss - (p.custoCapitalGiroAm * Math.max(0, p.prazoRecebimentoDias - (p.prazoPagamentoCustosDias ?? 0))) / 30 - p.despesasSobrePrecoPct;
     const x = (a: number) => (a * (1 + c)) / (dv - a);
     // De volta à receita: com P = D·(1 + x + c)/d, a administração x·D é a·P.
     const xa = adm([["faturamento_medio", 2_000_000], ["gerais", 10_000]]);
@@ -201,7 +201,7 @@ async function principal() {
     const a = total / 500_000;
     perto("a = total ÷ faturamento", celula("Resumo", "a —", "B"), a, 1e-9);
     const p = PREMISSAS_PADRAO.preco;
-    const d = 1 - p.lucroAlvoPct - (p.pis + p.cofins + p.irpj + p.csll + p.iss) - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
+    const d = 1 - p.lucroAlvoPct - (p.pis + p.cofins + p.irpj + p.csll + p.iss) - (p.custoCapitalGiroAm * Math.max(0, p.prazoRecebimentoDias - (p.prazoPagamentoCustosDias ?? 0))) / 30 - p.despesasSobrePrecoPct;
     const cc = PREMISSAS_PADRAO.indiretos.contingenciaPct;
     perto("d = o que sobra do preço", celula("Resumo", "d —", "B"), d, 1e-9);
     perto("administração = a × (1 + c) ÷ (d − a)", celula("Resumo", "Administração central, %", "B"), (a * (1 + cc)) / (d - a), 1e-9);

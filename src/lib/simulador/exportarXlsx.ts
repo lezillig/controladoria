@@ -346,6 +346,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("fracaoFin", "Fração financiada", v.fracaoFinanciada, "% do valor", "", PCT);
   premissa("taxaFin", "Taxa do financiamento", v.taxaFinanciamentoAa, "% a.a.", "", PCT);
   premissa("capProprio", "Custo de oportunidade do capital próprio", v.custoCapitalProprioAa, "% a.a.", "", PCT);
+  premissa("inflacao", "Inflação descontada da taxa de capital", p.contrato.inflacaoAa ?? 0, "% a.a.", "O contrato se reajusta por índice: o capital rende a taxa real, (1 + taxa) ÷ (1 + inflação) − 1. Zero = taxa nominal.", PCT);
   escolha("valorMedio", "Remunerar só o valor não depreciado? (S/N)", sn(v.remuneracaoSobreValorMedio), ["S", "N"], "S: o capital rende sobre o valor médio do veículo nos anos do contrato (GEIPOT), e não sobre o valor cheio.");
   premissa("seguro", "Seguro (casco + RCF-V)", v.seguroMes, "R$/mês por veíc.", "", BRL);
   premissa("ipva", "IPVA + licenciamento", v.ipvaLicenciamentoAno, "R$/ano por veíc.", "", BRL);
@@ -390,8 +391,9 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   derivada("tribMun", "Tributos totais — faturamento municipal", `${federais}+${P.iss}`, "%", "PIS + COFINS + IRPJ + CSLL + ISS", PCT2);
   derivada("tribInter", "Tributos totais — faturamento intermunicipal", `${federais}+${P.icms}`, "%", "PIS + COFINS + IRPJ + CSLL + ICMS", PCT2);
   premissa("prazo", "Prazo de recebimento", p.preco.prazoRecebimentoDias, "dias", "", INT);
+  premissa("prazoPag", "Prazo médio de pagamento dos custos", p.preco.prazoPagamentoCustosDias ?? 0, "dias", "Folha e fornecedores: o giro financia só a diferença entre receber e pagar.", INT);
   premissa("giro", "Custo do capital de giro", p.preco.custoCapitalGiroAm, "% a.m.", "", PCT2);
-  derivada("fin", "Custo financeiro sobre faturamento", `${P.giro}*${P.prazo}/30`, "% s/ fat.", "Capital de giro × prazo de recebimento ÷ 30", PCT2);
+  derivada("fin", "Custo financeiro sobre faturamento", `${P.giro}*MAX(0,${P.prazo}-${P.prazoPag})/30`, "% s/ fat.", "Capital de giro × (prazo de recebimento − prazo de pagamento) ÷ 30", PCT2);
   premissa("sobrePreco", "Despesas sobre o preço (adm. do contrato, comissão)", p.preco.despesasSobrePrecoPct, "% s/ preço", "Entram no divisor do preço, como os tributos.", PCT2);
   premissa("irLucro", "IRPJ + CSLL sobre o lucro (Lucro Real)", p.preco.irpjCsllSobreLucroPct, "% do lucro", "Sobre o lucro fiscal — lucro antes do IR + remuneração do capital próprio + contingência, que o fisco não deduz —, só quando positivo. Zero no Presumido.", PCT2);
   premissa("credito", "Crédito de PIS/COFINS não cumulativo (Lucro Real)", p.preco.creditoPisCofinsPct, "% dos custos com crédito", "Sobre depreciação (veículo e adaptação), manutenção fixa, garagem, combustível, ARLA, óleo, pneus e manutenção por km. Zero no Presumido.", PCT2);
@@ -463,6 +465,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     return typeof val === "boolean" ? sn(val) : (val as string | number);
   };
   const xv = (k: keyof Premissas["variaveis"]) => (pf: PerfilVeiculo) => pf.variaveis[k] ?? 0;
+  // Taxa real do capital: o reajuste anual por índice devolve a inflação.
+  const real = (taxa: string) => `((1+${taxa})/(1+${P.inflacao})-1)`;
   const linhasPerfil: LinhaPerfil[] = [
     { rotulo: "Descrição", padrao: "Veículo padrão", valor: (pf) => pf.descricao },
     { rotulo: "Tipo · energia", padrao: "Diesel", valor: (pf) => `${ROTULO_TIPO_VEICULO[pf.tipo] ?? pf.tipo} · ${ROTULO_ENERGIA[pf.energia ?? "DIESEL"]}` },
@@ -517,13 +521,19 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "manTerra", rotulo: "Manutenção — terra", unidade: "R$/km", fmt: BRL4, padrao: P.manutTerra, valor: xv("manutencaoTerraKm") },
     { chave: "corr", rotulo: "Corretiva fora da garantia", unidade: "R$/km", fmt: BRL4, padrao: P.corretiva, valor: xv("corretivaKm") },
     { rotulo: "CAPITAL E DEPRECIAÇÃO (anos de vida que o contrato ocupa)", secao: true },
-    { chave: "taxa", rotulo: "Taxa de capital aplicada", unidade: "% a.a.", fmt: PCT2, formula: (c, F) => `IF(${c}${F.composto}="S",${c}${F.fracao}*${c}${F.taxaFin}+(1-${c}${F.fracao})*${c}${F.proprio},${c}${F.capAa})` },
+    {
+      chave: "taxa",
+      rotulo: "Taxa de capital aplicada (real)",
+      unidade: "% a.a.",
+      fmt: PCT2,
+      formula: (c, F) => `IF(${c}${F.composto}="S",${c}${F.fracao}*${real(`${c}${F.taxaFin}`)}+(1-${c}${F.fracao})*${real(`${c}${F.proprio}`)},${real(`${c}${F.capAa}`)})`,
+    },
     {
       chave: "taxaProp",
       rotulo: "Taxa do capital próprio (não dedutível no Lucro Real)",
       unidade: "% a.a.",
       fmt: PCT2,
-      formula: (c, F) => `IF(${c}${F.composto}="S",(1-${c}${F.fracao})*${c}${F.proprio},${c}${F.capAa})`,
+      formula: (c, F) => `IF(${c}${F.composto}="S",(1-${c}${F.fracao})*${real(`${c}${F.proprio}`)},${real(`${c}${F.capAa}`)})`,
     },
     { chave: "anos", rotulo: "Anos do contrato", unidade: "anos", fmt: INT, formula: () => `MAX(1,ROUNDUP(${P.vigencia}/12,0))` },
     { chave: "n", rotulo: "Vida útil considerada (inteira)", unidade: "anos", fmt: INT, formula: (c, F) => `MAX(1,ROUND(${c}${F.vida},0))` },

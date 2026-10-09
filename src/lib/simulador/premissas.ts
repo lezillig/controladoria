@@ -6,7 +6,7 @@ import { CHAVE_PRECO_ENERGIA, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PAD
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO } from "./indiretosDoDre";
-import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, IRPJ_LOCACAO_PADRAO } from "./motor";
+import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, financeiroPct, INFLACAO_PADRAO, IRPJ_LOCACAO_PADRAO, PRAZO_PAGAMENTO_CUSTOS_PADRAO } from "./motor";
 
 // AS PREMISSAS — descrição, padrão e montagem a partir da base de custos.
 //
@@ -54,6 +54,7 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("contrato.kmMortoPct", "Km improdutivo", "% do km pago", "pct", "Garagem ↔ ponto inicial, retornos vazios."),
   c("contrato.reservaTecnicaPct", "Reserva técnica de frota", "% da frota", "pct"),
   c("contrato.implantacaoTotal", "Implantação / montagem de base", "R$ (uma vez)", "moeda", "Amortizada na vigência e rateada entre os itens pelo km."),
+  c("contrato.inflacaoAa", "Inflação descontada da taxa de capital", "% a.a.", "pct", "O contrato se reajusta por índice todo ano: o capital do veículo rende a taxa real, (1 + taxa) ÷ (1 + inflação) − 1. Zero para preço fixo sem reajuste."),
   c("pessoal.salarioMotorista", "Salário base — motorista", "R$/mês", "moeda"),
   c("pessoal.salarioMonitora", "Salário base — monitor(a)", "R$/mês", "moeda"),
   c("pessoal.horaExtraPct", "Horas extras médias", "% do salário", "pct"),
@@ -119,6 +120,7 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("preco.csllLocacao", "CSLL — locação sem motorista (Presumido)", "% do faturamento", "pct", "9% × 32% = 2,88% da receita. Só nos itens sem motorista e só no Presumido."),
   c("preco.custoCapitalGiroAm", "Custo do capital de giro", "% a.m.", "pct"),
   c("preco.prazoRecebimentoDias", "Prazo de recebimento", "dias", "numero"),
+  c("preco.prazoPagamentoCustosDias", "Prazo médio de pagamento dos custos", "dias", "numero", "Folha no 5º dia útil e fornecedores a prazo: o capital de giro financia só a diferença entre receber e pagar."),
   c("preco.despesasSobrePrecoPct", "Despesas sobre o preço (adm. do contrato, comissão)", "% do preço", "pct"),
   c("preco.irpjCsllSobreLucroPct", "IRPJ + CSLL sobre o lucro (Lucro Real)", "% do lucro", "pct", "No Lucro Real: 34% (15% + 10% adicional + 9%), sobre o lucro fiscal — o lucro antes do IR somado à remuneração do capital próprio e à contingência, que o fisco não deduz. No Presumido, zero — e IRPJ/CSLL entram acima como % do faturamento."),
   c("preco.cbsReferencia", "CBS — alíquota de referência (reforma)", "%", "pct", "Estimativa até o Senado fixar (governo: ~8,8%). Só a aba Reforma usa: cobrada por fora do preço a partir de 2027."),
@@ -142,7 +144,10 @@ export function escreverCaminho(p: Premissas, caminho: string, valor: unknown): 
 export const FONTE_PADRAO = "padrão do simulador (exemplos do Gabarito — estimativa)";
 
 export const PREMISSAS_PADRAO: Premissas = {
-  contrato: { modo: "MENSAL", mesesCustoFixo: 1, vigenciaMeses: 12, utilizacao: 0.85, kmMortoPct: 0.12, reservaTecnicaPct: 0.1, implantacaoTotal: 0 },
+  // Utilização de 85% só em registro de preços (ver premissasNovasDoEstudo);
+  // inflação esperada de 4,5% a.a. (Focus, out/2026) desconta a taxa de
+  // capital para a real.
+  contrato: { modo: "MENSAL", mesesCustoFixo: 1, vigenciaMeses: 12, utilizacao: 0.85, kmMortoPct: 0.12, reservaTecnicaPct: 0.1, implantacaoTotal: 0, inflacaoAa: INFLACAO_PADRAO },
   pessoal: {
     // Van em fretamento: piso do Nível B da TRANSFRETUR (ver convencoes.ts).
     salarioMotorista: PISO_TRANSFRETUR_NIVEL_B,
@@ -219,9 +224,12 @@ export const PREMISSAS_PADRAO: Premissas = {
     manutencaoTerraKm: 0.48,
     corretivaKm: 0.08,
   },
-  indiretos: { administracaoPct: 0.07, contingenciaPct: 0.03 },
+  // Lucro de 7% do preço e contingência de 1% (varredura de out/2026): o
+  // retorno do veículo já vem da remuneração do capital; 12% + 3% somados a
+  // ela punham ~44% de margem EBITDA no preço, contra 23–24% da operação.
+  indiretos: { administracaoPct: 0.07, contingenciaPct: 0.01 },
   preco: {
-    lucroAlvoPct: 0.12,
+    lucroAlvoPct: 0.07,
     pis: 0.0065,
     cofins: 0.03,
     // Lucro Presumido do TRANSPORTE DE PASSAGEIROS: presunção de 16% para o
@@ -235,6 +243,9 @@ export const PREMISSAS_PADRAO: Premissas = {
     icms: 0.12,
     custoCapitalGiroAm: 0.018,
     prazoRecebimentoDias: 55,
+    // Folha no 5º dia útil do mês seguinte e fornecedores a ~30 dias: ~25
+    // dias, em média, entre o custo e o pagamento.
+    prazoPagamentoCustosDias: PRAZO_PAGAMENTO_CUSTOS_PADRAO,
     despesasSobrePrecoPct: 0,
     irpjCsllSobreLucroPct: 0,
     creditoPisCofinsPct: 0,
@@ -310,6 +321,8 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
   deParam("preco.ibsReferencia", "ibs_referencia", normalizarPct);
   deParam("preco.reducaoIbsCbsPct", "reducao_ibs_cbs", normalizarPct);
   deParam("preco.custoCapitalGiroAm", "capital_giro_am");
+  deParam("preco.prazoPagamentoCustosDias", "prazo_pagamento_custos");
+  deParam("contrato.inflacaoAa", "inflacao_aa", normalizarPct);
   // Garantia contratual (art. 96 da Lei 14.133): custo proporcional ao valor
   // do contrato, então entra como despesa sobre o preço.
   deParam("preco.despesasSobrePrecoPct", "seguro_garantia_pct");
@@ -338,7 +351,7 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
     const a = total / faturamento;
     const pr = premissas.preco;
     const c = premissas.indiretos.contingenciaPct;
-    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - pr.iss - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
+    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - pr.iss - financeiroPct(premissas) - pr.despesasSobrePrecoPct;
     const x = d > a ? (a * (1 + c)) / (d - a) : a;
     definir("indiretos.administracaoPct", x, fonteDe("faturamento_medio"), `indiretos da aba 4 ÷ faturamento médio = ${(a * 100).toFixed(2)}% da receita, convertido para ${(x * 100).toFixed(2)}% do custo direto`);
   } else deParam("indiretos.administracaoPct", "adm_pct");
@@ -492,7 +505,7 @@ export function problemasNasPremissas(p: Premissas): string[] {
   const ir = pr.irpjCsllSobreLucroPct;
   if (ir < 0 || ir >= 1) problemas.push("IRPJ + CSLL sobre o lucro precisa ficar entre 0% e 100%.");
   const lucroNoDivisor = ir >= 0 && ir < 1 ? pr.lucroAlvoPct / (1 - ir) : pr.lucroAlvoPct;
-  const divisor = 1 - lucroNoDivisor - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
+  const divisor = 1 - lucroNoDivisor - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - financeiroPct(p) - pr.despesasSobrePrecoPct;
   if (divisor <= 0.05) problemas.push("Lucro, tributos e despesas sobre o preço somam 95% ou mais — o preço não fecha.");
   if (p.variaveis.consumoAsfaltoKmL <= 0) problemas.push("Consumo em asfalto precisa ser maior que zero.");
   // Os tipos de veículo têm consumo próprio: zero ali não quebrava a conta

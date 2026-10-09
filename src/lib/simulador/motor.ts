@@ -70,6 +70,8 @@ export const ADICIONAL_NOTURNO_PADRAO = 0.2;
 // o do transporte (16% × 25% = 4%): 25% × 32% de presunção.
 export const IRPJ_LOCACAO_PADRAO = 0.08;
 export const CSLL_LOCACAO_PADRAO = 0.0288; // 9% × 32%
+export const INFLACAO_PADRAO = 0.045; // Focus, out/2026
+export const PRAZO_PAGAMENTO_CUSTOS_PADRAO = 25; // dias
 
 // Custo a mais de cada hora de relógio noturna que já está na jornada: o
 // salário paga a hora-base; a hora noturna reduzida (52′30″) faz a hora de
@@ -108,8 +110,10 @@ function baseIr(lucroAntesIr: number, naoDedutiveis: number): number {
   return Math.max(0, lucroAntesIr + naoDedutiveis);
 }
 
+// O giro financia o intervalo entre pagar os custos e receber o preço: só a
+// diferença dos prazos custa juros.
 export function financeiroPct(p: Premissas): number {
-  return (p.preco.custoCapitalGiroAm * p.preco.prazoRecebimentoDias) / 30;
+  return (p.preco.custoCapitalGiroAm * Math.max(0, p.preco.prazoRecebimentoDias - (p.preco.prazoPagamentoCustosDias ?? 0))) / 30;
 }
 
 // Dias de operação da rota numa apuração. MENSAL: os dias/mês informados (ou
@@ -131,7 +135,7 @@ function diasNaApuracao(p: Premissas, r: Rota): number {
 // custo econômico, mas não despesa: no Lucro Real não sai da base do IR. Os
 // juros da parte financiada são despesa e saem. Sem capital composto, a taxa
 // única é tratada como toda própria (é o caso de quem compra à vista).
-export function custoDeCapital(v: Premissas["veiculo"], vigenciaMeses: number): {
+export function custoDeCapital(v: Premissas["veiculo"], vigenciaMeses: number, inflacaoAa = 0): {
   taxaCapitalAa: number;
   taxaCapitalProprioAa: number;
   depreciacaoAnual: number;
@@ -139,8 +143,10 @@ export function custoDeCapital(v: Premissas["veiculo"], vigenciaMeses: number): 
   remuneracaoAnual: number;
   remuneracaoPropriaAnual: number;
 } {
-  const taxaCapitalProprioAa = v.capitalComposto ? (1 - v.fracaoFinanciada) * v.custoCapitalProprioAa : v.custoCapitalAa;
-  const taxaCapitalAa = v.capitalComposto ? v.fracaoFinanciada * v.taxaFinanciamentoAa + taxaCapitalProprioAa : v.custoCapitalAa;
+  // Taxa real: o reajuste anual por índice já devolve a inflação.
+  const real = (t: number) => (inflacaoAa ? (1 + t) / (1 + inflacaoAa) - 1 : t);
+  const taxaCapitalProprioAa = v.capitalComposto ? (1 - v.fracaoFinanciada) * real(v.custoCapitalProprioAa) : real(v.custoCapitalAa);
+  const taxaCapitalAa = v.capitalComposto ? v.fracaoFinanciada * real(v.taxaFinanciamentoAa) + taxaCapitalProprioAa : real(v.custoCapitalAa);
   const anosContrato = Math.max(1, Math.ceil(vigenciaMeses / 12));
   const anos = Array.from({ length: anosContrato }, (_, i) => Math.floor(v.idadeInicialAnos) + i + 1);
 
@@ -257,7 +263,7 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   // Veículo — ter o veículo custa também para a reserva técnica;
   // higienização e acessibilidade, só para o que roda.
   const comReserva = r.veiculos * (1 + contrato.reservaTecnicaPct);
-  const cap = custoDeCapital(veiculo, contrato.vigenciaMeses);
+  const cap = custoDeCapital(veiculo, contrato.vigenciaMeses, contrato.inflacaoAa ?? 0);
   const depreciacao = (comReserva * cap.depreciacaoAnual) / 12;
   const remuneracaoCapital = (comReserva * cap.remuneracaoAnual) / 12;
   // A parte própria do capital do veículo e das adaptações (estas rendem à

@@ -432,6 +432,14 @@ const casos: Caso[] = [
   variar("Holambra diária", HOL, (e) => {
     e.unidadePreco = "DIARIA";
   }),
+  variar("SJP taxa real do capital + giro pelo prazo líquido", SJP, (e) => {
+    e.premissas.contrato.inflacaoAa = 0.045;
+    e.premissas.preco.prazoPagamentoCustosDias = 25;
+    e.premissas.perfis = perfisPadrao();
+    const carro = e.premissas.perfis.find((p) => p.codigo === "CARRO")!;
+    Object.assign(carro.veiculo, { capitalComposto: true, fracaoFinanciada: 0.6, taxaFinanciamentoAa: 0.22, custoCapitalProprioAa: 0.11 });
+    e.rotas[1].perfilVeiculo = "CARRO";
+  }),
   variar("SJP perfis ONIBUS/CARRO + depreciação por perfil", SJP, (e) => {
     const perfis = perfisPadrao();
     const onibus = perfis.find((p) => p.codigo === "ONIBUS")!;

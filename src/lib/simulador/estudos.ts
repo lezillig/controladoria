@@ -449,7 +449,7 @@ export async function entradaInicial(
 // veículo). É o ponto de partida de toda simulação nova e o destino do
 // "Voltar à base" no editor.
 export function premissasNovasDoEstudo(
-  estudo: Pick<NonNullable<Awaited<ReturnType<typeof carregarEstudo>>>["estudo"], "esfera" | "tipoServico" | "vigenciaMeses" | "prazoPagamentoDias" | "tiposVeiculo">,
+  estudo: Pick<NonNullable<Awaited<ReturnType<typeof carregarEstudo>>>["estudo"], "esfera" | "tipoServico" | "vigenciaMeses" | "prazoPagamentoDias" | "tiposVeiculo" | "srp">,
   baseCarregada: BaseVigente | null
 ): { premissas: Premissas; origem: MapaOrigem; vazia: boolean } {
   const vazia = baseCarregada && baseCarregada.parametros.size === 0 && baseCarregada.veiculos.length === 0 && baseCarregada.funcoes.length === 0;
@@ -461,6 +461,16 @@ export function premissasNovasDoEstudo(
     motoristaId: baseCarregada?.funcoes.find((f) => /motorista/i.test(String(f.funcao ?? "")))?.id ?? null,
     monitoraId: baseCarregada?.funcoes.find((f) => /monitor/i.test(String(f.funcao ?? "")))?.id ?? null,
   });
+  // A utilização abaixo de 100% é o risco do REGISTRO DE PREÇOS: o órgão paga
+  // só o km que demandar. Contrato de km fixo paga o km contratado.
+  if (!estudo.srp && premissas.contrato.utilizacao !== 1) {
+    origem["contrato.utilizacao"] = {
+      origem: "PADRAO",
+      fonte: "regra do contrato de km fixo",
+      detalhe: `sem registro de preços o km contratado é pago inteiro (a utilização de ${(premissas.contrato.utilizacao * 100).toLocaleString("pt-BR")}% vale só em SRP)`,
+    };
+    premissas.contrato.utilizacao = 1;
+  }
   if (estudo.tipoServico === "ESCOLAR") {
     premissas.contrato.modo = "PERIODO";
     premissas.contrato.utilizacao = 1;

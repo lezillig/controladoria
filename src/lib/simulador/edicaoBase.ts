@@ -21,7 +21,7 @@ export const FONTE_AJUSTE = "ajuste na tela";
 // informativo (fica na base para consulta e para o especialista de IA).
 export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unidade?: string; unidadePadrao?: string; padrao?: number }> = {
   km_morto_pct: { caminho: "contrato.kmMortoPct", como: "Km improdutivo das rotas" },
-  utilizacao_srp: { caminho: "contrato.utilizacao", como: "Utilização prevista do km" },
+  utilizacao_srp: { caminho: "contrato.utilizacao", como: "Utilização prevista do km nos estudos de registro de preços (nos de km fixo é 100%)" },
   meses_custo_fixo_escolar: { caminho: "contrato.mesesCustoFixo", como: "Meses de custo fixo no contrato escolar", unidade: "meses" },
   noturno_pct: { caminho: "pessoal.adicionalNoturnoPct", como: "Adicional sobre as horas noturnas" },
   preposto_mes: { caminho: "pessoal.supervisaoMes", como: "Supervisão local, quando o estudo tem base local", unidade: "R$/mês" },
@@ -58,7 +58,9 @@ export const USO_DA_BASE: Record<string, { caminho?: string; como: string; unida
   cbs_referencia: { caminho: "preco.cbsReferencia", como: "Aba Reforma: CBS cheia a partir de 2027 (estimativa até o Senado fixar)" },
   ibs_referencia: { caminho: "preco.ibsReferencia", como: "Aba Reforma: IBS cheio em 2033, em frações de 2029 a 2032 (estimativa)" },
   reducao_ibs_cbs: { caminho: "preco.reducaoIbsCbsPct", como: "Aba Reforma: redução das alíquotas do serviço — fretamento não tem (LC 214/2025)" },
-  capital_giro_am: { caminho: "preco.custoCapitalGiroAm", como: "Custo financeiro do prazo de recebimento" },
+  capital_giro_am: { caminho: "preco.custoCapitalGiroAm", como: "Custo financeiro do prazo de recebimento menos o de pagamento" },
+  prazo_pagamento_custos: { caminho: "preco.prazoPagamentoCustosDias", como: "O giro financia só o prazo de recebimento menos este", unidade: "dias", padrao: 25 },
+  inflacao_aa: { caminho: "contrato.inflacaoAa", como: "Desconta a taxa de capital da frota para a real (o reajuste anual devolve a inflação)", unidade: "% a.a.", padrao: 0.045 },
   prazo_prefeituras: { caminho: "preco.prazoRecebimentoDias", como: "Prazo de recebimento em licitação", unidade: "dias" },
   prazo_empresas: { caminho: "preco.prazoRecebimentoDias", como: "Prazo de recebimento em contrato privado", unidade: "dias" },
   seguro_garantia_pct: { caminho: "preco.despesasSobrePrecoPct", como: "Garantia contratual, como despesa sobre o preço" },

@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
 import type { BaseVigente } from "./baseDeCustos";
+import { financeiroPct } from "./motor";
 import { CATALOGO_PARAMETROS, normalizarPct } from "./catalogo";
 import type { DreDosMeses } from "./custosReais";
 import {
@@ -279,7 +280,7 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   const a = derivada("a — estrutura em % da receita", `C${linhaTotal}`, "Total da estrutura ÷ faturamento médio.");
   const lucro = entrada("Lucro alvo", p.lucroAlvoPct, "Das Regras da Azul Mob. Mude aqui para ver o efeito (azul = editável).");
   const trib = entrada("Tributos sobre o faturamento", p.pis + p.cofins + p.irpj + p.csll + p.iss, "PIS + COFINS + IRPJ + CSLL + ISS (transporte municipal).");
-  const giro = entrada("Capital de giro", (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30, "Custo do capital de giro × prazo de recebimento ÷ 30 (cliente privado).");
+  const giro = entrada("Capital de giro", financeiroPct(d.premissas), "Custo do capital de giro × (prazo de recebimento − prazo de pagamento dos custos) ÷ 30.");
   const desp = entrada("Despesas sobre o preço", p.despesasSobrePrecoPct, "Seguro-garantia e afins.");
   const dv = derivada("d — o que sobra do preço para pagar o custo", `1-B${lucro}-B${trib}-B${giro}-B${desp}`, "1 − lucro − tributos − giro − despesas.");
   const cont = entrada("Contingência / risco, % do custo direto", d.premissas.indiretos.contingenciaPct, "Regras da Azul Mob (ou padrão do simulador).");

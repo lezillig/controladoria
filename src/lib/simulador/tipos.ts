@@ -52,6 +52,12 @@ export type Premissas = {
     // Implantação/montagem de base (custo único), amortizada na vigência e
     // rateada entre os itens pelo km útil.
     implantacaoTotal: number;
+    // Inflação esperada ao ano. O contrato se reajusta por índice todo ano,
+    // então o capital do veículo rende a taxa REAL: (1 + taxa)/(1 + inflação)
+    // − 1 — com a nominal, a inflação seria paga duas vezes (na taxa e no
+    // reajuste). Zero = taxa nominal (preço fixo sem reajuste). Ausente nas
+    // versões salvas antes dela: zero.
+    inflacaoAa?: number;
   };
   pessoal: {
     salarioMotorista: number;
@@ -165,6 +171,10 @@ export type Premissas = {
     icms: number;
     custoCapitalGiroAm: number;
     prazoRecebimentoDias: number;
+    // Prazo médio em que a empresa paga os próprios custos (folha no 5º dia
+    // útil, fornecedores a prazo). O giro financia só a diferença entre receber
+    // e pagar. Ausente nas versões salvas antes dele: zero (o prazo inteiro).
+    prazoPagamentoCustosDias?: number;
     // Despesas cobradas como fração do PREÇO (administração do contrato,
     // encargos financeiros, comissão): entram no divisor, como os tributos.
     despesasSobrePrecoPct: number;

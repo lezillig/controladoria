@@ -9,10 +9,10 @@
 // Sem banco: o motor é puro.
 import esperado from "../src/lib/simulador/historico/casos_de_teste_esperados.json";
 import { historicoHolambra, historicoSaoJoseDosPinhais } from "../src/lib/simulador/historico";
-import { arredondarParaCima, custoDeCapital, simular } from "../src/lib/simulador/motor";
+import { arredondarParaCima, custoDeCapital, financeiroPct, simular } from "../src/lib/simulador/motor";
 import { PERFIS_PADRAO } from "../src/lib/simulador/premissas";
 // validarEntrada é pura (estudos.ts só toca o banco nas outras funções).
-import { validarEntrada } from "../src/lib/simulador/estudos";
+import { premissasNovasDoEstudo, validarEntrada } from "../src/lib/simulador/estudos";
 import type { EntradaSimulacao } from "../src/lib/simulador/tipos";
 
 let falhas = 0;
@@ -258,6 +258,33 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
   perto("PERCENTUAL usado: remuneração sobre o valor de hoje", usado.remuneracaoAnual, (280000 - 33600) * usado.taxaCapitalAa, "total");
   const usadoNovo = custoDeCapital({ ...v, metodoDepreciacao: "PERCENTUAL", valor: 280000, depreciacaoAa: 0.12, idadeInicialAnos: 0, remuneracaoSobreValorMedio: true }, 24);
   conferir("PERCENTUAL: idade não muda o capital", usado.valorMedio, usadoNovo.valorMedio);
+
+  // TAXA REAL: o reajuste anual por índice devolve a inflação; o capital
+  // rende (1 + 18%)/(1 + 4,5%) − 1 = 12,92%. Composto: cada parte deflaciona.
+  const realSimples = custoDeCapital({ ...v, capitalComposto: false, custoCapitalAa: 0.18 }, 12, 0.045);
+  perto("taxa real = 1,18 ÷ 1,045 − 1", realSimples.taxaCapitalAa, 1.18 / 1.045 - 1, "total");
+  conferir("sem inflação, a taxa é a nominal", custoDeCapital({ ...v, capitalComposto: false, custoCapitalAa: 0.18 }, 12).taxaCapitalAa, 0.18);
+  const realComp = custoDeCapital({ ...v, capitalComposto: true, fracaoFinanciada: 0.8, taxaFinanciamentoAa: 0.18, custoCapitalProprioAa: 0.12 }, 12, 0.045);
+  perto("composto real = 0,8 × real(18%) + 0,2 × real(12%)", realComp.taxaCapitalAa, 0.8 * (1.18 / 1.045 - 1) + 0.2 * (1.12 / 1.045 - 1), "total");
+  perto("parte própria real = 0,2 × real(12%)", realComp.taxaCapitalProprioAa, 0.2 * (1.12 / 1.045 - 1), "total");
+  const semInfl = simular(base);
+  const comInfl = simular({ ...base, premissas: { ...base.premissas, contrato: { ...base.premissas.contrato, inflacaoAa: 0.045 } } });
+  ok("inflação descontada baixa a remuneração do capital e o preço", comInfl.totais.custoTotal < semInfl.totais.custoTotal && comInfl.totais.faturamento < semInfl.totais.faturamento);
+
+  // GIRO PELO PRAZO LÍQUIDO: 1,8% a.m. × (55 − 25) ÷ 30 = 1,8%; sem o prazo
+  // de pagamento (versões antigas), os 55 dias inteiros.
+  const pr0 = base.premissas;
+  perto("giro = taxa × (recebimento − pagamento) ÷ 30", financeiroPct({ ...pr0, preco: { ...pr0.preco, custoCapitalGiroAm: 0.018, prazoRecebimentoDias: 55, prazoPagamentoCustosDias: 25 } }), 0.018, "total");
+  perto("sem prazo de pagamento: o prazo inteiro", financeiroPct({ ...pr0, preco: { ...pr0.preco, custoCapitalGiroAm: 0.018, prazoRecebimentoDias: 55, prazoPagamentoCustosDias: undefined } }), 0.033, "total");
+  conferir("pagar depois de receber não vira receita", financeiroPct({ ...pr0, preco: { ...pr0.preco, custoCapitalGiroAm: 0.018, prazoRecebimentoDias: 20, prazoPagamentoCustosDias: 30 } }), 0);
+
+  // UTILIZAÇÃO: abaixo de 100% só em registro de preços.
+  const dadosEstudo = { esfera: "PUBLICO", tipoServico: "FRETAMENTO", vigenciaMeses: 12, prazoPagamentoDias: null, tiposVeiculo: ["VAN"] } as const;
+  const kmFixo = premissasNovasDoEstudo({ ...dadosEstudo, srp: false } as never, null);
+  const srp = premissasNovasDoEstudo({ ...dadosEstudo, srp: true } as never, null);
+  conferir("contrato de km fixo: utilização 100%", kmFixo.premissas.contrato.utilizacao, 1);
+  ok("… e a origem diz por quê", (kmFixo.origem["contrato.utilizacao"]?.detalhe ?? "").includes("registro de preços"));
+  conferir("registro de preços: a utilização da base/padrão (85%)", srp.premissas.contrato.utilizacao, 0.85);
 
   console.log("\n  Lucro Real × Presumido");
   const r0 = simular(base);

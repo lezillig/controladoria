@@ -99,6 +99,8 @@ export const CATALOGO_PARAMETROS: DefinicaoParametro[] = [
   p("FINANCEIRO", "prazo_prefeituras", "Prazo médio real de recebimento — prefeituras", "numero"),
   p("FINANCEIRO", "prazo_empresas", "Prazo médio real de recebimento — empresas", "numero"),
   p("FINANCEIRO", "capital_giro_am", "Custo do capital de giro", "pct"),
+  p("FINANCEIRO", "prazo_pagamento_custos", "Prazo médio de pagamento dos custos (folha e fornecedores)", "numero", false),
+  p("FINANCEIRO", "inflacao_aa", "Inflação esperada ao ano (taxa real do capital)", "pct", false),
   p("FINANCEIRO", "inadimplencia_pct", "Inadimplência/glosas", "pct", false),
   p("FINANCEIRO", "seguro_garantia_pct", "Garantia contratual", "pct", false),
   // 6 — Insumos

@@ -126,7 +126,7 @@ async function principal() {
     const a = (149500 + 180000) / 3200000;
     const pr = premissas.preco;
     const c = premissas.indiretos.contingenciaPct;
-    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - pr.iss - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
+    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - pr.iss - (pr.custoCapitalGiroAm * Math.max(0, pr.prazoRecebimentoDias - (pr.prazoPagamentoCustosDias ?? 0))) / 30 - pr.despesasSobrePrecoPct;
     ok("administração = indiretos reais ÷ faturamento, convertida para o custo direto", Math.abs(premissas.indiretos.administracaoPct - (a * (1 + c)) / (d - a)) < 1e-9, `${premissas.indiretos.administracaoPct}`);
     ok("administração convertida é maior que a razão sobre a receita", premissas.indiretos.administracaoPct > a);
   }
