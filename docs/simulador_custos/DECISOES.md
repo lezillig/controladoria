@@ -612,6 +612,32 @@ gestao-motoristas).
   trocar de energia ou de tipo; híbridos salvos na versão de um fator só são
   desfeitos com os fatores antigos.
 
+## 7.10 Erros de fórmula da varredura de out/2026
+
+Varredura do motor, do preço e do ciclo com o custo real, com as fórmulas
+refeitas à mão. Corrigidos (com teste que falha na versão anterior):
+
+- **Capital do veículo usado no PERCENTUAL.** O valor do PERCENTUAL é o de
+  hoje (FIPE na idade atual), mas o valor médio descontava a depreciação de
+  todos os anos desde o 0 km: o ônibus padrão (8 anos, R$ 280 mil, 12% a.a.)
+  ficava com remuneração do capital ZERO, e o preço ~11% abaixo. Agora só os
+  anos já corridos do contrato saem do valor. No LINEAR e na SOMA_DIGITOS o
+  valor continua sendo o do 0 km (a idade conta desde a compra) — quem usa
+  esses métodos com o valor FIPE de um usado precisa trocar pelo do 0 km.
+- **Garantia por km com o km da rota inteira.** Com 3 veículos na rota, a
+  garantia por km "acabava" 3× mais cedo. Agora é o km de cada veículo.
+- **IRPJ da locação sem motorista sem o adicional.** 15% × 32% = 4,8%; com o
+  adicional de 10%, como o transporte já tinha (16% × 25% = 4%), é 8%.
+- **Administração da base convertida sem a contingência e com o ICMS.**
+  Agora x = a·(1 + c)/(d − a), com o ISS no divisor (ver "Administração
+  central sobre o custo direto").
+- **Manutenção real contada duas vezes.** Ao aplicar o R$/km medido, o
+  estudo continuava corrigindo pela idade a partir de 0 km e somando a
+  corretiva. Agora a corretiva vai a zero e a idade de referência passa a ser
+  a idade média da frota ativa (ano dos veículos da gestão).
+- **Locação sem motorista nascia com o combustível da contratada.** O item
+  nasce com o combustível por conta do cliente; a caixa da Operação desfaz.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com
