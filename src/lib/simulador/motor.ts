@@ -66,7 +66,9 @@ const dividir = (a: number, b: number) => (b === 0 ? 0 : a / b);
 
 // Padrões das premissas que as versões salvas antes delas não têm.
 export const ADICIONAL_NOTURNO_PADRAO = 0.2;
-export const IRPJ_LOCACAO_PADRAO = 0.048; // 15% × 32% de presunção
+// IRPJ com o adicional de 10% (base presumida acima de R$ 20 mil/mês), como
+// o do transporte (16% × 25% = 4%): 25% × 32% de presunção.
+export const IRPJ_LOCACAO_PADRAO = 0.08;
 export const CSLL_LOCACAO_PADRAO = 0.0288; // 9% × 32%
 
 // Custo a mais de cada hora de relógio noturna que já está na jornada: o
@@ -157,8 +159,11 @@ export function custoDeCapital(v: Premissas["veiculo"], vigenciaMeses: number): 
   // Valor não depreciado no meio de cada ano do contrato, em média.
   let valorMedio = v.valor;
   if (v.remuneracaoSobreValorMedio) {
-    const acumuladaAntes = (k: number) => {
-      if (v.metodoDepreciacao === "PERCENTUAL") return v.valor * v.depreciacaoAa * (k - 1);
+    // No PERCENTUAL o valor é o de hoje (FIPE na idade atual): só os anos já
+    // corridos do contrato saem dele. Nos outros, o valor é o do 0 km e sai a
+    // depreciação de toda a vida já vivida.
+    const acumuladaAntes = (k: number, i: number) => {
+      if (v.metodoDepreciacao === "PERCENTUAL") return v.valor * v.depreciacaoAa * i;
       const n = Math.max(1, Math.round(v.vidaUtilAnos));
       const depreciavel = v.valor * (1 - v.valorResidualPct);
       const somaDigitos = (n * (n + 1)) / 2;
@@ -166,7 +171,7 @@ export function custoDeCapital(v: Premissas["veiculo"], vigenciaMeses: number): 
       for (let j = 1; j < k; j++) acc += j > n ? 0 : v.metodoDepreciacao === "LINEAR" ? depreciavel / n : (depreciavel * (n - j + 1)) / somaDigitos;
       return acc;
     };
-    const meios = anos.map((k, i) => Math.max(v.valor * (v.metodoDepreciacao === "PERCENTUAL" ? 0 : v.valorResidualPct), v.valor - acumuladaAntes(k) - porAno[i] / 2));
+    const meios = anos.map((k, i) => Math.max(v.valor * (v.metodoDepreciacao === "PERCENTUAL" ? 0 : v.valorResidualPct), v.valor - acumuladaAntes(k, i) - porAno[i] / 2));
     valorMedio = meios.reduce((a, x) => a + x, 0) / meios.length;
   }
   return {
@@ -274,9 +279,9 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const dieselKm =
     variaveis.dieselLitro * (dividir(pctAsfalto, variaveis.consumoAsfaltoKmL) + (pctTerra > 0 ? dividir(pctTerra, variaveis.consumoTerraKmL) : 0));
   const pneusKm = pctAsfalto * variaveis.pneusAsfaltoKm + pctTerra * variaveis.pneusTerraKm;
-  // Corretiva: só nos meses do contrato fora da garantia (o km/mês da rota
-  // estima quando a garantia por km acaba), também pela idade.
-  const kmPorMes = contrato.modo === "MENSAL" ? kmRodado : dividir(kmRodado, contrato.mesesCustoFixo);
+  // Corretiva: só nos meses do contrato fora da garantia (o km/mês de cada
+  // veículo da rota estima quando a garantia por km acaba), também pela idade.
+  const kmPorMes = dividir(contrato.modo === "MENSAL" ? kmRodado : dividir(kmRodado, contrato.mesesCustoFixo), r.veiculos);
   const corretivaKm = (variaveis.corretivaKm ?? 0) * fatorIdade * fracaoForaDaGarantia(veiculo, contrato.vigenciaMeses, kmPorMes);
   const manutencaoKm = (pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm) * fatorIdade + corretivaKm;
 

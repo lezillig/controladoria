@@ -49,15 +49,15 @@ function categoria(codigo: string, descricao: string, linha: string, porMesCents
 }
 
 const VEICULOS: VeiculoReal[] = [
-  { id: "v1", placa: "VAN0001", modelo: "Sprinter 416", tipo: "Van", status: "ATIVO" },
-  { id: "v2", placa: "VAN0002", modelo: "Sprinter 416", tipo: "Van", status: "ATIVO" },
-  { id: "v3", placa: "VAN0003", modelo: "Master", tipo: "Van", status: "ATIVO" },
-  { id: "v4", placa: "VAN0004", modelo: "Master", tipo: "Van", status: "MANUTENCAO" },
-  { id: "o1", placa: "ONI0001", modelo: "Marcopolo", tipo: "Ônibus", status: "ATIVO" },
-  { id: "o2", placa: "ONI0002", modelo: "Marcopolo", tipo: "Ônibus", status: "ATIVO" },
-  { id: "c1", placa: "CAR0001", modelo: "Corolla", tipo: "Carro executivo", status: "ATIVO" },
+  { id: "v1", placa: "VAN0001", modelo: "Sprinter 416", tipo: "Van", status: "ATIVO", ano: 2022 },
+  { id: "v2", placa: "VAN0002", modelo: "Sprinter 416", tipo: "Van", status: "ATIVO", ano: 2022 },
+  { id: "v3", placa: "VAN0003", modelo: "Master", tipo: "Van", status: "ATIVO", ano: 2020 },
+  { id: "v4", placa: "VAN0004", modelo: "Master", tipo: "Van", status: "MANUTENCAO", ano: 2024 },
+  { id: "o1", placa: "ONI0001", modelo: "Marcopolo", tipo: "Ônibus", status: "ATIVO", ano: 2018 },
+  { id: "o2", placa: "ONI0002", modelo: "Marcopolo", tipo: "Ônibus", status: "ATIVO", ano: 2018 },
+  { id: "c1", placa: "CAR0001", modelo: "Corolla", tipo: "Carro executivo", status: "ATIVO", ano: 2025 },
   // Baixado: não conta no seguro nem no IPVA.
-  { id: "v9", placa: "VAN0009", modelo: "Ducato", tipo: "Van", status: "INATIVO" },
+  { id: "v9", placa: "VAN0009", modelo: "Ducato", tipo: "Van", status: "INATIVO", ano: 2010 },
 ];
 
 function abastecimento(vehicleId: string | null, mes: number, dia: number, litros: number, precoLitro: number, km: number | null, combustivel = "DIESEL S10"): AbastecimentoReal {
@@ -204,6 +204,9 @@ const KM_TOTAL = 12 * 3840 + 1200 + 540;
   conferir("manutenção: 12 meses é ALTA", manut?.confianca, "ALTA");
   conferir("manutenção: amostra em meses", manut?.amostra, 12);
   ok("manutenção: avisa que é média da frota", !!manut?.avisos.some((a) => a.includes("Média da frota inteira")));
+  // Idade da frota ativa em 2026 (a inativa de 2010 fora): 4, 4, 6, 2, 8, 8 e 1 → 33 ÷ 7.
+  conferir("manutenção: leva a idade média da frota ativa", manut?.idadeDaFrota, 4.7);
+  ok("manutenção: avisa que aplicar zera a corretiva e põe a idade", !!manut?.avisos.some((a) => a.includes("zera a corretiva") && a.includes("4,7 anos")));
   ok("manutenção: diz o km do uso de veículo que ficou de fora", !!manut?.avisos.some((a) => a.includes("uso de veículo") && a.includes("200 km")), JSON.stringify(manut?.avisos));
   perto("pneus = R$ 3.600 ÷ km da frota", achar(ind, "variaveis.pneusAsfaltoKm")?.valor, 3_600 / KM_TOTAL);
   conferir("óleo diesel NÃO é troca de óleo", achar(ind, "variaveis.oleoLavagemKm"), undefined);
@@ -334,6 +337,14 @@ console.log("\nAPLICAR os indicadores escolhidos");
   conferir("aplicados", r.aplicados, ["variaveis.dieselLitro", "perfil:VAN:variaveis.consumoAsfaltoKmL", "pessoal.encargosPct"]);
   conferir("ignorados: referência, caminho inexistente, indicador ausente", r.ignorados, ["referencia:kmPorVeiculoMes", "variaveis.naoExiste", "perfil:MICRO:variaveis.dieselLitro"]);
   conferir("padrão intacto", PREMISSAS_PADRAO.variaveis.dieselLitro, 6.15);
+
+  // Manutenção medida: já é a de uma frota com 4,7 anos e já traz a
+  // corretiva — o estudo não pode corrigir de novo pela idade nem somá-la.
+  const m = aplicarIndicadores(base, PERFIS_PADRAO, ind, ["variaveis.manutencaoAsfaltoKm"], origemBase);
+  perto("manutenção real aplicada", m.premissas.variaveis.manutencaoAsfaltoKm, achar(ind, "variaveis.manutencaoAsfaltoKm")!.valor);
+  conferir("corretiva zerada, com origem REAL", [m.premissas.variaveis.corretivaKm, m.origem["variaveis.corretivaKm"]?.origem], [0, "REAL"]);
+  conferir("idade de referência = idade da frota", [m.premissas.veiculo.idadeReferenciaManutencao, m.origem["veiculo.idadeReferenciaManutencao"]?.origem], [4.7, "REAL"]);
+  conferir("a base não muda", base.variaveis.corretivaKm, PREMISSAS_PADRAO.variaveis.corretivaKm);
 }
 
 console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");

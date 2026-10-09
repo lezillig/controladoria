@@ -278,21 +278,21 @@ export async function planilhaDosIndiretos(d: DadosIndiretos): Promise<Buffer> {
   ws.getRow(lr - 1).font = { bold: true };
   const a = derivada("a — estrutura em % da receita", `C${linhaTotal}`, "Total da estrutura ÷ faturamento médio.");
   const lucro = entrada("Lucro alvo", p.lucroAlvoPct, "Das Regras da Azul Mob. Mude aqui para ver o efeito (azul = editável).");
-  const trib = entrada("Tributos sobre o faturamento", p.pis + p.cofins + p.irpj + p.csll + Math.max(p.iss, p.icms), "PIS + COFINS + IRPJ + CSLL + o maior entre ISS e ICMS.");
+  const trib = entrada("Tributos sobre o faturamento", p.pis + p.cofins + p.irpj + p.csll + p.iss, "PIS + COFINS + IRPJ + CSLL + ISS (transporte municipal).");
   const giro = entrada("Capital de giro", (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30, "Custo do capital de giro × prazo de recebimento ÷ 30 (cliente privado).");
   const desp = entrada("Despesas sobre o preço", p.despesasSobrePrecoPct, "Seguro-garantia e afins.");
   const dv = derivada("d — o que sobra do preço para pagar o custo", `1-B${lucro}-B${trib}-B${giro}-B${desp}`, "1 − lucro − tributos − giro − despesas.");
+  const cont = entrada("Contingência / risco, % do custo direto", d.premissas.indiretos.contingenciaPct, "Regras da Azul Mob (ou padrão do simulador).");
   const x = derivada(
     "Administração central, % do custo direto",
-    `IF(B${dv}>B${a},B${a}/(B${dv}-B${a}),B${a})`,
-    "x = a ÷ (d − a): aplicado sobre o custo direto, dá a no preço final. É o valor do campo 'Administração central' do estudo.",
+    `IF(B${dv}>B${a},B${a}*(1+B${cont})/(B${dv}-B${a}),B${a})`,
+    "x = a × (1 + contingência) ÷ (d − a): o preço é custo direto × (1 + x + contingência) ÷ d, e assim a administração fica em a do preço final. É o valor do campo 'Administração central' do estudo.",
     true
   );
-  const cont = entrada("Contingência / risco, % do custo direto", d.premissas.indiretos.contingenciaPct, "Regras da Azul Mob (ou padrão do simulador).");
   derivada("Administração + contingência, % do custo direto", `B${x}+B${cont}`, "O total que aparece nos custos do estudo.", true);
   lr++;
   ws.getRow(lr).getCell(1).value =
-    "Observação: cada estudo tem o seu lucro alvo, tributos (ISS × ICMS) e prazo; com eles o % do estudo muda um pouco. Valores digitados na base de custos valem acima do DRE.";
+    "Observação: cada estudo tem o seu lucro alvo, tributos e prazo; com eles o % do estudo muda um pouco. Valores digitados na base de custos valem acima do DRE.";
   ws.getRow(lr).getCell(1).font = { italic: true, size: 9 };
   for (let r = 5; r <= linhaTotal + 1; r++) {
     ws.getRow(r).getCell(2).numFmt = BRL;

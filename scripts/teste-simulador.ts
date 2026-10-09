@@ -249,6 +249,15 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
   // não depreciado = 290.000 − 46.400 × (0,5 + 1,5 + 2,5)/3.
   const medio = custoDeCapital({ ...v, metodoDepreciacao: "LINEAR", vidaUtilAnos: 5, valorResidualPct: 0.2, idadeInicialAnos: 0, remuneracaoSobreValorMedio: true }, 36);
   perto("remuneração sobre o valor médio não depreciado", medio.valorMedio, 290000 - 46400 * 1.5, "total");
+  // PERCENTUAL com veículo usado: o valor já é o de hoje (FIPE na idade
+  // atual), então a idade não tira nada dele — só os anos do contrato. Ônibus
+  // de 8 anos, R$ 280 mil, 12% a.a., 24 meses: meios = 280k − 33,6k × 0,5 e
+  // 280k − 33,6k × 1,5. Antes, os 8 anos de vida zeravam a remuneração.
+  const usado = custoDeCapital({ ...v, metodoDepreciacao: "PERCENTUAL", valor: 280000, depreciacaoAa: 0.12, idadeInicialAnos: 8, remuneracaoSobreValorMedio: true }, 24);
+  perto("PERCENTUAL usado: valor médio não desconta a idade", usado.valorMedio, 280000 - 33600, "total");
+  perto("PERCENTUAL usado: remuneração sobre o valor de hoje", usado.remuneracaoAnual, (280000 - 33600) * usado.taxaCapitalAa, "total");
+  const usadoNovo = custoDeCapital({ ...v, metodoDepreciacao: "PERCENTUAL", valor: 280000, depreciacaoAa: 0.12, idadeInicialAnos: 0, remuneracaoSobreValorMedio: true }, 24);
+  conferir("PERCENTUAL: idade não muda o capital", usado.valorMedio, usadoNovo.valorMedio);
 
   console.log("\n  Lucro Real × Presumido");
   const r0 = simular(base);
@@ -310,15 +319,15 @@ console.log("\nREVISÃO DE PRECIFICAÇÃO — adicional noturno, locação sem m
 
   console.log("\n  locação sem motorista: sem ISS/ICMS, presunção de 32% no Presumido");
   // SJP: PIS 0,65% + COFINS 3%. Item 2 sem motorista no Presumido:
-  // 0,65% + 3% + IRPJ 4,8% + CSLL 2,88% = 11,33% (com motorista eram
+  // 0,65% + 3% + IRPJ 8% (25% × 32%) + CSLL 2,88% = 14,53% (com motorista eram
   // 0,65 + 3 + 1,35 + 1,08 + ISS 3 = 9,08%). O item 1 (35% intermunicipal)
   // fica em 6,08% + 3% × 0,65 + 12% × 0,35 = 12,23%.
   const locacao = com((e) => {
     e.itens[1].comMotorista = false;
   });
-  perto("item 2 sem motorista: 0,65% + 3% + 4,8% + 2,88% = 11,33%", locacao.itens[1].tributosPct, 0.1133, "total");
+  perto("item 2 sem motorista: 0,65% + 3% + 8% + 2,88% = 14,53%", locacao.itens[1].tributosPct, 0.1453, "total");
   perto("item 1 com motorista continua em 12,23%", locacao.itens[0].tributosPct, 0.1223, "total");
-  perto("… e o lote pondera os tributos dos dois", locacao.lote!.tributosPct, (0.1223 * locacao.itens[0].faturamento + 0.1133 * locacao.itens[1].faturamento) / locacao.totais.faturamento, "total");
+  perto("… e o lote pondera os tributos dos dois", locacao.lote!.tributosPct, (0.1223 * locacao.itens[0].faturamento + 0.1453 * locacao.itens[1].faturamento) / locacao.totais.faturamento, "total");
   ok("… com a margem do item sem motorista perto do alvo (9%)", Math.abs(locacao.itens[1].margem! - 0.09) < 0.005, `margem ${locacao.itens[1].margem}`);
   const locacaoPropria = com((e) => {
     e.itens[1].comMotorista = false;

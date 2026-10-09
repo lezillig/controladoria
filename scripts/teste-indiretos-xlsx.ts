@@ -96,9 +96,16 @@ async function principal() {
     });
     const escolhas = { clientePublico: false, escolar: false, baseLocal: false };
     const adm = (parametros: [string, number][]) => premissasDaBase(base(parametros) as never, escolhas).premissas.indiretos.administracaoPct;
-    const p = premissasDaBase(base([["faturamento_medio", 100_000]]) as never, escolhas).premissas.preco;
-    const dv = 1 - p.lucroAlvoPct - p.pis - p.cofins - p.irpj - p.csll - Math.max(p.iss, p.icms) - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
-    const x = (a: number) => a / (dv - a);
+    const pb = premissasDaBase(base([["faturamento_medio", 100_000]]) as never, escolhas).premissas;
+    const p = pb.preco;
+    const c = pb.indiretos.contingenciaPct;
+    // Divisor com o ISS (transporte municipal), e a contingência, que o motor
+    // soma à administração sobre o custo direto: x = a·(1 + c)/(d − a).
+    const dv = 1 - p.lucroAlvoPct - p.pis - p.cofins - p.irpj - p.csll - p.iss - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
+    const x = (a: number) => (a * (1 + c)) / (dv - a);
+    // De volta à receita: com P = D·(1 + x + c)/d, a administração x·D é a·P.
+    const xa = adm([["faturamento_medio", 2_000_000], ["gerais", 10_000]]);
+    perto("a administração convertida volta a ser 9,5% da receita no preço", (xa * dv) / (1 + xa + c), 190_000 / 2_000_000, 1e-12);
     perto("pró-labore padrão de R$ 180 mil (10 mil gerais + 180 mil, sobre 2 milhões)", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000]]), x(190_000 / 2_000_000), 1e-9);
     perto("pró-labore digitado na base: 50 mil", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000], [CHAVE_PRO_LABORE, 50_000]]), x(60_000 / 2_000_000), 1e-9);
     perto("pró-labore zero (digitado como 0)", adm([["faturamento_medio", 2_000_000], ["gerais", 10_000], [CHAVE_PRO_LABORE, 0]]), x(10_000 / 2_000_000), 1e-9);
@@ -194,10 +201,11 @@ async function principal() {
     const a = total / 500_000;
     perto("a = total ÷ faturamento", celula("Resumo", "a —", "B"), a, 1e-9);
     const p = PREMISSAS_PADRAO.preco;
-    const d = 1 - p.lucroAlvoPct - (p.pis + p.cofins + p.irpj + p.csll + Math.max(p.iss, p.icms)) - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
+    const d = 1 - p.lucroAlvoPct - (p.pis + p.cofins + p.irpj + p.csll + p.iss) - (p.custoCapitalGiroAm * p.prazoRecebimentoDias) / 30 - p.despesasSobrePrecoPct;
+    const cc = PREMISSAS_PADRAO.indiretos.contingenciaPct;
     perto("d = o que sobra do preço", celula("Resumo", "d —", "B"), d, 1e-9);
-    perto("administração = a ÷ (d − a)", celula("Resumo", "Administração central, %", "B"), a / (d - a), 1e-9);
-    perto("administração + contingência", celula("Resumo", "Administração + contingência", "B"), a / (d - a) + PREMISSAS_PADRAO.indiretos.contingenciaPct, 1e-9);
+    perto("administração = a × (1 + c) ÷ (d − a)", celula("Resumo", "Administração central, %", "B"), (a * (1 + cc)) / (d - a), 1e-9);
+    perto("administração + contingência", celula("Resumo", "Administração + contingência", "B"), (a * (1 + cc)) / (d - a) + cc, 1e-9);
 
     console.log("\nPOR FORNECEDOR — a diferença para o DRE é zero quando tudo é título");
     const pf = aba("Por fornecedor");

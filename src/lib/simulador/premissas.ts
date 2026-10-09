@@ -115,7 +115,7 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("preco.csll", "CSLL", "% do faturamento", "pct", "Presumido: 9% sobre a presunção de 12% = 1,08%."),
   c("preco.iss", "ISS (transporte municipal)", "% do faturamento municipal", "pct", "Não incide nos itens sem motorista: locação de bem móvel não é serviço (Súmula Vinculante 31)."),
   c("preco.icms", "ICMS (transporte intermunicipal)", "% do faturamento intermunicipal", "pct", "Não incide nos itens sem motorista (locação, não transporte)."),
-  c("preco.irpjLocacao", "IRPJ — locação sem motorista (Presumido)", "% do faturamento", "pct", "Locação de bens móveis presume 32%: 15% × 32% = 4,8% da receita (+ adicional de 10% acima de R$ 20 mil/mês de lucro presumido). Só nos itens sem motorista e só no Presumido; no Real, vale o IR sobre o lucro."),
+  c("preco.irpjLocacao", "IRPJ — locação sem motorista (Presumido)", "% do faturamento", "pct", "Locação de bens móveis presume 32%: 25% × 32% = 8% da receita (15% + adicional de 10%, que incide acima de R$ 20 mil/mês de lucro presumido — como no transporte, 16% × 25% = 4%). Só nos itens sem motorista e só no Presumido; no Real, vale o IR sobre o lucro."),
   c("preco.csllLocacao", "CSLL — locação sem motorista (Presumido)", "% do faturamento", "pct", "9% × 32% = 2,88% da receita. Só nos itens sem motorista e só no Presumido."),
   c("preco.custoCapitalGiroAm", "Custo do capital de giro", "% a.m.", "pct"),
   c("preco.prazoRecebimentoDias", "Prazo de recebimento", "dias", "numero"),
@@ -329,13 +329,17 @@ export function premissasDaBase(base: BaseVigente | null, escolhas: EscolhasDaBa
   if (faturamento && faturamento > 0 && indiretos.some((v) => v !== null)) {
     const total = indiretos.reduce<number>((a, v) => a + (v ?? 0), 0);
     // O rateio sai sobre o FATURAMENTO, mas o motor aplica a administração
-    // sobre o CUSTO DIRETO. Com preço P = D·(1 + x)/d (d = divisor do preço:
-    // 1 − lucro − tributos − giro − despesas), querer x·D = a·P dá
-    // x = a/(d − a). Sem a conversão, 7% da receita virava 7% do custo.
+    // sobre o CUSTO DIRETO, junto com a contingência c. Com preço
+    // P = D·(1 + x + c)/d (d = divisor do preço: 1 − lucro − tributos − giro
+    // − despesas), querer x·D = a·P dá x = a·(1 + c)/(d − a). Sem a
+    // conversão, 7% da receita virava 7% do custo. O tributo sobre o serviço
+    // é o ISS, o do transporte municipal — o ICMS (12%) só vale no
+    // intermunicipal e inflava a conversão.
     const a = total / faturamento;
     const pr = premissas.preco;
-    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
-    const x = d > a ? a / (d - a) : a;
+    const c = premissas.indiretos.contingenciaPct;
+    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - pr.iss - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
+    const x = d > a ? (a * (1 + c)) / (d - a) : a;
     definir("indiretos.administracaoPct", x, fonteDe("faturamento_medio"), `indiretos da aba 4 ÷ faturamento médio = ${(a * 100).toFixed(2)}% da receita, convertido para ${(x * 100).toFixed(2)}% do custo direto`);
   } else deParam("indiretos.administracaoPct", "adm_pct");
 

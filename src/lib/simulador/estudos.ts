@@ -121,15 +121,19 @@ const DIAS_ROTA_INICIAL = { MENSAL: 22, PERIODO: 200 } as const;
 // código do perfil daquele tipo (ver perfilDasRotasNovas).
 export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | "itens" | "tiposVeiculo" | "shareIntermunicipal">) {
   const comMotorista = dados.tipoServico !== "LOCACAO_SM";
+  // Na locação sem motorista quem abastece é o cliente: o item nasce sem
+  // diesel e ARLA no custo (a caixa na Operação desfaz, se o contrato incluir).
+  const combustivelPorContaDoCliente = !comMotorista;
   const shareIntermunicipal = dados.shareIntermunicipal ?? 0;
   const periodo = dados.tipoServico === "ESCOLAR";
   const lista = (dados.itens ?? []).filter((i) => i.descricao.trim() !== "" || (i.km ?? 0) > 0 || i.administrativo === true).slice(0, 100);
-  if (lista.length === 0) return { itens: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista, shareIntermunicipal }], rotas: [] };
+  if (lista.length === 0) return { itens: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista, combustivelPorContaDoCliente, shareIntermunicipal }], rotas: [] };
   const itens = lista.map((i, k) => ({
     codigo: String(k + 1),
     descricao: i.descricao.trim().slice(0, 200) || (lista.length === 1 ? dados.nome : `Item ${k + 1}`),
     ordem: k,
     comMotorista,
+    combustivelPorContaDoCliente,
     shareIntermunicipal,
     precoMaximoKm: i.precoMaximoKm && i.precoMaximoKm > 0 ? i.precoMaximoKm : null,
   }));

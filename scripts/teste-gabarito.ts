@@ -120,12 +120,14 @@ async function principal() {
   // (95.000 + 9.000 + 7.500 + 32.000 + 0 + 6.000) ÷ 3.200.000
   {
     // Indiretos ÷ faturamento é % da RECEITA; o motor aplica sobre o custo
-    // direto, então a leitura converte: x = a/(d − a), d = divisor do preço.
+    // direto junto com a contingência c, então a leitura converte:
+    // x = a·(1 + c)/(d − a), d = divisor do preço com o ISS.
     // + o pró-labore fixo dos sócios, padrão de R$ 180 mil/mês.
     const a = (149500 + 180000) / 3200000;
     const pr = premissas.preco;
-    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - Math.max(pr.iss, pr.icms) - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
-    ok("administração = indiretos reais ÷ faturamento, convertida para o custo direto", Math.abs(premissas.indiretos.administracaoPct - a / (d - a)) < 1e-9, `${premissas.indiretos.administracaoPct}`);
+    const c = premissas.indiretos.contingenciaPct;
+    const d = 1 - pr.lucroAlvoPct - pr.pis - pr.cofins - pr.irpj - pr.csll - pr.iss - (pr.custoCapitalGiroAm * pr.prazoRecebimentoDias) / 30 - pr.despesasSobrePrecoPct;
+    ok("administração = indiretos reais ÷ faturamento, convertida para o custo direto", Math.abs(premissas.indiretos.administracaoPct - (a * (1 + c)) / (d - a)) < 1e-9, `${premissas.indiretos.administracaoPct}`);
     ok("administração convertida é maior que a razão sobre a receita", premissas.indiretos.administracaoPct > a);
   }
   ok("ARLA = 4,20 × 4,5% ÷ 8,7 km/l", Math.abs(premissas.variaveis.arlaKm - (4.2 * 0.045) / 8.7) < 1e-9, `${premissas.variaveis.arlaKm}`);

@@ -62,6 +62,9 @@ export type VeiculoGestao = {
   // história própria.
   model: string;
   type: string;
+  // Ano do veículo: a idade da frota, para a manutenção medida valer como a
+  // de um veículo dessa idade no simulador.
+  year?: number | null;
 };
 
 export type ClienteGestao = {
@@ -212,7 +215,7 @@ export async function lerMotoristas(companyId: string): Promise<MotoristaGestao[
 export async function lerVeiculos(companyId: string): Promise<VeiculoGestao[]> {
   return ler(
     () => prismaGestao.$queryRaw<VeiculoGestao[]>`
-      SELECT id, plate, status::text AS status, "currentMileage", model, type
+      SELECT id, plate, status::text AS status, "currentMileage", model, type, year
       FROM public."Vehicle"
       WHERE "companyId" = ${companyId}
     `,

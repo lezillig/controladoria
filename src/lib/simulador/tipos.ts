@@ -176,10 +176,11 @@ export type Premissas = {
     irpjCsllSobreLucroPct: number;
     creditoPisCofinsPct: number;
     // LOCAÇÃO SEM MOTORISTA no Presumido: a locação de bens móveis presume
-    // 32% (e não os 16%/12% do transporte) — IRPJ 15% × 32% = 4,8% e CSLL
-    // 9% × 32% = 2,88% da receita. Valem só nos itens sem motorista e só com
-    // `irpjCsllSobreLucroPct` zerado; no Real, o item segue `irpj`/`csll`.
-    // Opcionais como o adicional noturno: sem eles, 4,8% e 2,88%.
+    // 32% (e não os 16%/12% do transporte) — IRPJ 25% × 32% = 8% (15% mais o
+    // adicional de 10%) e CSLL 9% × 32% = 2,88% da receita. Valem só nos itens
+    // sem motorista e só com `irpjCsllSobreLucroPct` zerado; no Real, o item
+    // segue `irpj`/`csll`. Opcionais como o adicional noturno: sem eles, 8% e
+    // 2,88%.
     irpjLocacao?: number;
     csllLocacao?: number;
     // REFORMA TRIBUTÁRIA (reforma.ts): alíquotas de referência estimadas da

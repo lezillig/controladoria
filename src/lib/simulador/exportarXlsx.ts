@@ -382,7 +382,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("cofins", "COFINS", p.preco.cofins, "% s/ fat.", "", PCT2);
   premissa("irpj", "IRPJ (Presumido, sobre a receita)", p.preco.irpj, "% s/ fat.", "No Lucro Real, zero aqui e a alíquota vai para 'IRPJ + CSLL sobre o lucro'.", PCT2);
   premissa("csll", "CSLL (Presumido, sobre a receita)", p.preco.csll, "% s/ fat.", "", PCT2);
-  premissa("irpjLoc", "IRPJ — locação sem motorista (Presumido)", p.preco.irpjLocacao ?? IRPJ_LOCACAO_PADRAO, "% s/ fat.", "Locação de bens móveis presume 32%: 15% × 32% = 4,8%. Só nos itens sem motorista e só no Presumido.", PCT2);
+  premissa("irpjLoc", "IRPJ — locação sem motorista (Presumido)", p.preco.irpjLocacao ?? IRPJ_LOCACAO_PADRAO, "% s/ fat.", "Locação de bens móveis presume 32%: 25% × 32% = 8% (15% + adicional de 10%). Só nos itens sem motorista e só no Presumido.", PCT2);
   premissa("csllLoc", "CSLL — locação sem motorista (Presumido)", p.preco.csllLocacao ?? CSLL_LOCACAO_PADRAO, "% s/ fat.", "9% × 32% = 2,88%. Só nos itens sem motorista e só no Presumido.", PCT2);
   premissa("iss", "ISS (transporte municipal)", p.preco.iss, "% s/ fat. municipal", "Não incide na locação sem motorista (Súmula Vinculante 31).", PCT2);
   premissa("icms", "ICMS (transporte intermunicipal)", p.preco.icms, "% s/ fat. intermunicipal", "Não incide na locação sem motorista.", PCT2);
@@ -546,10 +546,12 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   }
   for (let k = 1; k <= ANOS; k++) {
     const ano = (c: string, F: Record<string, number>) => `(INT(${c}${F.idade})+${k})`;
-    // Depreciação acumulada antes do ano: m = anos já vividos (até a vida útil).
+    // Depreciação acumulada antes do ano. PERCENTUAL: o valor já é o de hoje,
+    // então só os anos anteriores do contrato. Nos outros, m = anos já vividos
+    // desde o 0 km (até a vida útil).
     const m = (c: string, F: Record<string, number>) => `MIN(${ano(c, F)}-1,${c}${F.n})`;
     const acumulada = (c: string, F: Record<string, number>) =>
-      `IF(${c}${F.metodo}="PERCENTUAL",${c}${F.valor}*${c}${F.depAa}*(${ano(c, F)}-1),IF(${c}${F.metodo}="LINEAR",${c}${F.depreciavel}/${c}${F.n}*${m(c, F)},${c}${F.depreciavel}*(${m(c, F)}*(${c}${F.n}+1)-${m(c, F)}*(${m(c, F)}+1)/2)/${c}${F.somaDig}))`;
+      `IF(${c}${F.metodo}="PERCENTUAL",${c}${F.valor}*${c}${F.depAa}*${k - 1},IF(${c}${F.metodo}="LINEAR",${c}${F.depreciavel}/${c}${F.n}*${m(c, F)},${c}${F.depreciavel}*(${m(c, F)}*(${c}${F.n}+1)-${m(c, F)}*(${m(c, F)}+1)/2)/${c}${F.somaDig}))`;
     linhasPerfil.push({
       chave: `meio${k}`,
       rotulo: `Valor não depreciado no meio do ano ${k}`,
@@ -744,8 +746,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("oleo", `${pf("oleo")}*${$("kmRod")}`, BRL);
     f("pneus", `((1-${t})*${pf("pneusAsf")}+${t}*${pf("pneusTerra")})*${$("kmRod")}`, BRL);
     // Corretiva só nos meses fora da garantia (prazo ou km, o que vier antes;
-    // km do veículo no início = idade × 12 × km/mês da rota).
-    const kmMes = `IF(${P.modo}="MENSAL",${$("kmRod")},IF(${P.meses}=0,0,${$("kmRod")}/${P.meses}))`;
+    // km do veículo no início = idade × 12 × km/mês de cada veículo da rota).
+    const kmMes = `IF(${$("veic")}>0,IF(${P.modo}="MENSAL",${$("kmRod")},IF(${P.meses}=0,0,${$("kmRod")}/${P.meses}))/${$("veic")},0)`;
     const gm = pf("garMeses");
     const gk = pf("garKm");
     const idadeMeses = `MAX(0,${pf("idade")})*12`;

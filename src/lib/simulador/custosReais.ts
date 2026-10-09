@@ -81,7 +81,7 @@ export type AbastecimentoReal = {
   combustivel: string | null;
 };
 
-export type VeiculoReal = { id: string; placa: string; modelo: string; tipo: string; status: string };
+export type VeiculoReal = { id: string; placa: string; modelo: string; tipo: string; status: string; ano?: number | null };
 export type PessoaReal = { id: string; ativo: boolean; funcao: string | null };
 export type UsoReal = { vehicleId: string; checkInAt: Date; kmInicial: number; kmFinal: number | null };
 
@@ -259,6 +259,15 @@ const CATEGORIAS: CategoriaVeiculo[] = ["CARRO", "VAN", "MICRO", "ONIBUS"];
 // Veículo que ainda gera seguro e IPVA: tudo o que não foi baixado. O veículo
 // parado na oficina continua segurado e licenciado.
 const veiculoAtivo = (v: VeiculoReal) => v.status !== "INATIVO";
+
+// Idade média da frota ativa no ano da referência, com uma casa: a idade do
+// veículo cuja manutenção o custo real por km mede.
+function idadeMediaDaFrota(dados: DadosReais): number | undefined {
+  const ano = dados.dataReferencia.getFullYear();
+  const idades = dados.veiculos.filter((v) => veiculoAtivo(v) && typeof v.ano === "number" && v.ano > 1950 && v.ano <= ano + 1).map((v) => Math.max(0, ano - (v.ano as number)));
+  if (idades.length === 0) return undefined;
+  return Math.round((idades.reduce((a, x) => a + x, 0) / idades.length) * 10) / 10;
+}
 
 // ---------------------------------------------------------------------------
 // Categorias do DRE
@@ -631,7 +640,15 @@ export function analisarCustosReais(dados: DadosReais): AnaliseCustosReais {
       return;
     }
     const meses = [...mesesComKm].sort((a, b) => a - b).map((i) => dados.meses[i]);
+    const idadeDaFrota = caminho === "variaveis.manutencaoAsfaltoKm" ? idadeMediaDaFrota(dados) : undefined;
+    if (caminho === "variaveis.manutencaoAsfaltoKm")
+      avisos.push(
+        idadeDaFrota === undefined
+          ? "Aplicar zera a corretiva do estudo (o número já a inclui). Sem o ano dos veículos na gestão, a idade de referência da manutenção fica a do estudo — confira."
+          : `Aplicar zera a corretiva do estudo (o número já a inclui) e põe a idade de referência da manutenção em ${idadeDaFrota.toLocaleString("pt-BR")} anos, a idade média da frota ativa.`
+      );
     indicadores.push({
+      ...(idadeDaFrota === undefined ? {} : { idadeDaFrota }),
       caminho,
       rotulo,
       valor: custo / 100 / kmTotal,
@@ -1083,7 +1100,7 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
         kmRodados: a.kmRodados === null ? null : Number(a.kmRodados),
         combustivel: a.combustivel,
       })),
-    veiculos: veiculosGestao.map((v) => ({ id: v.id, placa: v.plate, modelo: v.model, tipo: v.type, status: v.status })),
+    veiculos: veiculosGestao.map((v) => ({ id: v.id, placa: v.plate, modelo: v.model, tipo: v.type, status: v.status, ano: v.year })),
     pessoas: motoristasGestao.map((m) => ({ id: m.id, ativo: m.active, funcao: m.funcao })),
     usos: usosGestao
       .filter((u) => u.checkInAt < fimExclusivo)

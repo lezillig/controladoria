@@ -28,6 +28,9 @@ export type IndicadorReal = {
   amostra: number;
   confianca: Confianca;
   avisos: string[];
+  // Só na manutenção por km: a idade média da frota ativa (anos) — a idade do
+  // veículo cuja manutenção o número mede. Ausente sem o ano dos veículos.
+  idadeDaFrota?: number;
 };
 
 // Uma categoria da Omie como entrou no DRE de cada mês.
@@ -103,6 +106,19 @@ export function aplicarIndicadores(
     escreverCaminho(novas, caminho, ind.valor);
     origem[caminho] = { origem: "REAL", fonte, detalhe: ind.base };
     aplicados.push(caminho);
+
+    // A manutenção medida é a de uma frota com a idade dela e já traz a
+    // corretiva que essa frota teve. Sem isto, o motor a corrigia pela curva
+    // de idade a partir de 0 km (uma frota de 5 anos sairia ~1,4× mais cara)
+    // e somava a corretiva por cima.
+    if (caminho === "variaveis.manutencaoAsfaltoKm") {
+      novas.variaveis.corretivaKm = 0;
+      origem["variaveis.corretivaKm"] = { origem: "REAL", fonte, detalhe: "zerada: a manutenção medida já inclui a corretiva da frota" };
+      if (ind.idadeDaFrota !== undefined) {
+        novas.veiculo.idadeReferenciaManutencao = ind.idadeDaFrota;
+        origem["veiculo.idadeReferenciaManutencao"] = { origem: "REAL", fonte, detalhe: `idade média da frota ativa: ${ind.idadeDaFrota.toLocaleString("pt-BR")} anos` };
+      }
+    }
   }
 
   return { premissas: novas, perfis: novosPerfis, origem, aplicados, ignorados };

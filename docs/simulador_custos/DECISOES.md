@@ -158,7 +158,10 @@ motoristas por van, que bate com o limite inferior do GEIPOT.
 - **Locação sem motorista tem os tributos da locação.** O item sem motorista
   pagava ISS/ICMS e a presunção do transporte. Locação de bem móvel não tem
   ISS (Súmula Vinculante 31) nem ICMS, e no Presumido presume 32%: IRPJ
-  4,8% e CSLL 2,88% da receita (`preco.irpjLocacao`, `preco.csllLocacao`).
+  8% (25% × 32%, com o adicional de 10%, como o transporte já tem nos 4%) e
+  CSLL 2,88% da receita (`preco.irpjLocacao`, `preco.csllLocacao`). Até
+  out/2026 o IRPJ padrão era 4,8%, sem o adicional; os estudos salvos com
+  4,8% gravado continuam com ele até a premissa voltar à base.
   No Real, o item segue o regime (IR sobre o lucro). PIS/COFINS continuam os
   do estudo: um estudo misto no Real (transporte cumulativo, locação não
   cumulativa com crédito) ainda não é separado por item.
@@ -192,7 +195,11 @@ correções do motor acima:
 - **Administração central sobre o custo direto.** O motor aplica a
   administração sobre o custo direto, mas o custo real e a base a ofereciam
   como % da receita. O custo real mede sobre o custo direto do DRE; a base
-  converte `x = a/(d − a)`, com `d` o divisor do preço.
+  converte `x = a·(1 + c)/(d − a)`, com `d` o divisor do preço (com o ISS)
+  e `c` a contingência, que o motor soma à administração sobre o custo
+  direto. Até out/2026 a conversão ignorava `c` e usava o maior entre ISS e
+  ICMS (12%): com 8,8% da receita, a administração saía 15,95% do custo
+  direto, ou 9,5% do preço, e não 14,58% (8,8% do preço).
 - **IRPJ presumido com o adicional**: 4% da receita, com aviso quando o
   estudo usa 2,4%. Alertas críticos para IRPJ/CSLL na receita e no lucro ao
   mesmo tempo e para crédito de PIS/COFINS no regime cumulativo.
