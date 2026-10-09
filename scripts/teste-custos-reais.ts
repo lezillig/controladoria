@@ -379,6 +379,23 @@ console.log("\nAPLICAR os indicadores escolhidos");
   conferir("corretiva zerada, com origem REAL", [m.premissas.variaveis.corretivaKm, m.origem["variaveis.corretivaKm"]?.origem], [0, "REAL"]);
   conferir("idade de referência = idade da frota", [m.premissas.veiculo.idadeReferenciaManutencao, m.origem["veiculo.idadeReferenciaManutencao"]?.origem], [4.7, "REAL"]);
   conferir("a base não muda", base.variaveis.corretivaKm, PREMISSAS_PADRAO.variaveis.corretivaKm);
+
+  // O REAL CHEGA AOS TIPOS: o fator da frota (real ÷ padrão no mix de km)
+  // multiplica cada tipo — as rotas usam os tipos, não o veículo padrão.
+  const manutInd = achar(ind, "variaveis.manutencaoAsfaltoKm")!;
+  ok("manutenção: traz o fator sobre os tipos", typeof manutInd.fatorSobreOsTipos === "number" && manutInd.fatorSobreOsTipos > 0, `${manutInd.fatorSobreOsTipos}`);
+  // Mix do cartão: vans 4 × 540 = 2.160 e ônibus 2 × 600 = 1.200 km por mês, mais o carro.
+  const van = PERFIS_PADRAO.find((p) => p.codigo === "VAN")!;
+  const onibus = PERFIS_PADRAO.find((p) => p.codigo === "ONIBUS")!;
+  const mv = m.perfis.find((p) => p.codigo === "VAN")!;
+  const mo = m.perfis.find((p) => p.codigo === "ONIBUS")!;
+  perto("van: (manutenção + corretiva) × fator", mv.variaveis.manutencaoAsfaltoKm, Math.round((van.variaveis.manutencaoAsfaltoKm + (van.variaveis.corretivaKm ?? 0)) * manutInd.fatorSobreOsTipos! * 10000) / 10000);
+  perto("ônibus: o dele × o mesmo fator", mo.variaveis.manutencaoAsfaltoKm, Math.round((onibus.variaveis.manutencaoAsfaltoKm + (onibus.variaveis.corretivaKm ?? 0)) * manutInd.fatorSobreOsTipos! * 10000) / 10000);
+  conferir("tipos: corretiva zerada, piso desligado, idade da frota", [mv.variaveis.corretivaKm, mv.veiculo.pisoPecasAntp, mv.veiculo.idadeReferenciaManutencao], [0, false, 4.7]);
+  conferir("origem por tipo é REAL com a confiança", [m.origem["perfil:VAN:variaveis.manutencaoAsfaltoKm"]?.origem, m.origem["perfil:VAN:variaveis.manutencaoAsfaltoKm"]?.confianca], ["REAL", manutInd.confianca]);
+  // O bug que isto corrige: aplicado, o real mudava só o veículo padrão e o
+  // preço das rotas com tipo de veículo ficava igual.
+  ok("aplicar muda a manutenção das rotas com tipo de veículo", mv.variaveis.manutencaoAsfaltoKm !== van.variaveis.manutencaoAsfaltoKm);
 }
 
 console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");

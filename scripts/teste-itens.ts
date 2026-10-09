@@ -44,6 +44,8 @@ conferir("escolar: 10 vans × 1,07 motorista", escolar.rotas[0].motoristas, 10.7
 conferir("fretamento: a contratada abastece", quatro.itens[0].combustivelPorContaDoCliente, false);
 const franquia = itensIniciais({ nome: "L", tipoServico: "LOCACAO_SM", itens: [{ descricao: "carro", km: null, veiculos: 1 }] });
 conferir("locação sem km informado: nasce com a franquia de 2.000 km/mês", franquia.rotas.map((r) => r.kmReferencia), [2000]);
+const franquia3 = itensIniciais({ nome: "L", tipoServico: "LOCACAO_SM", itens: [{ descricao: "carros", km: null, veiculos: 3 }] });
+conferir("franquia por carro: 3 carros × 2.000 km", franquia3.rotas.map((r) => r.kmReferencia), [6000]);
 const semFranquia = itensIniciais({ nome: "F", tipoServico: "FRETAMENTO", itens: [{ descricao: "linha", km: null, veiculos: 1 }] });
 conferir("com motorista e sem km: sem rota (como antes)", semFranquia.rotas.length, 0);
 

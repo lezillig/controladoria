@@ -194,7 +194,9 @@ export const PREMISSAS_PADRAO: Premissas = {
     depreciacaoAa: Number(((1 - revendaLiquidaDeIr(0.1, 6)) / 6).toFixed(4)),
     custoCapitalAa: 0.18,
     seguroMes: 650,
-    ipvaLicenciamentoAno: 3900,
+    // Van de 15–19 lugares é micro-ônibus (CTB): IPVA de SP a 2% do valor
+    // (ipva.ts) + ~R$ 150 de licenciamento.
+    ipvaLicenciamentoAno: 5850,
     laudoVistoriaAno: 1800,
     rastreadorMes: 95,
     telemetriaExtraMes: 0,
@@ -717,7 +719,8 @@ export function perfisDaBase(base: BaseVigente | null): PerfilVeiculo[] {
         ...padrao.veiculo,
         valor: n(v, "valorFipe") ?? n(v, "valorCompra") ?? padrao.veiculo.valor,
         custoCapitalAa: n(v, "taxaAa") ?? padrao.veiculo.custoCapitalAa,
-        depreciacaoAa: vidaVenda && revenda !== null ? (1 - revenda) / Math.max(1, vidaVenda - idade) : padrao.veiculo.depreciacaoAa,
+        // A revenda volta líquida do IR/CSLL sobre o ganho, como no veículo padrão.
+        depreciacaoAa: vidaVenda && revenda !== null ? (1 - revendaLiquidaDeIr(revenda, vidaVenda)) / Math.max(1, vidaVenda - idade) : padrao.veiculo.depreciacaoAa,
         seguroMes: n(v, "seguroAnual") !== null ? n(v, "seguroAnual")! / 12 : padrao.veiculo.seguroMes,
         ipvaLicenciamentoAno: n(v, "ipvaLicenciamentoAnual") ?? padrao.veiculo.ipvaLicenciamentoAno,
         laudoVistoriaAno: n(v, "licencasAnual") ?? padrao.veiculo.laudoVistoriaAno,

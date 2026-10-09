@@ -12,7 +12,7 @@ import ExcelJS from "exceljs";
 import { readFileSync } from "node:fs";
 import { baseDaLeitura, lerGabarito } from "../src/lib/simulador/gabarito";
 import { CATALOGO_PARAMETROS, numeroDoTexto, todosOsNumeros } from "../src/lib/simulador/catalogo";
-import { CAMPOS_PREMISSAS, PERFIS_PADRAO, PREMISSAS_PADRAO, lerCaminho, premissasDaBase, problemasNasPremissas } from "../src/lib/simulador/premissas";
+import { CAMPOS_PREMISSAS, PERFIS_PADRAO, PREMISSAS_PADRAO, lerCaminho, perfisDaBase, premissasDaBase, problemasNasPremissas } from "../src/lib/simulador/premissas";
 import { simular } from "../src/lib/simulador/motor";
 import { historicoSaoJoseDosPinhais } from "../src/lib/simulador/historico";
 
@@ -99,6 +99,10 @@ async function principal() {
   // veículo está zerado no fisco (25% a.a.): a venda inteira é ganho de
   // capital, 34% de IR/CSLL — volta 90% × 0,66 = 59,4%. (1 − 0,594) ÷ 3.
   ok("depreciação econômica = (1 − 90% × 0,66) ÷ 3 anos", Math.abs(premissas.veiculo.depreciacaoAa - (1 - 0.9 * 0.66) / 3) < 1e-9, `${premissas.veiculo.depreciacaoAa}`);
+  // O tipo de veículo vindo da base usa a mesma revenda líquida — é ele que as
+  // rotas apontam.
+  const doModelo = perfisDaBase(base)[0];
+  ok("tipo de veículo da base: mesma depreciação líquida do IR", Math.abs(doModelo.veiculo.depreciacaoAa - premissas.veiculo.depreciacaoAa) < 1e-9, `${doModelo.veiculo.depreciacaoAa}`);
   conferir("seguro mensal = anual ÷ 12", premissas.veiculo.seguroMes, 650);
   ok("pneus = 6 × 1.150 ÷ 60.000", Math.abs(premissas.variaveis.pneusAsfaltoKm - 0.115) < 1e-9);
   conferir("benefícios = VR + cesta + VT + plano + seguro", premissas.pessoal.beneficiosPorFuncionario, 660 + 210 + 190 + 0 + 12);

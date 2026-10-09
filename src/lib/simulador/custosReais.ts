@@ -16,7 +16,7 @@ import {
   lerVeiculos,
 } from "@/lib/gestao/leitura";
 import { CATEGORIA_DO_TIPO, ROTULO_TIPO_VEICULO, type CategoriaVeiculo } from "./tipos";
-import { tipoDoTexto } from "./premissas";
+import { PERFIS_PADRAO, tipoDoTexto } from "./premissas";
 
 // OS CUSTOS REAIS DA EMPRESA, TRADUZIDOS EM PREMISSAS DO SIMULADOR.
 //
@@ -644,6 +644,34 @@ export function analisarCustosReais(dadosOriginais: DadosReais): AnaliseCustosRe
   const km = kmDaFrota(dados, cartao);
   if (!km && !semGestao) lacunas.push("Sem km da frota (nem no extrato do cartão, nem no uso de veículo): os custos por km não foram medidos.");
 
+  // O MIX DE KM POR TIPO DE VEÍCULO (do cartão; sem ele, do uso de veículo):
+  // pondera o valor padrão de cada tipo para comparar com o real da frota.
+  const kmPorTipo = new Map<CategoriaVeiculo, number>();
+  for (const r of cartao.validos) if (r.tipo) kmPorTipo.set(r.tipo, (kmPorTipo.get(r.tipo) ?? 0) + (r.a.kmRodados as number));
+  if (kmPorTipo.size === 0)
+    for (const u of dados.usos) {
+      const t = tipoDoVeiculo(veiculos.get(u.vehicleId));
+      const k = u.kmFinal === null ? 0 : u.kmFinal - u.kmInicial;
+      if (t && k > 0 && k <= KM_POR_USO_MAX) kmPorTipo.set(t, (kmPorTipo.get(t) ?? 0) + k);
+    }
+  const kmDosTipos = soma([...kmPorTipo.values()]);
+  const padraoNoMix = (valorDoTipo: (v: (typeof PERFIS_PADRAO)[number]["variaveis"]) => number): number | null => {
+    if (kmDosTipos <= 0) return null;
+    let s = 0;
+    for (const [t, k] of kmPorTipo) {
+      const p = PERFIS_PADRAO.find((x) => x.codigo === t);
+      if (!p) return null;
+      s += (k / kmDosTipos) * valorDoTipo(p.variaveis);
+    }
+    return s;
+  };
+  const mixTexto = [...kmPorTipo].sort((a, b) => b[1] - a[1]).map(([t, k]) => `${ROTULO_TIPO_VEICULO[t].toLowerCase()} ${pct(k / kmDosTipos, 0)}`).join(", ");
+  const PADRAO_DO_CAMPO: Record<string, (v: (typeof PERFIS_PADRAO)[number]["variaveis"]) => number> = {
+    "variaveis.manutencaoAsfaltoKm": (v) => v.manutencaoAsfaltoKm + (v.corretivaKm ?? 0),
+    "variaveis.pneusAsfaltoKm": (v) => v.pneusAsfaltoKm,
+    "variaveis.oleoLavagemKm": (v) => v.oleoLavagemKm,
+  };
+
   const custoPorKm = (caminho: string, rotulo: string, padrao: RegExp, exclui: RegExp | undefined, nomeDoPadrao: string, subgrupos: string[]) => {
     const sel = selecionar(dados, LINHAS_DO_VEICULO, padrao, exclui, subgrupos);
     if (sel.usadas.length === 0) {
@@ -660,8 +688,13 @@ export function analisarCustosReais(dadosOriginais: DadosReais): AnaliseCustosRe
     let confianca = confiancaPorMeses(mesesComKm.size);
     if (cls.rebaixa) confianca = rebaixar(confianca);
     if (km.rebaixa) confianca = rebaixar(confianca);
+    const real = custo / 100 / kmTotal;
+    const esperado = padraoNoMix(PADRAO_DO_CAMPO[caminho]);
+    const fatorSobreOsTipos = esperado && esperado > 0 ? real / esperado : undefined;
     const avisos = [
-      "Média da frota inteira (carros, vans, micros e ônibus juntos): um ônibus custa mais por km que uma van. Vale para o veículo padrão, não para um perfil.",
+      fatorSobreOsTipos === undefined
+        ? "Média da frota inteira (carros, vans, micros e ônibus juntos): sem o mix de km por tipo, vale só para o veículo padrão, não para os tipos de veículo das rotas."
+        : `Média da frota inteira (${mixTexto} do km). Os tipos padrão dariam ${esperado!.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} R$/km nesse mix; aplicar multiplica o valor de cada tipo de veículo por ${fatorSobreOsTipos.toLocaleString("pt-BR", { maximumFractionDigits: 3 })} — o real chega às rotas sem apagar a diferença entre van e ônibus.`,
       ...cls.avisos,
       ...km.avisos,
       ...avisoDeEscopo,
@@ -681,9 +714,10 @@ export function analisarCustosReais(dadosOriginais: DadosReais): AnaliseCustosRe
       );
     indicadores.push({
       ...(idadeDaFrota === undefined ? {} : { idadeDaFrota }),
+      ...(fatorSobreOsTipos === undefined ? {} : { fatorSobreOsTipos }),
       caminho,
       rotulo,
-      valor: custo / 100 / kmTotal,
+      valor: real,
       unidade: "R$/km",
       base: `Σ ${deCents(custo)} em ${listaDeNomes(sel.usadas.map((c) => c.descricao))} ÷ Σ ${fmtNumero(kmTotal)} km da frota (${km.descricaoFonte}), nos ${mesesComKm.size} mês(es) com km medido.`,
       periodo: periodoDosMeses(meses),

@@ -110,7 +110,10 @@ export function montarPainel(
   resultado: ResultadoSimulacao,
   opcoes: { margemMinima?: number | null; margemAlvo?: number | null; origem?: MapaOrigem | null; inicioContrato?: Date } = {}
 ): PainelDecisao {
-  const alvo = opcoes.margemAlvo ?? entrada.premissas.preco.lucroAlvoPct;
+  // O alvo é o lucro do PRÓPRIO estudo — é com ele que o preço foi calculado;
+  // o da base só vale quando o estudo não tem o dele. A mínima da base é o
+  // piso da empresa e continua valendo: estudo abaixo dela não se lança.
+  const alvo = entrada.premissas.preco.lucroAlvoPct ?? opcoes.margemAlvo ?? 0;
   const regrasDaBase = opcoes.margemMinima !== undefined && opcoes.margemMinima !== null;
   const minima = regrasDaBase ? (opcoes.margemMinima as number) : alvo / 2;
   const unidade = resultado.unidade;

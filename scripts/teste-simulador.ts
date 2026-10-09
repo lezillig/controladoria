@@ -303,7 +303,7 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
     // Piso: 285.000 × 6% ÷ 12 = 1.425/mês. Com 1.000 km/mês a manutenção
     // por km não chega lá: o piso completa como custo fixo.
     const pouco = it(1000);
-    perto("km baixo: manutenção do mês = piso de 6% a.a. do valor", pouco.manutencao + pouco.manutencaoFixa, (van.valor * 0.06) / 12, "total");
+    perto("km baixo: manutenção do mês = piso de 6% a.a. do valor, com a reserva", pouco.manutencao + pouco.manutencaoFixa, ((1 + pr.contrato.reservaTecnicaPct) * van.valor * 0.06) / 12, "total");
     const muito = it(8000);
     conferir("km alto: o piso não entra", muito.manutencaoFixa, 0);
     const semPiso = structuredClone(pr);
@@ -325,6 +325,10 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
     const ent = (r: object, p = pr) => ({ ...base, premissas: p, itens: [{ codigo: "1", descricao: "x", shareIntermunicipal: 0 }], rotas: [{ ...rota, ...r }] }) as unknown as EntradaSimulacao;
     const vr = (r: object) => simular(ent(r)).itens[0].valeRefeicao;
     perto("12 motoristas (fator 1,2) em 10 vans: VR de 10 postos", vr({}), 10 * 42 * 22, "total");
+    // 30 dias de operação: 10 postos × 30 = 300 dias-pessoa, cobertos pelos 12
+    // motoristas até 26 dias cada (312) — o teto é por pessoa, não por posto.
+    perto("30 dias: 10 postos × 30 dias, dentro de 12 × 26", vr({ diasMes: 30, kmReferencia: 6000 }), 300 * 42, "total");
+    perto("31 dias com 10 motoristas: teto de 10 × 26", vr({ diasMes: 31, kmReferencia: 6200, motoristas: 10 }), 260 * 42, "total");
     perto("1 motorista para 1 van: 1 posto", vr({ veiculos: 1, motoristas: 1 }), 42 * 22, "total");
     perto("dupla pegada (2,4 para 1 van): 2 postos", vr({ veiculos: 1, motoristas: 2.4 }), 2 * 42 * 22, "total");
     perto("dois turnos (24 para 10 vans): 20 postos", vr({ motoristas: 24, turnos: 2 }), 20 * 42 * 22, "total");
@@ -337,6 +341,9 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
     const comGlobal = structuredClone(pr);
     comGlobal.pessoal.horasNoturnasMes = 20;
     perto("com horário, as horas noturnas por motorista não somam de novo", simular(ent({ horarioInicio: "06:00", horarioFim: "18:00" }, comGlobal)).itens[0].salarios, dia, "total");
+    const comFator = structuredClone(pr);
+    comFator.pessoal.fatorJornadaNoturna = 1.2;
+    perto("com horário, o fator de jornada noturna não soma ao noturno do horário", simular(ent({ horarioInicio: "18:00", horarioFim: "23:30", noturno: true }, comFator)).itens[0].salarios, noite, "total");
 
     const comDsr = structuredClone(pr);
     comDsr.pessoal.dsrSobreHoraExtraPct = 1 / 6;

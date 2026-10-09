@@ -48,7 +48,10 @@ import type {
 // v2: adicional noturno sem a hora-base, tributos da locação sem motorista e
 // base do IR no Lucro Real (docs/simulador_custos/DECISOES.md, seção 6).
 // v3: vale-refeição por dia trabalhado (seção 7.1.2).
-export const VERSAO_MOTOR = "2026.10-v3";
+// v4: varredura de out/2026 (seções 7.10 a 7.13) — capital do usado, taxa
+// real, giro líquido, garantia por veículo, VR por posto, noturno pelo
+// horário, DSR, piso de peças.
+export const VERSAO_MOTOR = "2026.10-v4";
 // Teto de dias de vale-refeição por pessoa no mês: a escala 6x1 da referência
 // da convenção. Operação de 30 dias tem folguista; cada pessoa trabalha ~26.
 export const DIAS_VR_MAXIMO = 26;
@@ -245,7 +248,10 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   // horas extras e noturnas em horas, por motorista, a salário ÷ divisor. A
   // hora extra é hora a mais, paga inteira; a noturna já está no salário, e
   // só o adicional (com a hora reduzida) é custo novo — ver fatorHoraNoturna.
-  const fatorNoturno = r.noturno ? pessoal.fatorJornadaNoturna : 1;
+  // Com o horário da rota, o noturno sai das horas entre 22h e 5h (abaixo) e
+  // o fator agregado não soma de novo.
+  const temHorario = horasNoturnasDoHorario(r.horarioInicio, r.horarioFim) !== null;
+  const fatorNoturno = r.noturno && !temHorario ? pessoal.fatorJornadaNoturna : 1;
   // O salário do motorista é o do tipo de veículo da rota, quando há perfil.
   const salarioMotorista = perfil?.motorista.salario ?? pessoal.salarioMotorista;
   const valorHora = pessoal.divisorHorasMes > 0 ? salarioMotorista / pessoal.divisorHorasMes : 0;
@@ -259,8 +265,9 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const noturnasPorDia = horasNoturnasDoHorario(r.horarioInicio, r.horarioFim);
   const horasNoturnasPorMotorista = noturnasPorDia === null ? pessoal.horasNoturnasMes : 0;
   const adicionaisEmHoras =
-    valorHora * ((pessoal.horasExtras50Mes * 1.5 + pessoal.horasExtras100Mes * 2) * comDsr + horasNoturnasPorMotorista * fatorHoraNoturna(p));
-  const noturnoDoHorario = motoristas > 0 && noturnasPorDia ? r.veiculos * noturnasPorDia * diasNoMes * valorHora * fatorHoraNoturna(p) : 0;
+    valorHora * (pessoal.horasExtras50Mes * 1.5 + pessoal.horasExtras100Mes * 2 + horasNoturnasPorMotorista * fatorHoraNoturna(p)) * comDsr;
+  // O adicional noturno habitual também reflete no DSR (Súmula 60 do TST).
+  const noturnoDoHorario = motoristas > 0 && noturnasPorDia ? r.veiculos * noturnasPorDia * diasNoMes * valorHora * fatorHoraNoturna(p) * comDsr : 0;
   const salarios =
     motoristas * (salarioMotorista * (1 + pessoal.horaExtraPct * comDsr) * fatorNoturno + adicionaisEmHoras) +
     noturnoDoHorario +
@@ -274,7 +281,10 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   // motorista para 1 van tem 1 posto) — dupla pegada (2,4) dá 2.
   const fator = perfil?.motorista.motoristasPorVeiculo ?? 0;
   const postosDeMotorista = fator > 1 ? Math.max(Math.min(motoristas, r.veiculos * (r.turnos ?? 1)), motoristas / fator) : motoristas;
-  const valeRefeicao = (postosDeMotorista + monitoras) * (pessoal.valeRefeicaoDia ?? 0) * Math.min(DIAS_VR_MAXIMO, diasNoMes);
+  // O teto de 26 dias (escala 6x1) é por PESSOA: numa operação de 30 dias os
+  // postos somam 30 dias, cobertos por quem folga — até 26 dias de cada um.
+  const diasDeMotorista = Math.min(postosDeMotorista * diasNoMes, motoristas * DIAS_VR_MAXIMO);
+  const valeRefeicao = (diasDeMotorista + monitoras * Math.min(DIAS_VR_MAXIMO, diasNoMes)) * (pessoal.valeRefeicaoDia ?? 0);
   const beneficios = (motoristas + monitoras) * (pessoal.beneficiosPorFuncionario + pessoal.uniformeEpiPorFuncionario) + valeRefeicao;
 
   // Veículo — ter o veículo custa também para a reserva técnica;
@@ -307,10 +317,12 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   const kmPorMes = dividir(contrato.modo === "MENSAL" ? kmRodado : dividir(kmRodado, contrato.mesesCustoFixo), r.veiculos);
   const corretivaKm = (variaveis.corretivaKm ?? 0) * fatorIdade * fracaoForaDaGarantia(veiculo, contrato.vigenciaMeses, kmPorMes);
   const manutencaoKm = (pctAsfalto * variaveis.manutencaoAsfaltoKm + pctTerra * variaveis.manutencaoTerraKm) * fatorIdade + corretivaKm;
-  // PISO DE PEÇAS: no mês, a manutenção dos veículos operacionais não fica
+  // PISO DE PEÇAS: no mês, a manutenção da frota (com a reserva) não fica
   // abaixo de valor × coeficiente ANTP da idade ÷ 12; a diferença é custo fixo.
   const mesesNaApuracao = contrato.modo === "MENSAL" ? 1 : Math.max(1, contrato.mesesCustoFixo);
-  const pisoPecasMes = veiculo.pisoPecasAntp && perfil?.energia !== "ELETRICO" ? (r.veiculos * veiculo.valor * coeficienteMedioDoContrato(veiculo, contrato.vigenciaMeses)) / 12 : 0;
+  // Sobre a frota com a reserva: o veículo parado também envelhece (a ANTP
+  // aplica o coeficiente à frota patrimonial).
+  const pisoPecasMes = veiculo.pisoPecasAntp && perfil?.energia !== "ELETRICO" ? (comReserva * veiculo.valor * coeficienteMedioDoContrato(veiculo, contrato.vigenciaMeses)) / 12 : 0;
   const complementoPecas = Math.max(0, pisoPecasMes - (manutencaoKm * kmRodado) / mesesNaApuracao - manutencaoFixaPct);
   const manutencaoFixa = manutencaoFixaPct + complementoPecas;
 

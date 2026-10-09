@@ -231,7 +231,7 @@ function conferirEstrutura(nome: string, m: Mapa, entrada: EntradaSimulacao) {
   ok(`${nome}: perfil da rota achado com MATCH na aba Perfis`, formulasCom(wr, naRota("Coluna do perfil"), /^IFERROR\(MATCH\(.*'Perfis de Veículo'!/));
   ok(
     `${nome}: salários por rota com salário do perfil, noturno e horas`,
-    formulasCom(wr, naRota("Salários"), /INDEX\('Perfis de Veículo'.*IF\([A-Z]+\d+="S".*1\.5\+.*\*2\)\*\(1\+Premissas!\$B\$\d+\)\+IF\([A-Z]+\d+="",Premissas!\$B\$\d+,0\)\*Premissas!\$B\$\d+\).*\*Premissas!\$B\$\d+,0\)/)
+    formulasCom(wr, naRota("Salários"), /INDEX\('Perfis de Veículo'.*IF\(AND\([A-Z]+\d+="S",[A-Z]+\d+=""\).*1\.5\+.*\*2\+IF\([A-Z]+\d+="",Premissas!\$B\$\d+,0\)\*Premissas!\$B\$\d+\)\*\(1\+Premissas!\$B\$\d+\)\).*,0\)/)
   );
   ok(`${nome}: hora noturna custa só o adicional com a hora reduzida`, formulasCom(ws, [m.prem("Custo a mais por hora noturna")], /^\(1\+Premissas!\$B\$\d+\)\*60\/52\.5-1$/));
   ok(`${nome}: capital próprio por rota vem do perfil`, formulasCom(wr, naRota("Capital próprio"), /INDEX\('Perfis de Veículo'/));

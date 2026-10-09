@@ -103,16 +103,16 @@ function parcelasDosSalarios(entrada: Pick<EntradaSimulacao, "itens" | "rotas" |
     const atual = porSalario.get(chave) ?? { salario, motoristas: 0, tipo };
     atual.motoristas += r.motoristas;
     porSalario.set(chave, atual);
-    const fn = r.noturno ? pe.fatorJornadaNoturna : 1;
+    const fn = r.noturno && horasNoturnasDoHorario(r.horarioInicio, r.horarioFim) === null ? pe.fatorJornadaNoturna : 1;
     horaExtraMedia += r.motoristas * salario * pe.horaExtraPct * comDsr;
     noturnoFator += r.motoristas * salario * (1 + pe.horaExtraPct * comDsr) * (fn - 1);
     const valorHora = pe.divisorHorasMes > 0 ? salario / pe.divisorHorasMes : 0;
     const noturnasPorDia = horasNoturnasDoHorario(r.horarioInicio, r.horarioFim);
-    emHoras += r.motoristas * valorHora * ((pe.horasExtras50Mes * 1.5 + pe.horasExtras100Mes * 2) * comDsr + (noturnasPorDia === null ? pe.horasNoturnasMes : 0) * fatorHoraNoturna(p));
+    emHoras += r.motoristas * valorHora * (pe.horasExtras50Mes * 1.5 + pe.horasExtras100Mes * 2 + (noturnasPorDia === null ? pe.horasNoturnasMes : 0) * fatorHoraNoturna(p)) * comDsr;
     if (r.motoristas > 0 && noturnasPorDia) {
       const dias = diasNaApuracao(p, r);
       const diasNoMes = p.contrato.modo === "MENSAL" ? dias : p.contrato.mesesCustoFixo > 0 ? dias / p.contrato.mesesCustoFixo : 0;
-      noturnoDoHorario += r.veiculos * noturnasPorDia * diasNoMes * valorHora * fatorHoraNoturna(p);
+      noturnoDoHorario += r.veiculos * noturnasPorDia * diasNoMes * valorHora * fatorHoraNoturna(p) * comDsr;
     }
     monitoras += r.monitoras;
   }

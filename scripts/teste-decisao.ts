@@ -41,6 +41,7 @@ console.log("SJP — lote a R$ 9,31, margem ~9%, equilíbrio ~68%");
 
   const alta = montarPainel(entrada, r, { margemMinima: 0.12, margemAlvo: 0.15 });
   conferir("margem mínima acima da obtida: não lançar", alta.veredicto, "NAO_LANCAR");
+  conferir("o alvo é o lucro do estudo, não o da base", alta.faixa.alvo, f.alvo);
   const semRegras = montarPainel(entrada, r);
   conferir("sem regras da base: margem mínima = metade do alvo", semRegras.margemMinima, 0.045);
   ok("… e avisa", semRegras.alertas.some((a) => a.titulo === "Margem mínima padrão"));

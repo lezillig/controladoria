@@ -144,7 +144,9 @@ export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | 
   // horário da operação — o resto se ajusta na aba Operação.
   const rotas = lista.flatMap((i, k) => {
     const jornada = jornadaDoHorario(i.horarioInicio, i.horarioFim);
-    const km = i.km && i.km > 0 ? i.km : !comMotorista && i.administrativo !== true ? FRANQUIA_LOCACAO_KM : 0;
+    // A franquia da locação é por carro: a rota de N carros nasce com N × 2.000 km.
+    const carros = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;
+    const km = i.km && i.km > 0 ? i.km : !comMotorista && i.administrativo !== true ? FRANQUIA_LOCACAO_KM * carros : 0;
     if (km === 0 && i.administrativo !== true && !jornada) return [];
     const tipo = i.tipoVeiculo ?? dados.tiposVeiculo?.[0] ?? null;
     const veiculos = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;

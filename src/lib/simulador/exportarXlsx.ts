@@ -589,7 +589,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   });
   linhasPerfil.push({
     chave: "pisoMes",
-    rotulo: "Piso de peças (ANTP) por veículo operacional",
+    rotulo: "Piso de peças (ANTP) por veículo (com a reserva)",
     unidade: "R$/mês",
     fmt: BRL,
     formula: (c, F) =>
@@ -763,8 +763,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
       "salarios",
       // Com o horário da rota, as horas noturnas saem dele (por veículo, nos
       // dias de operação) e substituem as horas noturnas por motorista.
-      `${$("mot")}*(${sal}*(1+${P.he}*(1+${P.dsr}))*IF(${$("noturno")}="S",${P.fatorNoturno},1)+${hora}*((${P.he50}*1.5+${P.he100}*2)*(1+${P.dsr})+IF(${$("hNotDia")}="",${P.hNoturnas},0)*${P.fatorHoraNoturna}))` +
-        `+IF(AND(${$("mot")}>0,N(${$("hNotDia")})>0),${$("veic")}*${$("hNotDia")}*${diasNoMes}*${hora}*${P.fatorHoraNoturna},0)+${$("mon")}*${P.salMon}`,
+      `${$("mot")}*(${sal}*(1+${P.he}*(1+${P.dsr}))*IF(AND(${$("noturno")}="S",${$("hNotDia")}=""),${P.fatorNoturno},1)+${hora}*(${P.he50}*1.5+${P.he100}*2+IF(${$("hNotDia")}="",${P.hNoturnas},0)*${P.fatorHoraNoturna})*(1+${P.dsr}))` +
+        `+IF(AND(${$("mot")}>0,N(${$("hNotDia")})>0),${$("veic")}*${$("hNotDia")}*${diasNoMes}*${hora}*${P.fatorHoraNoturna}*(1+${P.dsr}),0)+${$("mon")}*${P.salMon}`,
       BRL
     );
     const t = $("pctTerra");
@@ -797,14 +797,15 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("adCap", `${vr}*${pf("mAdCap")}`, BRL);
     // Manutenção fixa + o que faltar para o piso de peças (ANTP) no mês.
     const mesesApur = `IF(${P.modo}="MENSAL",1,MAX(1,${P.meses}))`;
-    f("manF", `${vr}*${pf("mManF")}+MAX(0,${$("veic")}*${pf("pisoMes")}-${$("manut")}/${mesesApur}-${vr}*${pf("mManF")})`, BRL);
+    f("manF", `${vr}*${pf("mManF")}+MAX(0,${vr}*${pf("pisoMes")}-${$("manut")}/${mesesApur}-${vr}*${pf("mManF")})`, BRL);
     f("remP", `${vr}*${pf("mRemP")}`, BRL);
     const pelaDistancia = `IF(${$("kmDia")}>0,${$("kmRef")}/${$("kmDia")},0)`;
     f("dias", `IF(${P.modo}="MENSAL",IF(${$("diasMes")}="",${pelaDistancia},${$("diasMes")}),IF(${pelaDistancia}<>0,${pelaDistancia},N(${$("diasMes")})*${P.meses}))`, NUM);
     f("diarias", `${$("veic")}*${$("dias")}`, NUM);
     // VR de quem está no posto: os motoristas a mais do fator do perfil cobrem
     // ausências, e o ausente não recebe.
-    f("vr", `(IF(N(${pf("mpv")})>1,MAX(MIN(${$("mot")},${$("veic")}*${$("turnos")}),${$("mot")}/${pf("mpv")}),${$("mot")})+${$("mon")})*${P.vrDia}*MIN(${DIAS_VR_MAXIMO},${diasNoMes})`, BRL);
+    const postos = `IF(N(${pf("mpv")})>1,MAX(MIN(${$("mot")},${$("veic")}*${$("turnos")}),${$("mot")}/${pf("mpv")}),${$("mot")})`;
+    f("vr", `(MIN(${postos}*${diasNoMes},${$("mot")}*${DIAS_VR_MAXIMO})+${$("mon")}*MIN(${DIAS_VR_MAXIMO},${diasNoMes}))*${P.vrDia}`, BRL);
     f("horas", `${$("veic")}*${$("dias")}*N(${$("horasDia")})`, NUM);
     f("semHoras", `IF(N(${$("horasDia")})=0,1,0)`, INT);
     wr.getRow(l).height = 30;

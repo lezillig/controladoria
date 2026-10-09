@@ -31,7 +31,14 @@ export type IndicadorReal = {
   // Só na manutenção por km: a idade média da frota ativa (anos) — a idade do
   // veículo cuja manutenção o número mede. Ausente sem o ano dos veículos.
   idadeDaFrota?: number;
+  // Só nos custos por km da frota inteira (manutenção, pneus, óleo): o real ÷
+  // o que os tipos de veículo padrão dariam no mix de km da frota. Aplicar
+  // multiplica o valor de cada tipo por ele — o real chega às rotas sem
+  // apagar a diferença entre van e ônibus.
+  fatorSobreOsTipos?: number;
 };
+
+const arred4 = (x: number) => Math.round(x * 10000) / 10000;
 
 // Uma categoria da Omie como entrou no DRE de cada mês.
 // Leva às premissas os indicadores que a pessoa escolheu, marcando a origem
@@ -111,7 +118,41 @@ export function aplicarIndicadores(
     // corretiva que essa frota teve. Sem isto, o motor a corrigia pela curva
     // de idade a partir de 0 km (uma frota de 5 anos sairia ~1,4× mais cara)
     // e somava a corretiva por cima.
+    // A FROTA CALIBRA OS TIPOS: as rotas usam os tipos de veículo, e sem isto o
+    // custo real mudava só o veículo padrão e não chegava ao preço.
+    const fator = ind.fatorSobreOsTipos;
+    if (fator !== undefined && Number.isFinite(fator) && fator > 0) {
+      const marcar = (p: PerfilVeiculo, campo: string, detalhe: string) =>
+        (origem[`perfil:${p.codigo}:${campo}`] = { origem: "REAL", fonte, detalhe, confianca: ind.confianca });
+      const fx = fator.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
+      for (const p of novosPerfis) {
+        if (p.energia === "ELETRICO") continue;
+        const v = p.variaveis;
+        if (caminho === "variaveis.manutencaoAsfaltoKm") {
+          const corretiva = v.corretivaKm ?? 0;
+          v.manutencaoAsfaltoKm = arred4((v.manutencaoAsfaltoKm + corretiva) * fator);
+          v.manutencaoTerraKm = arred4((v.manutencaoTerraKm + corretiva) * fator);
+          v.corretivaKm = 0;
+          p.veiculo.pisoPecasAntp = false;
+          if (ind.idadeDaFrota !== undefined) p.veiculo.idadeReferenciaManutencao = ind.idadeDaFrota;
+          marcar(p, "variaveis.manutencaoAsfaltoKm", `(manutenção + corretiva do tipo) × ${fx}, o fator da frota medida`);
+          marcar(p, "variaveis.manutencaoTerraKm", `(manutenção + corretiva do tipo) × ${fx}, o fator da frota medida`);
+          marcar(p, "variaveis.corretivaKm", "zerada: a manutenção medida já inclui a corretiva");
+          marcar(p, "veiculo.pisoPecasAntp", "desligado: vale a manutenção medida da frota");
+        } else if (caminho === "variaveis.pneusAsfaltoKm") {
+          v.pneusAsfaltoKm = arred4(v.pneusAsfaltoKm * fator);
+          v.pneusTerraKm = arred4(v.pneusTerraKm * fator);
+          marcar(p, "variaveis.pneusAsfaltoKm", `pneus do tipo × ${fx}, o fator da frota medida`);
+          marcar(p, "variaveis.pneusTerraKm", `pneus do tipo × ${fx}, o fator da frota medida`);
+        } else if (caminho === "variaveis.oleoLavagemKm") {
+          v.oleoLavagemKm = arred4(v.oleoLavagemKm * fator);
+          marcar(p, "variaveis.oleoLavagemKm", `óleo e lavagem do tipo × ${fx}, o fator da frota medida`);
+        }
+      }
+    }
+
     if (caminho === "variaveis.manutencaoAsfaltoKm") {
+      novas.veiculo.pisoPecasAntp = false;
       novas.variaveis.corretivaKm = 0;
       origem["variaveis.corretivaKm"] = { origem: "REAL", fonte, detalhe: "zerada: a manutenção medida já inclui a corretiva da frota", confianca: ind.confianca };
       if (ind.idadeDaFrota !== undefined) {

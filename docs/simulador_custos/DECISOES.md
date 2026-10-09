@@ -716,6 +716,36 @@ ser o contratado inteiro). Ônibus: veículo-mês de R$ 50.804 para R$ 47.539.
   IR/CSLL e deduções, e as operações entre as empresas (custo e receita) na
   visão do grupo. O valor que saiu aparece na tela.
 
+## 7.14 Correções da auditoria independente (out/2026)
+
+Três auditorias: conta refeita à mão em 6 casos (o motor bateu centavo por
+centavo), processo de ponta a ponta e validação contra o DRE real. Corrigido:
+
+- **O custo real chega aos tipos de veículo.** Manutenção, pneus e óleo
+  medidos mudavam só o veículo padrão; as rotas usam os tipos e o preço não
+  mudava. Agora o indicador traz o fator da frota (real ÷ o que os tipos
+  padrão dariam no mix de km da frota) e aplicar multiplica cada tipo por ele.
+  Na manutenção, a corretiva vai a zero, a idade de referência vira a da
+  frota e o piso de peças desliga (vale o medido).
+- **Revenda líquida de IR também nos tipos vindos da base** (antes só no
+  veículo padrão).
+- **Fator de jornada noturna não soma ao noturno do horário**; o adicional
+  noturno habitual reflete no DSR (Súmula 60 do TST).
+- **Teto de 26 dias do VR por pessoa**, não por posto: VR = mín(postos ×
+  dias; motoristas × 26).
+- **Piso de peças sobre a frota com a reserva** (o veículo parado envelhece).
+- **Franquia da locação por carro** (N carros × 2.000 km).
+- **IPVA da van a 2%** (micro-ônibus no CTB): R$ 5.850/ano.
+- **Painel de decisão com o alvo do próprio estudo**; a mínima da base segue
+  como piso da empresa.
+- **Versão do motor 2026.10-v4.**
+
+Pontos que dependem de decisão (ver o relatório da auditoria): seguro de
+casco nos tipos padrão (a Azul tem só APP), oficina própria na administração
+e mão de obra na manutenção por km (contagem dupla), administração padrão sem
+base (7% do custo direto contra ~13% do DRE), monitora no escolar, licenças
+nos encargos com o fator de motoristas, hora extra no recesso do escolar.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com
