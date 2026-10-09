@@ -231,7 +231,7 @@ function conferirEstrutura(nome: string, m: Mapa, entrada: EntradaSimulacao) {
   ok(`${nome}: perfil da rota achado com MATCH na aba Perfis`, formulasCom(wr, naRota("Coluna do perfil"), /^IFERROR\(MATCH\(.*'Perfis de Veículo'!/));
   ok(
     `${nome}: salários por rota com salário do perfil, noturno e horas`,
-    formulasCom(wr, naRota("Salários"), /INDEX\('Perfis de Veículo'.*IF\([A-Z]+\d+="S".*1\.5\+.*\*2\+Premissas!\$B\$\d+\*Premissas!\$B\$\d+\)/)
+    formulasCom(wr, naRota("Salários"), /INDEX\('Perfis de Veículo'.*IF\([A-Z]+\d+="S".*1\.5\+.*\*2\)\*\(1\+Premissas!\$B\$\d+\)\+IF\([A-Z]+\d+="",Premissas!\$B\$\d+,0\)\*Premissas!\$B\$\d+\).*\*Premissas!\$B\$\d+,0\)/)
   );
   ok(`${nome}: hora noturna custa só o adicional com a hora reduzida`, formulasCom(ws, [m.prem("Custo a mais por hora noturna")], /^\(1\+Premissas!\$B\$\d+\)\*60\/52\.5-1$/));
   ok(`${nome}: capital próprio por rota vem do perfil`, formulasCom(wr, naRota("Capital próprio"), /INDEX\('Perfis de Veículo'/));
@@ -431,6 +431,15 @@ const casos: Caso[] = [
   }),
   variar("Holambra diária", HOL, (e) => {
     e.unidadePreco = "DIARIA";
+  }),
+  variar("SJP horário noturno, turnos, DSR e VR por posto", SJP, (e) => {
+    e.premissas.pessoal.dsrSobreHoraExtraPct = 1 / 6;
+    e.premissas.pessoal.valeRefeicaoDia = 42;
+    e.premissas.pessoal.horasNoturnasMes = 10;
+    e.premissas.perfis = perfisPadrao();
+    e.rotas[0] = { ...e.rotas[0], perfilVeiculo: "VAN", horarioInicio: "18:00", horarioFim: "23:30", motoristas: e.rotas[0].veiculos * 2.4, turnos: 2 };
+    e.rotas[1] = { ...e.rotas[1], perfilVeiculo: "VAN", horarioInicio: "04:30", horarioFim: "13:00", motoristas: 1 };
+    e.rotas[2] = { ...e.rotas[2], perfilVeiculo: "VAN", horarioInicio: "06:00", horarioFim: "18:00" };
   }),
   variar("SJP taxa real do capital + giro pelo prazo líquido", SJP, (e) => {
     e.premissas.contrato.inflacaoAa = 0.045;

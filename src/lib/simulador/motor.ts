@@ -1,3 +1,4 @@
+import { horasNoturnasDoHorario } from "./horario";
 import { fatorManutencaoPorIdade, fracaoForaDaGarantia } from "./idadeManutencao";
 import type {
   Cenarios,
@@ -72,6 +73,7 @@ export const IRPJ_LOCACAO_PADRAO = 0.08;
 export const CSLL_LOCACAO_PADRAO = 0.0288; // 9% × 32%
 export const INFLACAO_PADRAO = 0.045; // Focus, out/2026
 export const PRAZO_PAGAMENTO_CUSTOS_PADRAO = 25; // dias
+export const DSR_SOBRE_HORA_EXTRA_PADRAO = 0.1667; // ~4,33 domingos ÷ 26 dias úteis
 
 // Custo a mais de cada hora de relógio noturna que já está na jornada: o
 // salário paga a hora-base; a hora noturna reduzida (52′30″) faz a hora de
@@ -118,7 +120,7 @@ export function financeiroPct(p: Premissas): number {
 
 // Dias de operação da rota numa apuração. MENSAL: os dias/mês informados (ou
 // km ÷ km/dia). PERIODO: os dias do período (km do período ÷ km/dia).
-function diasNaApuracao(p: Premissas, r: Rota): number {
+export function diasNaApuracao(p: Premissas, r: Rota): number {
   const pelaDistancia = r.kmDia > 0 ? r.kmReferencia / r.kmDia : 0;
   if (p.contrato.modo === "MENSAL") return r.diasMes ?? pelaDistancia;
   return pelaDistancia || (r.diasMes ?? 0) * p.contrato.mesesCustoFixo;
@@ -247,17 +249,32 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   // O salário do motorista é o do tipo de veículo da rota, quando há perfil.
   const salarioMotorista = perfil?.motorista.salario ?? pessoal.salarioMotorista;
   const valorHora = pessoal.divisorHorasMes > 0 ? salarioMotorista / pessoal.divisorHorasMes : 0;
+  const dias = diasNaApuracao(p, r);
+  const diasNoMes = contrato.modo === "MENSAL" ? dias : dividir(dias, contrato.mesesCustoFixo);
+  // A hora extra habitual reflete no descanso semanal remunerado.
+  const comDsr = 1 + (pessoal.dsrSobreHoraExtraPct ?? 0);
+  // HORAS NOTURNAS: com o horário da rota, as horas entre 22h e 5h saem dele —
+  // por veículo, em todos os dias de operação, quem quer que esteja no volante
+  // — e substituem as horas noturnas por motorista das premissas nessa rota.
+  const noturnasPorDia = horasNoturnasDoHorario(r.horarioInicio, r.horarioFim);
+  const horasNoturnasPorMotorista = noturnasPorDia === null ? pessoal.horasNoturnasMes : 0;
   const adicionaisEmHoras =
-    valorHora * (pessoal.horasExtras50Mes * 1.5 + pessoal.horasExtras100Mes * 2 + pessoal.horasNoturnasMes * fatorHoraNoturna(p));
+    valorHora * ((pessoal.horasExtras50Mes * 1.5 + pessoal.horasExtras100Mes * 2) * comDsr + horasNoturnasPorMotorista * fatorHoraNoturna(p));
+  const noturnoDoHorario = motoristas > 0 && noturnasPorDia ? r.veiculos * noturnasPorDia * diasNoMes * valorHora * fatorHoraNoturna(p) : 0;
   const salarios =
-    motoristas * (salarioMotorista * (1 + pessoal.horaExtraPct) * fatorNoturno + adicionaisEmHoras) +
+    motoristas * (salarioMotorista * (1 + pessoal.horaExtraPct * comDsr) * fatorNoturno + adicionaisEmHoras) +
+    noturnoDoHorario +
     monitoras * pessoal.salarioMonitora;
   const encargos = salarios * pessoal.encargosPct;
   // Vale-refeição: por dia trabalhado, nos dias de operação da rota no mês
-  // (5x2 ≈ 22), até o teto da escala 6x1.
-  const dias = diasNaApuracao(p, r);
-  const diasNoMes = contrato.modo === "MENSAL" ? dias : dividir(dias, contrato.mesesCustoFixo);
-  const valeRefeicao = (motoristas + monitoras) * (pessoal.valeRefeicaoDia ?? 0) * Math.min(DIAS_VR_MAXIMO, diasNoMes);
+  // (5x2 ≈ 22), até o teto da escala 6x1 — para quem está no posto. Os
+  // motoristas a mais do fator do tipo de veículo (1,2) cobrem folgas, faltas
+  // e férias: o ausente não recebe VR, e o dia é um só. Postos = motoristas ÷
+  // fator, e nunca menos que um por veículo e turno (quem informou 1
+  // motorista para 1 van tem 1 posto) — dupla pegada (2,4) dá 2.
+  const fator = perfil?.motorista.motoristasPorVeiculo ?? 0;
+  const postosDeMotorista = fator > 1 ? Math.max(Math.min(motoristas, r.veiculos * (r.turnos ?? 1)), motoristas / fator) : motoristas;
+  const valeRefeicao = (postosDeMotorista + monitoras) * (pessoal.valeRefeicaoDia ?? 0) * Math.min(DIAS_VR_MAXIMO, diasNoMes);
   const beneficios = (motoristas + monitoras) * (pessoal.beneficiosPorFuncionario + pessoal.uniformeEpiPorFuncionario) + valeRefeicao;
 
   // Veículo — ter o veículo custa também para a reserva técnica;

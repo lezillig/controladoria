@@ -82,8 +82,9 @@ console.log("\nUM MOTORISTA DE VAN (o estudo do print)");
   const r = simular(e);
   const s = separarMaoDeObraEVeiculo(r.itens, premissas, e);
   const [sal, enc, ben] = s.componentes.maoDeObra;
-  perto("salários = 2.986,75 × 1,14", sal.valor, 3404.90);
-  perto("encargos = 62,45% dos salários", enc.valor, 2126.36);
+  // Horas extras de 14% com o reflexo de 1/6 no DSR: 2.986,75 × (1 + 0,14 × 1,1667).
+  perto("salários = 2.986,75 × (1 + 14% × 1,1667)", sal.valor, 2986.75 * (1 + 0.14 * 1.1667));
+  perto("encargos = 62,45% dos salários", enc.valor, 2986.75 * (1 + 0.14 * 1.1667) * premissas.pessoal.encargosPct);
   ok("encargos abertos nos grupos A a D", enc.sub?.map((x) => x.rotulo[0]).join("") === "ABCD");
   // 4.400 km ÷ 200 km/dia = 22 dias (segunda a sexta): VR R$ 42 × 22 = R$ 924.
   perto("VR por dia trabalhado: 42 × 22 dias", r.itens[0].valeRefeicao, 924);

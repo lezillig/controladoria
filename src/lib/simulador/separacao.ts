@@ -1,6 +1,7 @@
 import { BENEFICIOS_MOTORISTA_TRANSFRETUR, CONVENCOES, ODONTO_FAMILIAR_TRANSFRETUR, PLANO_MEDICO_TRANSFRETUR } from "./convencoes";
 import { calcularEncargos, ENCARGOS_PADRAO } from "./maoDeObra";
-import { fatorHoraNoturna } from "./motor";
+import { horasNoturnasDoHorario } from "./horario";
+import { diasNaApuracao, fatorHoraNoturna } from "./motor";
 import type { ComposicaoItem, EntradaSimulacao, Premissas } from "./tipos";
 
 // MÃO DE OBRA × VEÍCULO — a mesma composição do motor, lida em duas contas.
@@ -90,7 +91,8 @@ function parcelasDosSalarios(entrada: Pick<EntradaSimulacao, "itens" | "rotas" |
   const p = entrada.premissas;
   const pe = p.pessoal;
   const porSalario = new Map<string, { salario: number; motoristas: number; tipo: string }>();
-  let horaExtraMedia = 0, noturnoFator = 0, emHoras = 0, monitoras = 0;
+  let horaExtraMedia = 0, noturnoFator = 0, emHoras = 0, noturnoDoHorario = 0, monitoras = 0;
+  const comDsr = 1 + (pe.dsrSobreHoraExtraPct ?? 0);
   for (const r of entrada.rotas) {
     const item = entrada.itens.find((i) => i.codigo === r.item);
     if (!item || !codigos.has(item.codigo) || item.comMotorista === false) continue;
@@ -102,10 +104,16 @@ function parcelasDosSalarios(entrada: Pick<EntradaSimulacao, "itens" | "rotas" |
     atual.motoristas += r.motoristas;
     porSalario.set(chave, atual);
     const fn = r.noturno ? pe.fatorJornadaNoturna : 1;
-    horaExtraMedia += r.motoristas * salario * pe.horaExtraPct;
-    noturnoFator += r.motoristas * salario * (1 + pe.horaExtraPct) * (fn - 1);
+    horaExtraMedia += r.motoristas * salario * pe.horaExtraPct * comDsr;
+    noturnoFator += r.motoristas * salario * (1 + pe.horaExtraPct * comDsr) * (fn - 1);
     const valorHora = pe.divisorHorasMes > 0 ? salario / pe.divisorHorasMes : 0;
-    emHoras += r.motoristas * valorHora * (pe.horasExtras50Mes * 1.5 + pe.horasExtras100Mes * 2 + pe.horasNoturnasMes * fatorHoraNoturna(p));
+    const noturnasPorDia = horasNoturnasDoHorario(r.horarioInicio, r.horarioFim);
+    emHoras += r.motoristas * valorHora * ((pe.horasExtras50Mes * 1.5 + pe.horasExtras100Mes * 2) * comDsr + (noturnasPorDia === null ? pe.horasNoturnasMes : 0) * fatorHoraNoturna(p));
+    if (r.motoristas > 0 && noturnasPorDia) {
+      const dias = diasNaApuracao(p, r);
+      const diasNoMes = p.contrato.modo === "MENSAL" ? dias : p.contrato.mesesCustoFixo > 0 ? dias / p.contrato.mesesCustoFixo : 0;
+      noturnoDoHorario += r.veiculos * noturnasPorDia * diasNoMes * valorHora * fatorHoraNoturna(p);
+    }
     monitoras += r.monitoras;
   }
   const parcelas: Componente[] = [...porSalario.values()].map((x) => ({
@@ -113,9 +121,12 @@ function parcelasDosSalarios(entrada: Pick<EntradaSimulacao, "itens" | "rotas" |
     valor: x.motoristas * x.salario,
     memo: `${qtd(x.motoristas)} motorista${x.motoristas === 1 ? "" : "s"} × ${brl(x.salario)}`,
   }));
-  if (horaExtraMedia) parcelas.push({ rotulo: "Horas extras médias", valor: horaExtraMedia, memo: `${pct(pe.horaExtraPct)} do salário` });
+  if (horaExtraMedia)
+    parcelas.push({ rotulo: "Horas extras médias", valor: horaExtraMedia, memo: `${pct(pe.horaExtraPct)} do salário${comDsr > 1 ? `, com o reflexo de ${pct(comDsr - 1)} no DSR` : ""}` });
   if (noturnoFator) parcelas.push({ rotulo: "Jornada noturna (fator)", valor: noturnoFator, memo: `× ${qtd(pe.fatorJornadaNoturna)} nas rotas noturnas` });
   if (emHoras) parcelas.push({ rotulo: "Horas extras e noturnas em horas", valor: emHoras, memo: `salário ÷ ${qtd(pe.divisorHorasMes)} h × horas informadas` });
+  if (noturnoDoHorario)
+    parcelas.push({ rotulo: "Adicional noturno pelo horário das rotas", valor: noturnoDoHorario, memo: "horas entre 22h e 5h do horário × veículos × dias de operação × valor da hora × adicional com a hora reduzida" });
   if (monitoras) parcelas.push({ rotulo: "Salário das monitoras", valor: monitoras * pe.salarioMonitora, memo: `${qtd(monitoras)} × ${brl(pe.salarioMonitora)}` });
   return parcelas;
 }
@@ -144,11 +155,11 @@ function parcelasDosBeneficios(p: Premissas, pessoas: number, valeRefeicaoMes: n
   const vrDia = p.pessoal.valeRefeicaoDia ?? 0;
   const parcelas: Componente[] = [];
   if (valeRefeicaoMes > 0) {
-    const diasPorPessoa = pessoas > 0 && vrDia > 0 ? valeRefeicaoMes / (pessoas * vrDia) : 0;
+    const diasPessoa = vrDia > 0 ? valeRefeicaoMes / vrDia : 0;
     parcelas.push({
       rotulo: "Vale-refeição",
       valor: valeRefeicaoMes,
-      memo: `${brl(vrDia)} por dia × ${qtd(diasPorPessoa)} dias trabalhados no mês por pessoa (dias de operação das rotas, até 26) × ${qtd(pessoas)} pessoa${pessoas === 1 ? "" : "s"}`,
+      memo: `${brl(vrDia)} por dia × ${qtd(diasPessoa)} dias trabalhados no mês — os postos ocupados nos dias de operação das rotas (até 26 por posto); quem cobre folga ou férias recebe no lugar do ausente`,
     });
   }
   const linha = (rotulo: string, porPessoa: number, memo: string): Componente => ({ rotulo, valor: porPessoa * pessoas, memo: `${brl(porPessoa)} por pessoa · ${memo}` });

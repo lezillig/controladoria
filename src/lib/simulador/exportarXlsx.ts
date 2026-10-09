@@ -1,6 +1,7 @@
 import ExcelJS from "exceljs";
 import { clausulaDeReequilibrio, lerInicio, proximoMes, reformaAnoAAno } from "./reforma";
 import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, DIAS_VR_MAXIMO, IRPJ_LOCACAO_PADRAO } from "./motor";
+import { horasNoturnasDoHorario } from "./horario";
 import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, type EntradaSimulacao, type PerfilVeiculo, type Premissas, type ResultadoSimulacao } from "./tipos";
 
 // A PLANILHA EXCEL DE UMA SIMULAÇÃO — abas Regras do Edital, Premissas, Perfis
@@ -309,6 +310,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("salMot", "Salário base — motorista", p.pessoal.salarioMotorista, "R$/mês", "Do veículo padrão. Rotas com perfil de veículo usam o salário do perfil (aba Perfis de Veículo).", BRL);
   premissa("salMon", "Salário base — monitora", p.pessoal.salarioMonitora, "R$/mês", "Só nas rotas com monitora (aba Rotas).", BRL);
   premissa("he", "Horas extras / adicional (média sobre o salário do motorista)", p.pessoal.horaExtraPct, "%", "Sábados, feriados, atrasos.", PCT);
+  premissa("dsr", "Reflexo da hora extra no DSR", p.pessoal.dsrSobreHoraExtraPct ?? 0, "% da hora extra", "Hora extra habitual reflete no descanso semanal remunerado (Súmula 172 do TST): ~1/6.", PCT2);
   premissa("encargos", "Encargos e provisões (INSS, RAT, FGTS, férias + 1/3, 13º, rescisão)", p.pessoal.encargosPct, "% s/ salários", "Regime CLT, fora do Simples.", PCT);
   premissa("fatorNoturno", "Fator de jornada noturna / estendida", p.pessoal.fatorJornadaNoturna, "x", "Multiplica o salário do motorista nas rotas marcadas com noturno = S na aba Rotas.", NUM);
   premissa("divisor", "Divisor de horas do mês", p.pessoal.divisorHorasMes, "h", "Valor da hora = salário do motorista ÷ divisor (220 na jornada de 44 h).", NUM);
@@ -317,7 +319,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   premissa("hNoturnas", "Horas noturnas na jornada (22h–5h)", p.pessoal.horasNoturnasMes, "h/mês por motorista", "Horas de relógio da jornada normal, já pagas no salário: entra só o custo a mais da linha abaixo. Hora noturna além da jornada é hora extra.", NUM);
   premissa("adNoturno", "Adicional noturno", p.pessoal.adicionalNoturnoPct ?? ADICIONAL_NOTURNO_PADRAO, "% da hora", "CLT, art. 73: ao menos 20%; há CCT com 25%.", PCT);
   derivada("fatorHoraNoturna", "Custo a mais por hora noturna", `(1+${P.adNoturno})*60/52.5-1`, "× valor da hora", "(1 + adicional) × 60 ÷ 52,5 − 1: a hora reduzida de 52′30″ com o adicional, sem a hora-base que o salário já paga (37,1% com 20%).", PCT2);
-  premissa("vrDia", "Vale-refeição por dia trabalhado", p.pessoal.valeRefeicaoDia ?? 0, "R$/dia por func.", "Dias de operação da rota no mês, até 26.", BRL);
+  premissa("vrDia", "Vale-refeição por dia trabalhado", p.pessoal.valeRefeicaoDia ?? 0, "R$/dia por func.", "Dias de operação da rota no mês, até 26, para quem está no posto: motoristas ÷ fator do perfil (ao menos um por veículo e turno) + monitoras.", BRL);
   premissa("beneficios", "Outros benefícios (cesta, plano, PLR, VA, VT, seguro)", p.pessoal.beneficiosPorFuncionario, "R$/mês por func.", "Motoristas e monitoras.", BRL);
   premissa("epi", "Uniforme, EPI, exames e cursos", p.pessoal.uniformeEpiPorFuncionario, "R$/mês por func.", "Motoristas e monitoras.", BRL);
   premissa("supervisao", "Preposto / supervisão local (total)", p.pessoal.supervisaoMes, "R$/mês (total)", "Rateado pelo km útil entre os itens com motorista.", BRL);
@@ -653,8 +655,10 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     ["horasDia", "Horas/dia (preço por hora)", 10],
     ["veic", "Veículos operacionais", 10],
     ["mot", "Motoristas", 10],
+    ["turnos", "Turnos", 7],
     ["mon", "Monitoras", 10],
     ["noturno", "Noturno? (S/N)", 9],
+    ["hNotDia", "Horas noturnas/dia (22h–5h, do horário)", 10],
     ["viagens", "Viagens/dia", 9],
     ["passagens", "Passagens pedágio/mês", 11],
     ["tarifa", "Tarifa pedágio (R$)", 10],
@@ -729,9 +733,11 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     e("horasDia", r.horasDia ?? null, NUM);
     e("veic", r.veiculos, NUM);
     e("mot", r.motoristas, NUM);
+    e("turnos", r.turnos ?? 1, INT);
     e("mon", r.monitoras, NUM);
     e("noturno", sn(r.noturno));
     lista(wr, l, colRota("noturno"), ["S", "N"]);
+    e("hNotDia", horasNoturnasDoHorario(r.horarioInicio, r.horarioFim), NUM);
     e("viagens", r.viagensDia ?? null, NUM);
     e("passagens", r.passagensPedagioMes, NUM);
     e("tarifa", r.tarifaPedagio, BRL);
@@ -741,9 +747,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("kmRod", `${$("kmUtil")}*(1+${P.kmMorto})`, INT);
     f("colPerfil", `IFERROR(MATCH(${$("perfil")},${FAIXA_CODIGOS},0),1)`, INT);
     const sal = pf("sal");
+    const hora = `IF(${P.divisor}>0,${sal}/${P.divisor},0)`;
+    const diasNoMes = `IF(${P.modo}="MENSAL",${$("dias")},IF(${P.meses}>0,${$("dias")}/${P.meses},0))`;
     f(
       "salarios",
-      `${$("mot")}*(${sal}*(1+${P.he})*IF(${$("noturno")}="S",${P.fatorNoturno},1)+IF(${P.divisor}>0,${sal}/${P.divisor},0)*(${P.he50}*1.5+${P.he100}*2+${P.hNoturnas}*${P.fatorHoraNoturna}))+${$("mon")}*${P.salMon}`,
+      // Com o horário da rota, as horas noturnas saem dele (por veículo, nos
+      // dias de operação) e substituem as horas noturnas por motorista.
+      `${$("mot")}*(${sal}*(1+${P.he}*(1+${P.dsr}))*IF(${$("noturno")}="S",${P.fatorNoturno},1)+${hora}*((${P.he50}*1.5+${P.he100}*2)*(1+${P.dsr})+IF(${$("hNotDia")}="",${P.hNoturnas},0)*${P.fatorHoraNoturna}))` +
+        `+IF(AND(${$("mot")}>0,N(${$("hNotDia")})>0),${$("veic")}*${$("hNotDia")}*${diasNoMes}*${hora}*${P.fatorHoraNoturna},0)+${$("mon")}*${P.salMon}`,
       BRL
     );
     const t = $("pctTerra");
@@ -779,7 +790,9 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     const pelaDistancia = `IF(${$("kmDia")}>0,${$("kmRef")}/${$("kmDia")},0)`;
     f("dias", `IF(${P.modo}="MENSAL",IF(${$("diasMes")}="",${pelaDistancia},${$("diasMes")}),IF(${pelaDistancia}<>0,${pelaDistancia},N(${$("diasMes")})*${P.meses}))`, NUM);
     f("diarias", `${$("veic")}*${$("dias")}`, NUM);
-    f("vr", `(${$("mot")}+${$("mon")})*${P.vrDia}*MIN(${DIAS_VR_MAXIMO},IF(${P.modo}="MENSAL",${$("dias")},IF(${P.meses}>0,${$("dias")}/${P.meses},0)))`, BRL);
+    // VR de quem está no posto: os motoristas a mais do fator do perfil cobrem
+    // ausências, e o ausente não recebe.
+    f("vr", `(IF(N(${pf("mpv")})>1,MAX(MIN(${$("mot")},${$("veic")}*${$("turnos")}),${$("mot")}/${pf("mpv")}),${$("mot")})+${$("mon")})*${P.vrDia}*MIN(${DIAS_VR_MAXIMO},${diasNoMes})`, BRL);
     f("horas", `${$("veic")}*${$("dias")}*N(${$("horasDia")})`, NUM);
     f("semHoras", `IF(N(${$("horasDia")})=0,1,0)`, INT);
     wr.getRow(l).height = 30;

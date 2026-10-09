@@ -1,6 +1,6 @@
 // O horário da rota: horas por dia e noturno (22h às 5h), e as rotas que o
 // formulário cria com turnos, dias e horário.
-import { horarioValido, jornadaDoHorario, minutosDoHorario } from "../src/lib/simulador/horario";
+import { horarioValido, horasNoturnasDoHorario, jornadaDoHorario, minutosDoHorario } from "../src/lib/simulador/horario";
 import { itensIniciais, perfilDasRotasNovas } from "../src/lib/simulador/estudos";
 import { PERFIS_PADRAO } from "../src/lib/simulador/premissas";
 
@@ -41,6 +41,13 @@ const perfis = [{ ...structuredClone(PERFIS_PADRAO.find((p) => p.tipo === "VAN")
 perfis[0].motorista.motoristasPorVeiculo = 1.5;
 const r0 = { ...(rotas[0] as unknown as Parameters<typeof perfilDasRotasNovas>[0][number]), item: "1" };
 conferir("ao abrir, motoristas pelo fator da base × turnos", perfilDasRotasNovas([r0], perfis)[0].motoristas, 2 * 1.5 * 3);
+
+// Horas entre 22h e 5h, as que pagam o adicional noturno.
+conferir("06:00 a 18:00: nenhuma hora noturna", horasNoturnasDoHorario("06:00", "18:00"), 0);
+conferir("04:30 a 13:00: meia hora noturna", horasNoturnasDoHorario("04:30", "13:00"), 0.5);
+conferir("18:00 a 23:30: hora e meia noturna", horasNoturnasDoHorario("18:00", "23:30"), 1.5);
+conferir("22:00 a 06:00: sete horas noturnas", horasNoturnasDoHorario("22:00", "06:00"), 7);
+conferir("sem horário: null", horasNoturnasDoHorario(null, "06:00"), null);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

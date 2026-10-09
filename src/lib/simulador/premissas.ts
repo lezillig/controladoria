@@ -6,7 +6,7 @@ import { CHAVE_PRECO_ENERGIA, energiaDoPerfil, energiaDoTexto, PRECO_ENERGIA_PAD
 import type { BaseVigente } from "./baseDeCustos";
 import { normalizarPct, todosOsNumeros } from "./catalogo";
 import { CHAVE_PRO_LABORE, PRO_LABORE_PADRAO } from "./indiretosDoDre";
-import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, financeiroPct, INFLACAO_PADRAO, IRPJ_LOCACAO_PADRAO, PRAZO_PAGAMENTO_CUSTOS_PADRAO } from "./motor";
+import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, DSR_SOBRE_HORA_EXTRA_PADRAO, financeiroPct, INFLACAO_PADRAO, IRPJ_LOCACAO_PADRAO, PRAZO_PAGAMENTO_CUSTOS_PADRAO } from "./motor";
 
 // AS PREMISSAS — descrição, padrão e montagem a partir da base de custos.
 //
@@ -58,12 +58,13 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("pessoal.salarioMotorista", "Salário base — motorista", "R$/mês", "moeda"),
   c("pessoal.salarioMonitora", "Salário base — monitor(a)", "R$/mês", "moeda"),
   c("pessoal.horaExtraPct", "Horas extras médias", "% do salário", "pct"),
+  c("pessoal.dsrSobreHoraExtraPct", "Reflexo da hora extra no DSR", "% da hora extra", "pct", "Hora extra habitual reflete no descanso semanal remunerado (Súmula 172 do TST): domingos e feriados ÷ dias úteis, ~1/6."),
   c("pessoal.encargosPct", "Encargos e provisões", "% do salário", "pct"),
   c("pessoal.fatorJornadaNoturna", "Fator de jornada noturna", "×", "numero", "Multiplica o salário do motorista nas rotas marcadas como noturnas — cobre jornada estendida e noturno de forma agregada. As horas noturnas em horas valem para todas as rotas: não cubra o mesmo adicional pelos dois."),
   c("pessoal.divisorHorasMes", "Divisor de horas do mês", "h", "numero", "Base do valor da hora: salário ÷ divisor (220 na jornada de 44 h)."),
   c("pessoal.horasExtras50Mes", "Horas extras a 50%", "h/mês por motorista", "numero"),
   c("pessoal.horasExtras100Mes", "Horas extras a 100%", "h/mês por motorista", "numero"),
-  c("pessoal.horasNoturnasMes", "Horas noturnas na jornada (22h–5h)", "h/mês por motorista", "numero", "Horas de relógio da jornada normal entre 22h e 5h. O salário já as paga: entra só o adicional noturno, com a hora reduzida de 52′30″ — (1 + adicional) × 60 ÷ 52,5 − 1 do valor da hora (37,1% com 20%). Hora noturna ALÉM da jornada é hora extra."),
+  c("pessoal.horasNoturnasMes", "Horas noturnas na jornada (22h–5h)", "h/mês por motorista", "numero", "Só nas rotas SEM horário: com o horário de início e fim, as horas entre 22h e 5h saem dele (por veículo, nos dias de operação). Horas de relógio da jornada normal entre 22h e 5h. O salário já as paga: entra só o adicional noturno, com a hora reduzida de 52′30″ — (1 + adicional) × 60 ÷ 52,5 − 1 do valor da hora (37,1% com 20%). Hora noturna ALÉM da jornada é hora extra."),
   c("pessoal.adicionalNoturnoPct", "Adicional noturno", "% da hora", "pct", "CLT, art. 73: ao menos 20%. Há CCT com 25% (RP/Franca). Não use junto com o fator de jornada noturna para cobrir o mesmo adicional nas mesmas rotas."),
   c("pessoal.valeRefeicaoDia", "Vale-refeição por dia trabalhado", "R$/dia por pessoa", "moeda", "A convenção paga por dia trabalhado. Os dias saem da operação de cada rota (dias no mês do item: segunda a sexta ≈ 22), até 26 (escala 6x1)."),
   c("pessoal.beneficiosPorFuncionario", "Outros benefícios (cesta, plano, PLR, VA, VT, seguro)", "R$/mês por pessoa", "moeda", "Os mensais fixos. O vale-refeição é por dia, no campo acima."),
@@ -114,8 +115,8 @@ export const CAMPOS_PREMISSAS: CampoPremissa[] = [
   c("preco.cofins", "COFINS", "% do faturamento", "pct"),
   c("preco.irpj", "IRPJ", "% do faturamento", "pct", "Presumido do transporte de passageiros: 15% sobre a presunção de 16% = 2,4% (+ adicional de 10% sobre o lucro presumido acima de R$ 20 mil/mês). 8% de presunção é só de cargas."),
   c("preco.csll", "CSLL", "% do faturamento", "pct", "Presumido: 9% sobre a presunção de 12% = 1,08%."),
-  c("preco.iss", "ISS (transporte municipal)", "% do faturamento municipal", "pct", "Não incide nos itens sem motorista: locação de bem móvel não é serviço (Súmula Vinculante 31)."),
-  c("preco.icms", "ICMS (transporte intermunicipal)", "% do faturamento intermunicipal", "pct", "Não incide nos itens sem motorista (locação, não transporte)."),
+  c("preco.iss", "ISS (transporte municipal)", "% do faturamento municipal", "pct", "O do município onde o serviço é prestado (LC 116/2003, art. 3º) — de 2% a 5%: confira o do edital. Não incide nos itens sem motorista: locação de bem móvel não é serviço (Súmula Vinculante 31)."),
+  c("preco.icms", "ICMS (transporte intermunicipal)", "% do faturamento intermunicipal", "pct", "SP: 12% com crédito outorgado de 20% do imposto = 9,6% de carga efetiva (até 31/12/2026 — confirme a prorrogação). Não incide nos itens sem motorista (locação, não transporte)."),
   c("preco.irpjLocacao", "IRPJ — locação sem motorista (Presumido)", "% do faturamento", "pct", "Locação de bens móveis presume 32%: 25% × 32% = 8% da receita (15% + adicional de 10%, que incide acima de R$ 20 mil/mês de lucro presumido — como no transporte, 16% × 25% = 4%). Só nos itens sem motorista e só no Presumido; no Real, vale o IR sobre o lucro."),
   c("preco.csllLocacao", "CSLL — locação sem motorista (Presumido)", "% do faturamento", "pct", "9% × 32% = 2,88% da receita. Só nos itens sem motorista e só no Presumido."),
   c("preco.custoCapitalGiroAm", "Custo do capital de giro", "% a.m.", "pct"),
@@ -153,6 +154,7 @@ export const PREMISSAS_PADRAO: Premissas = {
     salarioMotorista: PISO_TRANSFRETUR_NIVEL_B,
     salarioMonitora: 1900,
     horaExtraPct: 0.14,
+    dsrSobreHoraExtraPct: DSR_SOBRE_HORA_EXTRA_PADRAO,
     // Os grupos A a D da calculadora (maoDeObra.ts) no modo em que as férias
     // ficam no fator de utilização — o 1,2 motorista por veículo dos tipos
     // padrão já cobre folgas e férias. Os 68% antigos somavam as férias de
@@ -240,7 +242,9 @@ export const PREMISSAS_PADRAO: Premissas = {
     irpj: 0.04,
     csll: 0.0108,
     iss: 0.05,
-    icms: 0.12,
+    // 12% com o crédito outorgado de 20% do imposto no transporte
+    // intermunicipal de passageiros em SP: 9,6% de carga (até 31/12/2026).
+    icms: 0.096,
     custoCapitalGiroAm: 0.018,
     prazoRecebimentoDias: 55,
     // Folha no 5º dia útil do mês seguinte e fornecedores a ~30 dias: ~25
@@ -559,12 +563,13 @@ const PERFIS_BASE: PerfilVeiculo[] = [
   perfil("VAN", "VAN", "Van 15–19 lugares", 19, "D", PISO_TRANSFRETUR_NIVEL_B, 1.2, {}, {}),
   perfil("MICRO", "MICRO", "Micro-ônibus 25–33 lugares", 30, "D", PISO_TRANSFRETUR_NIVEL_B, 1.2,
     // Manutenção informada para micro de 6–8 anos (sem garantia: a corretiva
-    // está nela); o novo sai mais barato pela curva de idade.
-    { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 4500, laudoVistoriaAno: 1800, rastreadorMes: 95, idadeReferenciaManutencao: 6, garantiaMeses: null, garantiaKm: null },
+    // está nela); o novo sai mais barato pela curva de idade. IPVA de SP para
+    // micro e ônibus: 2% do valor (ipva.ts) + ~R$ 150 de licenciamento.
+    { valor: 420000, seguroMes: 850, ipvaLicenciamentoAno: 8550, laudoVistoriaAno: 1800, rastreadorMes: 95, idadeReferenciaManutencao: 6, garantiaMeses: null, garantiaKm: null },
     // Consumo urbano/pendular: ANTP 3,4–4,2 km/l (4,7 só no rodoviário).
     { consumoAsfaltoKmL: 4.0, consumoTerraKmL: 3.3, arlaKm: 0.059, oleoLavagemKm: 0.03, pneusAsfaltoKm: 0.18, pneusTerraKm: 0.25, manutencaoAsfaltoKm: 0.7, manutencaoTerraKm: 1.0, corretivaKm: 0 }),
   perfil("ONIBUS", "ONIBUS", "Ônibus 44–59 lugares (usado, ~8 anos)", 50, "D", PISO_TRANSFRETUR_NIVEL_A, 1.2,
-    { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 4200, laudoVistoriaAno: 900, rastreadorMes: 90, idadeInicialAnos: 8, idadeReferenciaManutencao: 8, garantiaMeses: null, garantiaKm: null },
+    { valor: 280000, depreciacaoAa: 0.12, custoCapitalAa: 0.14, seguroMes: 1100, ipvaLicenciamentoAno: 5750, laudoVistoriaAno: 900, rastreadorMes: 90, idadeInicialAnos: 8, idadeReferenciaManutencao: 8, garantiaMeses: null, garantiaKm: null },
     // Fretamento urbano/pendular em SP com ar: 2,3 km/l (ANTP 2,22–2,70 sem
     // ar; COPPE com ar 1,98–2,22; 2,6 no rodoviário). Manutenção de 8–10 anos
     // em serviço severo (ANTP): 1,15 (0,95 no rodoviário de estrada). Pneus de

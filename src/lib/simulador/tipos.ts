@@ -63,6 +63,11 @@ export type Premissas = {
     salarioMotorista: number;
     salarioMonitora: number;
     horaExtraPct: number;
+    // Reflexo da hora extra HABITUAL no descanso semanal remunerado (Súmula
+    // 172 do TST): domingos e feriados ÷ dias úteis do mês, ~1/6. Incide no
+    // percentual e nas horas extras em horas. Ausente nas versões salvas
+    // antes dele: zero.
+    dsrSobreHoraExtraPct?: number;
     encargosPct: number;
     // Multiplica o salário do motorista nas rotas com período noturno.
     fatorJornadaNoturna: number;

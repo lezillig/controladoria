@@ -29,3 +29,19 @@ export function jornadaDoHorario(inicio: string | null | undefined, fim: string 
   const noturno = noturnas.some(([n0, n1]) => Math.min(fimCorrido, n1) > Math.max(a, n0));
   return { horas: Math.round(((fimCorrido - a) / 60) * 100) / 100, noturno };
 }
+
+// Horas de relógio entre 22h e 5h no horário da rota, por dia — as que pagam o
+// adicional noturno. Sem os dois horários válidos, null.
+export function horasNoturnasDoHorario(inicio: string | null | undefined, fim: string | null | undefined): number | null {
+  const a = minutosDoHorario(inicio);
+  const b = minutosDoHorario(fim);
+  if (a === null || b === null || a === b) return null;
+  const fimCorrido = b > a ? b : b + 24 * 60;
+  const janelas = [
+    [-2 * 60, 5 * 60],
+    [22 * 60, 29 * 60],
+    [46 * 60, 53 * 60],
+  ];
+  const minutos = janelas.reduce((soma, [n0, n1]) => soma + Math.max(0, Math.min(fimCorrido, n1) - Math.max(a, n0)), 0);
+  return Math.round((minutos / 60) * 100) / 100;
+}

@@ -38,6 +38,9 @@ conferir("sem tipo na linha: o principal do estudo", quatro.rotas[1].perfilVeicu
 const locacao = itensIniciais({ nome: "L", tipoServico: "LOCACAO_SM", itens: [{ descricao: "a", km: 1000, veiculos: 2 }] });
 conferir("locação sem motorista: item e rota sem motoristas", [locacao.itens[0].comMotorista, locacao.rotas[0].motoristas], [false, 0]);
 conferir("locação sem motorista: o cliente abastece", locacao.itens[0].combustivelPorContaDoCliente, true);
+// Escolar: as férias caem no recesso — 1,07 motorista por veículo, não 1,2.
+const escolar = itensIniciais({ nome: "E", tipoServico: "ESCOLAR", itens: [{ descricao: "linha", km: 20000, veiculos: 10, tipoVeiculo: "VAN" }] } as never);
+conferir("escolar: 10 vans × 1,07 motorista", escolar.rotas[0].motoristas, 10.7);
 conferir("fretamento: a contratada abastece", quatro.itens[0].combustivelPorContaDoCliente, false);
 const franquia = itensIniciais({ nome: "L", tipoServico: "LOCACAO_SM", itens: [{ descricao: "carro", km: null, veiculos: 1 }] });
 conferir("locação sem km informado: nasce com a franquia de 2.000 km/mês", franquia.rotas.map((r) => r.kmReferencia), [2000]);

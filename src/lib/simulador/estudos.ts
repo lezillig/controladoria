@@ -110,6 +110,9 @@ export type ItemNovo = {
 // central é a reduzida da base (sem equipe, escala nem supervisão; padrão 4%
 // do custo direto) e o item sem km informado nasce com a franquia mensal.
 export const ADM_LOCACAO_PADRAO = 0.04;
+// ESCOLAR: as férias caem no recesso, sem operação — os motoristas a mais só
+// cobrem faltas e afastamentos (~7%), e não os 9% de férias do fator 1,2.
+export const MOTORISTAS_POR_VEICULO_ESCOLAR = 1.07;
 export const FRANQUIA_LOCACAO_KM = 2000;
 
 // Dias de referência para o km por dia da rota inicial: 22 no mês, 200 no
@@ -146,7 +149,8 @@ export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | 
     const tipo = i.tipoVeiculo ?? dados.tiposVeiculo?.[0] ?? null;
     const veiculos = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;
     const turnos = i.turnos && Number.isInteger(i.turnos) && i.turnos >= 1 && i.turnos <= 4 ? i.turnos : 1;
-    const fu = PERFIS_PADRAO.find((p) => p.tipo === tipo)?.motorista.motoristasPorVeiculo ?? 1.2;
+    const fuDoTipo = PERFIS_PADRAO.find((p) => p.tipo === tipo)?.motorista.motoristasPorVeiculo ?? 1.2;
+    const fu = periodo ? Math.min(fuDoTipo, MOTORISTAS_POR_VEICULO_ESCOLAR) : fuDoTipo;
     const diasMes = i.diasMes && Number.isInteger(i.diasMes) && i.diasMes >= 1 && i.diasMes <= 31 ? i.diasMes : 22;
     const dias = periodo ? DIAS_ROTA_INICIAL.PERIODO : diasMes;
     return [
@@ -520,6 +524,16 @@ export function premissasNovasDoEstudo(
   if (estudo.vigenciaMeses) premissas.contrato.vigenciaMeses = estudo.vigenciaMeses;
   if (estudo.prazoPagamentoDias) premissas.preco.prazoRecebimentoDias = estudo.prazoPagamentoDias;
   premissas.perfis = perfisDoEstudo(perfisDaBase(vazia ? null : baseCarregada), estudo.tiposVeiculo as TipoVeiculo[]);
+  if (estudo.tipoServico === "ESCOLAR")
+    for (const perfil of premissas.perfis)
+      if (perfil.motorista.motoristasPorVeiculo > MOTORISTAS_POR_VEICULO_ESCOLAR) {
+        perfil.motorista.motoristasPorVeiculo = MOTORISTAS_POR_VEICULO_ESCOLAR;
+        origem[`perfil:${perfil.codigo}:motorista.motoristasPorVeiculo`] = {
+          origem: "PADRAO",
+          fonte: "regra do transporte escolar",
+          detalhe: "as férias caem no recesso, sem operação: o fator só cobre faltas e afastamentos (~7%)",
+        };
+      }
   regrasDeCapitalNosPerfis(premissas, origem);
   if (estudo.tipoServico === "LOCACAO_SM") for (const perfil of premissas.perfis) perfil.veiculo.remuneracaoSobreValorMedio = true;
   return { premissas, origem, vazia: Boolean(vazia) };

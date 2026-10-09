@@ -285,6 +285,40 @@ console.log("\nCAPITAL, DEPRECIAÇÃO E REGIME TRIBUTÁRIO");
   conferir("contrato de km fixo: utilização 100%", kmFixo.premissas.contrato.utilizacao, 1);
   ok("… e a origem diz por quê", (kmFixo.origem["contrato.utilizacao"]?.detalhe ?? "").includes("registro de preços"));
   conferir("registro de preços: a utilização da base/padrão (85%)", srp.premissas.contrato.utilizacao, 0.85);
+  const escolarP = premissasNovasDoEstudo({ ...dadosEstudo, tipoServico: "ESCOLAR", srp: false } as never, null);
+  conferir("escolar: os tipos de veículo com 1,07 motorista por veículo", escolarP.premissas.perfis?.find((x) => x.tipo === "VAN")?.motorista.motoristasPorVeiculo, 1.07);
+  ok("… com a origem da regra", escolarP.origem["perfil:VAN:motorista.motoristasPorVeiculo"]?.fonte === "regra do transporte escolar");
+
+  console.log("\n  VR por posto, horas noturnas pelo horário, DSR");
+  {
+    const pr = structuredClone(base.premissas);
+    pr.perfis = structuredClone(PERFIS_PADRAO.filter((x) => x.codigo === "VAN"));
+    pr.pessoal.valeRefeicaoDia = 42;
+    pr.pessoal.dsrSobreHoraExtraPct = 0;
+    pr.pessoal.horasNoturnasMes = 0;
+    const rota = { item: "1", nome: "R", kmReferencia: 4400, kmDia: 200, kmTerraDia: 0, diasMes: 22, veiculos: 10, motoristas: 12, monitoras: 0, noturno: false, passagensPedagioMes: 0, tarifaPedagio: 0, perfilVeiculo: "VAN" };
+    const ent = (r: object, p = pr) => ({ ...base, premissas: p, itens: [{ codigo: "1", descricao: "x", shareIntermunicipal: 0 }], rotas: [{ ...rota, ...r }] }) as unknown as EntradaSimulacao;
+    const vr = (r: object) => simular(ent(r)).itens[0].valeRefeicao;
+    perto("12 motoristas (fator 1,2) em 10 vans: VR de 10 postos", vr({}), 10 * 42 * 22, "total");
+    perto("1 motorista para 1 van: 1 posto", vr({ veiculos: 1, motoristas: 1 }), 42 * 22, "total");
+    perto("dupla pegada (2,4 para 1 van): 2 postos", vr({ veiculos: 1, motoristas: 2.4 }), 2 * 42 * 22, "total");
+    perto("dois turnos (24 para 10 vans): 20 postos", vr({ motoristas: 24, turnos: 2 }), 20 * 42 * 22, "total");
+
+    // 18:00 a 23:30 = 1,5 h noturna/dia × 10 vans × 22 dias × hora × 0,3714.
+    const dia = simular(ent({ horarioInicio: "06:00", horarioFim: "18:00" })).itens[0].salarios;
+    const noite = simular(ent({ horarioInicio: "18:00", horarioFim: "23:30" })).itens[0].salarios;
+    const hora = PERFIS_PADRAO.find((x) => x.codigo === "VAN")!.motorista.salario / pr.pessoal.divisorHorasMes;
+    perto("adicional noturno pelo horário: 1,5 h × 10 vans × 22 dias × hora × 37,14%", noite - dia, 1.5 * 10 * 22 * hora * (1.2 * 60 / 52.5 - 1), "total");
+    const comGlobal = structuredClone(pr);
+    comGlobal.pessoal.horasNoturnasMes = 20;
+    perto("com horário, as horas noturnas por motorista não somam de novo", simular(ent({ horarioInicio: "06:00", horarioFim: "18:00" }, comGlobal)).itens[0].salarios, dia, "total");
+
+    const comDsr = structuredClone(pr);
+    comDsr.pessoal.dsrSobreHoraExtraPct = 1 / 6;
+    const semD = simular(ent({})).itens[0].salarios;
+    const comD = simular(ent({}, comDsr)).itens[0].salarios;
+    perto("DSR: + 1/6 das horas extras", comD - semD, 12 * PERFIS_PADRAO.find((x) => x.codigo === "VAN")!.motorista.salario * pr.pessoal.horaExtraPct / 6, "total");
+  }
 
   console.log("\n  Lucro Real × Presumido");
   const r0 = simular(base);

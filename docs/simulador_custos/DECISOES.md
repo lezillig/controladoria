@@ -661,6 +661,29 @@ Efeito (10 vans, 3.500 km/mês cada, fretamento de km fixo): veículo-mês de
 R$ 35.336 para R$ 31.180 (−11,8%); R$/km de 11,88 para 8,91 (o km pago passa a
 ser o contratado inteiro). Ônibus: veículo-mês de R$ 50.804 para R$ 47.539.
 
+## 7.12 Mão de obra, tributos e frota (itens E a L da varredura)
+
+- **Escolar com 1,07 motorista por veículo** (`MOTORISTAS_POR_VEICULO_ESCOLAR`):
+  as férias caem no recesso, sem operação; o fator só cobre faltas e
+  afastamentos. Vale nas rotas novas e nos tipos de veículo do estudo escolar.
+- **Vale-refeição por posto.** Os motoristas a mais do fator (1,2) cobrem
+  ausências e o ausente não recebe VR: postos = motoristas ÷ fator do tipo,
+  nunca menos que um por veículo e turno (dupla pegada 2,4 → 2 postos).
+- **Adicional noturno pelo horário da rota** (`horasNoturnasDoHorario`): as
+  horas entre 22h e 5h × veículos × dias de operação × valor da hora × o
+  adicional com a hora reduzida. Nessa rota, as horas noturnas por motorista
+  das premissas não somam de novo.
+- **Reflexo da hora extra no DSR** (`pessoal.dsrSobreHoraExtraPct`, 1/6,
+  Súmula 172 do TST), no percentual e nas horas extras em horas.
+- **ICMS intermunicipal 9,6%**: 12% com o crédito outorgado de 20% do imposto
+  em SP, até 31/12/2026 (padrão e base, por migração). Confirmar a prorrogação
+  para 2027.
+- **IPVA de micro e ônibus a 2%** do valor (SP) nos tipos padrão: micro
+  R$ 8.550/ano, ônibus R$ 5.750/ano.
+- **ISS**: o campo diz que é o do município do serviço (2% a 5%) — conferir no
+  edital. **LC 224/2025** (Presumido acima de R$ 5 milhões): não aplicada,
+  depende da confirmação do contador.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com
