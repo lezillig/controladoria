@@ -104,7 +104,13 @@ export function arquivosAssinadosValidos(companyId: string, bruto: unknown): Arq
   return lista;
 }
 
-export const cliente = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Chave de usuário (não de espaço de trabalho): a API pede o espaço em cada
+// requisição — ANTHROPIC_WORKSPACE_ID, o "wrkspc_…" do console.
+export const cliente = () =>
+  new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    ...(process.env.ANTHROPIC_WORKSPACE_ID?.trim() && { defaultHeaders: { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID.trim() } }),
+  });
 
 // PASSO 1 — um arquivo (ou uma parte de PDF) para a Files API.
 // `nomeDoArquivo` decide o formato (pela extensão); `nome` é o rótulo que a
@@ -285,7 +291,7 @@ async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto
     // Schema grande demais para a saída estruturada: a mesma leitura sem ela.
     const resta = tempoMs - (Date.now() - inicio);
     if (estruturada && /grammar/i.test(msg) && resta > 60_000) return lerComModelo(modelo, arquivos, contexto, resta, false);
-    const definitivo = /credit balance/i.test(msg) || e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError;
+    const definitivo = /credit balance|workspace/i.test(msg) || e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError;
     return { ok: false, definitivo, erro: mensagemDeErro(e) };
   }
 }
@@ -295,6 +301,8 @@ export function mensagemDeErro(e: unknown): string {
   // mensagem diz a quem resolver (a cobrança da API, não o sistema).
   if (/credit balance/i.test(e instanceof Error ? e.message : String(e)))
     return "A conta da API da Anthropic está sem crédito. Quem administra a conta precisa comprar créditos em console.anthropic.com (Plans & Billing) e tentar de novo — nada do edital foi perdido.";
+  if (/workspace/i.test(e instanceof Error ? e.message : String(e)))
+    return "A chave da IA não está ligada a um espaço de trabalho. Crie a chave dentro de um espaço de trabalho no console da Anthropic, ou informe o ID do espaço (wrkspc_…) na variável ANTHROPIC_WORKSPACE_ID da hospedagem.";
   if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError)
     return "A chave da IA (ANTHROPIC_API_KEY) foi recusada: confira a chave configurada na hospedagem.";
   if (e instanceof Anthropic.RateLimitError) return "Limite de uso da IA atingido; tente de novo em alguns minutos.";

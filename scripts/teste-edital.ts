@@ -222,6 +222,8 @@ async function assinatura() {
   const { mensagemDeErro } = await import("../src/lib/simulador/importarEdital");
   const semCredito = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }, undefined, new Headers());
   ok("conta sem crédito: mensagem diz para comprar créditos", mensagemDeErro(semCredito).includes("sem crédito"), mensagemDeErro(semCredito));
+  const semEspaco = new Error('400 {"error":{"message":"This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header"}}');
+  ok("chave sem espaço de trabalho: mensagem diz o que fazer", mensagemDeErro(semEspaco).includes("ANTHROPIC_WORKSPACE_ID"), mensagemDeErro(semEspaco));
   if (chave) process.env.ANTHROPIC_API_KEY = chave;
 }
 

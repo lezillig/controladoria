@@ -271,7 +271,7 @@ export async function mapearPlanilha(
     } catch (e) {
       ultimoErro = mensagemDeErro(e);
       // Conta sem crédito ou chave recusada: o outro modelo também não passaria.
-      if (/sem crédito|foi recusada/.test(ultimoErro)) break;
+      if (/sem crédito|foi recusada|espaço de trabalho/.test(ultimoErro)) break;
     }
   }
   return { ok: false, erro: ultimoErro };
