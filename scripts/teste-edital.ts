@@ -10,7 +10,7 @@ import { editalParaEstudo, EditalSchema, SERVICOS_DO_EDITAL, DIAS_LETIVOS_PADRAO
 import { itensIniciais, MOTORISTAS_POR_VEICULO_ESCOLAR, premissasNovasDoEstudo, TIPOS_SERVICO } from "../src/lib/simulador/estudos";
 import { lerHabilitacaoDoEdital, lerItensNovos } from "../src/lib/simulador/formularioDoEstudo";
 import { dividirPdf } from "../src/lib/simulador/dividirPdf";
-import { nomeDoModelo, problemasDaLeitura } from "../src/lib/simulador/importarEdital";
+import { jsonDaResposta, nomeDoModelo, problemasDaLeitura } from "../src/lib/simulador/importarEdital";
 import { montarHistorico, type EditalDoHistorico } from "../src/lib/simulador/historicoDeEditais";
 import { aplicarPremissasDoEdital, lerPremissasDoEdital } from "../src/lib/simulador/premissasDoEdital";
 
@@ -263,6 +263,9 @@ console.log("\nCONFERÊNCIA DA LEITURA (troca automática para o modelo forte)")
   ok("licitação sem habilitação: refaz", problemasDaLeitura({ ...base, habilitacao: [] }).some((p) => p.includes("habilitação")));
   const locacao = { ...base, tipoServico: "LOCACAO_SM" as const, itens: [{ ...base.itens[0], veiculos: 5, rotas: [], kmMes: null, kmDia: null }] };
   conferir("locação com veículos e sem km: normal", problemasDaLeitura(locacao), []);
+  conferir("plano B sem saída estruturada: JSON tirado do texto com cerca de markdown", jsonDaResposta('Aqui está:\n```json\n{"a": [1, 2]}\n```'), { a: [1, 2] });
+  const esquema = JSON.stringify((betaZodOutputFormat(EditalSchema) as { schema: unknown }).schema);
+  ok("o schema da leitura não tem limites de tamanho de lista (gramática grande demais na API)", !/maxItems|minItems/.test(esquema), esquema.match(/"m(ax|in)Items":\d+/g)?.join(","));
   conferir("nome do modelo para a tela", [nomeDoModelo("claude-sonnet-5-5"), nomeDoModelo("claude-opus-5-5"), nomeDoModelo("claude-haiku-5-5")], ["Sonnet 5.5", "Opus 5.5", "Haiku 5.5"]);
 }
 

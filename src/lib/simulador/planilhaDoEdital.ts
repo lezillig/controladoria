@@ -195,11 +195,9 @@ export const MapaSchema = z.object({
         multiplicador: z.number().describe("Converte a unidade do estudo para a da célula (1 se igual; 22 para R$/dia → R$/mês de 22 dias; 100 se a célula pede percentual inteiro)."),
         observacao: z.string().nullable(),
       })
-    )
-    .max(200),
+    ),
   pendentes: z
     .array(z.object({ aba: z.string(), celula: z.string(), rotulo: z.string().describe("O que a célula pede, em poucas palavras."), motivo: z.string().describe("Por que o estudo não tem esse número.") }))
-    .max(200)
     .describe("Células que a licitante deve preencher e que o estudo não tem como dar."),
   resultado: z
     .object({ aba: z.string(), celula: z.string(), descricao: z.string() })

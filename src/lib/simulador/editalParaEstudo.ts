@@ -71,7 +71,7 @@ const ItemSchema = z.object({
   horarioInicio: horario,
   horarioFim: horario,
   turnos: z.number().int().nullable(),
-  rotas: z.array(RotaSchema).max(200).describe("As rotas/itinerários do item quando o documento as detalha (planilha de itinerários). Lista vazia se não houver."),
+  rotas: z.array(RotaSchema).describe("As rotas/itinerários do item quando o documento as detalha (planilha de itinerários), até 300. Lista vazia se não houver."),
   fonte,
 });
 
@@ -99,7 +99,11 @@ export const EditalSchema = z.object({
   indiceReajuste: z.string().nullable(),
   diasLetivosAno: z.number().int().nullable().describe("Só no escolar: os dias de operação no ano que o edital usa na conta do km (ex.: 20 dias × 11 meses = 220). Se ele não fizer a conta, os dias letivos que informar."),
   kmImprodutivoPagoPct: z.number().nullable().describe("% de km improdutivo que o edital SOMA ao km das rotas para chegar ao km pago (ex.: 5 para 5%). Nulo se o km pago for só o das rotas."),
-  itens: z.array(ItemSchema).max(100),
+  // Sem .max() nas listas: o limite de tamanho vira gramática na saída
+  // estruturada da API, e as listas aninhadas (100 itens × 200 rotas)
+  // passaram do tamanho aceito ("compiled grammar is too large"). Os limites
+  // são aplicados depois, em editalParaEstudo.
+  itens: z.array(ItemSchema).describe("Até 100 itens."),
   exigencias: z
     .array(
       z.object({
@@ -108,7 +112,6 @@ export const EditalSchema = z.object({
         fonte,
       })
     )
-    .max(60)
     .describe("Exigências que mudam o custo: idade máxima e características dos veículos, monitor, ar, acessibilidade, CNH e cursos, reserva técnica, garagem, rastreamento, garantia contratual, prazo de pagamento, reajuste, penalidades relevantes."),
   premissas: z
     .object({
@@ -136,9 +139,8 @@ export const EditalSchema = z.object({
         fonte,
       })
     )
-    .max(80)
     .describe("Todos os documentos de habilitação que o edital exige, um por linha, na ordem do edital. Inclui os que o SICAF/cadastro substitui (diga isso na exigência)."),
-  suposicoes: z.array(z.string()).max(40).describe("O que você teve de deduzir ou que falta no documento (km não informado, dias letivos, tipo de veículo pela lotação, preço sigiloso)."),
+  suposicoes: z.array(z.string()).describe("O que você teve de deduzir ou que falta no documento (km não informado, dias letivos, tipo de veículo pela lotação, preço sigiloso)."),
 });
 
 export type EditalLido = z.infer<typeof EditalSchema>;
@@ -216,7 +218,12 @@ const hhmm = (v: string | null | undefined) => {
 };
 const turnosValidos = (t: number | null | undefined) => (t && Number.isInteger(t) && t >= 1 && t <= 4 ? String(t) : "1");
 
-export function editalParaEstudo(e: EditalLido): EstudoImportado {
+const LIMITE_ITENS = 100;
+const LIMITE_ROTAS = 300;
+
+export function editalParaEstudo(lido: EditalLido): EstudoImportado {
+  // Os limites das listas (o schema não os impõe; ver EditalSchema).
+  const e: EditalLido = { ...lido, itens: lido.itens.slice(0, LIMITE_ITENS), exigencias: lido.exigencias.slice(0, 60), suposicoes: lido.suposicoes.slice(0, 40) };
   const escolar = e.tipoServico === "ESCOLAR";
   const regras: RegraImportada[] = [];
   const dias = (d: number | null | undefined) => {
@@ -245,7 +252,7 @@ export function editalParaEstudo(e: EditalLido): EstudoImportado {
         texto: `${i.descricao.slice(0, 120)}: ${txt(i.veiculos)} veículos fazem as ${(i.rotas ?? []).length} rotas (que somam ${txt(somaDasRotas)}) em períodos diferentes; cada rota ficou com ${txt(fracao, 4)} da frota. Confira se a frota e os motoristas batem com o edital.`,
         fonte: i.fonte,
       });
-    const rotas: RotaImportada[] = (i.rotas ?? []).map((r) => ({
+    const rotas: RotaImportada[] = (i.rotas ?? []).slice(0, LIMITE_ROTAS).map((r) => ({
       nome: r.nome.slice(0, 120),
       tipoVeiculo: r.tipoVeiculo ?? i.tipoVeiculo ?? "",
       veiculos: txt((r.veiculos ?? 1) * fracao, fracao < 1 ? 4 : 2),

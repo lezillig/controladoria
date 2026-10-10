@@ -221,7 +221,20 @@ export function problemasDaLeitura(e: EditalLido): string[] {
 
 type ResultadoDoModelo = { ok: true; edital: EditalLido } | { ok: false; erro: string; definitivo: boolean };
 
-async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto: { empresa: string }, tempoMs: number): Promise<ResultadoDoModelo> {
+// O schema em texto, para a leitura sem saída estruturada (plano B).
+const SCHEMA_EM_TEXTO = () => JSON.stringify((betaZodOutputFormat(EditalSchema) as { schema: unknown }).schema);
+// O JSON de uma resposta em texto: sem cercas de markdown e sem texto em volta.
+export function jsonDaResposta(texto: string): unknown {
+  const limpo = texto.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "");
+  const [a, b] = [limpo.indexOf("{"), limpo.lastIndexOf("}")];
+  return JSON.parse(a >= 0 && b > a ? limpo.slice(a, b + 1) : limpo);
+}
+
+// `estruturada`: com a saída estruturada da API (o formato garantido). Se a
+// API recusar o schema ("grammar too large"), a mesma leitura vai sem ela, com
+// o schema no prompt e a validação aqui (zod).
+async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto: { empresa: string }, tempoMs: number, estruturada = true): Promise<ResultadoDoModelo> {
+  const inicio = Date.now();
   try {
     const blocos: Anthropic.Beta.BetaContentBlockParam[] = arquivos.map((a) =>
       a.bloco === "imagem" ? { type: "image", source: { type: "file", file_id: a.fileId } } : { type: "document", source: { type: "file", file_id: a.fileId }, title: a.nome.slice(0, 200) }
@@ -236,11 +249,13 @@ async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto
         // Teto para raciocínio + resposta: um edital com 100 rotas detalhadas
         // dá ~15 mil tokens de JSON. É anteparo, não controle de custo.
         max_tokens: 48000,
-        output_config: { effort: ESFORCO_EDITAL, format: betaZodOutputFormat(EditalSchema) },
+        output_config: estruturada ? { effort: ESFORCO_EDITAL, format: betaZodOutputFormat(EditalSchema) } : { effort: ESFORCO_EDITAL },
         // Edital com cláusula penal ou de segurança pode esbarrar num
         // classificador por engano; a API refaz a leitura em outro modelo.
         ...comFallback(modelo),
-        system: SYSTEM_PROMPT,
+        system: estruturada
+          ? SYSTEM_PROMPT
+          : `${SYSTEM_PROMPT}\n\n## Formato da resposta\n\nResponda SOMENTE com um objeto JSON válido — sem texto antes ou depois, sem markdown — que siga este JSON Schema:\n${SCHEMA_EM_TEXTO()}`,
         messages: [
           {
             role: "user",
@@ -261,12 +276,15 @@ async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto
       .map((b) => b.text)
       .join("");
     try {
-      return { ok: true, edital: EditalSchema.parse(JSON.parse(texto)) };
+      return { ok: true, edital: EditalSchema.parse(estruturada ? JSON.parse(texto) : jsonDaResposta(texto)) };
     } catch (e) {
       return { ok: false, definitivo: false, erro: `A resposta não veio no formato esperado (${e instanceof Error ? e.message.slice(0, 160) : "erro"}).` };
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    // Schema grande demais para a saída estruturada: a mesma leitura sem ela.
+    const resta = tempoMs - (Date.now() - inicio);
+    if (estruturada && /grammar/i.test(msg) && resta > 60_000) return lerComModelo(modelo, arquivos, contexto, resta, false);
     const definitivo = /credit balance/i.test(msg) || e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError;
     return { ok: false, definitivo, erro: mensagemDeErro(e) };
   }
