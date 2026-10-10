@@ -196,6 +196,8 @@ export type EstudoImportado = {
   // estudo novo (premissasDoEdital.ts). Nulo se o edital não fixa nenhuma.
   premissas: PremissasDoEdital | null;
   resumo: string;
+  // Quem leu (o modelo) e se a leitura foi refeita no modelo forte, e por quê.
+  leitura?: { modelo: string; refeitaPorque: string | null };
 };
 
 // Sem dias letivos no edital, o escolar usa 200 (o mínimo da LDB) e diz isso.

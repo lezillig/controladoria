@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { cliente, ESFORCO_EDITAL, isLeituraDeEditalDisponivel, mensagemDeErro, MODELO_EDITAL } from "./importarEdital";
+import { cliente, comFallback, ESFORCO_EDITAL, isLeituraDeEditalDisponivel, mensagemDeErro, MODELO_EDITAL, MODELO_PLANILHA } from "./importarEdital";
 import type { EntradaSimulacao, ResultadoSimulacao } from "./tipos";
 import { ROTULO_UNIDADE } from "./tipos";
 
@@ -229,34 +229,54 @@ export async function mapearPlanilha(
   if (inventario.celulas.length === 0) return { ok: false, erro: "A planilha não tem células de entrada lidas por fórmulas: não parece um modelo de planilha de custos." };
   const inv = inventario.celulas.map((c) => `${c.aba}!${c.celula}${c.amarela ? " (amarela)" : ""} = ${c.valor ?? "vazia"} — ${c.rotulo || "(sem rótulo)"}`).join("\n");
   const cat = catalogo.map((v) => `${v.chave}: ${v.descricao} = ${v.valor} ${v.unidade}`).join("\n");
-  try {
-    const message = await cliente().beta.messages.create(
-      {
-        model: MODELO_EDITAL,
-        max_tokens: 24000,
-        output_config: { effort: ESFORCO_EDITAL, format: betaZodOutputFormat(MapaSchema) },
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-        system: SYSTEM_MAPA,
-        messages: [
-          {
-            role: "user",
-            content: `Estudo: ${contexto.estudo}\nPlanilha: ${contexto.arquivo} (abas: ${inventario.abas.join(", ")})\n\n<inventario>\n${inv}\n</inventario>\n\n<catalogo>\n${cat}\n</catalogo>`,
-          },
-        ],
-      },
-      { timeout: 200_000, maxRetries: 0 }
-    );
-    if (message.stop_reason === "refusal") return { ok: false, erro: "O mapeamento foi recusado pelo modelo. Preencha a planilha à mão." };
-    if (message.stop_reason === "max_tokens") return { ok: false, erro: "A planilha tem células demais para mapear de uma vez." };
-    const texto = message.content
-      .filter((b): b is Extract<(typeof message.content)[number], { type: "text" }> => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-    return { ok: true, mapa: MapaSchema.parse(JSON.parse(texto)) };
-  } catch (e) {
-    return { ok: false, erro: mensagemDeErro(e) };
+  // O modelo barato primeiro; recusa, corte ou formato errado → o padrão.
+  let ultimoErro = "";
+  for (const modelo of [...new Set([MODELO_PLANILHA, MODELO_EDITAL])]) {
+    try {
+      const message = await cliente().beta.messages.create(
+        {
+          model: modelo,
+          max_tokens: 24000,
+          output_config: { effort: ESFORCO_EDITAL, format: betaZodOutputFormat(MapaSchema) },
+          ...comFallback(modelo),
+          system: SYSTEM_MAPA,
+          messages: [
+            {
+              role: "user",
+              content: `Estudo: ${contexto.estudo}\nPlanilha: ${contexto.arquivo} (abas: ${inventario.abas.join(", ")})\n\n<inventario>\n${inv}\n</inventario>\n\n<catalogo>\n${cat}\n</catalogo>`,
+            },
+          ],
+        },
+        { timeout: 120_000, maxRetries: 0 }
+      );
+      if (message.stop_reason === "refusal") {
+        ultimoErro = "O mapeamento foi recusado pelo modelo. Preencha a planilha à mão.";
+        continue;
+      }
+      if (message.stop_reason === "max_tokens") {
+        ultimoErro = "A planilha tem células demais para mapear de uma vez.";
+        continue;
+      }
+      const texto = message.content
+        .filter((b): b is Extract<(typeof message.content)[number], { type: "text" }> => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      const lido = MapaSchema.safeParse((() => {
+        try {
+          return JSON.parse(texto);
+        } catch {
+          return null;
+        }
+      })());
+      if (lido.success) return { ok: true, mapa: lido.data };
+      ultimoErro = "A resposta não veio no formato esperado.";
+    } catch (e) {
+      ultimoErro = mensagemDeErro(e);
+      // Conta sem crédito ou chave recusada: o outro modelo também não passaria.
+      if (/sem crédito|foi recusada/.test(ultimoErro)) break;
+    }
   }
+  return { ok: false, erro: ultimoErro };
 }
 
 // PASSO 3 — o preenchimento. Só escreve em célula do inventário que não é

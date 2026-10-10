@@ -897,6 +897,21 @@ os 12 meses no km e 12% de margem — a comparação lado a lado é o propósito
 da aba de conferência. Modelo só em PDF ou Word não é preenchido (use o
 Excel do próprio simulador).
 
+## 7.20 Modelos da leitura: padrão, forte e automático (out/2026)
+
+- Leitura do edital no **Sonnet 5.5** (metade do preço do Opus 5.5); o
+  resultado passa pela conferência `problemasDaLeitura` (sem item, item sem
+  km nem rotas, mais de 30% das rotas sem km, licitação sem habilitação) e,
+  se ela acusar — ou a leitura for recusada, cortada ou fora do formato —,
+  é refeita no **Opus 5.5** quando sobram ao menos 130 s dos 300 s da
+  função. Processo com 10 ou mais arquivos/partes já vai direto ao Opus.
+  Sem tempo para a segunda, fica a primeira, com os problemas nas
+  suposições. Conta sem crédito e chave recusada não tentam de novo.
+- Planilha do órgão mapeada pelo **Haiku 5.5**, com o Sonnet de reserva.
+- A tela diz quem leu e por que refez. Os três modelos trocam por variável
+  de ambiente: `ANTHROPIC_MODELO_EDITAL`, `ANTHROPIC_MODELO_EDITAL_FORTE`,
+  `ANTHROPIC_MODELO_PLANILHA`.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

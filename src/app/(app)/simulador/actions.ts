@@ -30,7 +30,7 @@ import { guardarArquivo, prenderAoEstudo, TIPOS_ARQUIVO, type TipoArquivo } from
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { ROTULO_UNIDADE, TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
-import { apagarArquivos, arquivosAssinadosValidos, assinarArquivo, enviarArquivo, lerEdital, type ArquivoAssinado } from "@/lib/simulador/importarEdital";
+import { apagarArquivos, arquivosAssinadosValidos, assinarArquivo, enviarArquivo, lerEdital, nomeDoModelo, type ArquivoAssinado } from "@/lib/simulador/importarEdital";
 import { editalParaEstudo, GRUPOS_HABILITACAO, SITUACOES_DOCUMENTO, type EstudoImportado } from "@/lib/simulador/editalParaEstudo";
 
 // AÇÕES DO SIMULADOR. Toda gravação exige "gerir-simulador" e deixa rastro na
@@ -604,6 +604,9 @@ export async function lerEditalEnviado(arquivosJson: string): Promise<{ erro?: s
   const r = await lerEdital(arquivos, { empresa: "Azul Mob (fretamento e transporte de passageiros, São Paulo)" });
   if (!r.ok) return { erro: r.erro };
   const estudo = editalParaEstudo(r.edital);
+  estudo.leitura = { modelo: nomeDoModelo(r.leitura.modelo), refeitaPorque: r.leitura.refeitaPorque };
+  // O que a conferência ainda acusa vai para as suposições, para conferir.
+  for (const a of r.leitura.avisos) estudo.regras.unshift({ tema: "SUPOSICAO", texto: `Conferência da leitura: ${a}. Confira no edital.`, fonte: null });
   await registrarEvento({
     companyId: session.companyId,
     userId: session.userId,
@@ -612,7 +615,7 @@ export async function lerEditalEnviado(arquivosJson: string): Promise<{ erro?: s
     acao: "SIMULADOR_EDITAL_LIDO",
     entidadeTipo: "SimEstudo",
     entidadeId: "novo",
-    descricao: `Edital lido pela IA (${arquivos.length} arquivo(s): ${[...new Set(arquivos.map((a) => a.nome))].join(", ").slice(0, 400)}) — ${estudo.itens.length} item(ns), ${estudo.itens.reduce((a, i) => a + i.rotas.length, 0)} rota(s).`,
+    descricao: `Edital lido pela IA (${nomeDoModelo(r.leitura.modelo)}${r.leitura.refeitaPorque ? `, refeito porque: ${r.leitura.refeitaPorque.slice(0, 120)}` : ""}; ${arquivos.length} arquivo(s): ${[...new Set(arquivos.map((a) => a.nome))].join(", ").slice(0, 400)}) — ${estudo.itens.length} item(ns), ${estudo.itens.reduce((a, i) => a + i.rotas.length, 0)} rota(s).`,
   });
   return { estudo };
 }

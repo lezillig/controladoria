@@ -32,8 +32,37 @@ import { LIMITE_PARTE } from "./dividirPdf";
 // item do edital com a rota da planilha, deduzir o tipo de veículo pela
 // lotação, separar o que pesa no custo do que é forma. Esforço médio cabe no
 // teto de 300 s da função com documentos de 100+ páginas.
-export const MODELO_EDITAL = "claude-opus-5-5";
+//
+// DOIS MODELOS, AUTOMÁTICO. A leitura começa no modelo padrão (Sonnet 5.5,
+// metade do preço do Opus) e é conferida (problemasDaLeitura): sem item, item
+// sem quantidade, rotas sem km, edital público sem habilitação. Se a conferência
+// falha — ou a leitura é recusada, cortada ou sai fora do formato — ela é
+// refeita no modelo forte (Opus 5.5), se ainda couber no tempo da função.
+// Processo com muitos arquivos já começa no forte. A planilha do órgão é
+// mapeada pelo modelo barato (Haiku 5.5), com o padrão de reserva. Os três se
+// trocam por variável de ambiente, sem mexer no código.
+export const MODELO_EDITAL = process.env.ANTHROPIC_MODELO_EDITAL || "claude-sonnet-5-5";
+export const MODELO_EDITAL_FORTE = process.env.ANTHROPIC_MODELO_EDITAL_FORTE || "claude-opus-5-5";
+export const MODELO_PLANILHA = process.env.ANTHROPIC_MODELO_PLANILHA || "claude-haiku-5-5";
 export const ESFORCO_EDITAL = "medium" as const;
+// Processo com tantos arquivos (ou partes de PDF) já vai direto ao forte.
+const ARQUIVOS_PARA_O_FORTE = 10;
+// O teto da função é 300 s: a primeira leitura tem até 150 s, e a segunda só
+// começa se sobrarem 130 s.
+const TEMPO_PRIMEIRA_MS = 150_000;
+const TEMPO_TOTAL_MS = 285_000;
+const TEMPO_MINIMO_SEGUNDA_MS = 130_000;
+
+// Nome curto do modelo, para a tela.
+export const nomeDoModelo = (m: string) =>
+  m
+    .replace(/^claude-/, "")
+    .replace(/-(\d+)-(\d+)$/, " $1.$2")
+    .replace(/-(\d+)$/, " $1")
+    .replace(/^./, (c) => c.toUpperCase());
+// O fallback do servidor (outro modelo quando um classificador recusa) não
+// existe no Haiku.
+export const comFallback = (m: string) => (/haiku/i.test(m) ? {} : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const });
 
 // Abaixo do limite de corpo da hospedagem (~4,5 MB), com folga para o
 // envelope do formulário. O navegador divide PDFs maiores em partes deste
@@ -142,32 +171,75 @@ Você recebe vários arquivos do mesmo processo: o edital, o termo de referênci
 
 Escreva em português do Brasil.`;
 
-// PASSO 2 — ler os arquivos enviados como um conjunto. Apaga os arquivos no
-// fim, com ou sem sucesso: a evidência é o edital que a pessoa tem, e o que a
-// leitura produziu fica no estudo.
-export async function lerEdital(arquivos: ArquivoEnviado[], contexto: { empresa: string }): Promise<{ ok: true; edital: EditalLido } | { ok: false; erro: string }> {
+// PASSO 2 — ler os arquivos enviados como um conjunto, com o modelo padrão e,
+// se a conferência pedir, de novo com o forte. Apaga os arquivos no fim, com
+// ou sem sucesso: a evidência é o edital guardado no estudo.
+export type Leitura = { modelo: string; refeitaPorque: string | null; avisos: string[] };
+export async function lerEdital(
+  arquivos: ArquivoEnviado[],
+  contexto: { empresa: string }
+): Promise<{ ok: true; edital: EditalLido; leitura: Leitura } | { ok: false; erro: string }> {
   if (!isLeituraDeEditalDisponivel()) return { ok: false, erro: "Leitura automática indisponível (ANTHROPIC_API_KEY não configurada)." };
   if (arquivos.length === 0) return { ok: false, erro: "Nenhum arquivo enviado." };
+  const inicio = Date.now();
+  try {
+    const direto = arquivos.length >= ARQUIVOS_PARA_O_FORTE || MODELO_EDITAL === MODELO_EDITAL_FORTE;
+    const primeiro = direto ? MODELO_EDITAL_FORTE : MODELO_EDITAL;
+    const r1 = await lerComModelo(primeiro, arquivos, contexto, direto ? TEMPO_TOTAL_MS : TEMPO_PRIMEIRA_MS);
+    const problemas1 = r1.ok ? problemasDaLeitura(r1.edital) : [r1.erro];
+    if (r1.ok && problemas1.length === 0) return { ok: true, edital: r1.edital, leitura: { modelo: primeiro, refeitaPorque: null, avisos: [] } };
+    // Conta sem crédito ou chave recusada: o forte também não passaria.
+    if (!r1.ok && r1.definitivo) return { ok: false, erro: r1.erro };
+    const sobra = TEMPO_TOTAL_MS - (Date.now() - inicio);
+    if (!direto && sobra >= TEMPO_MINIMO_SEGUNDA_MS) {
+      const r2 = await lerComModelo(MODELO_EDITAL_FORTE, arquivos, contexto, sobra);
+      if (r2.ok) return { ok: true, edital: r2.edital, leitura: { modelo: MODELO_EDITAL_FORTE, refeitaPorque: problemas1.join("; "), avisos: problemasDaLeitura(r2.edital) } };
+      if (!r1.ok) return { ok: false, erro: r2.erro };
+    }
+    // Sem tempo (ou o forte falhou): a primeira leitura, com os problemas à vista.
+    if (r1.ok) return { ok: true, edital: r1.edital, leitura: { modelo: primeiro, refeitaPorque: null, avisos: problemas1 } };
+    return { ok: false, erro: r1.erro };
+  } finally {
+    await apagarArquivos(arquivos.map((a) => a.fileId));
+  }
+}
+
+// A CONFERÊNCIA da leitura: o que indica que o modelo não deu conta do edital.
+export function problemasDaLeitura(e: EditalLido): string[] {
+  const p: string[] = [];
+  if (e.itens.length === 0) p.push("nenhum item lido");
+  const locacao = e.tipoServico === "LOCACAO_SM" || e.tipoServico === "LOCACAO_CM";
+  const semQuantidade = e.itens.filter((i) => (i.rotas ?? []).length === 0 && !i.kmMes && !i.kmDia && !(locacao && i.veiculos));
+  if (semQuantidade.length > 0 && !(e.unidadePreco === "DIARIA" || e.unidadePreco === "HORA"))
+    p.push(`${semQuantidade.length} item(ns) sem km nem rotas`);
+  const rotas = e.itens.flatMap((i) => i.rotas ?? []);
+  const rotasSemKm = rotas.filter((r) => !r.kmDia).length;
+  if (rotas.length >= 5 && rotasSemKm / rotas.length > 0.3) p.push(`${rotasSemKm} de ${rotas.length} rotas sem km`);
+  if (e.esfera === "PUBLICO" && e.tipoEstudo === "LICITACAO" && (e.habilitacao ?? []).length === 0) p.push("nenhum documento de habilitação");
+  return p;
+}
+
+type ResultadoDoModelo = { ok: true; edital: EditalLido } | { ok: false; erro: string; definitivo: boolean };
+
+async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto: { empresa: string }, tempoMs: number): Promise<ResultadoDoModelo> {
   try {
     const blocos: Anthropic.Beta.BetaContentBlockParam[] = arquivos.map((a) =>
       a.bloco === "imagem" ? { type: "image", source: { type: "file", file_id: a.fileId } } : { type: "document", source: { type: "file", file_id: a.fileId }, title: a.nome.slice(0, 200) }
     );
     const lista = arquivos.map((a, k) => `${k + 1}. ${a.nome}`).join("\n");
-    // `create` cru com timeout explícito, como na leitura de conformidade: o
-    // helper `parse` decodifica o JSON antes de olhar o stop_reason e, com a
-    // saída cortada, o erro que sobe não diz o motivo. Sem retentativa: uma
-    // segunda tentativa não caberia no teto de 300 s da função.
+    // `create` cru com timeout explícito: o helper `parse` decodifica o JSON
+    // antes de olhar o stop_reason e, com a saída cortada, o erro que sobe não
+    // diz o motivo. Sem retentativa: o tempo é da segunda leitura.
     const message = await cliente().beta.messages.create(
       {
-        model: MODELO_EDITAL,
+        model: modelo,
         // Teto para raciocínio + resposta: um edital com 100 rotas detalhadas
         // dá ~15 mil tokens de JSON. É anteparo, não controle de custo.
         max_tokens: 48000,
         output_config: { effort: ESFORCO_EDITAL, format: betaZodOutputFormat(EditalSchema) },
         // Edital com cláusula penal ou de segurança pode esbarrar num
         // classificador por engano; a API refaz a leitura em outro modelo.
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
+        ...comFallback(modelo),
         system: SYSTEM_PROMPT,
         messages: [
           {
@@ -179,26 +251,24 @@ export async function lerEdital(arquivos: ArquivoEnviado[], contexto: { empresa:
           },
         ],
       },
-      { timeout: 280_000, maxRetries: 0 }
+      { timeout: tempoMs, maxRetries: 0 }
     );
     if (message.stop_reason === "refusal")
-      return { ok: false, erro: `A leitura foi recusada pelo modelo (categoria ${message.stop_details?.category ?? "não informada"}). Preencha o estudo à mão.` };
-    if (message.stop_reason === "max_tokens") return { ok: false, erro: "O edital tem dados demais para uma leitura só: envie só o edital, o termo de referência e a planilha de itinerários." };
+      return { ok: false, definitivo: false, erro: `A leitura foi recusada pelo modelo (categoria ${message.stop_details?.category ?? "não informada"}). Preencha o estudo à mão.` };
+    if (message.stop_reason === "max_tokens") return { ok: false, definitivo: false, erro: "O edital tem dados demais para uma leitura só: envie só o edital, o termo de referência e a planilha de itinerários." };
     const texto = message.content
       .filter((b): b is Extract<(typeof message.content)[number], { type: "text" }> => b.type === "text")
       .map((b) => b.text)
       .join("");
-    let edital: EditalLido;
     try {
-      edital = EditalSchema.parse(JSON.parse(texto));
+      return { ok: true, edital: EditalSchema.parse(JSON.parse(texto)) };
     } catch (e) {
-      return { ok: false, erro: `A resposta não veio no formato esperado (${e instanceof Error ? e.message.slice(0, 160) : "erro"}).` };
+      return { ok: false, definitivo: false, erro: `A resposta não veio no formato esperado (${e instanceof Error ? e.message.slice(0, 160) : "erro"}).` };
     }
-    return { ok: true, edital };
   } catch (e) {
-    return { ok: false, erro: mensagemDeErro(e) };
-  } finally {
-    await apagarArquivos(arquivos.map((a) => a.fileId));
+    const msg = e instanceof Error ? e.message : String(e);
+    const definitivo = /credit balance/i.test(msg) || e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError;
+    return { ok: false, definitivo, erro: mensagemDeErro(e) };
   }
 }
 

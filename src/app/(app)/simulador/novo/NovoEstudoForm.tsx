@@ -189,6 +189,12 @@ function ResumoDoImportado({ importado }: { importado: EstudoImportado }) {
     <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-4 text-sm">
       <p className="font-semibold text-slate-800">Lido do edital — confira antes de criar</p>
       <p className="text-slate-700">{importado.resumo}</p>
+      {importado.leitura && (
+        <p className="text-xs text-slate-500">
+          Lido pelo {importado.leitura.modelo}
+          {importado.leitura.refeitaPorque ? ` — refeito no modelo mais forte porque a primeira leitura veio com: ${importado.leitura.refeitaPorque}.` : "."}
+        </p>
+      )}
       {suposicoes.length > 0 && (
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">O que a leitura supôs ({suposicoes.length})</p>

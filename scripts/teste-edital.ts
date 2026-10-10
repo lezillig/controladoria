@@ -10,6 +10,7 @@ import { editalParaEstudo, EditalSchema, SERVICOS_DO_EDITAL, DIAS_LETIVOS_PADRAO
 import { itensIniciais, MOTORISTAS_POR_VEICULO_ESCOLAR, premissasNovasDoEstudo, TIPOS_SERVICO } from "../src/lib/simulador/estudos";
 import { lerHabilitacaoDoEdital, lerItensNovos } from "../src/lib/simulador/formularioDoEstudo";
 import { dividirPdf } from "../src/lib/simulador/dividirPdf";
+import { nomeDoModelo, problemasDaLeitura } from "../src/lib/simulador/importarEdital";
 import { montarHistorico, type EditalDoHistorico } from "../src/lib/simulador/historicoDeEditais";
 import { aplicarPremissasDoEdital, lerPremissasDoEdital } from "../src/lib/simulador/premissasDoEdital";
 
@@ -251,6 +252,18 @@ async function divisao() {
   ok("página sozinha acima do limite: erro que diz a página", erro.includes("página 1"), erro);
   const pequeno = await dividirPdf(bytes, "grande.pdf", 10_000_000);
   conferir("PDF abaixo do limite: uma parte só", pequeno.map((x) => [x.de, x.ate]), [[0, 24]]);
+}
+
+console.log("\nCONFERÊNCIA DA LEITURA (troca automática para o modelo forte)");
+{
+  conferir("leitura boa: nada a refazer", problemasDaLeitura(base), []);
+  ok("sem item: refaz", problemasDaLeitura({ ...base, itens: [] }).some((p) => p.includes("nenhum item")));
+  const semKm = { ...base, itens: [{ ...base.itens[0], rotas: Array.from({ length: 10 }, (_, k) => ({ ...base.itens[0].rotas[0], nome: `R${k}`, kmDia: k < 5 ? null : 50 })) }] };
+  ok("metade das rotas sem km: refaz", problemasDaLeitura(semKm).some((p) => p.includes("rotas sem km")));
+  ok("licitação sem habilitação: refaz", problemasDaLeitura({ ...base, habilitacao: [] }).some((p) => p.includes("habilitação")));
+  const locacao = { ...base, tipoServico: "LOCACAO_SM" as const, itens: [{ ...base.itens[0], veiculos: 5, rotas: [], kmMes: null, kmDia: null }] };
+  conferir("locação com veículos e sem km: normal", problemasDaLeitura(locacao), []);
+  conferir("nome do modelo para a tela", [nomeDoModelo("claude-sonnet-5-5"), nomeDoModelo("claude-opus-5-5"), nomeDoModelo("claude-haiku-5-5")], ["Sonnet 5.5", "Opus 5.5", "Haiku 5.5"]);
 }
 
 console.log("\nPREMISSAS QUE O EDITAL FIXA (o caso da TCB)");
