@@ -118,6 +118,7 @@ const ESTILO_ORIGEM: Record<OrigemPremissa["origem"], { rotulo: string; classe: 
   PADRAO: { rotulo: "estimativa", classe: "bg-amber-50 text-amber-800" },
   HISTORICO: { rotulo: "estimativa de mercado", classe: "bg-amber-50 text-amber-800" },
   AJUSTE: { rotulo: "ajustado aqui", classe: "bg-violet-50 text-violet-800" },
+  EDITAL: { rotulo: "do edital", classe: "bg-sky-50 text-sky-800" },
 };
 
 export function SeloOrigem({ origem, titulo }: { origem: OrigemPremissa["origem"] | undefined; titulo?: string }) {

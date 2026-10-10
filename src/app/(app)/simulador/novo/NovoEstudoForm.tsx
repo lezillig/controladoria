@@ -10,6 +10,7 @@ import { ROTULO_TIPO_VEICULO, TIPOS_VEICULO, unidadeDoTeto, VARIANTE_DO_TIPO, ty
 import { atualizarEstudo, criarEstudo } from "../actions";
 import { GRUPOS_HABILITACAO, ROTULO_GRUPO_HABILITACAO, type EstudoImportado, type RegraImportada, type RotaImportada } from "@/lib/simulador/editalParaEstudo";
 import ImportarEdital from "./ImportarEdital";
+import { descreverPremissasDoEdital } from "@/lib/simulador/premissasDoEdital";
 
 // O PRIMEIRO PASSO de um estudo. Primeiro a esfera — público ou privado —,
 // porque ela muda o que se pergunta: no público, edital, modalidade, sessão e
@@ -199,6 +200,16 @@ function ResumoDoImportado({ importado }: { importado: EstudoImportado }) {
           <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-600">Exigências que pesam no custo ({exigencias.length})</summary>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-700">{exigencias.map(item)}</ul>
         </details>
+      )}
+      {importado.premissas && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">Premissas que o edital fixa — o estudo já abre com elas</p>
+          <ul className="list-disc space-y-0.5 pl-5 text-slate-700">
+            {descreverPremissasDoEdital(importado.premissas).map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        </div>
       )}
       {importado.habilitacao.length > 0 && (
         <details>
@@ -390,6 +401,7 @@ export default function NovoEstudoForm({ estudo, leituraDisponivel = false }: { 
           formData.set("regrasDoEdital", JSON.stringify(importado.regras));
           formData.set("habilitacaoDoEdital", JSON.stringify(importado.habilitacao));
           formData.set("arquivosGuardados", JSON.stringify(arquivosGuardados));
+          if (importado.premissas) formData.set("premissasDoEdital", JSON.stringify(importado.premissas));
         }
         iniciar(async () => {
           const r = estudo ? await atualizarEstudo(estudo.id, formData) : await criarEstudo(formData);

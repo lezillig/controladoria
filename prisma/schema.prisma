@@ -1900,6 +1900,9 @@ model SimEstudo {
   formaFaturamento    String?
   avisoRescisaoDias   Int?
   valorTotalMaximo    Decimal?  @db.Decimal(18, 6)
+  // As premissas que o edital importado fixa (reserva, encargos, pisos, idade
+  // do veículo…), aplicadas às premissas do estudo novo (premissasDoEdital.ts).
+  premissasDoEdital   Json?
   prorrogavelAte      String?
   garantiaPct         Decimal?  @db.Decimal(18, 6)
   // EM_ESTUDO | PROPOSTA_ENVIADA | GANHO | PERDIDO | DESISTENCIA | EM_EXECUCAO | ENCERRADO

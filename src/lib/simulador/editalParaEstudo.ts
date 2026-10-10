@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { lerNumero } from "./numeros";
+import { lerPremissasDoEdital, type PremissasDoEdital } from "./premissasDoEdital";
 import { TIPOS_VEICULO, type TipoVeiculo } from "./tipos";
 
 // O EDITAL LIDO → O ESTUDO NOVO.
@@ -109,6 +110,19 @@ export const EditalSchema = z.object({
     )
     .max(60)
     .describe("Exigências que mudam o custo: idade máxima e características dos veículos, monitor, ar, acessibilidade, CNH e cursos, reserva técnica, garagem, rastreamento, garantia contratual, prazo de pagamento, reajuste, penalidades relevantes."),
+  premissas: z
+    .object({
+      reservaTecnicaVeiculos: z.number().nullable().describe("Veículos de reserva técnica que o edital fixa (ex.: 3). Nulo se não fixar."),
+      reservaTecnicaPct: z.number().nullable().describe("Reserva técnica em fração da frota quando o edital dá percentual (0,05 = 5%). Nulo se não der."),
+      encargosSociaisPct: z.number().nullable().describe("Encargos sociais que o órgão FIXA para a proposta, em fração (0,7064 = 70,64%). Nulo se a licitante informa os dela."),
+      salarioMotorista: z.number().nullable().describe("Piso salarial do motorista na convenção coletiva indicada pelo edital (R$/mês). Nulo se não houver."),
+      salarioMonitor: z.number().nullable().describe("Piso do monitor/acompanhante na convenção indicada (R$/mês). Nulo se não houver."),
+      valeRefeicaoDia: z.number().nullable().describe("Vale-refeição/auxílio-alimentação por DIA trabalhado na convenção indicada (R$). Se só houver valor mensal, divida por 22 e diga em suposições."),
+      exigeVeiculoNovo: z.boolean().describe("true se a proposta tem de cotar veículo zero km."),
+      idadeMaximaVeiculoAnos: z.number().nullable().describe("Idade máxima do veículo na ENTRADA em operação, em anos. Nulo se não houver."),
+      consumoKmPorLitro: z.number().nullable().describe("Consumo de referência de diesel que o órgão fixa, em km por litro (0,35 L/km de diesel+ARLA é cerca de 3 km/L de diesel). Nulo se a licitante informa o dela."),
+    })
+    .describe("Os números que o edital FIXA para a proposta (não os que a licitante escolhe)."),
   habilitacao: z
     .array(
       z.object({
@@ -162,6 +176,7 @@ export type ItemImportado = {
 };
 
 export type RegraImportada = { tema: string; texto: string; fonte: string | null };
+export type { PremissasDoEdital };
 export type DocumentoImportado = { grupo: GrupoHabilitacao; documento: string; exigencia: string | null; fonte: string | null };
 
 export type EstudoImportado = {
@@ -177,6 +192,9 @@ export type EstudoImportado = {
   itens: ItemImportado[];
   regras: RegraImportada[];
   habilitacao: DocumentoImportado[];
+  // As premissas que o edital fixa (reserva, encargos, pisos…), aplicadas ao
+  // estudo novo (premissasDoEdital.ts). Nulo se o edital não fixa nenhuma.
+  premissas: PremissasDoEdital | null;
   resumo: string;
 };
 
@@ -314,6 +332,26 @@ export function editalParaEstudo(e: EditalLido): EstudoImportado {
       .filter((d) => d.documento.trim() !== "")
       .slice(0, 80)
       .map((d) => ({ grupo: d.grupo, documento: d.documento.trim().slice(0, 500), exigencia: d.exigencia?.trim().slice(0, 1000) || null, fonte: d.fonte?.slice(0, 200) || null })),
+    premissas: premissasDoEdital(e),
     resumo: e.resumo,
   };
+}
+
+// A reserva em veículos vira fração da frota operante (a soma dos itens).
+function premissasDoEdital(e: EditalLido): PremissasDoEdital | null {
+  const p = e.premissas;
+  if (!p) return lerPremissasDoEdital({ kmImprodutivoPagoPct: e.kmImprodutivoPagoPct ? e.kmImprodutivoPagoPct / 100 : null });
+  const frota = e.itens.reduce((a, i) => a + (i.veiculos ?? 0), 0);
+  const reserva = p.reservaTecnicaPct ?? (p.reservaTecnicaVeiculos !== null && frota > 0 ? Math.round((p.reservaTecnicaVeiculos / frota) * 10000) / 10000 : null);
+  return lerPremissasDoEdital({
+    reservaTecnicaPct: reserva,
+    kmImprodutivoPagoPct: e.kmImprodutivoPagoPct ? e.kmImprodutivoPagoPct / 100 : null,
+    encargosSociaisPct: p.encargosSociaisPct,
+    salarioMotorista: p.salarioMotorista,
+    salarioMonitor: p.salarioMonitor,
+    valeRefeicaoDia: p.valeRefeicaoDia,
+    exigeVeiculoNovo: p.exigeVeiculoNovo,
+    idadeMaximaVeiculoAnos: p.idadeMaximaVeiculoAnos,
+    consumoKmPorLitro: p.consumoKmPorLitro,
+  });
 }

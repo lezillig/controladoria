@@ -7,10 +7,11 @@
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { editalParaEstudo, EditalSchema, SERVICOS_DO_EDITAL, DIAS_LETIVOS_PADRAO, type EditalLido } from "../src/lib/simulador/editalParaEstudo";
-import { itensIniciais, MOTORISTAS_POR_VEICULO_ESCOLAR, TIPOS_SERVICO } from "../src/lib/simulador/estudos";
+import { itensIniciais, MOTORISTAS_POR_VEICULO_ESCOLAR, premissasNovasDoEstudo, TIPOS_SERVICO } from "../src/lib/simulador/estudos";
 import { lerHabilitacaoDoEdital, lerItensNovos } from "../src/lib/simulador/formularioDoEstudo";
 import { dividirPdf } from "../src/lib/simulador/dividirPdf";
 import { montarHistorico, type EditalDoHistorico } from "../src/lib/simulador/historicoDeEditais";
+import { aplicarPremissasDoEdital, lerPremissasDoEdital } from "../src/lib/simulador/premissasDoEdital";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -44,6 +45,7 @@ const base: EditalLido = {
   indiceReajuste: "IPCA",
   diasLetivosAno: null,
   kmImprodutivoPagoPct: null,
+  premissas: { reservaTecnicaVeiculos: null, reservaTecnicaPct: null, encargosSociaisPct: null, salarioMotorista: null, salarioMonitor: null, valeRefeicaoDia: null, exigeVeiculoNovo: false, idadeMaximaVeiculoAnos: null, consumoKmPorLitro: null },
   itens: [
     {
       descricao: "Lote 1 — rotas rurais",
@@ -245,6 +247,37 @@ async function divisao() {
   ok("página sozinha acima do limite: erro que diz a página", erro.includes("página 1"), erro);
   const pequeno = await dividirPdf(bytes, "grande.pdf", 10_000_000);
   conferir("PDF abaixo do limite: uma parte só", pequeno.map((x) => [x.de, x.ate]), [[0, 24]]);
+}
+
+console.log("\nPREMISSAS QUE O EDITAL FIXA (o caso da TCB)");
+{
+  const tcb = editalParaEstudo({
+    ...base,
+    kmImprodutivoPagoPct: 5,
+    itens: [{ ...base.itens[0], veiculos: 52, rotas: [] }],
+    premissas: { reservaTecnicaVeiculos: 3, reservaTecnicaPct: null, encargosSociaisPct: 0.7064, salarioMotorista: 2772, salarioMonitor: 1621, valeRefeicaoDia: 46.23, exigeVeiculoNovo: true, idadeMaximaVeiculoAnos: 5, consumoKmPorLitro: 3 },
+  });
+  const ped = tcb.premissas!;
+  conferir("reserva em veículos vira fração da frota (3 ÷ 52)", ped.reservaTecnicaPct, Math.round((3 / 52) * 10000) / 10000);
+  conferir("km improdutivo pago em fração", ped.kmImprodutivoPagoPct, 0.05);
+  conferir("nada fixado: sem premissas", editalParaEstudo(base).premissas, null);
+  conferir("leitura recusa número fora de faixa (encargos de 706%)", lerPremissasDoEdital({ encargosSociaisPct: 7.06 }), null);
+
+  const { premissas, origem } = premissasNovasDoEstudo({ esfera: "PUBLICO", tipoServico: "ESCOLAR", vigenciaMeses: 30, prazoPagamentoDias: 30, tiposVeiculo: ["ONIBUS"], srp: false, premissasDoEdital: ped } as never, null);
+  const sem = premissasNovasDoEstudo({ esfera: "PUBLICO", tipoServico: "ESCOLAR", vigenciaMeses: 30, prazoPagamentoDias: 30, tiposVeiculo: ["ONIBUS"], srp: false } as never, null);
+  conferir("reserva do edital substitui a da base", premissas.contrato.reservaTecnicaPct, ped.reservaTecnicaPct);
+  conferir("km improdutivo não pago = (1 + base) ÷ 1,05 − 1", premissas.contrato.kmMortoPct, Math.round(((1 + sem.premissas.contrato.kmMortoPct) / 1.05 - 1) * 10000) / 10000);
+  conferir("encargos fixados pelo órgão", premissas.pessoal.encargosPct, 0.7064);
+  const onibus = premissas.perfis!.find((p) => p.tipo === "ONIBUS")!;
+  const onibusBase = sem.premissas.perfis!.find((p) => p.tipo === "ONIBUS")!;
+  conferir("piso é mínimo: salário do motorista = máx(base, piso)", onibus.motorista.salario, Math.max(onibusBase.motorista.salario, 2772));
+  conferir("monitor = máx(base, piso)", premissas.pessoal.salarioMonitora, Math.max(sem.premissas.pessoal.salarioMonitora, 1621));
+  conferir("vale-refeição = máx(base, edital)", premissas.pessoal.valeRefeicaoDia, Math.max(sem.premissas.pessoal.valeRefeicaoDia ?? 0, 46.23));
+  conferir("veículo zero km", onibus.veiculo.idadeInicialAnos, 0);
+  conferir("consumo de referência do edital", onibus.variaveis.consumoAsfaltoKmL, 3);
+  conferir("a origem diz que veio do edital", [origem["contrato.reservaTecnicaPct"]?.origem, origem["pessoal.encargosPct"]?.origem, origem[`perfil:${onibus.codigo}:veiculo.idadeInicialAnos`]?.origem], ["EDITAL", "EDITAL", "EDITAL"]);
+  const lidas = aplicarPremissasDoEdital(structuredClone(sem.premissas), {}, ped);
+  ok("o que mudou vem em texto para a tela", lidas.length >= 6 && lidas.some((t) => t.includes("Reserva")));
 }
 
 console.log("\nHISTÓRICO DE EDITAIS");

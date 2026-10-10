@@ -7,6 +7,7 @@ import { simular, VERSAO_MOTOR } from "./motor";
 import { precoDoConjunto } from "./decisao";
 import { baseVigente, paraNumero, type BaseVigente } from "./baseDeCustos";
 import { PERFIS_PADRAO, perfisDaBase, premissasDaBase, problemasNasPremissas, regrasDeCapitalNosPerfis, type MapaOrigem } from "./premissas";
+import { aplicarPremissasDoEdital, lerPremissasDoEdital } from "./premissasDoEdital";
 import { simulacoesHistoricas, FONTE_HISTORICO } from "./historico";
 import { normalizarPct } from "./catalogo";
 import type { CriterioJulgamento, EntradaSimulacao, Item, PerfilVeiculo, Premissas, ResultadoSimulacao, Rota, TipoVeiculo, UnidadePreco } from "./tipos";
@@ -499,6 +500,7 @@ export async function entradaInicial(
 export function premissasNovasDoEstudo(
   estudo: Pick<NonNullable<Awaited<ReturnType<typeof carregarEstudo>>>["estudo"], "esfera" | "tipoServico" | "vigenciaMeses" | "prazoPagamentoDias" | "tiposVeiculo" | "srp"> & {
     itens?: { shareIntermunicipal: unknown }[];
+    premissasDoEdital?: unknown;
   },
   baseCarregada: BaseVigente | null
 ): { premissas: Premissas; origem: MapaOrigem; vazia: boolean } {
@@ -586,6 +588,9 @@ export function premissasNovasDoEstudo(
       }
   regrasDeCapitalNosPerfis(premissas, origem);
   if (estudo.tipoServico === "LOCACAO_SM") for (const perfil of premissas.perfis) perfil.veiculo.remuneracaoSobreValorMedio = true;
+  // Por último, o que o edital importado fixa (reserva, encargos, pisos,
+  // idade do veículo): vale sobre a base e as regras do serviço.
+  aplicarPremissasDoEdital(premissas, origem, lerPremissasDoEdital(estudo.premissasDoEdital));
   return { premissas, origem, vazia: Boolean(vazia) };
 }
 

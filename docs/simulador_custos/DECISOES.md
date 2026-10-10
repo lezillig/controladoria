@@ -845,6 +845,29 @@ sessão (formatação condicional) e a fonte de cada documento.
   km, veículo-mês e diária; o mesmo nome escrito de jeitos diferentes conta
   como uma empresa).
 
+## 7.18 Premissas que o edital fixa (out/2026)
+
+A leitura do edital transcreve também os números que a proposta TEM de usar
+(`EditalSchema.premissas`), e o estudo novo abre com eles, com a origem "do
+edital" (`premissasDoEdital.ts`, aplicadas por último em
+`premissasNovasDoEstudo` — o "Voltar à base" do estudo volta a elas):
+
+- **Reserva técnica** (TCB: 3 ônibus para 52 = 5,77%): substitui a da base.
+- **Km improdutivo já pago** (TCB: 5%): a premissa de km improdutivo passa
+  a ser só o que roda sem receber, (1 + base) ÷ (1 + pago) − 1 — 12% vira
+  6,67%. Antes os 5% eram contados duas vezes.
+- **Encargos sociais fixados pelo órgão** (TCB: 70,64%): substituem os da
+  base (o preço tem de bater com a planilha que vai na proposta).
+- **Piso do motorista e do monitor e vale-refeição da CCT**: são mínimos —
+  só sobem o que a base tem abaixo.
+- **Veículo zero km** ou **idade máxima de entrada**: a idade inicial dos
+  perfis desce até ela.
+- **Consumo de referência** fixado (km/L de diesel), nos perfis a combustão.
+
+Com isso a TCB (base de exemplo) foi de R$ 24,38 para R$ 23,48/km.
+Ainda fora: os meses sem operação pagos à parte (a TCB paga janeiro como
+parcela fixa, sem km) — hoje o R$/km cobre os 12 meses de custo fixo.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

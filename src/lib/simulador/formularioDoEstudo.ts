@@ -1,4 +1,5 @@
 import { GRUPOS_HABILITACAO } from "./editalParaEstudo";
+export { lerPremissasDoEdital } from "./premissasDoEdital";
 import type { ItemNovo } from "./estudos";
 import { horarioValido } from "./horario";
 import { lerNumero } from "./numeros";

@@ -284,7 +284,8 @@ export const PREMISSAS_PADRAO: Premissas = {
 // A `fonte` diz qual indicador e o `detalhe`, a conta com os números.
 // `confianca`: só no REAL — a do indicador medido (um número de 2 meses é
 // medido, mas ainda é estimativa para o painel de decisão).
-export type OrigemPremissa = { origem: "BASE" | "PADRAO" | "AJUSTE" | "HISTORICO" | "REAL"; fonte: string; detalhe?: string; confianca?: "ALTA" | "MEDIA" | "BAIXA" };
+// EDITAL: o número que o edital importado fixa (premissasDoEdital.ts).
+export type OrigemPremissa = { origem: "BASE" | "PADRAO" | "AJUSTE" | "HISTORICO" | "REAL" | "EDITAL"; fonte: string; detalhe?: string; confianca?: "ALTA" | "MEDIA" | "BAIXA" };
 export type MapaOrigem = Record<string, OrigemPremissa>;
 
 export type EscolhasDaBase = {

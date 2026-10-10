@@ -21,7 +21,7 @@ import {
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerDataHoraDeBrasilia, lerInteiro, lerNumero } from "@/lib/simulador/numeros";
-import { lerHabilitacaoDoEdital, lerItensNovos, lerRegrasDoEdital } from "@/lib/simulador/formularioDoEstudo";
+import { lerHabilitacaoDoEdital, lerItensNovos, lerPremissasDoEdital, lerRegrasDoEdital } from "@/lib/simulador/formularioDoEstudo";
 import { SITUACOES_PARTICIPANTE } from "@/lib/simulador/disputa";
 import { guardarArquivo, prenderAoEstudo, TIPOS_ARQUIVO, type TipoArquivo } from "@/lib/simulador/arquivosDoEstudo";
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
@@ -126,6 +126,15 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   // conferência antes de lançar preço.
   if (regras.length > 0)
     await prisma.simRegra.createMany({ data: regras.map((r, ordem) => ({ estudoId: id, ordem, tema: r.tema, texto: r.texto, fonte: r.fonte })) });
+  // As premissas que o edital fixa: aplicadas quando o estudo abrir.
+  const premissasDoEdital = (() => {
+    try {
+      return lerPremissasDoEdital(JSON.parse(texto(formData, "premissasDoEdital", 5_000) ?? "null"));
+    } catch {
+      return null;
+    }
+  })();
+  if (premissasDoEdital) await prisma.simEstudo.update({ where: { id }, data: { premissasDoEdital } });
   // Os arquivos do edital enviados na importação passam a ser do estudo.
   const guardados = (() => {
     try {
