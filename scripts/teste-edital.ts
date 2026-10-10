@@ -217,6 +217,10 @@ async function assinatura() {
   conferir("sem chave da IA: indisponível", isLeituraDeEditalDisponivel(), false);
   const r = await lerEdital([{ fileId: "file_011CTesteAbc123", nome: "x.pdf", bloco: "documento" }], { empresa: "Azul" });
   ok("sem chave da IA: erro claro, sem chamar a API", !r.ok && r.erro.includes("ANTHROPIC_API_KEY"));
+  const Anthropic = (await import("@anthropic-ai/sdk")).default;
+  const { mensagemDeErro } = await import("../src/lib/simulador/importarEdital");
+  const semCredito = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }, undefined, new Headers());
+  ok("conta sem crédito: mensagem diz para comprar créditos", mensagemDeErro(semCredito).includes("sem crédito"), mensagemDeErro(semCredito));
   if (chave) process.env.ANTHROPIC_API_KEY = chave;
 }
 

@@ -203,6 +203,12 @@ export async function lerEdital(arquivos: ArquivoEnviado[], contexto: { empresa:
 }
 
 export function mensagemDeErro(e: unknown): string {
+  // Conta da API sem saldo ou chave recusada: não é o arquivo, é a conta — a
+  // mensagem diz a quem resolver (a cobrança da API, não o sistema).
+  if (/credit balance/i.test(e instanceof Error ? e.message : String(e)))
+    return "A conta da API da Anthropic está sem crédito. Quem administra a conta precisa comprar créditos em console.anthropic.com (Plans & Billing) e tentar de novo — nada do edital foi perdido.";
+  if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError)
+    return "A chave da IA (ANTHROPIC_API_KEY) foi recusada: confira a chave configurada na hospedagem.";
   if (e instanceof Anthropic.RateLimitError) return "Limite de uso da IA atingido; tente de novo em alguns minutos.";
   if (e instanceof Anthropic.APIConnectionTimeoutError) return "A leitura passou do tempo (edital muito longo). Envie só o edital, o termo de referência e a planilha de itinerários.";
   if (e instanceof Anthropic.BadRequestError) return `O arquivo não foi aceito pela leitura: ${e.message.slice(0, 200)}`;
