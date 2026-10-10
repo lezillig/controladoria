@@ -143,7 +143,8 @@ async function principal() {
   conferir("fretamento eventual: km da viagem é o cobrado (utilização 100%) e preço por diária", [eventual.entrada.premissas.contrato.utilizacao, eventual.entrada.unidadePreco], [1, "DIARIA"]);
   {
     const pr = eventual.entrada.premissas.preco;
-    const esperado = 0.08 * (1 - pr.pis - pr.cofins - Math.max(pr.iss, pr.icms));
+    // Item municipal: o tributo da nota é o ISS (não o maior entre ISS e ICMS).
+    const esperado = 0.08 * (1 - pr.pis - pr.cofins - pr.iss);
     const semPremio = (await estudos.entradaInicial(EMPRESA, novo)).entrada.premissas.preco.despesasSobrePrecoPct;
     ok(
       "fretamento eventual: prêmio de 8% da nota sem tributos nas despesas sobre o preço, sem hora extra",

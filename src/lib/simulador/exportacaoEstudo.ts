@@ -79,7 +79,7 @@ export async function exportarEstudo(
 ): Promise<{ erro: string } | ArquivoExportado> {
   const estudo = await prisma.simEstudo.findFirst({
     where: { id: estudoId, companyId },
-    include: { regras: { orderBy: { ordem: "asc" } } },
+    include: { regras: { orderBy: { ordem: "asc" } }, habilitacao: { orderBy: { ordem: "asc" } } },
   });
   if (!estudo) return { erro: "Estudo não encontrado." };
 
@@ -130,6 +130,16 @@ export async function exportarEstudo(
       avisoRescisaoDias: estudo.avisoRescisaoDias,
     },
     regras: estudo.regras.map((r) => ({ tema: r.tema, texto: r.texto, impacto: r.impacto ?? "", campo: r.campoAfetado })),
+    habilitacao: estudo.habilitacao.map((h) => ({
+      grupo: h.grupo,
+      documento: h.documento,
+      exigencia: h.exigencia,
+      fonte: h.fonte,
+      situacao: h.situacao,
+      validade: h.validade ? h.validade.toISOString().slice(0, 10) : null,
+      observacao: h.observacao,
+    })),
+    dataSessaoIso: estudo.dataSessao ? estudo.dataSessao.toISOString().slice(0, 10) : null,
     entrada,
     resultado,
     versao,

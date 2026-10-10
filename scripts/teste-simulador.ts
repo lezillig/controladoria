@@ -144,7 +144,10 @@ console.log("\nUNIDADES DE PREÇO — o mesmo custo, cobrado de outro jeito");
   const i1 = km.itens[0];
   // SJP: 4 vans no item 1, 26 dias; custo/veículo-mês = custo ÷ 4.
   perto("custo por veículo-mês = custo ÷ veículos", i1.indicadores.veiculoMes.custo, i1.custoTotal / 4, "total");
-  perto("custo por diária = custo ÷ (veículos × dias)", i1.indicadores.diaria.custo, i1.custoTotal / (4 * 26), "total");
+  // Diária e hora pagas acompanham a utilização (no registro de preços, o
+  // órgão paga as diárias que pedir).
+  const u = base.premissas.contrato.utilizacao;
+  perto("custo por diária = custo ÷ (veículos × dias × utilização)", i1.indicadores.diaria.custo, i1.custoTotal / (4 * 26 * u), "total");
   conferir("sem horas por dia não há preço por hora", i1.indicadores.hora, null);
   const porVeiculo = simular({ ...base, unidadePreco: "VEICULO_MES", precoTesteKm: null });
   const v1 = porVeiculo.itens[0];
@@ -156,7 +159,7 @@ console.log("\nUNIDADES DE PREÇO — o mesmo custo, cobrado de outro jeito");
   conferir("… e o equilíbrio é um teto de utilização", c.tipoEquilibrio, "MAXIMA");
   ok("… com lucro caindo quando o km sobe", c.linhas[0].lucro > c.linhas[5].lucro);
   const comHoras = simular({ ...base, unidadePreco: "HORA", rotas: base.rotas.map((r) => ({ ...r, horasDia: r.item === "1" ? 15 : 10 })) });
-  perto("por hora: quantidade = veículos × dias × horas", comHoras.itens[0].indicadores.hora!.quantidade, 4 * 26 * 15, "total");
+  perto("por hora: quantidade = veículos × dias × horas × utilização", comHoras.itens[0].indicadores.hora!.quantidade, 4 * 26 * 15 * u, "total");
 
   const binomia = simular({ ...base, unidadePreco: "BINOMIA", precoTesteKm: null });
   const b1 = binomia.itens[0];
@@ -519,6 +522,42 @@ console.log("\nVALIDAÇÃO DA ENTRADA — o que chega do navegador antes do moto
   ok("dias por mês acima de 31 é recusado", variar((e) => (e.rotas[0].diasMes = 40)) !== null);
   conferir("dias por mês vazio continua válido", variar((e) => (e.rotas[0].diasMes = null)), null);
   ok("parcela intermunicipal acima de 100% é recusada", variar((e) => (e.itens[0].shareIntermunicipal = 1.5)) !== null);
+}
+
+console.log("\nCORREÇÕES DA AUDITORIA DOS EDITAIS (out/2026)");
+{
+  // PISO DE PEÇAS POR ITEM E TIPO: a frota repartida entre rotas (o mesmo
+  // ônibus de manhã e à tarde) não paga o piso duas vezes. Uma rota de 2
+  // veículos dividida em quatro meias-frotas, com o km concentrado em duas.
+  const base = historicoSaoJoseDosPinhais().entrada;
+  const perfis = PERFIS_PADRAO.map((p) => ({ ...p, veiculo: { ...p.veiculo, pisoPecasAntp: true, garantiaMeses: null, garantiaKm: null } }));
+  const r0 = { ...base.rotas[0], perfilVeiculo: perfis[1].codigo, veiculos: 2, motoristas: 2, kmReferencia: 4000, kmDia: 160, passagensPedagioMes: 0 };
+  const inteira = { ...base, premissas: { ...base.premissas, perfis }, rotas: [r0] };
+  const repartida = {
+    ...inteira,
+    rotas: [0.45, 0.45, 0.05, 0.05].map((f, k) => ({ ...r0, nome: `R${k}`, veiculos: 0.5, motoristas: 0.5, kmReferencia: 4000 * f, kmDia: 160 * f })),
+  };
+  const a = simular(inteira).itens[0];
+  const b = simular(repartida).itens[0];
+  ok("o piso entra (o teste exercita o complemento)", a.manutencaoFixa > 0);
+  perto("frota repartida: mesma manutenção fixa (com o piso) da frota inteira", b.manutencaoFixa, a.manutencaoFixa, "total");
+  perto("… e o mesmo custo total", b.custoTotal, a.custoTotal, "total");
+
+  // DIÁRIA: no registro de preços, as diárias pagas acompanham a demanda —
+  // nos cenários, o faturamento cai com a utilização (e a margem não sobe).
+  const diaria = simular({ ...base, unidadePreco: "DIARIA", precoTesteKm: null });
+  const c = diaria.cenarios.linhas;
+  ok("por diária o faturamento cresce com a utilização", c[c.length - 1].faturamento > c[0].faturamento);
+  const u = base.premissas.contrato.utilizacao;
+  const naUtilizacao = c.find((l) => Math.abs(l.utilizacao - u) < 1e-9);
+  if (naUtilizacao) perto("na utilização do estudo, o cenário fatura o mesmo que o resultado", naUtilizacao.faturamento, diaria.totais.faturamento, "total");
+
+  // TETO NA UNIDADE DO CONTRATO: o teto por veículo-mês é conferido.
+  const veic = simular({ ...base, unidadePreco: "VEICULO_MES", precoTesteKm: null });
+  const preco = veic.itens[0].precoUnidade;
+  const comTeto = (t: number) => simular({ ...base, unidadePreco: "VEICULO_MES", precoTesteKm: null, itens: base.itens.map((i, k) => (k === 0 ? { ...i, precoMaximoKm: t } : i)) }).itens[0].acimaDoTeto;
+  conferir("veículo-mês acima do teto da unidade: acusa", comTeto(preco * 0.9), true);
+  conferir("… abaixo: não acusa", comTeto(preco * 1.1), false);
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

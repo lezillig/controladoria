@@ -28,6 +28,10 @@ export type CriterioJulgamento = "ITEM" | "LOTE";
 // o custo fixo, e um valor por km, que cobre o variável.
 export type UnidadePreco = "KM" | "VEICULO_MES" | "DIARIA" | "HORA" | "BINOMIA";
 
+// A unidade do PREÇO MÁXIMO do item (o campo precoMaximoKm): a do contrato; na
+// binômia, o equivalente por km.
+export const unidadeDoTeto = (u: UnidadePreco | null | undefined): string => (!u || u === "KM" || u === "BINOMIA" ? "R$/km" : ROTULO_UNIDADE[u]);
+
 export const ROTULO_UNIDADE: Record<UnidadePreco, string> = {
   KM: "R$/km",
   VEICULO_MES: "R$/veículo-mês",

@@ -214,6 +214,12 @@ type PorRota = {
   adaptacao: number;
   adaptacaoDepreciacao: number;
   manutencaoFixa: number;
+  // Para o piso de peças por item e tipo de veículo (ver simular): o piso da
+  // rota, a manutenção dela sem o piso e o grupo (perfil resolvido).
+  pisoPecasMes: number;
+  manutencaoSemPisoMes: number;
+  manutencaoFixaPct: number;
+  grupoPerfil: string;
   diesel: number;
   arla: number;
   oleoLavagem: number;
@@ -323,8 +329,12 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   // Sobre a frota com a reserva: o veículo parado também envelhece (a ANTP
   // aplica o coeficiente à frota patrimonial).
   const pisoPecasMes = veiculo.pisoPecasAntp && perfil?.energia !== "ELETRICO" ? (comReserva * veiculo.valor * coeficienteMedioDoContrato(veiculo, contrato.vigenciaMeses)) / 12 : 0;
-  const complementoPecas = Math.max(0, pisoPecasMes - (manutencaoKm * kmRodado) / mesesNaApuracao - manutencaoFixaPct);
-  const manutencaoFixa = manutencaoFixaPct + complementoPecas;
+  const manutencaoSemPisoMes = (manutencaoKm * kmRodado) / mesesNaApuracao + manutencaoFixaPct;
+  // O complemento até o piso sai por item e tipo de veículo, não por rota
+  // (simular, abaixo): com a frota repartida entre rotas de manhã e de tarde,
+  // o mesmo ônibus aparece em duas rotas, e o piso rota a rota cobrava a
+  // diferença da rota curta sem descontar a sobra da longa.
+  const manutencaoFixa = manutencaoFixaPct + Math.max(0, pisoPecasMes - manutencaoSemPisoMes);
 
   return {
     kmReferencia: r.kmReferencia,
@@ -345,6 +355,10 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
     adaptacao,
     adaptacaoDepreciacao,
     manutencaoFixa,
+    pisoPecasMes,
+    manutencaoSemPisoMes,
+    manutencaoFixaPct,
+    grupoPerfil: perfil?.codigo ?? "",
     diesel: combustivelDaContratada ? dieselKm * kmRodado : 0,
     arla: combustivelDaContratada ? variaveis.arlaKm * kmRodado : 0,
     oleoLavagem: variaveis.oleoLavagemKm * kmRodado,
@@ -358,7 +372,25 @@ function calcularRota(p: Premissas, r: Rota, item: Item): PorRota {
   };
 }
 
-function somaCampo(linhas: PorRota[], campo: Exclude<keyof PorRota, "horas">): number {
+// PISO DE PEÇAS POR ITEM E TIPO DE VEÍCULO: o complemento até o piso é o do
+// grupo (Σ piso − Σ manutenção sem piso), repartido entre as rotas pelo piso
+// de cada uma. Mesma conta da coluna "manF" do Excel (exportarXlsx.ts).
+function pisoDePecasPorGrupo(calc: PorRota[]): PorRota[] {
+  const grupos = new Map<string, { piso: number; base: number }>();
+  for (const c of calc) {
+    const g = grupos.get(c.grupoPerfil) ?? { piso: 0, base: 0 };
+    g.piso += c.pisoPecasMes;
+    g.base += c.manutencaoSemPisoMes;
+    grupos.set(c.grupoPerfil, g);
+  }
+  return calc.map((c) => {
+    const g = grupos.get(c.grupoPerfil)!;
+    const complemento = g.piso > 0 ? (Math.max(0, g.piso - g.base) * c.pisoPecasMes) / g.piso : 0;
+    return { ...c, manutencaoFixa: c.manutencaoFixaPct + complemento };
+  });
+}
+
+function somaCampo(linhas: PorRota[], campo: Exclude<keyof PorRota, "horas" | "grupoPerfil">): number {
   return linhas.reduce((a, l) => a + l[campo], 0);
 }
 
@@ -394,8 +426,8 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
 
   const composicao: ComposicaoItem[] = itens.map((item) => {
     const rotasDoItem = rotas.filter((r) => r.item === item.codigo);
-    const calc = rotasDoItem.map((r) => calcularRota(p, r, item));
-    const s = (c: Exclude<keyof PorRota, "horas">) => somaCampo(calc, c);
+    const calc = pisoDePecasPorGrupo(rotasDoItem.map((r) => calcularRota(p, r, item)));
+    const s = (c: Exclude<keyof PorRota, "horas" | "grupoPerfil">) => somaCampo(calc, c);
 
     const kmUtil = s("kmUtil");
     const veiculos = rotasDoItem.reduce((a, r) => a + r.veiculos, 0);
@@ -472,11 +504,14 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
     const precoPara = (custoUnitario: number, quantidade: number) => (quantidade > 0 ? arredondarParaCima(custoUnitario / divisor, 2) : 0);
 
     const horasRotas = calc.map((c) => c.horas);
-    const quantidadeHoras = horasRotas.length > 0 && horasRotas.every((h) => h !== null) ? horasRotas.reduce((a, h) => a + (h ?? 0), 0) : null;
+    // Diária e hora pagas acompanham a utilização, como o km: no registro de
+    // preços o órgão paga as diárias que pedir. O veículo-mês não.
+    const util = p.contrato.utilizacao;
+    const quantidadeHoras = horasRotas.length > 0 && horasRotas.every((h) => h !== null) ? horasRotas.reduce((a, h) => a + (h ?? 0), 0) * util : null;
     const quantidades = {
       km: kmUtil,
       veiculoMes: veiculos * meses,
-      diaria: s("diarias"),
+      diaria: s("diarias") * util,
     };
     const indicador = (quantidade: number) => {
       const custo = dividir(custoTotal, quantidade);
@@ -583,8 +618,10 @@ export function simular(entrada: EntradaSimulacao): ResultadoSimulacao {
       margem: faturamento > 0 ? lucro / faturamento : null,
       precoMaximoKm,
       precoReferenciaKm: item.precoReferenciaKm ?? null,
-      // O teto do edital é por km; fora do km, compara-se o equivalente.
-      acimaDoTeto: precoMaximoKm !== null && precoKm > precoMaximoKm,
+      // O teto do edital está na unidade do contrato (veículo-mês, diária,
+      // hora); por km na binômia. Antes só o km era conferido, e a locação
+      // acima do teto passava sem aviso.
+      acimaDoTeto: precoMaximoKm !== null && (unidade === "KM" || unidade === "BINOMIA" ? precoKm : precoUnidade) > precoMaximoKm,
       unidade,
       quantidadeUnidade,
       precoUnidade,
@@ -716,9 +753,14 @@ function calcularCenarios(
   // Faturamento(u) = fixoReceita + porUtilizacao × u. A utilização escala o
   // km de referência, que é a base da utilização 1.
   const quantidadeFixa = composicao.reduce((a, i) => a + i.quantidadeUnidade, 0);
+  // Diária e hora também: a quantidade paga já está na utilização do estudo,
+  // e cai ou sobe com ela (antes a receita ficava fixa e a margem SUBIA com a
+  // demanda caindo). Só o veículo-mês é receita fixa.
+  const utilEstudo = p.contrato.utilizacao > 0 ? p.contrato.utilizacao : 1;
+  const porDemanda = unidade === "DIARIA" || unidade === "HORA";
   const faturamentoFixo =
-    unidade === "KM" ? 0 : unidade === "BINOMIA" ? composicao.reduce((a, i) => a + i.indicadores.binomia.fixoVeiculoMes * i.indicadores.veiculoMes.quantidade, 0) : precoTeste * quantidadeFixa;
-  const faturamentoPorUtilizacao = unidade === "KM" || unidade === "BINOMIA" ? precoTeste * kmReferencia : 0;
+    unidade === "KM" || porDemanda ? 0 : unidade === "BINOMIA" ? composicao.reduce((a, i) => a + i.indicadores.binomia.fixoVeiculoMes * i.indicadores.veiculoMes.quantidade, 0) : precoTeste * quantidadeFixa;
+  const faturamentoPorUtilizacao = unidade === "KM" || unidade === "BINOMIA" ? precoTeste * kmReferencia : porDemanda ? (precoTeste * quantidadeFixa) / utilEstudo : 0;
 
   const linhas: LinhaCenario[] = utilizacoes.map((u) => {
     const kmUtil = kmReferencia * u;

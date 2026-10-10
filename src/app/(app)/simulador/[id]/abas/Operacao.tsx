@@ -4,7 +4,7 @@ import { jornadaDoHorario } from "@/lib/simulador/horario";
 import { codigoLivre, duplicarItem } from "@/lib/simulador/itens";
 import { PERFIS_PADRAO } from "@/lib/simulador/premissas";
 import { tarifaParaPerfil, type PracaPedagio } from "@/lib/simulador/pedagio";
-import type { EntradaSimulacao, Item, Rota, UnidadePreco } from "@/lib/simulador/tipos";
+import { unidadeDoTeto, type EntradaSimulacao, type Item, type Rota, type UnidadePreco } from "@/lib/simulador/tipos";
 import { Cartao, CampoNumero, botao, num, pct, selecao, td, tdN, th, thN } from "../comum";
 
 export type Alterar = (mudar: (e: EntradaSimulacao) => void, premissasAjustadas?: string[]) => void;
@@ -243,7 +243,7 @@ export default function Operacao({ entrada, alterar, podeEditar, pracas = [] }: 
                 <th className={th}>Item</th>
                 <th className={th}>Descrição</th>
                 <th className={thN}>% intermunicipal (ICMS)</th>
-                <th className={thN}>Preço máx. R$/km</th>
+                <th className={thN}>Preço máx. {unidadeDoTeto(unidade)}</th>
                 <th className={thN}>Preço ref. R$/km</th>
                 <th className={th}>Com motorista</th>
                 <th className={th}>Combustível do cliente</th>

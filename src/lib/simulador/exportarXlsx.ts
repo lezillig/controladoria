@@ -2,7 +2,8 @@ import ExcelJS from "exceljs";
 import { clausulaDeReequilibrio, lerInicio, proximoMes, reformaAnoAAno } from "./reforma";
 import { ADICIONAL_NOTURNO_PADRAO, CSLL_LOCACAO_PADRAO, DIAS_VR_MAXIMO, IRPJ_LOCACAO_PADRAO } from "./motor";
 import { horasNoturnasDoHorario } from "./horario";
-import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, type EntradaSimulacao, type PerfilVeiculo, type Premissas, type ResultadoSimulacao } from "./tipos";
+import { GRUPOS_HABILITACAO, ROTULO_GRUPO_HABILITACAO, ROTULO_SITUACAO_DOCUMENTO, SITUACOES_DOCUMENTO, type GrupoHabilitacao, type SituacaoDocumento } from "./editalParaEstudo";
+import { ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, unidadeDoTeto, type EntradaSimulacao, type PerfilVeiculo, type Premissas, type ResultadoSimulacao } from "./tipos";
 
 // A PLANILHA EXCEL DE UMA SIMULAÇÃO — abas Regras do Edital, Premissas, Perfis
 // de Veículo, Rotas, Composição de Custo, Cenários e Proposta, no padrão das planilhas de
@@ -59,6 +60,9 @@ export type DadosExportacao = {
     avisoRescisaoDias?: number | null;
   };
   regras: { tema: string; texto: string; impacto: string; campo: string | null }[];
+  // Documentos de habilitação do estudo (aba Habilitação); sem eles, a aba não sai.
+  habilitacao?: { grupo: string; documento: string; exigencia: string | null; fonte: string | null; situacao: string; validade: string | null; observacao: string | null }[];
+  dataSessaoIso?: string | null;
   entrada: EntradaSimulacao;
   resultado: ResultadoSimulacao;
   versao: number;
@@ -298,7 +302,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   novaSecao("2. PARÂMETROS DO CONTRATO");
   escolha("modo", "Modo de apuração (MENSAL ou PERIODO)", p.contrato.modo, ["MENSAL", "PERIODO"], "MENSAL: contrato por demanda (SRP, fretamento contínuo) — km de referência = km/mês máximo do edital, apuração mensal. PERIODO: escolar — km de referência = km do período letivo (km/dia × dias) e o custo fixo conta por 'meses de custo fixo'.");
   escolha("criterio", "Critério de julgamento (ITEM ou LOTE)", entrada.criterio, ["ITEM", "LOTE"], "LOTE: a proposta usa em todos os itens o preço médio do lote (ponderado pela quantidade), arredondado para cima em 2 casas. ITEM: cada item com o seu preço.");
-  escolha("unidade", "Unidade de preço (KM, VEICULO_MES, DIARIA, HORA ou BINOMIA)", unidadePreco, UNIDADES, "Unidade em que o contrato paga. KM: o faturamento cai com o km. VEICULO_MES, DIARIA, HORA: o faturamento fica e só o custo variável muda com a utilização. BINOMIA: parcela fixa por veículo-mês + parcela por km.");
+  escolha("unidade", "Unidade de preço (KM, VEICULO_MES, DIARIA, HORA ou BINOMIA)", unidadePreco, UNIDADES, "Unidade em que o contrato paga. KM: o faturamento cai com o km. DIARIA, HORA: as diárias/horas pagas acompanham a utilização. VEICULO_MES: o faturamento fica e só o custo variável muda com a utilização. BINOMIA: parcela fixa por veículo-mês + parcela por km.");
   premissa("meses", "Meses de custo fixo por apuração", p.contrato.mesesCustoFixo, "meses", "1 no MENSAL; 12 no escolar anual — a equipe e o veículo custam também nas férias.", INT);
   premissa("vigencia", "Vigência considerada", p.contrato.vigenciaMeses, "meses", "Anualiza o resultado mensal (Composição, Cenários e Proposta no modo MENSAL), amortiza a implantação e define os anos do contrato na depreciação (aba Perfis de Veículo).", INT);
   premissa("util", "Utilização esperada do km de referência", p.contrato.utilizacao, "%", "Fração do km de referência efetivamente paga (SRP/demanda). 100% no escolar. Teste outras utilizações na aba Cenários.", PCT);
@@ -700,6 +704,9 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     ["vr", "Vale-refeição (R$/mês)", 11],
     ["horas", "Horas (veículo × dia × h)", 10],
     ["semHoras", "Sem horas/dia? (1 = sim)", 9],
+    ["grupo", "Item e perfil (grupo do piso de peças)", 10],
+    ["pisoR", "Piso de peças da rota (R$/mês)", 12],
+    ["baseR", "Manutenção da rota sem o piso (R$/mês)", 12],
   ] as const;
   type ChaveRota = (typeof COLS_ROTA)[number][0];
   const CR = {} as Record<ChaveRota, string>;
@@ -795,9 +802,16 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     f("gar", `IF(${pf("garReserva")}="S",${vr},${$("veic")})*${pf("garagem")}`, BRL);
     f("adDep", `${vr}*${pf("mAdDep")}`, BRL);
     f("adCap", `${vr}*${pf("mAdCap")}`, BRL);
-    // Manutenção fixa + o que faltar para o piso de peças (ANTP) no mês.
+    // Manutenção fixa + o que faltar para o piso de peças (ANTP) no mês. O
+    // que falta é do grupo (mesmo item e perfil), repartido pelo piso da rota:
+    // o ônibus que faz a rota da manhã e a da tarde tem um piso só.
     const mesesApur = `IF(${P.modo}="MENSAL",1,MAX(1,${P.meses}))`;
-    f("manF", `${vr}*${pf("mManF")}+MAX(0,${vr}*${pf("pisoMes")}-${$("manut")}/${mesesApur}-${vr}*${pf("mManF")})`, BRL);
+    f("grupo", `${$("item")}&"|"&${$("colPerfil")}`, "@");
+    f("pisoR", `${vr}*${pf("pisoMes")}`, BRL);
+    f("baseR", `${$("manut")}/${mesesApur}+${vr}*${pf("mManF")}`, BRL);
+    const faixa = (k: ChaveRota) => `${CR[k]}$${R0}:${CR[k]}$${REND}`;
+    const somaGrupo = (k: ChaveRota) => `SUMIFS(${faixa(k)},${faixa("grupo")},${$("grupo")})`;
+    f("manF", `${vr}*${pf("mManF")}+IF(${somaGrupo("pisoR")}>0,MAX(0,${somaGrupo("pisoR")}-${somaGrupo("baseR")})*${$("pisoR")}/${somaGrupo("pisoR")},0)`, BRL);
     f("remP", `${vr}*${pf("mRemP")}`, BRL);
     const pelaDistancia = `IF(${$("kmDia")}>0,${$("kmRef")}/${$("kmDia")},0)`;
     f("dias", `IF(${P.modo}="MENSAL",IF(${$("diasMes")}="",${pelaDistancia},${$("diasMes")}),IF(${pelaDistancia}<>0,${pelaDistancia},N(${$("diasMes")})*${P.meses}))`, NUM);
@@ -879,14 +893,14 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     { chave: "mot", rotulo: "Motoristas", item: comEquipe("mot"), total: "soma", fmt: NUM, memo: "Rotas; zero no item sem motorista" },
     { chave: "mon", rotulo: "Monitoras", item: comEquipe("mon"), total: "soma", fmt: NUM, memo: "Rotas; zero no item sem motorista" },
     { chave: "qvm", rotulo: `Veículos-mês no ${apuracao}`, item: (c, _i, R) => `${c}${R.veic}*${P.meses}`, total: "soma", fmt: NUM, memo: "veículos × meses de custo fixo" },
-    { chave: "qd", rotulo: `Diárias no ${apuracao}`, item: somaSe("diarias"), total: "soma", fmt: NUM, memo: "Rotas: veículos × dias de operação" },
+    { chave: "qd", rotulo: `Diárias no ${apuracao}`, item: (c, i, R) => `${somaSe("diarias")(c, i, R)}*${P.util}`, total: "soma", fmt: NUM, memo: "Rotas: veículos × dias de operação × utilização (no registro de preços, as diárias pedidas)" },
     {
       chave: "qh",
       rotulo: `Horas no ${apuracao}`,
-      item: (c, i, R) => `IF(OR(COUNTIF(${rot("item")},${c}$${R.codigo})=0,${somaSe("semHoras")(c, i, R)}>0),"",${somaSe("horas")(c, i, R)})`,
+      item: (c, i, R) => `IF(OR(COUNTIF(${rot("item")},${c}$${R.codigo})=0,${somaSe("semHoras")(c, i, R)}>0),"",${somaSe("horas")(c, i, R)}*${P.util})`,
       total: "soma",
       fmt: NUM,
-      memo: "veículos × dias × horas/dia; vazio se alguma rota do item não tem horas/dia",
+      memo: "veículos × dias × horas/dia × utilização; vazio se alguma rota do item não tem horas/dia",
     },
     { rotulo: "B. MÃO DE OBRA (fixo mensal)", secao: true },
     { chave: "sal", rotulo: "Salários (motoristas c/ HE, noturno e horas + monitoras)", item: comEquipe("salarios"), total: "soma", memo: "Rotas: salário do perfil × (1+HE) × fator noturno + horas extras/noturnas em horas; zero sem motorista" },
@@ -1038,9 +1052,11 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
       memo: "na binômia, a parcela por km; no total, média ponderada pela quantidade",
     },
     { chave: "peq", rotulo: "Preço por km equivalente", item: (c, _i, R) => `IF(${U}="KM",${c}${R.pkm},IF(${c}${R.kmfat}=0,0,${c}${R.fat}/${c}${R.kmfat}))`, total: (R) => `IF(${T}${R.kmfat}=0,0,${T}${R.fat}/${T}${R.kmfat})`, fmt: BRL, memo: "faturamento ÷ km útil (compara com o teto por km)" },
-    { chave: "pmax", rotulo: "Preço máximo do edital (R$/km)", item: (_c, i) => itens[i].precoMaximoKm ?? null, tipo: "entrada", total: "vazio", fmt: BRL, memo: "edital (vazio = sem teto)" },
-    { chave: "folga", rotulo: "Folga vs. preço máximo", item: (c, _i, R) => `IF(N(${c}${R.pmax})=0,"",${c}${R.peq}/${c}${R.pmax}-1)`, total: "vazio", fmt: DPCT, memo: "negativo = abaixo do teto" },
-    { chave: "teto", rotulo: "Situação frente ao preço máximo", item: (c, _i, R) => `IF(N(${c}${R.pmax})=0,"sem teto",IF(${c}${R.peq}>${c}${R.pmax},"ACIMA DO TETO","dentro do teto"))`, total: "vazio", memo: lote ? "no lote vale o preço único; item isolado acima do teto só fecha subsidiado pelos outros" : "" },
+    { chave: "pmax", rotulo: `Preço máximo do edital (${unidadeDoTeto(unidadePreco)})`, item: (_c, i) => itens[i].precoMaximoKm ?? null, tipo: "entrada", total: "vazio", fmt: BRL, memo: "edital, na unidade do contrato (por km na binômia); vazio = sem teto" },
+    // O preço que se compara com o teto: o da unidade do contrato (por km na binômia).
+    { chave: "pcmp", rotulo: "Preço comparado com o teto", item: (c, _i, R) => `IF(OR(${U}="KM",${U}="BINOMIA"),${c}${R.peq},IF(${U}="VEICULO_MES",${c}${R.pvm},IF(${U}="DIARIA",${c}${R.pd},N(${c}${R.ph}))))`, total: "vazio", fmt: BRL, memo: "na unidade do teto" },
+    { chave: "folga", rotulo: "Folga vs. preço máximo", item: (c, _i, R) => `IF(N(${c}${R.pmax})=0,"",${c}${R.pcmp}/${c}${R.pmax}-1)`, total: "vazio", fmt: DPCT, memo: "negativo = abaixo do teto" },
+    { chave: "teto", rotulo: "Situação frente ao preço máximo", item: (c, _i, R) => `IF(N(${c}${R.pmax})=0,"sem teto",IF(${c}${R.pcmp}>${c}${R.pmax},"ACIMA DO TETO","dentro do teto"))`, total: "vazio", memo: lote ? "no lote vale o preço único; item isolado acima do teto só fecha subsidiado pelos outros" : "" },
     { chave: "pref", rotulo: "Preço de referência (R$/km)", item: (_c, i) => itens[i].precoReferenciaKm ?? null, tipo: "entrada", total: "vazio", fmt: BRL, memo: "estimativa do órgão / lances de referência (vazio = não há)" },
     { chave: "dref", rotulo: "Δ vs. preço de referência", item: (c, _i, R) => `IF(N(${c}${R.pref})=0,"",${c}${R.peq}/${c}${R.pref}-1)`, total: "vazio", fmt: DPCT, memo: "positivo = acima da referência" },
     { chave: "pmin", rotulo: "Preço mínimo para lucro zero (R$/km)", item: (c, _i, R) => `IF(OR(${c}${R.kmfat}=0,${c}${R.liq}=0),0,${c}${R.cpp}/${c}${R.kmfat}/${c}${R.liq})`, total: (R) => `IF(OR(${T}${R.kmfat}=0,${T}${R.liq}=0),0,${T}${R.cpp}/${T}${R.kmfat}/${T}${R.liq})`, fmt: BRL4, memo: "piso de exequibilidade: custo a cobrir/km ÷ receita líquida (lucro zero depois do IR)" },
@@ -1176,8 +1192,8 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     credFixo: ["Crédito de PIS/COFINS — parte fixa", `${CC("fcc")}*${P.credito}`, BRL],
     credKm: ["Crédito de PIS/COFINS por km rodado", `IF(${CC("kmrod")}=0,0,${Z("credVar")}/${CC("kmrod")})*${P.credito}`, BRL4],
     qFixa: ["Quantidade na unidade do contrato", CC("qtdU"), NUM],
-    fatFixo: ["Faturamento fixo (não varia com a utilização)", `IF(${U}="KM",0,IF(${U}="BINOMIA",SUMPRODUCT(${CCfaixa("bfix")},${CCfaixa("qvm")}),$B$4*${Z("qFixa")}))`, BRL],
-    fatU: ["Faturamento por utilização (× u)", `IF(OR(${U}="KM",${U}="BINOMIA"),$B$4*${Z("kmRef")},0)`, BRL],
+    fatFixo: ["Faturamento fixo (não varia com a utilização)", `IF(OR(${U}="KM",${U}="DIARIA",${U}="HORA"),0,IF(${U}="BINOMIA",SUMPRODUCT(${CCfaixa("bfix")},${CCfaixa("qvm")}),$B$4*${Z("qFixa")}))`, BRL],
+    fatU: ["Faturamento por utilização (× u)", `IF(OR(${U}="KM",${U}="BINOMIA"),$B$4*${Z("kmRef")},IF(OR(${U}="DIARIA",${U}="HORA"),IF(${P.util}>0,$B$4*${Z("qFixa")}/${P.util},$B$4*${Z("qFixa")}),0))`, BRL],
     capProp: [`Remuneração do capital próprio no ${apuracao} (não dedutível)`, `${CC("remP")}*${P.meses}`, BRL],
     cont: ["Contingência (não dedutível)", P.contingencia, PCT2],
     kir: ["IR sobre cada real não dedutível (IR ÷ (1 − IR))", `IF(1-${Z("ir")}=0,0,${Z("ir")}/(1-${Z("ir")}))`, PCT2],
@@ -1310,7 +1326,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
     true
   );
   if (itens.some((it) => it.precoMaximoKm)) {
-    const lMax = linhaTotal("Valor máximo do edital (preço máx. × km útil)", `SUMPRODUCT(${CCfaixa("kmfat")},${CCfaixa("pmax")})*${anual}`, BRL, false);
+    const lMax = linhaTotal("Valor máximo do edital (preço máx. × quantidade)", `IF(OR(${U}="KM",${U}="BINOMIA"),SUMPRODUCT(${CCfaixa("kmfat")},${CCfaixa("pmax")}),SUMPRODUCT(${CCfaixa("qtdU")},${CCfaixa("pmax")}))*${anual}`, BRL, false);
     linhaTotal("Desconto sobre o valor máximo", `IF(H${lMax}=0,0,1-H${lTotal}/H${lMax})`, PCT, false);
   }
   lp2++;
@@ -1361,6 +1377,7 @@ export async function gerarPlanilhaSimulacao(d: DadosExportacao): Promise<Buffer
   congelar(wp, 0, 9);
 
   abaReforma(wReforma, d);
+  if (d.habilitacao && d.habilitacao.length > 0) abaHabilitacao(wb.addWorksheet("Habilitação"), d);
   const bytes = await wb.xlsx.writeBuffer();
   return Buffer.from(bytes as ArrayBuffer);
 }
@@ -1420,4 +1437,57 @@ function abaReforma(w: ExcelJS.Worksheet, d: DadosExportacao) {
   l++;
   secao(w, l++, "CLÁUSULA DE REEQUILÍBRIO (sugestão)", col);
   nota(w, l, clausulaDeReequilibrio(ref), col, 90);
+}
+
+// HABILITAÇÃO — os documentos que o edital pede, por grupo, com a situação da
+// empresa em cada um (a mesma lista da aba Habilitação do estudo). A situação
+// é editável (lista); a validade vencida ou vencendo antes da sessão fica em
+// vermelho por fórmula, para a planilha continuar certa depois de impressa.
+function abaHabilitacao(wh: ExcelJS.Worksheet, d: DadosExportacao) {
+  const docs = d.habilitacao ?? [];
+  const COLS = 6;
+  larguras(wh, [62, 58, 16, 13, 30, 26]);
+  titulo(wh, 1, `DOCUMENTOS DE HABILITAÇÃO — ${d.edital.numero} — ${d.edital.orgao}`, COLS);
+  const aplicaveis = docs.filter((x) => x.situacao !== "NAO_SE_APLICA");
+  nota(
+    wh,
+    2,
+    `${aplicaveis.filter((x) => x.situacao === "OK").length} de ${aplicaveis.length} prontos` +
+      (d.dataSessaoIso ? ` · sessão em ${d.dataSessaoIso.split("-").reverse().join("/")}` : "") +
+      ". Situação: Pendente, Providenciando, Pronto ou Não se aplica. Validade em vermelho: vencida ou vencendo antes da sessão.",
+    COLS,
+    24
+  );
+  cabecalho(wh, 4, ["Documento", "Exigência do edital", "Situação", "Validade", "Observação", "Fonte"], undefined, 22);
+  const sessao = d.dataSessaoIso ? new Date(`${d.dataSessaoIso}T00:00:00Z`) : null;
+  const situacoes = SITUACOES_DOCUMENTO.map((x) => ROTULO_SITUACAO_DOCUMENTO[x]);
+  let l = 5;
+  const grupos = [...GRUPOS_HABILITACAO.filter((g) => docs.some((x) => x.grupo === g)), ...[...new Set(docs.map((x) => x.grupo))].filter((g) => !(GRUPOS_HABILITACAO as readonly string[]).includes(g))];
+  for (const g of grupos) {
+    const doGrupo = docs.filter((x) => x.grupo === g);
+    wh.mergeCells(l, 1, l, COLS);
+    escrever(wh, l, 1, `${ROTULO_GRUPO_HABILITACAO[g as GrupoHabilitacao] ?? g} — ${doGrupo.filter((x) => x.situacao === "OK").length} de ${doGrupo.filter((x) => x.situacao !== "NAO_SE_APLICA").length}`, { negrito: true, fundo: FUNDO_TOTAL });
+    l++;
+    for (const x of doGrupo) {
+      escrever(wh, l, 1, x.documento, { quebra: true, tamanho: 9 });
+      escrever(wh, l, 2, x.exigencia ?? "", { quebra: true, tamanho: 9 });
+      escrever(wh, l, 3, ROTULO_SITUACAO_DOCUMENTO[x.situacao as SituacaoDocumento] ?? x.situacao, { tipo: "entrada", tamanho: 9 });
+      lista(wh, l, 3, situacoes);
+      // Data como número de série do Excel (dias desde 30/12/1899).
+      const validade = x.validade ? Math.round((Date.parse(`${x.validade}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86_400_000) : null;
+      escrever(wh, l, 4, validade, { tipo: "entrada", fmt: "dd/mm/yyyy", tamanho: 9 });
+      escrever(wh, l, 5, x.observacao ?? "", { tipo: "entrada", quebra: true, tamanho: 9 });
+      escrever(wh, l, 6, x.fonte ?? "", { quebra: true, tamanho: 8 });
+      wh.getRow(l).height = Math.min(90, 15 * Math.max(1, Math.ceil(Math.max(x.documento.length / 70, (x.exigencia ?? "").length / 65))));
+      l++;
+    }
+  }
+  // Vermelho: vencida hoje (ao abrir) ou antes da sessão.
+  const limite = sessao ? `DATE(${sessao.getUTCFullYear()},${sessao.getUTCMonth() + 1},${sessao.getUTCDate()})` : "TODAY()";
+  wh.addConditionalFormatting({
+    ref: `D5:D${Math.max(5, l - 1)}`,
+    rules: [{ type: "expression", priority: 1, formulae: [`AND(ISNUMBER(D5),OR(D5<TODAY(),D5<${limite}),$C5<>"${ROTULO_SITUACAO_DOCUMENTO.NAO_SE_APLICA}")`], style: { font: { color: { argb: "FFC00000" }, bold: true } } }],
+  });
+  congelar(wh, 0, 4);
+  wh.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
 }

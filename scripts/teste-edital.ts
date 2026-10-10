@@ -143,7 +143,7 @@ console.log("\nFROTA COMPARTILHADA E KM IMPRODUTIVO PAGO (o caso da TCB)");
     const soma = (f: (r: (typeof rotas)[number]) => number) => Math.round(rotas.reduce((a, r) => a + f(r), 0) * 100) / 100;
     conferir("no estudo: frota = 2 ônibus", soma((r) => r.veiculos), 2);
     conferir("motoristas = frota × 1,07", soma((r) => r.motoristas), Math.round(2 * MOTORISTAS_POR_VEICULO_ESCOLAR * 100) / 100);
-    conferir("monitores = frota × 1", soma((r) => r.monitoras), 2);
+    conferir("monitores = frota × 1 × cobertura (1,07)", soma((r) => r.monitoras), Math.round(2 * MOTORISTAS_POR_VEICULO_ESCOLAR * 100) / 100);
   }
 }
 
@@ -171,8 +171,11 @@ console.log("\nFRETAMENTO SEM ROTAS, PREÇO POR VEÍCULO-MÊS");
   });
   conferir("item com km/mês usa o km/mês", e.itens[0].km, "9000");
   conferir("item com km/dia: km/dia × dias do mês", e.itens[1].km, String(400 * 21));
-  conferir("preço máximo por veículo-mês não vai ao campo de R$/km", e.itens[0].precoMaximoKm, "");
-  ok("… e vira regra para conferir", e.regras.some((r) => r.texto.includes("veículo-mês") && r.texto.includes("30.000")));
+  conferir("preço máximo por veículo-mês vai ao teto do item, na unidade do contrato", e.itens[0].precoMaximoKm, "30000");
+  const bin = editalParaEstudo({ ...base, unidadePreco: "BINOMIA", itens: [{ ...base.itens[0], precoMaximo: 30000, rotas: [] }] });
+  ok("na binômia o teto não tem campo e vira regra para conferir", bin.itens[0].precoMaximoKm === "" && bin.regras.some((r) => r.tema === "CONTRATUAL" && r.texto.includes("30.000")));
+  const misto = editalParaEstudo({ ...base, abrangencia: "MISTO" });
+  ok("abrangência mista avisa para ajustar o % intermunicipal", misto.regras.some((r) => r.texto.includes("% intermunicipal")));
   conferir("dias do mês do item", e.itens.map((i) => i.diasMes), ["22", "21"]);
 }
 
@@ -185,7 +188,8 @@ console.log("\nO ESTUDO QUE NASCE DAS ROTAS");
   // R03 não tem km nem horário válido: não nasce rota (vai na Operação).
   conferir("uma rota por linha com km ou horário", rotas.map((r) => r.nome), ["R01", "R02"]);
   conferir("km/dia do edital preservado", rotas.map((r) => r.kmDia), [120, 80.5]);
-  conferir("monitores = veículos × monitores/veículo × turnos", rotas.map((r) => r.monitoras), [1 * 1 * 2, 2 * 1 * 1]);
+  const f = MOTORISTAS_POR_VEICULO_ESCOLAR;
+  conferir("monitores = veículos × monitores/veículo × turnos × cobertura", rotas.map((r) => r.monitoras), [Math.round(1 * 1 * 2 * f * 1e4) / 1e4, Math.round(2 * 1 * 1 * f * 1e4) / 1e4]);
   conferir("escolar: motoristas = veículos × 1,07 × turnos", rotas.map((r) => r.motoristas), [Math.round(1 * MOTORISTAS_POR_VEICULO_ESCOLAR * 2 * 100) / 100, Math.round(2 * MOTORISTAS_POR_VEICULO_ESCOLAR * 100) / 100]);
   conferir("tipo de veículo por rota", rotas.map((r) => r.perfilVeiculo), ["MICRO", "VAN"]);
   conferir("horário da rota e noturno", rotas.map((r) => [r.horarioInicio, r.horarioFim, r.noturno]), [["04:40", "18:30", true], ["06:00", "13:00", false]]);

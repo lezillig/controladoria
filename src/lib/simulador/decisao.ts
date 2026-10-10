@@ -1,7 +1,7 @@
 import { reformaAnoAAno } from "./reforma";
 import { simular } from "./motor";
 import { escreverCaminho, lerCaminho, type MapaOrigem } from "./premissas";
-import { CATEGORIA_DO_TIPO, type EntradaSimulacao, type Premissas, type ResultadoSimulacao, type UnidadePreco } from "./tipos";
+import { CATEGORIA_DO_TIPO, unidadeDoTeto, type EntradaSimulacao, type Premissas, type ResultadoSimulacao, type UnidadePreco } from "./tipos";
 
 // O PAINEL DE DECISÃO — o que a simulação diz a quem decide o lance.
 //
@@ -125,7 +125,9 @@ export function montarPainel(
   const precoMinima = precoDoConjunto(comLucro(minima));
   const precoAlvo = precoDoConjunto(alvo === entrada.premissas.preco.lucroAlvoPct ? resultado : comLucro(alvo));
   const tetos = resultado.itens.map((i) => i.precoMaximoKm).filter((t): t is number => t !== null);
-  const teto = unidade === "KM" && tetos.length > 0 ? Math.min(...tetos) : null;
+  // O teto está na unidade do contrato (unidadeDoTeto); a binômia não tem um
+  // preço único comparável.
+  const teto = unidade !== "BINOMIA" && tetos.length > 0 ? Math.min(...tetos) : null;
 
   const margem = resultado.lote ? resultado.lote.margemAoPrecoProposta : resultado.totais.margem;
 
@@ -177,7 +179,7 @@ export function montarPainel(
     alertas.push({
       nivel: resultado.lote ? "ATENCAO" : "CRITICO",
       titulo: `Item ${i.item} acima do preço máximo`,
-      detalhe: `${reais(i.precoKm)}/km isolado contra teto de ${reais(i.precoMaximoKm ?? 0)}/km${resultado.lote ? " — o lote compensa, mas o item sozinho seria desclassificado" : ""}.`,
+      detalhe: `${unidade === "KM" || unidade === "BINOMIA" ? `${reais(i.precoKm)}/km` : `${reais(i.precoUnidade)} (${unidadeDoTeto(unidade)})`} isolado contra teto de ${reais(i.precoMaximoKm ?? 0)}${resultado.lote ? " — o lote compensa, mas o item sozinho seria desclassificado" : ""}.`,
     });
   if (teto !== null && precoMinima > teto)
     alertas.push({ nivel: "CRITICO", titulo: "Teto abaixo do preço de margem mínima", detalhe: `Para a margem mínima seria preciso ${reais(precoMinima)}; o teto é ${reais(teto)}.` });

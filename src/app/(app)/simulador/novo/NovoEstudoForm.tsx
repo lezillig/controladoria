@@ -6,7 +6,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cardClass, inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
 import { PERFIS_PADRAO } from "@/lib/simulador/premissas";
-import { ROTULO_TIPO_VEICULO, TIPOS_VEICULO, VARIANTE_DO_TIPO, type TipoVeiculo, type VarianteVeiculo } from "@/lib/simulador/tipos";
+import { ROTULO_TIPO_VEICULO, TIPOS_VEICULO, unidadeDoTeto, VARIANTE_DO_TIPO, type TipoVeiculo, type UnidadePreco, type VarianteVeiculo } from "@/lib/simulador/tipos";
 import { atualizarEstudo, criarEstudo } from "../actions";
 import { GRUPOS_HABILITACAO, ROTULO_GRUPO_HABILITACAO, type EstudoImportado, type RegraImportada, type RotaImportada } from "@/lib/simulador/editalParaEstudo";
 import ImportarEdital from "./ImportarEdital";
@@ -233,12 +233,14 @@ function ItensDoEstudo({
   tipos,
   publico,
   escolar,
+  unidade,
 }: {
   itens: LinhaItem[];
   setItens: (f: (atual: LinhaItem[]) => LinhaItem[]) => void;
   tipos: string[];
   publico: boolean;
   escolar: boolean;
+  unidade: string;
 }) {
   // Só os tipos marcados (ou todos, sem nenhum marcado); tipo desmarcado
   // depois volta a "principal".
@@ -260,7 +262,7 @@ function ItensDoEstudo({
           <span>Tipo de veículo</span>
           <span>Veículos</span>
           <span>{escolar ? "Km no período" : "Km por mês"}</span>
-          {publico && <span>Preço máx. R$/km</span>}
+          {publico && <span>Preço máx. {unidadeDoTeto(unidade as UnidadePreco)}</span>}
           <span />
         </div>
         {itens.map((x, k) => (
@@ -648,7 +650,7 @@ export default function NovoEstudoForm({ estudo, leituraDisponivel = false }: { 
             </select>
           </div>
 
-          <ItensDoEstudo itens={itens} setItens={setItens} tipos={tipos} publico={publico} escolar={tipoServico === "ESCOLAR"} />
+          <ItensDoEstudo itens={itens} setItens={setItens} tipos={tipos} publico={publico} escolar={tipoServico === "ESCOLAR"} unidade={unidade} />
         </div>
         )}
       </div>

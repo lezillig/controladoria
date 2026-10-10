@@ -177,7 +177,10 @@ export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | 
     const fu = periodo ? Math.min(fuDoTipo, MOTORISTAS_POR_VEICULO_ESCOLAR) : fuDoTipo;
     const diasMes = i.diasMes && Number.isInteger(i.diasMes) && i.diasMes >= 1 && i.diasMes <= 31 ? i.diasMes : 22;
     const dias = periodo ? DIAS_ROTA_INICIAL.PERIODO : diasMes;
-    const monitoras = comMotorista && r.monitoras && r.monitoras > 0 ? Math.round(veiculos * r.monitoras * turnos * 10000) / 10000 : 0;
+    // O monitor também tem férias e faltas: o posto leva o mesmo fator de
+    // cobertura do motorista (no escolar, 1,07 — a TCB fixa 55 monitores para
+    // 52 ônibus). Antes eram só os postos, e o custo saía ~7% menor.
+    const monitoras = comMotorista && r.monitoras && r.monitoras > 0 ? Math.round(veiculos * r.monitoras * turnos * fu * 10000) / 10000 : 0;
     return {
       itemCodigo: String(k + 1),
       ordem,
@@ -491,7 +494,9 @@ export async function entradaInicial(
 // veículo). É o ponto de partida de toda simulação nova e o destino do
 // "Voltar à base" no editor.
 export function premissasNovasDoEstudo(
-  estudo: Pick<NonNullable<Awaited<ReturnType<typeof carregarEstudo>>>["estudo"], "esfera" | "tipoServico" | "vigenciaMeses" | "prazoPagamentoDias" | "tiposVeiculo" | "srp">,
+  estudo: Pick<NonNullable<Awaited<ReturnType<typeof carregarEstudo>>>["estudo"], "esfera" | "tipoServico" | "vigenciaMeses" | "prazoPagamentoDias" | "tiposVeiculo" | "srp"> & {
+    itens?: { shareIntermunicipal: unknown }[];
+  },
   baseCarregada: BaseVigente | null
 ): { premissas: Premissas; origem: MapaOrigem; vazia: boolean } {
   const vazia = baseCarregada && baseCarregada.parametros.size === 0 && baseCarregada.veiculos.length === 0 && baseCarregada.funcoes.length === 0;
@@ -529,7 +534,11 @@ export function premissasNovasDoEstudo(
     // fora do expediente), no lugar das horas extras e do adicional noturno.
     // Entra como despesa sobre o preço; a hora extra sai.
     const pr = premissas.preco;
-    const tributosDaNota = pr.pis + pr.cofins + Math.max(pr.iss, pr.icms);
+    // O tributo da nota é o da abrangência dos itens: ISS no municipal, ICMS no
+    // intermunicipal (antes, sempre o maior — 12% de ICMS num serviço de ISS).
+    const shares = (estudo.itens ?? []).map((i) => Number(i.shareIntermunicipal) || 0);
+    const share = shares.length > 0 ? shares.reduce((a, x) => a + x, 0) / shares.length : 0;
+    const tributosDaNota = pr.pis + pr.cofins + pr.iss * (1 - share) + pr.icms * share;
     const premio = PREMIO_EVENTUAL_FIM_DE_SEMANA * (1 - tributosDaNota);
     pr.despesasSobrePrecoPct = Number((pr.despesasSobrePrecoPct + premio).toFixed(6));
     origem["preco.despesasSobrePrecoPct"] = {

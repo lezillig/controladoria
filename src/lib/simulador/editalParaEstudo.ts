@@ -255,8 +255,9 @@ export function editalParaEstudo(e: EditalLido): EstudoImportado {
       tipoVeiculo: i.tipoVeiculo ?? rotas.find((r) => r.tipoVeiculo)?.tipoVeiculo ?? "",
       veiculos: txt(rotas.length > 0 ? veiculosDasRotas : (i.veiculos ?? 1), 2),
       km: kmDoItem > 0 ? txt(kmDoItem, 0) : "",
-      // O teto do formulário é em R$/km: só o preço máximo de edital por km.
-      precoMaximoKm: e.unidadePreco === "KM" ? txt(i.precoMaximo, 4) : "",
+      // O teto vai na unidade do contrato (veículo-mês, diária, hora, km); a
+      // binômia não tem um preço único, e o teto dela fica só como regra.
+      precoMaximoKm: e.unidadePreco === "BINOMIA" ? "" : txt(i.precoMaximo, 4),
       administrativo: false,
       turnos: turnosValidos(i.turnos),
       diasMes: String(escolar ? DIAS_MES_PADRAO : Math.min(31, Math.max(1, Math.round(i.diasMes ?? DIAS_MES_PADRAO)))),
@@ -269,8 +270,10 @@ export function editalParaEstudo(e: EditalLido): EstudoImportado {
   });
 
   for (const i of e.itens)
-    if (i.precoMaximo && e.unidadePreco !== "KM")
-      regras.push({ tema: "CONTRATUAL", texto: `${i.descricao}: preço máximo de ${i.precoMaximo.toLocaleString("pt-BR")} por ${e.unidadePreco === "VEICULO_MES" ? "veículo-mês" : e.unidadePreco.toLowerCase()}.`, fonte: i.fonte });
+    if (i.precoMaximo && e.unidadePreco === "BINOMIA")
+      regras.push({ tema: "CONTRATUAL", texto: `${i.descricao}: preço máximo de ${i.precoMaximo.toLocaleString("pt-BR")} (tarifa binômia: confira em que parcela o teto vale).`, fonte: i.fonte });
+  if (e.abrangencia === "MISTO")
+    regras.push({ tema: "SUPOSICAO", texto: "Abrangência mista (municipal e intermunicipal): o estudo nasce como municipal (ISS). Ajuste o % intermunicipal (ICMS) de cada item na aba Operação.", fonte: null });
   for (const x of e.exigencias) regras.push({ tema: x.tema, texto: x.texto.slice(0, 600), fonte: x.fonte });
   for (const s of e.suposicoes) regras.push({ tema: "SUPOSICAO", texto: s.slice(0, 600), fonte: null });
 

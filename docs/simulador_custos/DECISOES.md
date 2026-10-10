@@ -794,6 +794,34 @@ aplica), a validade da certidão — vencida ou vencendo antes da sessão fica
 em vermelho — e uma observação. Dá para acrescentar à mão e copiar a lista em
 texto (para o contador ou o jurídico). Tabela `SimDocumentoHabilitacao`.
 
+## 7.16 Correções da auditoria dos editais (out/2026)
+
+Auditoria independente dos 4 editais de teste (TCB, Santos, CPB, SENAR): a
+conta do motor conferiu componente a componente (recalculada à parte em
+Python); o que mudou foram regras de modelagem.
+
+- **Piso de peças por item e tipo de veículo**, não por rota: com a frota
+  repartida entre rotas de manhã e de tarde, o piso rota a rota cobrava a
+  diferença da rota curta sem descontar a sobra da longa (+R$ 0,29/km na
+  TCB). O complemento é Σ piso − Σ manutenção do grupo, repartido pelo piso
+  de cada rota; no Excel, colunas "grupo", "pisoR" e "baseR" com SUMIFS.
+- **Diária e hora pagas acompanham a utilização** (no registro de preços o
+  órgão paga as diárias que pedir), no preço e nos cenários — antes a receita
+  ficava fixa e a margem subia com a demanda caindo.
+- **Teto do edital na unidade do contrato** (veículo-mês, diária, hora; por
+  km na binômia): a locação acima do teto do SUV passava sem aviso.
+- **Monitor com o fator de cobertura do motorista** (1,07 no escolar): férias
+  e faltas do monitor também precisam de cobertura (a TCB fixa 55 monitores
+  para 52 ônibus).
+- **Prêmio do motorista no eventual** descontando o tributo da abrangência
+  dos itens (ISS no municipal), não o maior entre ISS e ICMS.
+- Abrangência mista no edital importado vira aviso para ajustar o %
+  intermunicipal de cada item.
+
+**Excel**: aba **Habilitação** (quando o estudo tem documentos), por grupo,
+com situação em lista, validade em vermelho se vencida ou vencendo antes da
+sessão (formatação condicional) e a fonte de cada documento.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com
