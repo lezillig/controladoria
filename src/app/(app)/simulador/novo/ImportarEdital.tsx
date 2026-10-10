@@ -35,12 +35,14 @@ export default function ImportarEdital({ disponivel, onImportado }: { disponivel
   const [etapa, setEtapa] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [lendo, setLendo] = useState(false);
+  const [arrastando, setArrastando] = useState(false);
   const entrada = useRef<HTMLInputElement>(null);
 
   const adicionar = (lista: FileList | null) => {
-    if (!lista) return;
-    const novos = [...lista].filter((f) => !selecionados.some((s) => s.arquivo.name === f.name && s.arquivo.size === f.size));
-    setSelecionados((atual) => [...atual, ...novos.map((arquivo) => ({ arquivo, usar: true }))]);
+    if (!lista || lista.length === 0) return;
+    const recebidos = [...lista];
+    setErro(null);
+    setSelecionados((atual) => [...atual, ...recebidos.filter((f) => !atual.some((s) => s.arquivo.name === f.name && s.arquivo.size === f.size)).map((arquivo) => ({ arquivo, usar: true }))]);
     if (entrada.current) entrada.current.value = "";
   };
 
@@ -103,10 +105,31 @@ export default function ImportarEdital({ disponivel, onImportado }: { disponivel
         <p className="text-sm font-semibold text-slate-800">Importar edital</p>
         <p className="text-xs text-slate-500">PDF, Word, Excel ou imagem — o edital, o termo de referência e os anexos juntos. A leitura preenche o formulário; você confere e cria.</p>
       </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <input ref={entrada} type="file" multiple accept={ACEITOS} onChange={(e) => adicionar(e.target.files)} disabled={lendo} className="text-sm" aria-label="Arquivos do edital" />
+      {/* A área de arquivos: botão visível (o do navegador some com o estilo
+          base do sistema) e arrastar e soltar. */}
+      <div
+        className={`flex flex-wrap items-center gap-3 rounded-lg border-2 border-dashed px-4 py-4 ${arrastando ? "border-blue-500 bg-blue-100/60" : "border-blue-200 bg-white/60"}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!lendo) setArrastando(true);
+        }}
+        onDragLeave={() => setArrastando(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setArrastando(false);
+          if (!lendo) adicionar(e.dataTransfer.files);
+        }}
+      >
+        <input ref={entrada} id="arquivos-do-edital" type="file" multiple accept={ACEITOS} onChange={(e) => adicionar(e.target.files)} disabled={lendo} className="sr-only" aria-label="Arquivos do edital" />
+        <label
+          htmlFor="arquivos-do-edital"
+          className={`cursor-pointer rounded-md border border-blue-300 bg-white px-4 py-1.5 text-sm font-medium text-blue-800 shadow-sm hover:bg-blue-50 ${lendo ? "pointer-events-none opacity-50" : ""}`}
+        >
+          {selecionados.length > 0 ? "Acrescentar arquivos" : "Escolher arquivos"}
+        </label>
+        <span className="text-sm text-slate-500">ou arraste os arquivos do edital para cá</span>
         {selecionados.length > 0 && (
-          <button type="button" onClick={ler} disabled={lendo} className="rounded-md bg-blue-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50">
+          <button type="button" onClick={ler} disabled={lendo} className="ml-auto rounded-md bg-blue-700 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50">
             {lendo ? "Lendo…" : `Ler edital (${selecionados.filter((s) => s.usar).length} arquivo(s), ${mb(total)})`}
           </button>
         )}
