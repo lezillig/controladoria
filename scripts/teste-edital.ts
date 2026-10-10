@@ -296,7 +296,71 @@ console.log("\nHISTÓRICO DE EDITAIS");
   conferir("por serviço", h.porServico.map((s) => [s.servico, s.editais, s.decididos]), [["ESCOLAR", 2, 2], ["FRETAMENTO", 1, 0]]);
 }
 
+async function planilhaDoOrgao() {
+  console.log("\nPLANILHA DE CUSTOS DO EDITAL PREENCHIDA");
+  const ExcelJS = (await import("exceljs")).default;
+  const { inventariarPlanilha, preencherPlanilha, catalogoDoEstudo, MapaSchema } = await import("../src/lib/simulador/planilhaDoEdital");
+  ok("o mapa vira formato de saída estruturada", (betaZodOutputFormat(MapaSchema) as { type: string }).type === "json_schema");
+  const { simular } = await import("../src/lib/simulador/motor");
+  const { historicoSaoJoseDosPinhais } = await import("../src/lib/simulador/historico");
+  // O modelo do órgão: a aba de oferta com as células amarelas e a de
+  // julgamento com as fórmulas (inclusive um intervalo e uma aba com espaço).
+  const wb = new ExcelJS.Workbook();
+  const of = wb.addWorksheet("Oferta da licitante");
+  const amarelo = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFFFFF00" } };
+  of.getCell("A2").value = { richText: [{ text: "Preço médio do diesel " }, { text: "S10" }] };
+  of.getCell("C2").value = "R$/Litro";
+  of.getCell("B2").fill = amarelo;
+  of.getCell("A3").value = "Salário-base do motorista";
+  of.getCell("B3").fill = amarelo;
+  of.getCell("A4").value = "Preço do pneu";
+  of.getCell("B4").fill = amarelo;
+  of.getCell("A5").value = "Coeficiente de consumo (fixado)";
+  of.getCell("B5").value = 0.35;
+  const ju = wb.addWorksheet("Julgamento");
+  ju.getCell("A1").value = "Custo por km";
+  ju.getCell("B1").value = { formula: "'Oferta da licitante'!B2*'Oferta da licitante'!B5+SUM('Oferta da licitante'!B3:B4)/1000" };
+  ju.getCell("B2").value = { formula: "B1*1.0865" };
+  const modelo = Buffer.from(await wb.xlsx.writeBuffer());
+
+  const inv = await inventariarPlanilha(modelo);
+  const pos = inv.celulas.map((c) => `${c.aba}!${c.celula}${c.amarela ? "*" : ""}`);
+  conferir("entradas: as que as fórmulas leem e não são fórmula (* = amarela)", pos.sort(), ["Oferta da licitante!B2*", "Oferta da licitante!B3*", "Oferta da licitante!B4*", "Oferta da licitante!B5"].sort());
+  ok("rótulo com o texto formatado e a unidade à direita", inv.celulas.find((c) => c.celula === "B2")?.rotulo === "Preço médio do diesel S10 | [R$/Litro]", inv.celulas.find((c) => c.celula === "B2")?.rotulo);
+
+  const entrada = historicoSaoJoseDosPinhais().entrada;
+  const cat = catalogoDoEstudo(entrada, simular(entrada));
+  const diesel = cat.find((c) => c.chave === "diesel_litro")!;
+  ok("catálogo com diesel, salário e preço proposto", Boolean(diesel) && cat.some((c) => c.chave === "salario_motorista") && cat.some((c) => c.chave === "preco_proposto"));
+  const r = await preencherPlanilha(
+    modelo,
+    inv,
+    {
+      preenchimentos: [
+        { aba: "Oferta da licitante", celula: "B2", chave: "diesel_litro", multiplicador: 1, observacao: null },
+        { aba: "Oferta da licitante", celula: "B3", chave: "salario_motorista", multiplicador: 1, observacao: null },
+        { aba: "Julgamento", celula: "B1", chave: "diesel_litro", multiplicador: 1, observacao: "fórmula do órgão: não pode ser sobrescrita" },
+        { aba: "Oferta da licitante", celula: "B4", chave: "inventada", multiplicador: 1, observacao: null },
+      ],
+      pendentes: [],
+      resultado: { aba: "Julgamento", celula: "B2", descricao: "Preço por km" },
+    },
+    cat,
+    { estudo: "SJP", versao: 1, unidade: "R$/km", preco: 9.31 }
+  );
+  conferir("preenche só as células de entrada com chave do catálogo", r.preenchidas, 2);
+  conferir("o resto vira pendente, com o motivo", r.pendentes.map((p) => p.celula).sort(), ["B1", "B4"]);
+  const lido = new ExcelJS.Workbook();
+  await lido.xlsx.load(r.conteudo as unknown as ArrayBuffer);
+  conferir("o número entra na célula amarela", lido.getWorksheet("Oferta da licitante")!.getCell("B2").value, diesel.valor);
+  const f = lido.getWorksheet("Julgamento")!.getCell("B1").value as { formula?: string };
+  ok("a fórmula do órgão fica intacta", typeof f === "object" && f?.formula?.startsWith("'Oferta da licitante'!B2") === true, JSON.stringify(f));
+  const conf = lido.getWorksheet("Conferência (simulador)");
+  ok("aba de conferência com o preço do órgão ao lado do simulador", Boolean(conf) && JSON.stringify(conf!.getSheetValues()).includes("Julgamento'!B2"));
+}
+
 (async () => {
+  await planilhaDoOrgao();
   await assinatura();
   await divisao();
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

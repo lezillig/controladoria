@@ -40,6 +40,7 @@ import EditorEstudo from "./EditorEstudo";
 import Acompanhamento from "./abas/Acompanhamento";
 import Disputa from "./abas/Disputa";
 import ArquivosDoEstudo from "./ArquivosDoEstudo";
+import { isLeituraDeEditalDisponivel } from "@/lib/simulador/importarEdital";
 import { unidadeDoTeto, type UnidadePreco } from "@/lib/simulador/tipos";
 
 // UM ESTUDO — o editor e o acompanhamento.
@@ -52,6 +53,9 @@ import { unidadeDoTeto, type UnidadePreco } from "@/lib/simulador/tipos";
 //
 // Custos reais são um extra: se a leitura falhar (Omie fora, gestão fora), o
 // estudo abre normalmente e o painel diz o que não pôde ser medido.
+
+// Preencher a planilha do edital chama a IA (até ~3 min).
+export const maxDuration = 300;
 
 export default async function EstudoPage({
   params,
@@ -309,6 +313,7 @@ export default async function EstudoPage({
       <ArquivosDoEstudo
         estudoId={estudo.id}
         podeEditar={podeEditar}
+        preencherDisponivel={isLeituraDeEditalDisponivel()}
         arquivos={estudo.arquivos.map((a) => ({
           id: a.id,
           tipo: a.tipo,

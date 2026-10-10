@@ -868,6 +868,35 @@ Com isso a TCB (base de exemplo) foi de R$ 24,38 para R$ 23,48/km.
 Ainda fora: os meses sem operação pagos à parte (a TCB paga janeiro como
 parcela fixa, sem km) — hoje o R$/km cobre os 12 meses de custo fixo.
 
+## 7.19 Planilha de custos do edital preenchida (out/2026)
+
+Quando o edital traz o modelo da planilha de custos em Excel (a TCB manda o
+dela, com as fórmulas do órgão e as células amarelas), o arquivo fica no
+estudo e o botão **Preencher com o estudo** gera a proposta
+(`planilhaDoEdital.ts`):
+
+1. **Inventário** (sem IA): as células de entrada são as que as fórmulas do
+   órgão leem e não são fórmula, mais as amarelas; cada uma com o rótulo da
+   linha (texto formatado incluído) e a unidade à direita.
+2. **Mapa** (IA, saída estruturada `MapaSchema`): para cada célula da
+   licitante, a chave do catálogo do estudo (diesel, salários, encargos,
+   VR, seguro, IPVA, valor do veículo, frota, km, tributos, preço) e o
+   multiplicador da unidade (R$/dia × 22 = R$/mês). O que o estudo não tem
+   (pneu por unidade, lubrificante por litro, aluguel, salário do
+   administrativo) fica **pendente**, nunca inventado.
+3. **Preenchimento** (sem IA): só células do inventário que não são fórmula
+   e só chaves do catálogo; as fórmulas do órgão ficam intactas. A aba
+   **Conferência (simulador)** lista o que entrou e de onde, as pendentes e
+   o preço da planilha do órgão (fórmula) ao lado do preço do simulador.
+
+Usa a última versão salva (ou o estudo como abre). O arquivo gerado fica no
+estudo como "Proposta enviada". Na TCB, com as pendentes preenchidas com
+valores de referência, a planilha do órgão dá R$ 16,98/km + R$ 1,22 milhão
+por mês sem operação (janeiro, pago à parte); o simulador dá R$ 23,48/km com
+os 12 meses no km e 12% de margem — a comparação lado a lado é o propósito
+da aba de conferência. Modelo só em PDF ou Word não é preenchido (use o
+Excel do próprio simulador).
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com

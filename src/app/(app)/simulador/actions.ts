@@ -23,9 +23,12 @@ import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerDataHoraDeBrasilia, lerInteiro, lerNumero } from "@/lib/simulador/numeros";
 import { lerHabilitacaoDoEdital, lerItensNovos, lerPremissasDoEdital, lerRegrasDoEdital } from "@/lib/simulador/formularioDoEstudo";
 import { SITUACOES_PARTICIPANTE } from "@/lib/simulador/disputa";
+import { catalogoDoEstudo, inventariarPlanilha, mapearPlanilha, preencherPlanilha } from "@/lib/simulador/planilhaDoEdital";
+import { carregarEstudo, entradaInicial } from "@/lib/simulador/estudos";
+import { simular } from "@/lib/simulador/motor";
 import { guardarArquivo, prenderAoEstudo, TIPOS_ARQUIVO, type TipoArquivo } from "@/lib/simulador/arquivosDoEstudo";
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
-import { TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
+import { ROTULO_UNIDADE, TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
 import { apagarArquivos, arquivosAssinadosValidos, assinarArquivo, enviarArquivo, lerEdital, type ArquivoAssinado } from "@/lib/simulador/importarEdital";
 import { editalParaEstudo, GRUPOS_HABILITACAO, SITUACOES_DOCUMENTO, type EstudoImportado } from "@/lib/simulador/editalParaEstudo";
@@ -530,6 +533,54 @@ export async function anexarArquivoAoEstudo(estudoId: string, formData: FormData
   if (!r.ok) return { erro: r.erro };
   revalidatePath(`/simulador/${estudoId}`);
   return { id: r.id };
+}
+
+// A PLANILHA DE CUSTOS DO EDITAL PREENCHIDA (planilhaDoEdital.ts): o modelo
+// do órgão (um .xlsx guardado no estudo) com os números da última versão
+// salva — ou do estudo como abre, sem versão. Fica guardada no estudo como
+// "Proposta enviada", com a aba Conferência dizendo o que falta.
+export async function preencherPlanilhaDoEdital(estudoId: string, arquivoId: string): Promise<{ erro?: string; id?: string; preenchidas?: number; pendentes?: number }> {
+  const session = await exigirPermissao("gerir-simulador");
+  const arquivo = await prisma.simArquivo.findFirst({ where: { id: arquivoId, estudoId, companyId: session.companyId }, select: { nome: true, conteudo: true } });
+  if (!arquivo) return { erro: "Arquivo não encontrado." };
+  if (!/\.xlsx$/i.test(arquivo.nome)) return { erro: "Só o modelo em Excel (.xlsx) pode ser preenchido." };
+  const carregado = await carregarEstudo(session.companyId, estudoId);
+  if (!carregado) return { erro: "Estudo não encontrado." };
+  const inicial = await entradaInicial(session.companyId, carregado);
+  let resultado: ReturnType<typeof simular>;
+  try {
+    resultado = simular(inicial.entrada);
+  } catch {
+    return { erro: "O estudo ainda não tem conta (faltam rotas ou itens)." };
+  }
+  const conteudo = Buffer.from(arquivo.conteudo);
+  let inventario: Awaited<ReturnType<typeof inventariarPlanilha>>;
+  try {
+    inventario = await inventariarPlanilha(conteudo);
+  } catch {
+    return { erro: "Não foi possível abrir a planilha (arquivo protegido ou corrompido)." };
+  }
+  const catalogo = catalogoDoEstudo(inicial.entrada, resultado);
+  const m = await mapearPlanilha(inventario, catalogo, { estudo: carregado.estudo.nome, arquivo: arquivo.nome });
+  if (!m.ok) return { erro: m.erro };
+  const unidade = inicial.entrada.unidadePreco ?? "KM";
+  const preco = resultado.lote ? resultado.lote.precoPropostaUnidade : (resultado.itens[0]?.precoUnidade ?? 0);
+  const r = await preencherPlanilha(conteudo, inventario, m.mapa, catalogo, { estudo: carregado.estudo.nome, versao: inicial.versaoBase, unidade: ROTULO_UNIDADE[unidade], preco });
+  const nome = `${arquivo.nome.replace(/\.xlsx$/i, "")} — preenchida${inicial.versaoBase ? ` v${inicial.versaoBase}` : ""}.xlsx`;
+  const g = await guardarArquivo({ companyId: session.companyId, estudoId, tipo: "PROPOSTA", nome, mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", conteudo: r.conteudo, autor: session.name });
+  if (!g.ok) return { erro: g.erro };
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SIMULADOR_PLANILHA_EDITAL_PREENCHIDA",
+    entidadeTipo: "SimEstudo",
+    entidadeId: estudoId,
+    descricao: `Planilha do edital "${arquivo.nome}" preenchida: ${r.preenchidas} célula(s), ${r.pendentes.length} pendente(s).`,
+  });
+  revalidatePath(`/simulador/${estudoId}`);
+  return { id: g.id, preenchidas: r.preenchidas, pendentes: r.pendentes.length };
 }
 
 export async function excluirArquivoDoEstudo(estudoId: string, id: string): Promise<Resultado> {

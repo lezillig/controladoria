@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { dividirPdf, LIMITE_PARTE } from "@/lib/simulador/dividirPdf";
-import { anexarArquivoAoEstudo, excluirArquivoDoEstudo } from "../actions";
+import { anexarArquivoAoEstudo, excluirArquivoDoEstudo, preencherPlanilhaDoEdital } from "../actions";
 
 // OS ARQUIVOS DO ESTUDO — o edital e os anexos guardados na importação, e o
 // que vier depois (ata da sessão, contrato, recurso). Baixar é pela rota de
@@ -15,7 +15,7 @@ export type ArquivoTela = { id: string; tipo: string; nome: string; tamanhoBytes
 const ROTULO_TIPO: Record<string, string> = { EDITAL: "Edital e anexos", ATA: "Ata da sessão", CONTRATO: "Contrato", PROPOSTA: "Proposta enviada", OUTRO: "Outros" };
 const mb = (b: number) => `${(b / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
 
-export default function ArquivosDoEstudo({ estudoId, arquivos, podeEditar }: { estudoId: string; arquivos: ArquivoTela[]; podeEditar: boolean }) {
+export default function ArquivosDoEstudo({ estudoId, arquivos, podeEditar, preencherDisponivel = false }: { estudoId: string; arquivos: ArquivoTela[]; podeEditar: boolean; preencherDisponivel?: boolean }) {
   const router = useRouter();
   const [tipo, setTipo] = useState("ATA");
   const [etapa, setEtapa] = useState<string | null>(null);
@@ -53,6 +53,27 @@ export default function ArquivosDoEstudo({ estudoId, arquivos, podeEditar }: { e
     }
   };
 
+  // O modelo de planilha de custos do edital, preenchido com o estudo.
+  const [preenchendo, setPreenchendo] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const preencher = async (a: ArquivoTela) => {
+    setErro(null);
+    setAviso(null);
+    setPreenchendo(a.id);
+    try {
+      const r = await preencherPlanilhaDoEdital(estudoId, a.id);
+      if (r.erro) setErro(r.erro);
+      else {
+        setAviso(`Planilha preenchida: ${r.preenchidas} célula(s)${r.pendentes ? `, ${r.pendentes} para preencher à mão (veja a aba Conferência)` : ""}. Está em "Proposta enviada".`);
+        router.refresh();
+      }
+    } catch {
+      setErro("A leitura da planilha demorou demais ou falhou. Tente de novo.");
+    } finally {
+      setPreenchendo(null);
+    }
+  };
+
   const excluir = async (a: ArquivoTela) => {
     if (!window.confirm(`Apagar "${a.nome}" do estudo?`)) return;
     const r = await excluirArquivoDoEstudo(estudoId, a.id);
@@ -85,6 +106,17 @@ export default function ArquivosDoEstudo({ estudoId, arquivos, podeEditar }: { e
                       {mb(a.tamanhoBytes)} · {new Date(a.criadoEm).toLocaleDateString("pt-BR")}
                       {a.enviadoPorNome ? ` · ${a.enviadoPorNome}` : ""}
                     </span>
+                    {podeEditar && preencherDisponivel && /\.xlsx$/i.test(a.nome) && a.tipo !== "PROPOSTA" && (
+                      <button
+                        type="button"
+                        className="rounded border border-blue-200 px-2 py-0.5 text-xs font-medium text-blue-800 hover:bg-blue-50 disabled:opacity-50"
+                        disabled={preenchendo !== null}
+                        title="Preenche o modelo de planilha de custos do edital com os números da última versão salva do estudo, sem mexer nas fórmulas do órgão"
+                        onClick={() => preencher(a)}
+                      >
+                        {preenchendo === a.id ? "Preenchendo… (até 2 min)" : "Preencher com o estudo"}
+                      </button>
+                    )}
                     {podeEditar && (
                       <button type="button" className="text-xs text-slate-400 hover:text-red-700" aria-label={`Apagar ${a.nome}`} onClick={() => excluir(a)}>
                         ✕
@@ -112,6 +144,8 @@ export default function ArquivosDoEstudo({ estudoId, arquivos, podeEditar }: { e
             {erro && <span className="text-xs text-red-700">{erro}</span>}
           </div>
         )}
+        {aviso && <p className="text-sm text-emerald-700">{aviso}</p>}
+        {!podeEditar && erro && <p className="text-sm text-red-700">{erro}</p>}
       </div>
     </details>
   );

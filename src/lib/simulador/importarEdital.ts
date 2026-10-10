@@ -32,8 +32,8 @@ import { LIMITE_PARTE } from "./dividirPdf";
 // item do edital com a rota da planilha, deduzir o tipo de veículo pela
 // lotação, separar o que pesa no custo do que é forma. Esforço médio cabe no
 // teto de 300 s da função com documentos de 100+ páginas.
-const MODELO_EDITAL = "claude-opus-5-5";
-const ESFORCO_EDITAL = "medium" as const;
+export const MODELO_EDITAL = "claude-opus-5-5";
+export const ESFORCO_EDITAL = "medium" as const;
 
 // Abaixo do limite de corpo da hospedagem (~4,5 MB), com folga para o
 // envelope do formulário. O navegador divide PDFs maiores em partes deste
@@ -75,7 +75,7 @@ export function arquivosAssinadosValidos(companyId: string, bruto: unknown): Arq
   return lista;
 }
 
-const cliente = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+export const cliente = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // PASSO 1 — um arquivo (ou uma parte de PDF) para a Files API.
 // `nomeDoArquivo` decide o formato (pela extensão); `nome` é o rótulo que a
@@ -202,7 +202,7 @@ export async function lerEdital(arquivos: ArquivoEnviado[], contexto: { empresa:
   }
 }
 
-function mensagemDeErro(e: unknown): string {
+export function mensagemDeErro(e: unknown): string {
   if (e instanceof Anthropic.RateLimitError) return "Limite de uso da IA atingido; tente de novo em alguns minutos.";
   if (e instanceof Anthropic.APIConnectionTimeoutError) return "A leitura passou do tempo (edital muito longo). Envie só o edital, o termo de referência e a planilha de itinerários.";
   if (e instanceof Anthropic.BadRequestError) return `O arquivo não foi aceito pela leitura: ${e.message.slice(0, 200)}`;
