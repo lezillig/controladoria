@@ -30,7 +30,7 @@ import { guardarArquivo, prenderAoEstudo, TIPOS_ARQUIVO, type TipoArquivo } from
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { ROTULO_UNIDADE, TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
-import { apagarArquivos, arquivosAssinadosValidos, assinarArquivo, enviarArquivo, lerEdital, nomeDoModelo, type ArquivoAssinado } from "@/lib/simulador/importarEdital";
+import { apagarArquivos, arquivosAssinadosValidos, assinarArquivo, enviarArquivo, lerEdital, nomeDoModelo, testarConexao, type ArquivoAssinado } from "@/lib/simulador/importarEdital";
 import { editalParaEstudo, GRUPOS_HABILITACAO, SITUACOES_DOCUMENTO, type EstudoImportado } from "@/lib/simulador/editalParaEstudo";
 
 // AÇÕES DO SIMULADOR. Toda gravação exige "gerir-simulador" e deixa rastro na
@@ -621,6 +621,12 @@ export async function lerEditalEnviado(arquivosJson: string): Promise<{ erro?: s
 }
 
 // A pessoa desistiu no meio do envio: apaga o que já subiu.
+export async function testarConexaoDaIA(): Promise<{ ok?: boolean; erro?: string }> {
+  await exigirPermissao("gerir-simulador");
+  const r = await testarConexao();
+  return r.ok ? { ok: true } : { erro: r.erro };
+}
+
 export async function descartarArquivosDoEdital(arquivosJson: string): Promise<void> {
   const session = await exigirPermissao("gerir-simulador");
   let bruto: unknown;

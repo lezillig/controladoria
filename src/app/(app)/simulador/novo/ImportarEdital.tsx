@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import type { EstudoImportado } from "@/lib/simulador/editalParaEstudo";
-import { descartarArquivosDoEdital, enviarArquivoDoEdital, lerEditalEnviado } from "../actions";
+import { descartarArquivosDoEdital, enviarArquivoDoEdital, lerEditalEnviado, testarConexaoDaIA } from "../actions";
 import { dividirPdf, LIMITE_PARTE as LIMITE_DA_PARTE } from "@/lib/simulador/dividirPdf";
 
 // IMPORTAR EDITAL — o atalho de Novo estudo. A pessoa escolhe os arquivos do
@@ -39,6 +39,16 @@ export default function ImportarEdital({ disponivel, onImportado }: { disponivel
   const [erro, setErro] = useState<string | null>(null);
   const [lendo, setLendo] = useState(false);
   const [arrastando, setArrastando] = useState(false);
+  const [conexao, setConexao] = useState<{ testando?: boolean; ok?: boolean; erro?: string } | null>(null);
+  const testar = async () => {
+    setConexao({ testando: true });
+    try {
+      const r = await testarConexaoDaIA();
+      setConexao(r.ok ? { ok: true } : { erro: r.erro ?? "falhou" });
+    } catch {
+      setConexao({ erro: "Não foi possível testar agora." });
+    }
+  };
   const entrada = useRef<HTMLInputElement>(null);
 
   const adicionar = (lista: FileList | null) => {
@@ -168,6 +178,13 @@ export default function ImportarEdital({ disponivel, onImportado }: { disponivel
         </ul>
       )}
       {selecionados.length > 0 && !lendo && <p className="text-xs text-slate-500">Desmarque o que não traz custo (logomarca, manual visual, formulários) para a leitura ficar mais rápida.</p>}
+      <p className="text-xs text-slate-500">
+        <button type="button" className="text-blue-700 underline disabled:opacity-50" disabled={lendo || conexao?.testando} onClick={testar}>
+          {conexao?.testando ? "Testando a conexão…" : "Testar conexão com a IA"}
+        </button>
+        {conexao?.ok && <span className="ml-2 text-emerald-700">Conexão ok: chave, espaço de trabalho e envio de arquivos funcionando.</span>}
+        {conexao?.erro && <span className="ml-2 text-red-700">{conexao.erro}</span>}
+      </p>
       {etapa && <p className="text-sm text-blue-800">{etapa}</p>}
       {erro && <p className="text-sm text-red-700">{erro}</p>}
     </section>

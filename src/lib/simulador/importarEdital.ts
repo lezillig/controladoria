@@ -104,12 +104,16 @@ export function arquivosAssinadosValidos(companyId: string, bruto: unknown): Arq
   return lista;
 }
 
+export const limparSegredo = (v: string | undefined) => (v ?? "").trim().replace(/^["']|["']$/g, "").trim();
+
 // Chave de usuário (não de espaço de trabalho): a API pede o espaço em cada
 // requisição — ANTHROPIC_WORKSPACE_ID, o "wrkspc_…" do console.
 export const cliente = () =>
   new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    ...(process.env.ANTHROPIC_WORKSPACE_ID?.trim() && { defaultHeaders: { "anthropic-workspace-id": process.env.ANTHROPIC_WORKSPACE_ID.trim() } }),
+    // Sem espaço, quebra de linha ou aspas coladas junto na hospedagem — a
+    // causa mais comum de "chave recusada".
+    apiKey: limparSegredo(process.env.ANTHROPIC_API_KEY),
+    ...(limparSegredo(process.env.ANTHROPIC_WORKSPACE_ID) && { defaultHeaders: { "anthropic-workspace-id": limparSegredo(process.env.ANTHROPIC_WORKSPACE_ID) } }),
   });
 
 // PASSO 1 — um arquivo (ou uma parte de PDF) para a Files API.
@@ -135,6 +139,20 @@ export async function enviarArquivo(conteudo: Buffer, nome: string, mimeType: st
     return { ok: false, erro: `${nome}: formato não suportado. Envie PDF, Word (.docx), Excel (.xlsx), imagem ou texto.` };
   } catch (e) {
     return { ok: false, erro: `${nome}: ${mensagemDeErro(e)}` };
+  }
+}
+
+// DIAGNÓSTICO: envia e apaga um arquivo de texto mínimo — exercita a chave, o
+// espaço de trabalho e a Files API sem gastar leitura de modelo.
+export async function testarConexao(): Promise<{ ok: true } | { ok: false; erro: string }> {
+  if (!isLeituraDeEditalDisponivel()) return { ok: false, erro: "ANTHROPIC_API_KEY não configurada na hospedagem." };
+  try {
+    const c = cliente();
+    const meta = await c.files.upload({ file: new File(["teste de conexão da controladoria"], "teste-conexao.txt", { type: "text/plain" }) });
+    await c.files.delete(meta.id).catch(() => undefined);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, erro: mensagemDeErro(e) };
   }
 }
 
@@ -303,8 +321,11 @@ export function mensagemDeErro(e: unknown): string {
     return "A conta da API da Anthropic está sem crédito. Quem administra a conta precisa comprar créditos em console.anthropic.com (Plans & Billing) e tentar de novo — nada do edital foi perdido.";
   if (/workspace/i.test(e instanceof Error ? e.message : String(e)))
     return "A chave da IA não está ligada a um espaço de trabalho. Crie a chave dentro de um espaço de trabalho no console da Anthropic, ou informe o ID do espaço (wrkspc_…) na variável ANTHROPIC_WORKSPACE_ID da hospedagem.";
-  if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError)
-    return "A chave da IA (ANTHROPIC_API_KEY) foi recusada: confira a chave configurada na hospedagem.";
+  if (e instanceof Anthropic.AuthenticationError || e instanceof Anthropic.PermissionDeniedError) {
+    // O motivo que a API dá, sem o envelope JSON, para saber o que corrigir.
+    const motivo = /"message"\s*:\s*"([^"]+)"/.exec(e.message)?.[1] ?? e.message;
+    return `A chave da IA foi recusada (${e.status}: ${motivo.slice(0, 160)}). ${e.status === 401 ? "Confira o valor de ANTHROPIC_API_KEY na hospedagem (a chave inteira, sem espaços) e se a chave está ativa no console." : "A chave existe mas não tem acesso: confira o espaço de trabalho (ANTHROPIC_WORKSPACE_ID) e as permissões da chave."} Depois da troca, refaça o deploy.`;
+  }
   if (e instanceof Anthropic.RateLimitError) return "Limite de uso da IA atingido; tente de novo em alguns minutos.";
   if (e instanceof Anthropic.APIConnectionTimeoutError) return "A leitura passou do tempo (edital muito longo). Envie só o edital, o termo de referência e a planilha de itinerários.";
   if (e instanceof Anthropic.BadRequestError) return `O arquivo não foi aceito pela leitura: ${e.message.slice(0, 200)}`;
