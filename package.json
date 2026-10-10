@@ -53,7 +53,8 @@
     "teste:reclassificacoes": "tsx scripts/teste-reclassificacoes.ts",
     "teste:horario": "tsx scripts/teste-horario.ts",
     "teste:mes-em-formacao": "tsx scripts/teste-mes-em-formacao.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "teste:edital": "tsx scripts/teste-edital.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
@@ -64,6 +65,7 @@
     "jose": "^6.2.3",
     "lucide-react": "^1.25.0",
     "next": "16.2.10",
+    "pdf-lib": "^1.17.1",
     "prisma": "^6.19.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",

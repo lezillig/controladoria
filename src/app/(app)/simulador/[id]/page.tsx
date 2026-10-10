@@ -129,6 +129,26 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
     />
   );
 
+  // Habilitação: só na licitação (estudo público) ou quando o edital lido trouxe
+  // a lista.
+  const habilitacao =
+    estudo.esfera === "PUBLICO" || estudo.habilitacao.length > 0
+      ? {
+          dataSessao: estudo.dataSessao ? estudo.dataSessao.toISOString().slice(0, 10) : null,
+          documentos: estudo.habilitacao.map((d) => ({
+            id: d.id,
+            grupo: d.grupo,
+            documento: d.documento,
+            exigencia: d.exigencia,
+            fonte: d.fonte,
+            situacao: d.situacao,
+            validade: d.validade ? d.validade.toISOString().slice(0, 10) : null,
+            observacao: d.observacao,
+            atualizadoPor: d.atualizadoPor,
+          })),
+        }
+      : null;
+
   return (
     <div className={`${larguraPainel} space-y-4`}>
       <EditorEstudo
@@ -154,6 +174,7 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
         indicadores={indicadores}
         lacunas={lacunas}
         acompanhamento={acompanhamento}
+        habilitacao={habilitacao}
         podeConsultarEspecialista={podeConsultarEspecialista}
         pracas={base.pedagios.map((p) => ({
           chave: p.chave,
@@ -168,11 +189,51 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
         precosEnergia={Object.fromEntries(FONTES_ENERGIA.map((f) => [f, base.parametros.get(CHAVE_PRECO_ENERGIA[f])?.valor ?? PRECO_ENERGIA_PADRAO[f]])) as Record<FonteEnergia, number>}
         avisoInicial={salva && /^\d{1,5}$/.test(salva) ? `Versão ${salva} salva.` : null}
       />
+      {estudo.regras.length > 0 && <RegrasDoEdital regras={estudo.regras.map((r) => ({ tema: r.tema, texto: r.texto, fonte: r.fonte }))} />}
       <p className="text-xs text-slate-500">
         <Link href="/simulador" className="text-blue-700 hover:underline">
           ← Todos os estudos
         </Link>
       </p>
     </div>
+  );
+}
+
+// AS REGRAS DO EDITAL — o que a leitura do edital (ou o histórico importado)
+// registrou: exigências que pesam no custo e o que precisou ser suposto. É a
+// lista de conferência antes de lançar preço.
+const ROTULO_TEMA: Record<string, string> = {
+  SUPOSICAO: "Suposições da leitura — conferir",
+  VEICULO: "Veículos",
+  PESSOAL: "Pessoal",
+  OPERACAO: "Operação",
+  CONTRATUAL: "Contrato e pagamento",
+  TRIBUTARIO: "Tributos",
+  PENALIDADE: "Penalidades",
+  OUTRO: "Outras",
+};
+function RegrasDoEdital({ regras }: { regras: { tema: string; texto: string; fonte: string | null }[] }) {
+  const temas = [...new Set(regras.map((r) => r.tema))].sort((a, b) => (a === "SUPOSICAO" ? -1 : b === "SUPOSICAO" ? 1 : 0));
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white p-4" open={regras.some((r) => r.tema === "SUPOSICAO")}>
+      <summary className="cursor-pointer text-sm font-semibold text-slate-800">Regras do edital ({regras.length})</summary>
+      <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {temas.map((t) => (
+          <div key={t}>
+            <p className={`mb-1 text-xs font-semibold uppercase tracking-wide ${t === "SUPOSICAO" ? "text-amber-700" : "text-slate-500"}`}>{ROTULO_TEMA[t] ?? t}</p>
+            <ul className="space-y-1 text-sm text-slate-700">
+              {regras
+                .filter((r) => r.tema === t)
+                .map((r, k) => (
+                  <li key={k}>
+                    {r.texto}
+                    {r.fonte && <span className="ml-1 text-xs text-slate-400">({r.fonte})</span>}
+                  </li>
+                ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }

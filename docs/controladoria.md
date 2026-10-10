@@ -1268,6 +1268,10 @@ e o veredicto, pelo mesmo motor que grava a versão. As premissas vêm da
 pelos **custos reais medidos** nesta controladoria (DRE por categoria,
 cartão de combustível, frota), sempre com a origem de cada número à vista.
 
+Um estudo pode nascer do **edital importado** (Novo estudo → Importar
+edital: os arquivos do processo, lidos por IA, preenchem itens, rotas,
+regras e a aba **Habilitação**, com os documentos por grupo para conferir).
+
 Cada versão salva é um snapshot reexecutável; a planilha Excel sai em
 fórmulas. Lances, resultado da disputa e o realizado do contrato fecham o
 ciclo: a calibração compara a versão lançada com o que o contrato custou.

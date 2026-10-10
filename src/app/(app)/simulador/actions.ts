@@ -21,10 +21,12 @@ import {
 } from "@/lib/simulador/estudos";
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerDataHoraDeBrasilia, lerInteiro, lerNumero } from "@/lib/simulador/numeros";
-import { horarioValido } from "@/lib/simulador/horario";
+import { lerHabilitacaoDoEdital, lerItensNovos, lerRegrasDoEdital } from "@/lib/simulador/formularioDoEstudo";
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
+import { apagarArquivos, arquivosAssinadosValidos, assinarArquivo, enviarArquivo, lerEdital, type ArquivoAssinado } from "@/lib/simulador/importarEdital";
+import { editalParaEstudo, GRUPOS_HABILITACAO, SITUACOES_DOCUMENTO, type EstudoImportado } from "@/lib/simulador/editalParaEstudo";
 
 // AÇÕES DO SIMULADOR. Toda gravação exige "gerir-simulador" e deixa rastro na
 // trilha; a leitura (tela) exige "simulador". A empresa vem sempre da sessão —
@@ -44,47 +46,6 @@ const inteiro = (f: FormData, k: string) => {
   const v = texto(f, k);
   return v === null ? null : lerInteiro(v);
 };
-// Os itens do formulário de novo estudo, em JSON: números como a pessoa
-// digitou (pt-BR), lidos por lerNumero; texto inválido volta como erro.
-function lerItensNovos(bruto: string | null): ItemNovo[] | string {
-  if (!bruto) return [];
-  let lista: unknown;
-  try {
-    lista = JSON.parse(bruto);
-  } catch {
-    return "Itens do estudo ilegíveis.";
-  }
-  if (!Array.isArray(lista) || lista.length > 100) return "Itens do estudo: máximo de 100.";
-  const itens: ItemNovo[] = [];
-  for (const [k, x] of lista.entries()) {
-    const o = (x ?? {}) as Record<string, unknown>;
-    const num = (v: unknown) => (v === undefined || v === null || String(v).trim() === "" ? null : (lerNumero(String(v)) ?? NaN));
-    const [veiculos, km, precoMaximoKm] = [num(o.veiculos), num(o.km), num(o.precoMaximoKm)];
-    for (const [v, rotulo] of [[veiculos, "veículos"], [km, "km"], [precoMaximoKm, "preço máximo"]] as const)
-      if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1e9)) return `Item ${k + 1}: ${rotulo} inválido.`;
-    const tipo = String(o.tipoVeiculo ?? "");
-    const [turnos, diasMes] = [num(o.turnos), num(o.diasMes)];
-    if (turnos !== null && !(Number.isInteger(turnos) && turnos >= 1 && turnos <= 4)) return `Item ${k + 1}: turnos de 1 a 4.`;
-    if (diasMes !== null && !(Number.isInteger(diasMes) && diasMes >= 1 && diasMes <= 31)) return `Item ${k + 1}: dias no mês de 1 a 31, inteiro.`;
-    const horario = (v: unknown) => (typeof v === "string" && v.trim() !== "" ? v.trim().slice(0, 5) : null);
-    const [inicio, fim] = [horario(o.horarioInicio), horario(o.horarioFim)];
-    if (!horarioValido(inicio) || !horarioValido(fim)) return `Item ${k + 1}: horário no formato 06:30.`;
-    itens.push({
-      descricao: String(o.descricao ?? "").slice(0, 200),
-      tipoVeiculo: (TIPOS_VEICULO as string[]).includes(tipo) ? (tipo as TipoVeiculo) : null,
-      veiculos,
-      km,
-      precoMaximoKm,
-      administrativo: o.administrativo === true,
-      turnos,
-      diasMes,
-      horarioInicio: inicio,
-      horarioFim: fim,
-    });
-  }
-  return itens;
-}
-
 const UNIDADES: UnidadePreco[] = ["KM", "VEICULO_MES", "DIARIA", "HORA", "BINOMIA"];
 
 // Abrangência do transporte: municipal (ISS), intermunicipal (ICMS) ou misto
@@ -156,7 +117,16 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   if ("erro" in lido) return { erro: lido.erro };
   const itens = lerItensNovos(texto(formData, "itens", 100_000));
   if (typeof itens === "string") return { erro: itens };
+  const regras = lerRegrasDoEdital(texto(formData, "regrasDoEdital", 200_000));
+  const habilitacao = lerHabilitacaoDoEdital(texto(formData, "habilitacaoDoEdital", 200_000));
   const id = await criarEstudoNoBanco(session.companyId, { ...lido.dados, itens, shareIntermunicipal: lido.shareIntermunicipal ?? 0 }, session.name);
+  // As exigências e suposições do edital importado ficam no estudo, para a
+  // conferência antes de lançar preço.
+  if (regras.length > 0)
+    await prisma.simRegra.createMany({ data: regras.map((r, ordem) => ({ estudoId: id, ordem, tema: r.tema, texto: r.texto, fonte: r.fonte })) });
+  // E os documentos de habilitação, para a aba Habilitação.
+  if (habilitacao.length > 0)
+    await prisma.simDocumentoHabilitacao.createMany({ data: habilitacao.map((d, ordem) => ({ estudoId: id, ordem, ...d, atualizadoPor: session.name })) });
   await registrarEvento({
     companyId: session.companyId,
     userId: session.userId,
@@ -327,6 +297,51 @@ export async function excluirEstudo(estudoId: string): Promise<Resultado> {
   return { ok: true };
 }
 
+// HABILITAÇÃO: a situação de cada documento (pendente, providenciando, pronto,
+// não se aplica), a validade da certidão e uma observação; ou um documento
+// novo que a leitura não pegou. O documento é sempre de um estudo da empresa.
+// Sem revalidatePath: a aba guarda o estado na tela, e recarregar a página do
+// estudo releria os custos reais a cada clique.
+export async function salvarDocumentoHabilitacao(
+  estudoId: string,
+  id: string | null,
+  dados: { grupo?: string; documento?: string; exigencia?: string | null; situacao?: string; validade?: string | null; observacao?: string | null }
+): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const estudo = await prisma.simEstudo.findFirst({ where: { id: estudoId, companyId: session.companyId }, select: { id: true } });
+  if (!estudo) return { erro: "Estudo não encontrado." };
+  if (dados.situacao !== undefined && !(SITUACOES_DOCUMENTO as readonly string[]).includes(dados.situacao)) return { erro: "Situação inválida." };
+  if (dados.grupo !== undefined && !(GRUPOS_HABILITACAO as readonly string[]).includes(dados.grupo)) return { erro: "Grupo inválido." };
+  if (dados.validade && !/^\d{4}-\d{2}-\d{2}$/.test(dados.validade)) return { erro: "Validade inválida." };
+  const campos = {
+    ...(dados.grupo !== undefined && { grupo: dados.grupo }),
+    ...(dados.documento !== undefined && { documento: dados.documento.trim().slice(0, 500) }),
+    ...(dados.exigencia !== undefined && { exigencia: dados.exigencia?.trim().slice(0, 1000) || null }),
+    ...(dados.situacao !== undefined && { situacao: dados.situacao }),
+    ...(dados.validade !== undefined && { validade: dados.validade ? new Date(`${dados.validade}T00:00:00Z`) : null }),
+    ...(dados.observacao !== undefined && { observacao: dados.observacao?.trim().slice(0, 1000) || null }),
+    atualizadoPor: session.name,
+  };
+  if (campos.documento === "") return { erro: "Diga qual é o documento." };
+  if (id) {
+    const r = await prisma.simDocumentoHabilitacao.updateMany({ where: { id, estudoId }, data: campos });
+    if (r.count === 0) return { erro: "Documento não encontrado." };
+  } else {
+    if (!campos.documento || !campos.grupo) return { erro: "Diga o documento e o grupo." };
+    const ultimo = await prisma.simDocumentoHabilitacao.findFirst({ where: { estudoId }, orderBy: { ordem: "desc" }, select: { ordem: true } });
+    const novo = await prisma.simDocumentoHabilitacao.create({ data: { estudoId, ordem: (ultimo?.ordem ?? -1) + 1, grupo: campos.grupo, documento: campos.documento, exigencia: campos.exigencia ?? null, atualizadoPor: session.name } });
+    id = novo.id;
+  }
+  return { ok: true, id };
+}
+
+export async function excluirDocumentoHabilitacao(estudoId: string, id: string): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const r = await prisma.simDocumentoHabilitacao.deleteMany({ where: { id, estudoId, estudo: { companyId: session.companyId } } });
+  if (r.count === 0) return { erro: "Documento não encontrado." };
+  return { ok: true };
+}
+
 // IMPORTAR O GABARITO: lê, grava com vigência e devolve o resumo e os avisos.
 const LIMITE_ARQUIVO = 5 * 1024 * 1024;
 
@@ -408,4 +423,57 @@ export async function encerrarRegistroBase(tipo: TipoTabela, id: string): Promis
   if (r.erro) return { erro: r.erro };
   await registrarAjusteBase(session, `Base de custos: ${tipo === "veiculo" ? "modelo da frota" : tipo === "funcao" ? "função" : "praça de pedágio"} retirado da base.`);
   return { ok: true, mensagem: "Retirado da base (fica no histórico)." };
+}
+
+// IMPORTAR EDITAL (Novo estudo). Dois passos — cada arquivo sobe sozinho (a
+// hospedagem limita o corpo da requisição) e depois a leitura lê o conjunto.
+// Nada é gravado no estudo aqui: a leitura preenche o formulário, e a pessoa
+// confere antes de criar. A trilha registra a leitura.
+export async function enviarArquivoDoEdital(formData: FormData): Promise<{ erro?: string; arquivo?: ArquivoAssinado }> {
+  const session = await exigirPermissao("gerir-simulador");
+  const f = formData.get("arquivo");
+  if (!(f instanceof File)) return { erro: "Arquivo não recebido." };
+  const nome = (texto(formData, "nome", 200) ?? f.name).slice(0, 200);
+  const r = await enviarArquivo(Buffer.from(await f.arrayBuffer()), nome, f.type, f.name);
+  if (!r.ok) return { erro: r.erro };
+  return { arquivo: assinarArquivo(session.companyId, r.arquivo) };
+}
+
+export async function lerEditalEnviado(arquivosJson: string): Promise<{ erro?: string; estudo?: EstudoImportado }> {
+  const session = await exigirPermissao("gerir-simulador");
+  let bruto: unknown;
+  try {
+    bruto = JSON.parse(arquivosJson);
+  } catch {
+    return { erro: "Lista de arquivos ilegível." };
+  }
+  const arquivos = arquivosAssinadosValidos(session.companyId, bruto);
+  if (!arquivos) return { erro: "Arquivos do edital inválidos — envie de novo." };
+  const r = await lerEdital(arquivos, { empresa: "Azul Mob (fretamento e transporte de passageiros, São Paulo)" });
+  if (!r.ok) return { erro: r.erro };
+  const estudo = editalParaEstudo(r.edital);
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SIMULADOR_EDITAL_LIDO",
+    entidadeTipo: "SimEstudo",
+    entidadeId: "novo",
+    descricao: `Edital lido pela IA (${arquivos.length} arquivo(s): ${[...new Set(arquivos.map((a) => a.nome))].join(", ").slice(0, 400)}) — ${estudo.itens.length} item(ns), ${estudo.itens.reduce((a, i) => a + i.rotas.length, 0)} rota(s).`,
+  });
+  return { estudo };
+}
+
+// A pessoa desistiu no meio do envio: apaga o que já subiu.
+export async function descartarArquivosDoEdital(arquivosJson: string): Promise<void> {
+  const session = await exigirPermissao("gerir-simulador");
+  let bruto: unknown;
+  try {
+    bruto = JSON.parse(arquivosJson);
+  } catch {
+    return;
+  }
+  const arquivos = arquivosAssinadosValidos(session.companyId, bruto);
+  if (arquivos) await apagarArquivos(arquivos.map((a) => a.fileId));
 }

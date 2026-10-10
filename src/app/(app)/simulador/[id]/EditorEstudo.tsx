@@ -18,6 +18,7 @@ import Premissas from "./abas/Premissas";
 import Veiculos from "./abas/Veiculos";
 import Proposta from "./abas/Proposta";
 import Reforma from "./abas/Reforma";
+import Habilitacao, { type DocumentoTela } from "./abas/Habilitacao";
 import { Cenarios, Custos, Decisao, SeloVeredicto } from "./abas/Resultado";
 
 // O EDITOR DE UM ESTUDO.
@@ -33,7 +34,7 @@ import { Cenarios, Custos, Decisao, SeloVeredicto } from "./abas/Resultado";
 // quanto falta ou o que chama atenção, para ninguém precisar abrir todas para
 // saber onde está.
 
-type Aba = "operacao" | "veiculos" | "premissas" | "custos" | "cenarios" | "reforma" | "decisao" | "proposta" | "acompanhamento";
+type Aba = "operacao" | "veiculos" | "premissas" | "custos" | "cenarios" | "reforma" | "decisao" | "proposta" | "habilitacao" | "acompanhamento";
 
 export type EstudoTela = {
   id: string;
@@ -61,6 +62,7 @@ export default function EditorEstudo({
   indicadores,
   lacunas,
   acompanhamento,
+  habilitacao = null,
   avisoInicial,
   podeConsultarEspecialista,
   precosEnergia,
@@ -81,6 +83,9 @@ export default function EditorEstudo({
   indicadores: IndicadorReal[];
   lacunas: string[];
   acompanhamento: ReactNode;
+  // Licitação: os documentos de habilitação (a aba só aparece com eles ou no
+  // estudo público).
+  habilitacao?: { documentos: DocumentoTela[]; dataSessao: string | null } | null;
   avisoInicial: string | null;
   podeConsultarEspecialista: boolean;
   precosEnergia: Record<FonteEnergia, number>;
@@ -93,6 +98,11 @@ export default function EditorEstudo({
   const [origem, setOrigem] = useState(origemInicial);
   const [sujo, setSujo] = useState(pendente);
   const [aba, setAba] = useState<Aba>("operacao");
+  const contar = (docs: DocumentoTela[]) => {
+    const aplicaveis = docs.filter((d) => d.situacao !== "NAO_SE_APLICA");
+    return { total: aplicaveis.length, prontos: aplicaveis.filter((d) => d.situacao === "OK").length };
+  };
+  const [docsHabilitacao, setDocsHabilitacao] = useState(() => contar(habilitacao?.documentos ?? []));
   const [statusVersao, setStatusVersao] = useState("RASCUNHO");
   const [observacoes, setObservacoes] = useState("");
   const [mensagem, setMensagem] = useState<{ erro?: string; ok?: string } | null>(avisoInicial ? { ok: avisoInicial } : null);
@@ -226,6 +236,9 @@ export default function EditorEstudo({
     { id: "reforma", rotulo: "6. Reforma" },
     { id: "decisao", rotulo: "7. Decisão", selo: painel ? <SeloVeredicto veredicto={painel.veredicto} /> : undefined },
     { id: "proposta", rotulo: "8. Orçamento" },
+    ...(habilitacao
+      ? [{ id: "habilitacao" as const, rotulo: "Habilitação", selo: docsHabilitacao.total > 0 ? <Selo cor={docsHabilitacao.prontos >= docsHabilitacao.total ? "slate" : "amber"}>{`${docsHabilitacao.prontos}/${docsHabilitacao.total}`}</Selo> : undefined }]
+      : []),
     { id: "acompanhamento", rotulo: "9. Versões" },
   ];
 
@@ -371,7 +384,7 @@ export default function EditorEstudo({
       )}
       {!podeEditar && <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">Modo leitura: você pode simular à vontade, mas não salvar versões.</div>}
 
-      {calculo.erro && aba !== "operacao" && aba !== "premissas" && aba !== "veiculos" && aba !== "acompanhamento" && (
+      {calculo.erro && aba !== "operacao" && aba !== "premissas" && aba !== "veiculos" && aba !== "habilitacao" && aba !== "acompanhamento" && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           {calculo.erro}{" "}
           <button type="button" className="font-medium text-blue-700 underline" onClick={() => setAba("operacao")}>
@@ -389,6 +402,11 @@ export default function EditorEstudo({
       {aba === "decisao" && (painel ? <Decisao painel={painel} /> : !calculo.erro && <p className="text-sm text-slate-500">Calculando…</p>)}
       {aba === "decisao" && podeConsultarEspecialista && <PerguntarAoEspecialista nome={estudo.nome} versao={versaoBase} sujo={sujo} />}
       {aba === "proposta" && resultado && <Proposta entrada={entrada} resultado={resultado} nomeArquivo={nomeArquivo} aoExportarExcel={exportarExcel} exportando={exportando} inicioPrevisto={estudo.inicioPrevisto} />}
+      {habilitacao && (
+        <div hidden={aba !== "habilitacao"}>
+          <Habilitacao estudoId={estudo.id} documentos={habilitacao.documentos} dataSessao={habilitacao.dataSessao} podeEditar={podeEditar} aoMudar={(docs) => setDocsHabilitacao(contar(docs))} />
+        </div>
+      )}
       <div hidden={aba !== "acompanhamento"}>{acompanhamento}</div>
 
       {/* Próxima etapa: o orçamento se lê de cima para baixo e da esquerda

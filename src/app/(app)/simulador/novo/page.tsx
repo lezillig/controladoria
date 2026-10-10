@@ -2,6 +2,11 @@ import Link from "next/link";
 import { exigirPermissao } from "../../_dados";
 import { larguraPainel } from "@/lib/ui";
 import NovoEstudoForm from "./NovoEstudoForm";
+import { isLeituraDeEditalDisponivel } from "@/lib/simulador/importarEdital";
+
+// A leitura do edital pela IA leva de 1 a 4 minutos (server action desta
+// página).
+export const maxDuration = 300;
 
 export default async function NovoEstudoPage() {
   await exigirPermissao("gerir-simulador");
@@ -17,7 +22,7 @@ export default async function NovoEstudoPage() {
           base da Azul Mob.
         </p>
       </div>
-      <NovoEstudoForm />
+      <NovoEstudoForm leituraDisponivel={isLeituraDeEditalDisponivel()} />
     </div>
   );
 }

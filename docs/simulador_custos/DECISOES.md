@@ -746,6 +746,54 @@ e mão de obra na manutenção por km (contagem dupla), administração padrão 
 base (7% do custo direto contra ~13% do DRE), monitora no escolar, licenças
 nos encargos com o fator de motoristas, hora extra no recesso do escolar.
 
+## 7.15 Importar edital e Habilitação (out/2026)
+
+**Importar edital** (Novo estudo): a pessoa escolhe os arquivos do processo —
+edital, TR, anexos; PDF, Word (.docx), Excel (.xlsx), texto, imagem — e a
+leitura preenche o formulário para ela conferir antes de criar.
+
+- **Envio**: a hospedagem recusa requisição acima de ~4,5 MB, então cada
+  arquivo sobe sozinho para a Files API da Anthropic (ação do servidor), e o
+  PDF maior que 3,5 MB é dividido **no navegador** por intervalo de páginas
+  (pdf-lib). Word e Excel viram texto no servidor (a API lê PDF, imagem e
+  texto). O identificador de cada arquivo volta **assinado** (HMAC com a
+  empresa): só quem enviou pede a leitura. Os arquivos são apagados ao fim
+  da leitura, com ou sem erro.
+- **Leitura**: Claude (`claude-opus-5-5`, esforço médio) com saída
+  estruturada no `EditalSchema` (`editalParaEstudo.ts`). Ela TRANSCREVE —
+  não precifica nem estima km; o que deduz vai em suposições. Sem a chave
+  `ANTHROPIC_API_KEY` a tela diz que a leitura está indisponível. Leva de 1 a
+  4 minutos (`maxDuration = 300`).
+- **Conversão** (`editalParaEstudo`, testada em `teste:edital`):
+  - km da rota = km/dia × (1 + km improdutivo **pago** pelo edital) × dias —
+    no escolar, os dias de operação do ano que o edital usa na conta do km
+    (20 × 11 = 220 na TCB); sem isso, 200 (LDB), registrado como suposição;
+  - **frota compartilhada**: quando o edital fixa a frota (TCB: 52 ônibus)
+    e as rotas somam mais (107 itinerários em manhã, tarde e noite), cada rota
+    fica com a sua fração da frota — o custo do veículo segue a frota, o km
+    segue as rotas; motoristas = frota × 1,07;
+  - km/dia das rotas conferido contra o km/mês do edital (alerta acima de 2%);
+  - preço máximo só vai ao campo de R$/km quando o edital paga por km; nas
+    outras unidades vira regra;
+  - números no padrão do formulário (vírgula decimal): com ponto, "5.172"
+    seria lido como 5.172 reais (milhar) — o teste passa o número da
+    conversão pelo mesmo leitor do servidor (`formularioDoEstudo.ts`).
+- **Regras do edital**: exigências que pesam no custo e as suposições da
+  leitura ficam no estudo (cartão "Regras do edital"), para conferir antes de
+  lançar preço. As premissas do edital (reserva, km improdutivo, encargos
+  fixos, piso da CCT) ainda **não** são aplicadas sozinhas: a regra diz o que
+  ajustar na aba Premissas.
+
+**Habilitação** (aba do estudo público): os documentos que o edital pede,
+um por linha, por grupo — jurídica; fiscal, social e trabalhista;
+econômico-financeira (contábil); técnica (atestados, registros, visita);
+declarações; o que vai com a proposta. Cada um com a exigência que decide se
+a empresa atende (índices, PL mínimo, quantitativo do atestado, se o SICAF
+substitui), a fonte, a situação (pendente, providenciando, pronto, não se
+aplica), a validade da certidão — vencida ou vencendo antes da sessão fica
+em vermelho — e uma observação. Dá para acrescentar à mão e copiar a lista em
+texto (para o contador ou o jurídico). Tabela `SimDocumentoHabilitacao`.
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com
@@ -756,5 +804,9 @@ nos encargos com o fator de motoristas, hora extra no recesso do escolar.
 - Fórmula paramétrica de reajuste gerada da própria composição.
 - Realizado do contrato preenchido automaticamente pela controladoria (hoje
   é lançado na tela).
+- Premissas do edital aplicadas sozinhas ao estudo importado (reserva
+  técnica, km improdutivo, encargos fixados pelo órgão, piso da CCT).
+- Biblioteca de certidões da empresa (com validade) para a aba Habilitação
+  marcar sozinha o que já está pronto.
 - As calculadoras de encargos e de jornada ainda não vão para o Excel; o
   Excel recebe o resultado delas (o percentual e os motoristas por veículo).

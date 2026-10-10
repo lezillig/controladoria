@@ -1920,12 +1920,13 @@ model SimEstudo {
   criadoEm            DateTime  @default(now())
   atualizadoEm        DateTime  @updatedAt
 
-  itens      SimItem[]
-  rotas      SimRota[]
-  regras     SimRegra[]
-  simulacoes SimSimulacao[]
-  lances     SimLance[]
-  realizados SimContratoRealizado[]
+  itens       SimItem[]
+  rotas       SimRota[]
+  regras      SimRegra[]
+  habilitacao SimDocumentoHabilitacao[]
+  simulacoes  SimSimulacao[]
+  lances      SimLance[]
+  realizados  SimContratoRealizado[]
 
   @@index([companyId, tipo, status])
   @@index([companyId, criadoEm])
@@ -1944,6 +1945,30 @@ model SimRegra {
   campoAfetado String?
 
   @@index([estudoId, ordem])
+}
+
+// Documento de habilitação exigido pelo edital (o que a leitura do edital
+// listou ou a pessoa acrescentou), com a situação da Azul em cada um: a lista
+// de conferência da habilitação, separada por grupo.
+model SimDocumentoHabilitacao {
+  id            String    @id @default(cuid())
+  estudoId      String
+  estudo        SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  ordem         Int       @default(0)
+  // JURIDICA | FISCAL | CONTABIL | TECNICA | DECLARACAO | PROPOSTA | OUTRO
+  grupo         String
+  documento     String
+  // O detalhe exigido: índice mínimo, quantitativo do atestado, prazo de emissão.
+  exigencia     String?
+  fonte         String?
+  // PENDENTE | PROVIDENCIANDO | OK | NAO_SE_APLICA
+  situacao      String    @default("PENDENTE")
+  validade      DateTime? @db.Date
+  observacao    String?
+  atualizadoPor String?
+  atualizadoEm  DateTime  @updatedAt
+
+  @@index([estudoId, grupo, ordem])
 }
 
 model SimItem {

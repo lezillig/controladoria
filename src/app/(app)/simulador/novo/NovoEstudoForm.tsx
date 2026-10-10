@@ -1,12 +1,15 @@
 "use client";
 
 import { jornadaDoHorario } from "@/lib/simulador/horario";
+import { lerNumero } from "@/lib/simulador/numeros";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cardClass, inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
 import { PERFIS_PADRAO } from "@/lib/simulador/premissas";
 import { ROTULO_TIPO_VEICULO, TIPOS_VEICULO, VARIANTE_DO_TIPO, type TipoVeiculo, type VarianteVeiculo } from "@/lib/simulador/tipos";
 import { atualizarEstudo, criarEstudo } from "../actions";
+import { GRUPOS_HABILITACAO, ROTULO_GRUPO_HABILITACAO, type EstudoImportado, type RegraImportada, type RotaImportada } from "@/lib/simulador/editalParaEstudo";
+import ImportarEdital from "./ImportarEdital";
 
 // O PRIMEIRO PASSO de um estudo. Primeiro a esfera — público ou privado —,
 // porque ela muda o que se pergunta: no público, edital, modalidade, sessão e
@@ -71,16 +74,17 @@ type LinhaItem = {
   diasMes: string;
   horarioInicio: string;
   horarioFim: string;
+  // Monitores por veículo; de onde o item saiu no edital; as rotas da planilha
+  // de itinerários (importação) — com elas, o item nasce com uma rota por linha.
+  monitoras: string;
+  fonte: string;
+  rotas: RotaImportada[];
 };
-const LINHA_VAZIA: LinhaItem = { descricao: "", tipoVeiculo: "", veiculos: "1", km: "", precoMaximoKm: "", administrativo: false, turnos: "1", diasMes: "22", horarioInicio: "", horarioFim: "" };
+const LINHA_VAZIA: LinhaItem = { descricao: "", tipoVeiculo: "", veiculos: "1", km: "", precoMaximoKm: "", administrativo: false, turnos: "1", diasMes: "22", horarioInicio: "", horarioFim: "", monitoras: "", fonte: "", rotas: [] };
 
-// O que vai ao servidor: no público, sem os campos da proposta privada.
+// O que vai ao servidor. O preço máximo só no público.
 function itensParaEnviar(itens: LinhaItem[], publico: boolean) {
-  return itens.map((x) =>
-    publico
-      ? { descricao: x.descricao, tipoVeiculo: x.tipoVeiculo, veiculos: x.veiculos, km: x.km, precoMaximoKm: x.precoMaximoKm }
-      : { ...x, precoMaximoKm: "" }
-  );
+  return itens.map(({ fonte: _fonte, ...x }) => ({ ...x, precoMaximoKm: publico ? x.precoMaximoKm : "" }));
 }
 
 // A segunda linha do item na proposta privada: como o veículo roda no dia.
@@ -107,6 +111,10 @@ function OperacaoDoItem({ x, k, mudar }: { x: LinhaItem; k: number; mudar: (k: n
         Dias no mês
         <input aria-label={`Dias trabalhados no mês do item ${k + 1}`} inputMode="numeric" className={`${pequeno} w-14 text-right`} value={x.diasMes} onChange={(e) => mudar(k, "diasMes", e.target.value)} />
       </label>
+      <label className="flex items-center gap-1.5" title="Monitores (acompanhantes) por veículo e turno — escolar, saúde">
+        Monitores/veículo
+        <input aria-label={`Monitores por veículo do item ${k + 1}`} inputMode="decimal" className={`${pequeno} w-14 text-right`} placeholder="0" value={x.monitoras} onChange={(e) => mudar(k, "monitoras", e.target.value)} />
+      </label>
       <label className="flex items-center gap-1.5">
         Início
         <input type="time" aria-label={`Horário de início do item ${k + 1}`} className={pequeno} value={x.horarioInicio} onChange={(e) => mudar(k, "horarioInicio", e.target.value)} />
@@ -118,9 +126,103 @@ function OperacaoDoItem({ x, k, mudar }: { x: LinhaItem; k: number; mudar: (k: n
       {jornada && (
         <span className="text-slate-500">
           {jornada.horas.toLocaleString("pt-BR")} h/dia{jornada.noturno ? " · com horário noturno" : ""}
-          {Number(x.turnos) > 1 ? ` · ${x.turnos} equipes de motoristas` : ""}
+          {(lerNumero(x.turnos) ?? 1) > 1 ? ` · ${x.turnos} equipes de motoristas` : ""}
         </span>
       )}
+    </div>
+  );
+}
+
+// As rotas que vieram da planilha de itinerários do edital: só para conferir
+// aqui; o ajuste é rota a rota na aba Operação, depois de criado.
+function RotasDoItem({ x, escolar }: { x: LinhaItem; escolar: boolean }) {
+  const n = (v: string) => (v ? (lerNumero(v)?.toLocaleString("pt-BR") ?? v) : "—");
+  return (
+    <details className="text-xs text-slate-600">
+      <summary className="cursor-pointer">
+        {x.rotas.length} rota(s) do edital · {n(x.veiculos)} veículo(s) · {n(x.km)} km {escolar ? "no período letivo" : "por mês"}
+      </summary>
+      <div className="mt-1 max-h-64 overflow-auto">
+        <table className="w-full min-w-[560px]">
+          <thead>
+            <tr className="text-left text-[11px] uppercase text-slate-400">
+              <th className="py-1 pr-2">Rota</th>
+              <th className="py-1 pr-2">Veículo</th>
+              <th className="py-1 pr-2 text-right">Veíc.</th>
+              <th className="py-1 pr-2 text-right">Km/dia</th>
+              <th className="py-1 pr-2">Horário</th>
+              <th className="py-1 pr-2 text-right">Turnos</th>
+              <th className="py-1 text-right">Monitores/veíc.</th>
+            </tr>
+          </thead>
+          <tbody>
+            {x.rotas.map((r, j) => (
+              <tr key={j} className="border-t border-slate-100">
+                <td className="py-1 pr-2">{r.nome}</td>
+                <td className="py-1 pr-2">{r.tipoVeiculo ? ROTULO_TIPO_VEICULO[r.tipoVeiculo as TipoVeiculo] ?? r.tipoVeiculo : "—"}</td>
+                <td className="py-1 pr-2 text-right">{n(r.veiculos)}</td>
+                <td className="py-1 pr-2 text-right">{n(r.kmDia)}</td>
+                <td className="py-1 pr-2">{r.horarioInicio && r.horarioFim ? `${r.horarioInicio}–${r.horarioFim}` : "—"}</td>
+                <td className="py-1 pr-2 text-right">{r.turnos}</td>
+                <td className="py-1 text-right">{n(r.monitoras)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  );
+}
+
+// O que a leitura do edital achou que precisa de conferência.
+function ResumoDoImportado({ importado }: { importado: EstudoImportado }) {
+  const suposicoes = importado.regras.filter((r) => r.tema === "SUPOSICAO");
+  const exigencias = importado.regras.filter((r) => r.tema !== "SUPOSICAO");
+  const item = (r: RegraImportada, k: number) => (
+    <li key={k}>
+      {r.texto}
+      {r.fonte && <span className="ml-1 text-xs text-slate-400">({r.fonte})</span>}
+    </li>
+  );
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50/60 p-4 text-sm">
+      <p className="font-semibold text-slate-800">Lido do edital — confira antes de criar</p>
+      <p className="text-slate-700">{importado.resumo}</p>
+      {suposicoes.length > 0 && (
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-amber-800">O que a leitura supôs ({suposicoes.length})</p>
+          <ul className="list-disc space-y-0.5 pl-5 text-slate-700">{suposicoes.map(item)}</ul>
+        </div>
+      )}
+      {exigencias.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-600">Exigências que pesam no custo ({exigencias.length})</summary>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-slate-700">{exigencias.map(item)}</ul>
+        </details>
+      )}
+      {importado.habilitacao.length > 0 && (
+        <details>
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wide text-slate-600">Documentos de habilitação ({importado.habilitacao.length})</summary>
+          <div className="mt-1 space-y-2">
+            {GRUPOS_HABILITACAO.filter((g) => importado.habilitacao.some((d) => d.grupo === g)).map((g) => (
+              <div key={g}>
+                <p className="text-xs font-medium text-slate-600">{ROTULO_GRUPO_HABILITACAO[g]}</p>
+                <ul className="list-disc space-y-0.5 pl-5 text-slate-700">
+                  {importado.habilitacao
+                    .filter((d) => d.grupo === g)
+                    .map((d, k) => (
+                      <li key={k}>
+                        {d.documento}
+                        {d.exigencia && <span className="text-slate-500"> — {d.exigencia}</span>}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+      <p className="text-xs text-slate-500">Ao criar, as suposições e exigências ficam no estudo, em “Regras do edital”, e os documentos na aba Habilitação.</p>
     </div>
   );
 }
@@ -162,7 +264,7 @@ function ItensDoEstudo({
           <span />
         </div>
         {itens.map((x, k) => (
-          <div key={k} className={publico ? "" : "space-y-1.5 rounded-lg border border-slate-200 p-2"}>
+          <div key={k} className={publico && x.rotas.length === 0 && !escolar && !x.horarioInicio && !x.monitoras ? "" : "space-y-1.5 rounded-lg border border-slate-200 p-2"}>
           <div className={`grid grid-cols-2 gap-2 ${publico ? "rounded-lg border border-slate-200 p-2 sm:border-0 sm:p-0" : ""} ${colunas}`}>
             <input
               aria-label={`Descrição do item ${k + 1}`}
@@ -180,8 +282,8 @@ function ItensDoEstudo({
                 </option>
               ))}
             </select>
-            <input aria-label={`Veículos do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right`} value={x.veiculos} onChange={(e) => mudar(k, "veiculos", e.target.value)} />
-            <input aria-label={`Km do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right`} placeholder="opcional" value={x.km} onChange={(e) => mudar(k, "km", e.target.value)} />
+            <input aria-label={`Veículos do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right ${x.rotas.length > 0 ? "bg-slate-50 text-slate-500" : ""}`} readOnly={x.rotas.length > 0} title={x.rotas.length > 0 ? "Soma das rotas do edital — ajuste rota a rota na aba Operação" : undefined} value={x.veiculos} onChange={(e) => mudar(k, "veiculos", e.target.value)} />
+            <input aria-label={`Km do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right ${x.rotas.length > 0 ? "bg-slate-50 text-slate-500" : ""}`} readOnly={x.rotas.length > 0} title={x.rotas.length > 0 ? "Soma das rotas do edital — ajuste rota a rota na aba Operação" : undefined} placeholder="opcional" value={x.km} onChange={(e) => mudar(k, "km", e.target.value)} />
             {publico && (
               <input aria-label={`Preço máximo do item ${k + 1}`} inputMode="decimal" className={`${pequeno} text-right`} placeholder="sem teto" value={x.precoMaximoKm} onChange={(e) => mudar(k, "precoMaximoKm", e.target.value)} />
             )}
@@ -196,7 +298,12 @@ function ItensDoEstudo({
               ✕
             </button>
           </div>
-          {!publico && <OperacaoDoItem x={x} k={k} mudar={mudar} />}
+          {x.rotas.length > 0 ? (
+            <RotasDoItem x={x} escolar={escolar} />
+          ) : (
+            (!publico || escolar || x.horarioInicio || x.monitoras) && <OperacaoDoItem x={x} k={k} mudar={mudar} />
+          )}
+          {x.fonte && <p className="text-[11px] text-slate-400">Do edital: {x.fonte}</p>}
           </div>
         ))}
         <button
@@ -222,9 +329,13 @@ export type EstudoParaEditar = {
   srp: boolean;
 };
 
-export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar } = {}) {
+export default function NovoEstudoForm({ estudo, leituraDisponivel = false }: { estudo?: EstudoParaEditar; leituraDisponivel?: boolean } = {}) {
   const editando = Boolean(estudo);
-  const v = (campo: string) => estudo?.campos[campo] ?? "";
+  // O edital lido preenche o formulário; a chave remonta os campos para eles
+  // pegarem os valores lidos.
+  const [importado, setImportado] = useState<EstudoImportado | null>(null);
+  const [versaoDoFormulario, setVersaoDoFormulario] = useState(0);
+  const v = (campo: string) => estudo?.campos[campo] ?? importado?.campos[campo] ?? "";
   const [esfera, setEsfera] = useState<"PUBLICO" | "PRIVADO">(estudo?.esfera ?? "PUBLICO");
   const [tipo, setTipo] = useState<string>(estudo?.campos.tipo ?? "LICITACAO");
   const [tipoServico, setTipoServico] = useState(estudo?.campos.tipoServico ?? "FRETAMENTO");
@@ -243,8 +354,24 @@ export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar }
     setTipo(TIPOS_POR_ESFERA[e][0][0]);
   };
 
+  const aplicarImportado = (e: EstudoImportado) => {
+    setImportado(e);
+    setEsfera(e.esfera);
+    setTipo(TIPOS_POR_ESFERA[e.esfera].some(([t]) => t === e.tipo) ? e.tipo : TIPOS_POR_ESFERA[e.esfera][0][0]);
+    setTipoServico(e.tipoServico);
+    setAbrangencia(e.abrangencia);
+    setUnidade(e.unidade);
+    setTipos(e.tipos);
+    setItens(e.itens.length > 0 ? e.itens : [LINHA_VAZIA]);
+    setVersaoDoFormulario((n) => n + 1);
+  };
+
   return (
+    <div className="space-y-4">
+    {!editando && <ImportarEdital disponivel={leituraDisponivel} onImportado={aplicarImportado} />}
+    {importado && <ResumoDoImportado importado={importado} />}
     <form
+      key={versaoDoFormulario}
       className={`${cardClass} space-y-6`}
       action={(formData) => {
         setErro(null);
@@ -254,6 +381,10 @@ export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar }
         for (const t of tipos) formData.append("tiposVeiculo", t);
         formData.set("abrangencia", abrangencia);
         if (!estudo) formData.set("itens", JSON.stringify(itensParaEnviar(itens, publico)));
+        if (!estudo && importado) {
+          formData.set("regrasDoEdital", JSON.stringify(importado.regras));
+          formData.set("habilitacaoDoEdital", JSON.stringify(importado.habilitacao));
+        }
         iniciar(async () => {
           const r = estudo ? await atualizarEstudo(estudo.id, formData) : await criarEstudo(formData);
           if (r.erro) setErro(r.erro);
@@ -343,7 +474,7 @@ export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar }
             </div>
             <div>
               <label htmlFor="novo-vigenciaMeses" className={labelClass}>Vigência (meses)</label>
-              <input id="novo-vigenciaMeses" name="vigenciaMeses" inputMode="numeric" className={inputClass} defaultValue={estudo ? v("vigenciaMeses") : 12} />
+              <input id="novo-vigenciaMeses" name="vigenciaMeses" inputMode="numeric" className={inputClass} defaultValue={estudo || importado ? v("vigenciaMeses") : 12} />
             </div>
             <div>
               <label htmlFor="novo-prazoPagamentoDias" className={labelClass}>Prazo de pagamento (dias)</label>
@@ -399,7 +530,7 @@ export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar }
                 <input id="novo-indiceReajuste-pub" name="indiceReajuste" maxLength={80} defaultValue={v("indiceReajuste")} className={inputClass} list="indices" placeholder="IPCA, após 12 meses" />
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
-                <input type="checkbox" name="srp" defaultChecked={estudo?.srp ?? false} /> Registro de preços (SRP) — paga só o que for demandado
+                <input type="checkbox" name="srp" defaultChecked={estudo?.srp ?? importado?.srp ?? false} /> Registro de preços (SRP) — paga só o que for demandado
               </label>
             </div>
           ) : (
@@ -511,7 +642,7 @@ export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar }
 
           <div>
             <label htmlFor="novo-criterio" className={labelClass}>{publico ? "Julgamento" : "Preço"}</label>
-            <select id="novo-criterio" name="criterio" className={inputClass} defaultValue="ITEM">
+            <select id="novo-criterio" name="criterio" className={inputClass} defaultValue={importado?.criterio ?? "ITEM"}>
               <option value="ITEM">Um preço por item</option>
               <option value="LOTE">Preço único do lote (média ponderada dos itens)</option>
             </select>
@@ -529,5 +660,6 @@ export default function NovoEstudoForm({ estudo }: { estudo?: EstudoParaEditar }
         {erro && <p className="text-sm text-red-700">{erro}</p>}
       </div>
     </form>
+    </div>
   );
 }

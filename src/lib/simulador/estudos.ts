@@ -102,6 +102,27 @@ export type ItemNovo = {
   diasMes?: number | null;
   horarioInicio?: string | null;
   horarioFim?: string | null;
+  // Monitores por veículo (escolar, saúde): a rota nasce com veículos ×
+  // monitores × turnos.
+  monitoras?: number | null;
+  // As rotas do item quando o edital as detalha (planilha de itinerários,
+  // importação do edital). Com elas, o item nasce com uma rota por linha, e o
+  // km/veículos/horário do item não criam rota própria.
+  rotas?: RotaNova[];
+};
+
+export type RotaNova = {
+  nome: string;
+  tipoVeiculo?: TipoVeiculo | null;
+  veiculos?: number | null;
+  // Km de referência (no mês; no escolar, no período) e km por dia, quando
+  // conhecido — sem ele, km ÷ dias da apuração.
+  km?: number | null;
+  kmDia?: number | null;
+  horarioInicio?: string | null;
+  horarioFim?: string | null;
+  turnos?: number | null;
+  monitoras?: number | null;
 };
 
 // LOCAÇÃO SEM MOTORISTA — o que o estudo novo já traz: o carro fica com o
@@ -129,7 +150,7 @@ export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | 
   const combustivelPorContaDoCliente = !comMotorista;
   const shareIntermunicipal = dados.shareIntermunicipal ?? 0;
   const periodo = dados.tipoServico === "ESCOLAR";
-  const lista = (dados.itens ?? []).filter((i) => i.descricao.trim() !== "" || (i.km ?? 0) > 0 || i.administrativo === true).slice(0, 100);
+  const lista = (dados.itens ?? []).filter((i) => i.descricao.trim() !== "" || (i.km ?? 0) > 0 || i.administrativo === true || (i.rotas?.length ?? 0) > 0).slice(0, 100);
   if (lista.length === 0) return { itens: [{ codigo: "1", descricao: dados.nome, ordem: 0, comMotorista, combustivelPorContaDoCliente, shareIntermunicipal }], rotas: [] };
   const itens = lista.map((i, k) => ({
     codigo: String(k + 1),
@@ -141,40 +162,54 @@ export function itensIniciais(dados: Pick<DadosEstudo, "nome" | "tipoServico" | 
     precoMaximoKm: i.precoMaximoKm && i.precoMaximoKm > 0 ? i.precoMaximoKm : null,
   }));
   // A rota nasce com o km, ou com o veículo à disposição (ADM), ou com o
-  // horário da operação — o resto se ajusta na aba Operação.
-  const rotas = lista.flatMap((i, k) => {
-    const jornada = jornadaDoHorario(i.horarioInicio, i.horarioFim);
+  // horário da operação — o resto se ajusta na aba Operação. Com as rotas do
+  // edital, uma por linha da planilha de itinerários.
+  const rota = (i: ItemNovo, k: number, r: RotaNova, nome: string, ordem: number, administrativo: boolean) => {
+    const jornada = jornadaDoHorario(r.horarioInicio, r.horarioFim);
     // A franquia da locação é por carro: a rota de N carros nasce com N × 2.000 km.
-    const carros = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;
-    const km = i.km && i.km > 0 ? i.km : !comMotorista && i.administrativo !== true ? FRANQUIA_LOCACAO_KM * carros : 0;
-    if (km === 0 && i.administrativo !== true && !jornada) return [];
-    const tipo = i.tipoVeiculo ?? dados.tiposVeiculo?.[0] ?? null;
-    const veiculos = i.veiculos && i.veiculos > 0 ? i.veiculos : 1;
-    const turnos = i.turnos && Number.isInteger(i.turnos) && i.turnos >= 1 && i.turnos <= 4 ? i.turnos : 1;
+    const carros = r.veiculos && r.veiculos > 0 ? r.veiculos : 1;
+    const km = r.km && r.km > 0 ? r.km : !comMotorista && !administrativo ? FRANQUIA_LOCACAO_KM * carros : 0;
+    if (km === 0 && !administrativo && !jornada) return null;
+    const tipo = r.tipoVeiculo ?? i.tipoVeiculo ?? dados.tiposVeiculo?.[0] ?? null;
+    const veiculos = r.veiculos && r.veiculos > 0 ? r.veiculos : 1;
+    const turnos = r.turnos && Number.isInteger(r.turnos) && r.turnos >= 1 && r.turnos <= 4 ? r.turnos : 1;
     const fuDoTipo = PERFIS_PADRAO.find((p) => p.tipo === tipo)?.motorista.motoristasPorVeiculo ?? 1.2;
     const fu = periodo ? Math.min(fuDoTipo, MOTORISTAS_POR_VEICULO_ESCOLAR) : fuDoTipo;
     const diasMes = i.diasMes && Number.isInteger(i.diasMes) && i.diasMes >= 1 && i.diasMes <= 31 ? i.diasMes : 22;
     const dias = periodo ? DIAS_ROTA_INICIAL.PERIODO : diasMes;
-    return [
-      {
-        itemCodigo: String(k + 1),
-        ordem: k,
-        nome: itens[k].descricao,
-        kmReferencia: km,
-        kmDia: Math.round((km / dias) * 10) / 10,
-        diasMes,
-        veiculos,
-        // Cada turno tem a sua equipe: motoristas = veículos × fator do tipo × turnos.
-        motoristas: comMotorista ? Math.round(veiculos * fu * turnos * 100) / 100 : 0,
-        perfilVeiculo: tipo,
-        horasDia: jornada?.horas ?? null,
-        noturno: jornada?.noturno ?? false,
-        horarioInicio: jornada ? i.horarioInicio!.trim() : null,
-        horarioFim: jornada ? i.horarioFim!.trim() : null,
-        turnos,
-        administrativo: i.administrativo === true,
-      },
-    ];
+    const monitoras = comMotorista && r.monitoras && r.monitoras > 0 ? Math.round(veiculos * r.monitoras * turnos * 10000) / 10000 : 0;
+    return {
+      itemCodigo: String(k + 1),
+      ordem,
+      nome: nome.slice(0, 200),
+      kmReferencia: km,
+      kmDia: r.kmDia && r.kmDia > 0 ? r.kmDia : Math.round((km / dias) * 10) / 10,
+      diasMes,
+      veiculos,
+      // Cada turno tem a sua equipe: motoristas = veículos × fator do tipo × turnos.
+      motoristas: comMotorista ? Math.round(veiculos * fu * turnos * 10000) / 10000 : 0,
+      monitoras,
+      perfilVeiculo: tipo,
+      horasDia: jornada?.horas ?? null,
+      noturno: jornada?.noturno ?? false,
+      horarioInicio: jornada ? r.horarioInicio!.trim() : null,
+      horarioFim: jornada ? r.horarioFim!.trim() : null,
+      turnos,
+      administrativo,
+    };
+  };
+  let ordem = 0;
+  const rotas = lista.flatMap((i, k) => {
+    const doItem: RotaNova[] =
+      i.rotas && i.rotas.length > 0
+        ? i.rotas
+        : [{ nome: itens[k].descricao, tipoVeiculo: i.tipoVeiculo, veiculos: i.veiculos, km: i.km, horarioInicio: i.horarioInicio, horarioFim: i.horarioFim, turnos: i.turnos, monitoras: i.monitoras }];
+    return doItem.flatMap((r) => {
+      const criada = rota(i, k, r, r.nome || itens[k].descricao, ordem, i.administrativo === true && !(i.rotas && i.rotas.length > 0));
+      if (!criada) return [];
+      ordem++;
+      return [criada];
+    });
   });
   return { itens, rotas };
 }
@@ -187,7 +222,7 @@ export function perfilDasRotasNovas(rotas: Rota[], perfis: PerfilVeiculo[]): Rot
     if (!r.perfilVeiculo || perfis.some((p) => p.codigo === r.perfilVeiculo)) return r;
     const doTipo = perfis.find((p) => p.tipo === r.perfilVeiculo) ?? perfis[0];
     if (!doTipo) return { ...r, perfilVeiculo: null };
-    const motoristas = r.motoristas > 0 ? Math.round(r.veiculos * doTipo.motorista.motoristasPorVeiculo * (r.turnos ?? 1) * 100) / 100 : 0;
+    const motoristas = r.motoristas > 0 ? Math.round(r.veiculos * doTipo.motorista.motoristasPorVeiculo * (r.turnos ?? 1) * 10000) / 10000 : 0;
     return { ...r, perfilVeiculo: doTipo.codigo, motoristas };
   });
 }
@@ -347,6 +382,7 @@ export async function carregarEstudo(companyId: string, id: string) {
       itens: { orderBy: [{ ordem: "asc" }, { codigo: "asc" }] },
       rotas: { orderBy: [{ ordem: "asc" }] },
       regras: { orderBy: [{ ordem: "asc" }] },
+      habilitacao: { orderBy: [{ ordem: "asc" }] },
       simulacoes: { orderBy: { versao: "desc" } },
       lances: { orderBy: { dataHora: "desc" } },
       realizados: { orderBy: { competencia: "desc" } },
