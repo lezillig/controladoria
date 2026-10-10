@@ -386,6 +386,9 @@ export async function carregarEstudo(companyId: string, id: string) {
       rotas: { orderBy: [{ ordem: "asc" }] },
       regras: { orderBy: [{ ordem: "asc" }] },
       habilitacao: { orderBy: [{ ordem: "asc" }] },
+      participantes: { orderBy: [{ ordem: "asc" }] },
+      // Só a lista: o conteúdo dos arquivos sai pela rota de download.
+      arquivos: { select: { id: true, tipo: true, nome: true, mimeType: true, tamanhoBytes: true, enviadoPorNome: true, criadoEm: true }, orderBy: [{ criadoEm: "asc" }] },
       simulacoes: { orderBy: { versao: "desc" } },
       lances: { orderBy: { dataHora: "desc" } },
       realizados: { orderBy: { competencia: "desc" } },

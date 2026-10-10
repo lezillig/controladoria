@@ -156,6 +156,8 @@ export default async function BaseDeCustosPage() {
             aqui mesmo. Ajustar não apaga nada: o valor anterior fica no histórico, e estudos já salvos continuam com a base do dia deles.
           </p>
         </div>
+        {/* Download de arquivo (rota de API), não navegação: <Link> pré-carregaria o Excel. */}
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
         <a href="/api/simulador/gabarito" className={secondaryButtonClass}>
           Baixar Gabarito em branco
         </a>
@@ -209,6 +211,8 @@ export default async function BaseDeCustosPage() {
       <Secao titulo="Parâmetros" descricao="Diesel, tributos, prazos, jornada, administração e margens. “Estimativa” é o padrão do simulador enquanto a empresa não informa o seu número.">
         <p className="mb-3 text-sm text-slate-600">
           De onde sai a administração central (folha corporativa, contabilidade, sistemas, sede, oficina, despesas gerais) e o % que o estudo aplica:{" "}
+          {/* Download de arquivo (rota de API), não navegação: <Link> pré-carregaria o Excel. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/api/simulador/indiretos" className="font-medium text-blue-700 hover:underline">
             baixar a composição em Excel
           </a>{" "}

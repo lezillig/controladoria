@@ -20,17 +20,20 @@ const ACEITOS = ".pdf,.docx,.xlsx,.txt,.csv,.png,.jpg,.jpeg,.webp,.gif,.msg";
 const LIMITE_PARTE = LIMITE_DA_PARTE;
 
 type Selecionado = { arquivo: File; usar: boolean };
-type Parte = { nome: string; blob: Blob };
+// nome: o rótulo da parte (vai à leitura e fica guardado no estudo);
+// arquivo: o nome do arquivo original (decide o formato no servidor).
+type Parte = { nome: string; blob: Blob; arquivo: string };
 
 const mb = (b: number) => `${(b / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`;
 const ehPdf = (f: File) => f.type === "application/pdf" || /\.pdf$/i.test(f.name);
 
 async function partesDoPdf(arquivo: File): Promise<Parte[]> {
   const partes = await dividirPdf(await arquivo.arrayBuffer(), arquivo.name);
-  return partes.map((p) => ({ nome: `${arquivo.name} (páginas ${p.de + 1} a ${p.ate} de ${p.total})`, blob: new Blob([new Uint8Array(p.bytes)], { type: "application/pdf" }) }));
+  const base = arquivo.name.replace(/\.pdf$/i, "");
+  return partes.map((p) => ({ nome: `${base} (páginas ${p.de + 1} a ${p.ate} de ${p.total}).pdf`, blob: new Blob([new Uint8Array(p.bytes)], { type: "application/pdf" }), arquivo: arquivo.name }));
 }
 
-export default function ImportarEdital({ disponivel, onImportado }: { disponivel: boolean; onImportado: (e: EstudoImportado) => void }) {
+export default function ImportarEdital({ disponivel, onImportado }: { disponivel: boolean; onImportado: (e: EstudoImportado, guardados: string[]) => void }) {
   const [selecionados, setSelecionados] = useState<Selecionado[]>([]);
   const [etapa, setEtapa] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -54,6 +57,7 @@ export default function ImportarEdital({ disponivel, onImportado }: { disponivel
     if (antigos.length > 0) return setErro(`Formato antigo do Office (${antigos.map((f) => f.name).join(", ")}): salve como .docx/.xlsx ou PDF.`);
     setLendo(true);
     const enviados: unknown[] = [];
+    const guardados: string[] = [];
     try {
       // 1. As partes: PDF grande dividido; os demais inteiros (até o limite).
       const partes: Parte[] = [];
@@ -63,24 +67,25 @@ export default function ImportarEdital({ disponivel, onImportado }: { disponivel
           partes.push(...(await partesDoPdf(f)));
         } else if (f.size > LIMITE_PARTE) {
           throw new Error(`${f.name} tem ${mb(f.size)}: acima de ${mb(LIMITE_PARTE)} só PDF é dividido. Exporte em PDF ou reduza a imagem.`);
-        } else partes.push({ nome: f.name, blob: f });
+        } else partes.push({ nome: f.name, blob: f, arquivo: f.name });
       }
       // 2. Uma a uma para a leitura (a hospedagem limita o tamanho de cada envio).
       for (const [k, p] of partes.entries()) {
         setEtapa(`Enviando ${k + 1} de ${partes.length}: ${p.nome}…`);
         const fd = new FormData();
-        fd.set("arquivo", new File([p.blob], p.nome.replace(/ \(páginas .*\)$/, ""), { type: p.blob.type }));
+        fd.set("arquivo", new File([p.blob], p.arquivo, { type: p.blob.type }));
         fd.set("nome", p.nome);
         const r = await enviarArquivoDoEdital(fd);
         if (r.erro || !r.arquivo) throw new Error(r.erro ?? "Falha no envio.");
         enviados.push(r.arquivo);
+        if (r.guardado) guardados.push(r.guardado);
       }
       // 3. A leitura do conjunto.
       setEtapa(`Lendo ${partes.length} documento(s) — pode levar de 1 a 4 minutos…`);
       const r = await lerEditalEnviado(JSON.stringify(enviados));
       if (r.erro || !r.estudo) throw new Error(r.erro ?? "A leitura não devolveu resultado.");
       setEtapa(null);
-      onImportado(r.estudo);
+      onImportado(r.estudo, guardados);
     } catch (e) {
       setEtapa(null);
       setErro(e instanceof Error ? e.message : "Falha na importação.");

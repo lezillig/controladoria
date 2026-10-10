@@ -44,6 +44,9 @@ export default async function SimuladorPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/simulador/editais" className={secondaryButtonClass}>
+            Histórico de editais
+          </Link>
           <Link href="/simulador/base" className={secondaryButtonClass}>
             Custos base
           </Link>

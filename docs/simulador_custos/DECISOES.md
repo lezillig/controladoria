@@ -822,6 +822,29 @@ Python); o que mudou foram regras de modelagem.
 com situação em lista, validade em vermelho se vencida ou vencendo antes da
 sessão (formatação condicional) e a fonte de cada documento.
 
+## 7.17 Histórico de editais (out/2026)
+
+- **Arquivos do estudo** (`SimArquivo`): o edital e os anexos enviados na
+  importação ficam guardados no banco (como na Conformidade), presos ao
+  estudo no "Criar"; o que não virou estudo some em dois dias. Depois dá para
+  acrescentar ata, contrato, proposta enviada. PDF grande vai em partes (o
+  limite de envio da hospedagem); download só pela rota
+  `/api/simulador/[estudoId]/arquivo/[arquivoId]`, sempre como anexo.
+  Limite de 80 MB por estudo.
+- **Disputa** (`SimParticipante`, aba 9. Versões e resultado): a ata da
+  sessão empresa a empresa — posição, preço na unidade do contrato, valor
+  total, situação, a linha da Azul. A vencedora e a nossa posição vão ao
+  resultado do estudo.
+- **Histórico de editais** (`/simulador/editais`): os estudos com o
+  resultado, filtros (busca por órgão/edital/município/concorrente, serviço,
+  situação, ano da sessão, público/privado) e as contas de
+  `historicoDeEditais.ts`: taxa de vitória (ganhos ÷ decididos, com os que
+  viraram contrato), nosso preço ÷ vencedor nas perdidas, desconto do
+  vencedor sobre o teto, por serviço, e concorrentes (disputas, vitórias e o
+  preço deles ÷ o nosso no mesmo edital — razão sem unidade, comparável entre
+  km, veículo-mês e diária; o mesmo nome escrito de jeitos diferentes conta
+  como uma empresa).
+
 ## 8. O que ainda não existe
 
 - Seletor de método para o custo variável (medido, GEIPOT, ANTP) com
@@ -834,6 +857,8 @@ sessão (formatação condicional) e a fonte de cada documento.
   é lançado na tela).
 - Premissas do edital aplicadas sozinhas ao estudo importado (reserva
   técnica, km improdutivo, encargos fixados pelo órgão, piso da CCT).
+- Edital ganho ligado ao contrato da Omie (o campo existe), para o
+  realizado entrar sozinho.
 - Biblioteca de certidões da empresa (com validade) para a aba Habilitação
   marcar sozinha o que já está pronto.
 - As calculadoras de encargos e de jornada ainda não vão para o Excel; o

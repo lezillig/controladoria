@@ -239,7 +239,7 @@ export default function EditorEstudo({
     ...(habilitacao
       ? [{ id: "habilitacao" as const, rotulo: "Habilitação", selo: docsHabilitacao.total > 0 ? <Selo cor={docsHabilitacao.prontos >= docsHabilitacao.total ? "slate" : "amber"}>{`${docsHabilitacao.prontos}/${docsHabilitacao.total}`}</Selo> : undefined }]
       : []),
-    { id: "acompanhamento", rotulo: "9. Versões" },
+    { id: "acompanhamento", rotulo: "9. Versões e resultado" },
   ];
 
   const salvar = () =>

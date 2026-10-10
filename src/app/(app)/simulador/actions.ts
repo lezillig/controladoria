@@ -22,6 +22,8 @@ import {
 import type { MapaOrigem } from "@/lib/simulador/premissas";
 import { lerDataHoraDeBrasilia, lerInteiro, lerNumero } from "@/lib/simulador/numeros";
 import { lerHabilitacaoDoEdital, lerItensNovos, lerRegrasDoEdital } from "@/lib/simulador/formularioDoEstudo";
+import { SITUACOES_PARTICIPANTE } from "@/lib/simulador/disputa";
+import { guardarArquivo, prenderAoEstudo, TIPOS_ARQUIVO, type TipoArquivo } from "@/lib/simulador/arquivosDoEstudo";
 import { ajustarParametro, encerrarRegistro, salvarRegistro, TABELAS, voltarAoPadrao, type TipoTabela } from "@/lib/simulador/edicaoBase";
 import { TIPOS_VEICULO, type EntradaSimulacao, type TipoVeiculo, type UnidadePreco } from "@/lib/simulador/tipos";
 import { exigirPermissao } from "../_dados";
@@ -124,6 +126,16 @@ export async function criarEstudo(formData: FormData): Promise<Resultado> {
   // conferência antes de lançar preço.
   if (regras.length > 0)
     await prisma.simRegra.createMany({ data: regras.map((r, ordem) => ({ estudoId: id, ordem, tema: r.tema, texto: r.texto, fonte: r.fonte })) });
+  // Os arquivos do edital enviados na importação passam a ser do estudo.
+  const guardados = (() => {
+    try {
+      const l = JSON.parse(texto(formData, "arquivosGuardados", 20_000) ?? "[]");
+      return Array.isArray(l) ? l.map(String) : [];
+    } catch {
+      return [];
+    }
+  })();
+  if (guardados.length > 0) await prenderAoEstudo(session.companyId, id, guardados);
   // E os documentos de habilitação, para a aba Habilitação.
   if (habilitacao.length > 0)
     await prisma.simDocumentoHabilitacao.createMany({ data: habilitacao.map((d, ordem) => ({ estudoId: id, ordem, ...d, atualizadoPor: session.name })) });
@@ -342,6 +354,59 @@ export async function excluirDocumentoHabilitacao(estudoId: string, id: string):
   return { ok: true };
 }
 
+// A DISPUTA: os participantes da sessão (a ata), empresa a empresa. A lista
+// inteira é regravada a cada "Salvar". A vencedora e a posição da Azul também
+// vão ao resultado do estudo, para a lista e o histórico.
+export async function salvarParticipantes(
+  estudoId: string,
+  lista: { empresa: string; cnpj?: string | null; posicao?: string | number | null; preco?: string | number | null; valorTotal?: string | number | null; situacao?: string; ehNossa?: boolean; observacao?: string | null }[]
+): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const estudo = await prisma.simEstudo.findFirst({ where: { id: estudoId, companyId: session.companyId }, select: { id: true, nome: true } });
+  if (!estudo) return { erro: "Estudo não encontrado." };
+  if (!Array.isArray(lista) || lista.length > 80) return { erro: "Lista de participantes inválida (até 80)." };
+  const n = (v: unknown) => (v === null || v === undefined || String(v).trim() === "" ? null : lerNumero(String(v)));
+  const linhas = [];
+  for (const [k, x] of lista.entries()) {
+    const empresa = String(x.empresa ?? "").trim().slice(0, 160);
+    if (!empresa) continue;
+    const [posicao, preco, valorTotal] = [n(x.posicao), n(x.preco), n(x.valorTotal)];
+    if (posicao !== null && !(Number.isInteger(posicao) && posicao >= 1 && posicao <= 200)) return { erro: `${empresa}: posição inteira de 1 a 200.` };
+    for (const [v, rotulo] of [[preco, "preço"], [valorTotal, "valor total"]] as const)
+      if (v !== null && (!Number.isFinite(v) || v < 0 || v > 1e12)) return { erro: `${empresa}: ${rotulo} inválido.` };
+    const situacao = (SITUACOES_PARTICIPANTE as readonly string[]).includes(String(x.situacao)) ? String(x.situacao) : "CLASSIFICADA";
+    linhas.push({ estudoId, ordem: k, empresa, cnpj: String(x.cnpj ?? "").replace(/[^\d./-]/g, "").slice(0, 20) || null, posicao, preco, valorTotal, situacao, ehNossa: x.ehNossa === true, observacao: String(x.observacao ?? "").trim().slice(0, 500) || null });
+  }
+  if (linhas.filter((l) => l.ehNossa).length > 1) return { erro: "Só uma linha pode ser a Azul." };
+  if (linhas.filter((l) => l.situacao === "VENCEDORA").length > 1) return { erro: "Só uma vencedora por disputa (no lote por item, use um estudo por item ou a observação)." };
+  const vencedora = linhas.find((l) => l.situacao === "VENCEDORA") ?? null;
+  const nossa = linhas.find((l) => l.ehNossa) ?? null;
+  await prisma.$transaction([
+    prisma.simParticipante.deleteMany({ where: { estudoId } }),
+    prisma.simParticipante.createMany({ data: linhas }),
+    prisma.simEstudo.update({
+      where: { id: estudoId },
+      data: {
+        ...(vencedora && { resultadoVencedor: vencedora.empresa, ...(vencedora.preco !== null && { resultadoPrecoKm: vencedora.preco }), ...(vencedora.valorTotal !== null && { resultadoValorTotal: vencedora.valorTotal }) }),
+        ...(nossa?.posicao && { resultadoPosicao: nossa.posicao }),
+      },
+    }),
+  ]);
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "SIMULADOR_DISPUTA_REGISTRADA",
+    entidadeTipo: "SimEstudo",
+    entidadeId: estudoId,
+    descricao: `Disputa do estudo "${estudo.nome}": ${linhas.length} participante(s)${vencedora ? `, vencedora ${vencedora.empresa}` : ""}.`,
+  });
+  revalidatePath(`/simulador/${estudoId}`);
+  revalidatePath("/simulador/editais");
+  return { ok: true };
+}
+
 // IMPORTAR O GABARITO: lê, grava com vigência e devolve o resumo e os avisos.
 const LIMITE_ARQUIVO = 5 * 1024 * 1024;
 
@@ -429,14 +494,41 @@ export async function encerrarRegistroBase(tipo: TipoTabela, id: string): Promis
 // hospedagem limita o corpo da requisição) e depois a leitura lê o conjunto.
 // Nada é gravado no estudo aqui: a leitura preenche o formulário, e a pessoa
 // confere antes de criar. A trilha registra a leitura.
-export async function enviarArquivoDoEdital(formData: FormData): Promise<{ erro?: string; arquivo?: ArquivoAssinado }> {
+export async function enviarArquivoDoEdital(formData: FormData): Promise<{ erro?: string; arquivo?: ArquivoAssinado; guardado?: string }> {
   const session = await exigirPermissao("gerir-simulador");
   const f = formData.get("arquivo");
   if (!(f instanceof File)) return { erro: "Arquivo não recebido." };
   const nome = (texto(formData, "nome", 200) ?? f.name).slice(0, 200);
-  const r = await enviarArquivo(Buffer.from(await f.arrayBuffer()), nome, f.type, f.name);
+  const conteudo = Buffer.from(await f.arrayBuffer());
+  const r = await enviarArquivo(conteudo, nome, f.type, f.name);
   if (!r.ok) return { erro: r.erro };
-  return { arquivo: assinarArquivo(session.companyId, r.arquivo) };
+  // O original fica guardado (sem estudo até o "Criar") para a consulta no
+  // histórico. Falha ao guardar não impede a leitura.
+  const g = await guardarArquivo({ companyId: session.companyId, estudoId: null, tipo: "EDITAL", nome, mimeType: f.type, conteudo, autor: session.name }).catch(() => null);
+  return { arquivo: assinarArquivo(session.companyId, r.arquivo), guardado: g?.ok ? g.id : undefined };
+}
+
+// Arquivo acrescentado depois, no estudo (ata da sessão, contrato, recurso).
+export async function anexarArquivoAoEstudo(estudoId: string, formData: FormData): Promise<{ erro?: string; id?: string }> {
+  const session = await exigirPermissao("gerir-simulador");
+  const estudo = await prisma.simEstudo.findFirst({ where: { id: estudoId, companyId: session.companyId }, select: { id: true } });
+  if (!estudo) return { erro: "Estudo não encontrado." };
+  const f = formData.get("arquivo");
+  if (!(f instanceof File)) return { erro: "Arquivo não recebido." };
+  const tipo = (TIPOS_ARQUIVO as readonly string[]).includes(String(formData.get("tipo"))) ? (String(formData.get("tipo")) as TipoArquivo) : "OUTRO";
+  const nome = (texto(formData, "nome", 200) ?? f.name).slice(0, 200);
+  const r = await guardarArquivo({ companyId: session.companyId, estudoId, tipo, nome, mimeType: f.type, conteudo: Buffer.from(await f.arrayBuffer()), autor: session.name });
+  if (!r.ok) return { erro: r.erro };
+  revalidatePath(`/simulador/${estudoId}`);
+  return { id: r.id };
+}
+
+export async function excluirArquivoDoEstudo(estudoId: string, id: string): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const r = await prisma.simArquivo.deleteMany({ where: { id, estudoId, companyId: session.companyId } });
+  if (r.count === 0) return { erro: "Arquivo não encontrado." };
+  revalidatePath(`/simulador/${estudoId}`);
+  return { ok: true };
 }
 
 export async function lerEditalEnviado(arquivosJson: string): Promise<{ erro?: string; estudo?: EstudoImportado }> {

@@ -1920,13 +1920,15 @@ model SimEstudo {
   criadoEm            DateTime  @default(now())
   atualizadoEm        DateTime  @updatedAt
 
-  itens       SimItem[]
-  rotas       SimRota[]
-  regras      SimRegra[]
-  habilitacao SimDocumentoHabilitacao[]
-  simulacoes  SimSimulacao[]
-  lances      SimLance[]
-  realizados  SimContratoRealizado[]
+  itens         SimItem[]
+  rotas         SimRota[]
+  regras        SimRegra[]
+  habilitacao   SimDocumentoHabilitacao[]
+  arquivos      SimArquivo[]
+  participantes SimParticipante[]
+  simulacoes    SimSimulacao[]
+  lances        SimLance[]
+  realizados    SimContratoRealizado[]
 
   @@index([companyId, tipo, status])
   @@index([companyId, criadoEm])
@@ -1969,6 +1971,54 @@ model SimDocumentoHabilitacao {
   atualizadoEm  DateTime  @updatedAt
 
   @@index([estudoId, grupo, ordem])
+}
+
+// Arquivo guardado com o estudo: os do edital (enviados na importação) e os
+// que vierem depois (ata da sessão, contrato, recurso). No banco, como na
+// Conformidade: são poucos por estudo e a consulta depois é o ponto. Sem
+// estudo (estudoId nulo) é o enviado na importação que ainda não virou
+// estudo; some depois de dois dias.
+model SimArquivo {
+  id             String     @id @default(cuid())
+  companyId      String
+  estudoId       String?
+  estudo         SimEstudo? @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  // EDITAL | ATA | CONTRATO | PROPOSTA | OUTRO
+  tipo           String     @default("EDITAL")
+  nome           String
+  mimeType       String
+  tamanhoBytes   Int
+  sha256         String
+  conteudo       Bytes
+  enviadoPorNome String?
+  criadoEm       DateTime   @default(now())
+
+  @@index([estudoId])
+  @@index([companyId, estudoId, criadoEm])
+}
+
+// Participante da disputa (licitação): a ata da sessão, empresa a empresa —
+// posição, preço e situação. A Azul é uma das linhas (ehNossa). É o que vira
+// inteligência de mercado no histórico: quem disputa o quê, a que preço.
+model SimParticipante {
+  id         String    @id @default(cuid())
+  estudoId   String
+  estudo     SimEstudo @relation(fields: [estudoId], references: [id], onDelete: Cascade)
+  ordem      Int       @default(0)
+  empresa    String
+  cnpj       String?
+  posicao    Int?
+  // Preço na unidade do contrato do estudo (R$/km, R$/veículo-mês…).
+  preco      Decimal?  @db.Decimal(18, 6)
+  valorTotal Decimal?  @db.Decimal(18, 2)
+  // VENCEDORA | CLASSIFICADA | DESCLASSIFICADA | INABILITADA | DESISTENTE
+  situacao   String    @default("CLASSIFICADA")
+  ehNossa    Boolean   @default(false)
+  observacao String?
+  criadoEm   DateTime  @default(now())
+
+  @@index([estudoId, ordem])
+  @@index([empresa])
 }
 
 model SimItem {

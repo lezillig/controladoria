@@ -10,6 +10,7 @@ import { editalParaEstudo, EditalSchema, SERVICOS_DO_EDITAL, DIAS_LETIVOS_PADRAO
 import { itensIniciais, MOTORISTAS_POR_VEICULO_ESCOLAR, TIPOS_SERVICO } from "../src/lib/simulador/estudos";
 import { lerHabilitacaoDoEdital, lerItensNovos } from "../src/lib/simulador/formularioDoEstudo";
 import { dividirPdf } from "../src/lib/simulador/dividirPdf";
+import { montarHistorico, type EditalDoHistorico } from "../src/lib/simulador/historicoDeEditais";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -244,6 +245,22 @@ async function divisao() {
   ok("página sozinha acima do limite: erro que diz a página", erro.includes("página 1"), erro);
   const pequeno = await dividirPdf(bytes, "grande.pdf", 10_000_000);
   conferir("PDF abaixo do limite: uma parte só", pequeno.map((x) => [x.de, x.ate]), [[0, 24]]);
+}
+
+console.log("\nHISTÓRICO DE EDITAIS");
+{
+  const ed = (o: Partial<EditalDoHistorico>): EditalDoHistorico => ({ id: "x", nome: "E", orgao: "Órgão", numeroEdital: null, tipoServico: "ESCOLAR", esfera: "PUBLICO", status: "PERDIDO", dataSessao: new Date(2026, 9, 1), unidade: "R$/km", nossoPreco: 10, precoVencedor: 9, vencedor: "Viação X", posicao: 2, teto: 12, valorTotalMaximo: null, participantes: [], arquivos: 0, ...o });
+  const h = montarHistorico([
+    ed({ participantes: [{ empresa: "Viação X Ltda.", preco: 9, situacao: "VENCEDORA", ehNossa: false }, { empresa: "Azul", preco: 10, situacao: "CLASSIFICADA", ehNossa: true }] }),
+    ed({ status: "GANHO", vencedor: "Azul", precoVencedor: 10, posicao: 1, participantes: [{ empresa: "VIACAO X LTDA", preco: 11, situacao: "CLASSIFICADA", ehNossa: false }] }),
+    ed({ status: "EM_ESTUDO", tipoServico: "FRETAMENTO", vencedor: null, precoVencedor: null, posicao: null }),
+  ]);
+  conferir("taxa de vitória = ganhos ÷ decididos", [h.resumo.decididos, h.resumo.ganhos, h.resumo.taxa], [2, 1, 0.5]);
+  ok("nosso × vencedor só na perdida: 10 ÷ 9 − 1", Math.abs((h.linhas[0].nossoSobreVencedor ?? 0) - (10 / 9 - 1)) < 1e-12 && h.linhas[1].nossoSobreVencedor === null);
+  ok("desconto do vencedor sobre o teto: 1 − 9 ÷ 12", Math.abs((h.linhas[0].descontoVencedor ?? 0) - (1 - 9 / 12)) < 1e-12);
+  conferir("o mesmo concorrente escrito de dois jeitos conta como um", h.concorrentes.map((c) => [c.disputas, c.vitorias]), [[2, 1]]);
+  ok("preço do concorrente × o nosso: média de −10% e +10%", Math.abs(h.concorrentes[0].precoSobreONossoMedio ?? 1) < 1e-12);
+  conferir("por serviço", h.porServico.map((s) => [s.servico, s.editais, s.decididos]), [["ESCOLAR", 2, 2], ["FRETAMENTO", 1, 0]]);
 }
 
 (async () => {

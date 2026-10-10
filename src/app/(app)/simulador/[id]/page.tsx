@@ -1,10 +1,18 @@
 import Link from "next/link";
-import { baseComIndiretosDoDre, indiretosDaEmpresa, indiretosDoDre, type IndiretoDoDre } from "@/lib/simulador/indiretosDoDre";
+import {
+  baseComIndiretosDoDre,
+  indiretosDaEmpresa,
+  indiretosDoDre,
+  type IndiretoDoDre,
+} from "@/lib/simulador/indiretosDoDre";
 import { notFound } from "next/navigation";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { baseVigente, paraNumero } from "@/lib/simulador/baseDeCustos";
 import { calibrar, type Calibracao } from "@/lib/simulador/calibracao";
-import { analisarCustosReais, carregarDadosReais } from "@/lib/simulador/custosReais";
+import {
+  analisarCustosReais,
+  carregarDadosReais,
+} from "@/lib/simulador/custosReais";
 import type { IndicadorReal } from "@/lib/simulador/aplicarReais";
 import {
   carregarEstudo,
@@ -17,12 +25,22 @@ import {
   STATUS_ESTUDO,
 } from "@/lib/simulador/estudos";
 import { simular } from "@/lib/simulador/motor";
-import { FONTES_ENERGIA, type EntradaSimulacao, type FonteEnergia } from "@/lib/simulador/tipos";
-import { CHAVE_PRECO_ENERGIA, PRECO_ENERGIA_PADRAO } from "@/lib/simulador/energia";
+import {
+  FONTES_ENERGIA,
+  type EntradaSimulacao,
+  type FonteEnergia,
+} from "@/lib/simulador/tipos";
+import {
+  CHAVE_PRECO_ENERGIA,
+  PRECO_ENERGIA_PADRAO,
+} from "@/lib/simulador/energia";
 import { larguraPainel } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
 import EditorEstudo from "./EditorEstudo";
 import Acompanhamento from "./abas/Acompanhamento";
+import Disputa from "./abas/Disputa";
+import ArquivosDoEstudo from "./ArquivosDoEstudo";
+import { unidadeDoTeto, type UnidadePreco } from "@/lib/simulador/tipos";
 
 // UM ESTUDO — o editor e o acompanhamento.
 //
@@ -35,27 +53,43 @@ import Acompanhamento from "./abas/Acompanhamento";
 // Custos reais são um extra: se a leitura falhar (Omie fora, gestão fora), o
 // estudo abre normalmente e o painel diz o que não pôde ser medido.
 
-export default async function EstudoPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ versao?: string; salva?: string }> }) {
+export default async function EstudoPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ versao?: string; salva?: string }>;
+}) {
   const session = await exigirPermissao("simulador");
-  const [podeEditar, podeConsultarEspecialista] = await Promise.all([podeAcao(session, "gerir-simulador"), podeAcao(session, "investigar")]);
+  const [podeEditar, podeConsultarEspecialista] = await Promise.all([
+    podeAcao(session, "gerir-simulador"),
+    podeAcao(session, "investigar"),
+  ]);
   const { id } = await params;
   const { versao, salva } = await searchParams;
 
   const carregado = await carregarEstudo(session.companyId, id);
   if (!carregado) notFound();
   const { estudo, versoes } = carregado;
-  const versaoPedida = versao && estudo.simulacoes.some((s) => s.id === versao) ? versao : null;
+  const versaoPedida =
+    versao && estudo.simulacoes.some((s) => s.id === versao) ? versao : null;
 
   let indicadores: IndicadorReal[] = [];
   let lacunas: string[] = [];
   let dados: Awaited<ReturnType<typeof carregarDadosReais>> | null = null;
   try {
-    dados = await carregarDadosReais(session.companyId, null, dataReferenciaPadrao());
+    dados = await carregarDadosReais(
+      session.companyId,
+      null,
+      dataReferenciaPadrao(),
+    );
     const analise = analisarCustosReais(dados);
     indicadores = analise.indicadores;
     lacunas = [...new Set([...dados.avisos, ...analise.lacunas])];
   } catch {
-    lacunas = ["Os custos reais não puderam ser lidos agora. O estudo segue com a base e os padrões."];
+    lacunas = [
+      "Os custos reais não puderam ser lidos agora. O estudo segue com a base e os padrões.",
+    ];
   }
 
   // Os indiretos que a base não tem vêm do DRE consolidado (ver
@@ -64,13 +98,23 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
   let doDre = new Map<string, IndiretoDoDre>();
   if (dados) {
     try {
-      doDre = await indiretosDaEmpresa(session.companyId, dataReferenciaPadrao(), baseGravada, dados);
+      doDre = await indiretosDaEmpresa(
+        session.companyId,
+        dataReferenciaPadrao(),
+        baseGravada,
+        dados,
+      );
     } catch {
       doDre = indiretosDoDre(dados);
     }
   }
   const base = baseComIndiretosDoDre(baseGravada, doDre);
-  const inicial = await entradaInicial(session.companyId, carregado, versaoPedida, base);
+  const inicial = await entradaInicial(
+    session.companyId,
+    carregado,
+    versaoPedida,
+    base,
+  );
   const { margemMinima, margemAlvo } = regrasDeMargem(base);
 
   // Calibração: a última versão LANÇADA (a que virou preço) contra o realizado.
@@ -79,15 +123,22 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
   if (lancada && estudo.realizados.length > 0) {
     const entradaLancada = lancada.entrada as unknown as EntradaSimulacao;
     try {
-      calibracao = calibrar(simular(entradaLancada), entradaLancada.premissas.contrato.mesesCustoFixo, realizadosParaCalibracao(estudo.realizados));
+      calibracao = calibrar(
+        simular(entradaLancada),
+        entradaLancada.premissas.contrato.mesesCustoFixo,
+        realizadosParaCalibracao(estudo.realizados),
+      );
     } catch {
       calibracao = null;
     }
   }
 
   const subtitulo = [
-    ROTULO_TIPO_ESTUDO[estudo.tipo as keyof typeof ROTULO_TIPO_ESTUDO] ?? estudo.tipo,
-    ROTULO_TIPO_SERVICO[estudo.tipoServico as keyof typeof ROTULO_TIPO_SERVICO] ?? estudo.tipoServico,
+    ROTULO_TIPO_ESTUDO[estudo.tipo as keyof typeof ROTULO_TIPO_ESTUDO] ??
+      estudo.tipo,
+    ROTULO_TIPO_SERVICO[
+      estudo.tipoServico as keyof typeof ROTULO_TIPO_SERVICO
+    ] ?? estudo.tipoServico,
     estudo.orgao ?? estudo.cliente,
     estudo.numeroEdital,
     [estudo.municipio, estudo.uf].filter(Boolean).join("/"),
@@ -95,38 +146,85 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
     .filter(Boolean)
     .join(" · ");
 
-  const acompanhamento = (
-    <Acompanhamento
+  // A DISPUTA: o preço da versão lançada (ou da última) e o menor teto dos itens.
+  const versaoDoLance =
+    versoes.find((v) => v.status === "LANCADA") ?? versoes[0] ?? null;
+  const tetos = estudo.itens
+    .map((i) => paraNumero(i.precoMaximoKm))
+    .filter((t): t is number => t !== null && t > 0);
+  const fmtNum = (v: unknown) => {
+    const n = paraNumero(v as never);
+    return n === null ? "" : String(n).replace(".", ",");
+  };
+  const disputa = (
+    <Disputa
       estudoId={estudo.id}
-      versoes={versoes.map((v) => ({ ...v, criadoEm: v.criadoEm.toISOString() }))}
-      versaoAberta={inicial.versaoBase}
-      lances={estudo.lances.map((l) => {
-        const precos = (l.precos as { item: string; preco: number }[] | null) ?? [];
-        return {
-          id: l.id,
-          fase: l.fase,
-          dataHora: l.dataHora.toISOString(),
-          preco: precos[0]?.preco ?? null,
-          valorTotal: paraNumero(l.valorTotal),
-          observacao: l.observacao,
-          autor: l.registradoPorNome,
-        };
-      })}
-      resultado={{
-        status: estudo.status,
-        posicao: estudo.resultadoPosicao,
-        vencedor: estudo.resultadoVencedor,
-        precoVencedor: paraNumero(estudo.resultadoPrecoKm),
-        valorTotal: paraNumero(estudo.resultadoValorTotal),
-        data: estudo.resultadoData ? estudo.resultadoData.toISOString().slice(0, 10) : null,
-        observacao: estudo.resultadoObservacao,
-      }}
-      statusOpcoes={STATUS_ESTUDO.map((s) => ({ valor: s, rotulo: ROTULO_STATUS_ESTUDO[s] }))}
-      realizados={estudo.realizados.map((r) => ({ competencia: r.competencia, kmRealizado: paraNumero(r.kmRealizado), faturamento: paraNumero(r.faturamento), fonte: r.fonte }))}
-      calibracao={calibracao}
-      versaoCalibrada={lancada?.versao ?? null}
+      unidade={unidadeDoTeto(estudo.unidadePreco as UnidadePreco)}
+      nossoPreco={versaoDoLance?.precoKm ?? null}
+      teto={tetos.length > 0 ? Math.min(...tetos) : null}
       podeEditar={podeEditar}
+      participantes={estudo.participantes.map((x) => ({
+        empresa: x.empresa,
+        cnpj: x.cnpj ?? "",
+        posicao: x.posicao ? String(x.posicao) : "",
+        preco: fmtNum(x.preco),
+        valorTotal: fmtNum(x.valorTotal),
+        situacao: x.situacao,
+        ehNossa: x.ehNossa,
+        observacao: x.observacao ?? "",
+      }))}
     />
+  );
+
+  const acompanhamento = (
+    <>
+      <Acompanhamento
+        estudoId={estudo.id}
+        versoes={versoes.map((v) => ({
+          ...v,
+          criadoEm: v.criadoEm.toISOString(),
+        }))}
+        versaoAberta={inicial.versaoBase}
+        lances={estudo.lances.map((l) => {
+          const precos =
+            (l.precos as { item: string; preco: number }[] | null) ?? [];
+          return {
+            id: l.id,
+            fase: l.fase,
+            dataHora: l.dataHora.toISOString(),
+            preco: precos[0]?.preco ?? null,
+            valorTotal: paraNumero(l.valorTotal),
+            observacao: l.observacao,
+            autor: l.registradoPorNome,
+          };
+        })}
+        resultado={{
+          status: estudo.status,
+          posicao: estudo.resultadoPosicao,
+          vencedor: estudo.resultadoVencedor,
+          precoVencedor: paraNumero(estudo.resultadoPrecoKm),
+          valorTotal: paraNumero(estudo.resultadoValorTotal),
+          data: estudo.resultadoData
+            ? estudo.resultadoData.toISOString().slice(0, 10)
+            : null,
+          observacao: estudo.resultadoObservacao,
+        }}
+        statusOpcoes={STATUS_ESTUDO.map((s) => ({
+          valor: s,
+          rotulo: ROTULO_STATUS_ESTUDO[s],
+        }))}
+        realizados={estudo.realizados.map((r) => ({
+          competencia: r.competencia,
+          kmRealizado: paraNumero(r.kmRealizado),
+          faturamento: paraNumero(r.faturamento),
+          fonte: r.fonte,
+        }))}
+        calibracao={calibracao}
+        versaoCalibrada={lancada?.versao ?? null}
+        podeEditar={podeEditar}
+      />
+      {disputa}
+    </>
   );
 
   // Habilitação: só na licitação (estudo público) ou quando o edital lido trouxe
@@ -134,7 +232,9 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
   const habilitacao =
     estudo.esfera === "PUBLICO" || estudo.habilitacao.length > 0
       ? {
-          dataSessao: estudo.dataSessao ? estudo.dataSessao.toISOString().slice(0, 10) : null,
+          dataSessao: estudo.dataSessao
+            ? estudo.dataSessao.toISOString().slice(0, 10)
+            : null,
           documentos: estudo.habilitacao.map((d) => ({
             id: d.id,
             grupo: d.grupo,
@@ -158,15 +258,22 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
           nome: estudo.nome,
           subtitulo,
           status: estudo.status,
-          statusRotulo: ROTULO_STATUS_ESTUDO[estudo.status as keyof typeof ROTULO_STATUS_ESTUDO] ?? estudo.status,
-          inicioPrevisto: estudo.inicioPrevisto ? estudo.inicioPrevisto.toISOString().slice(0, 7) : null,
+          statusRotulo:
+            ROTULO_STATUS_ESTUDO[
+              estudo.status as keyof typeof ROTULO_STATUS_ESTUDO
+            ] ?? estudo.status,
+          inicioPrevisto: estudo.inicioPrevisto
+            ? estudo.inicioPrevisto.toISOString().slice(0, 7)
+            : null,
         }}
         entradaInicial={inicial.entrada}
         origemInicial={inicial.origem}
         daBase={inicial.daBase ?? null}
         pendente={inicial.pendente === true}
         versaoBase={inicial.versaoBase}
-        versaoAntiga={Boolean(versaoPedida) && versaoPedida !== estudo.simulacoes[0]?.id}
+        versaoAntiga={
+          Boolean(versaoPedida) && versaoPedida !== estudo.simulacoes[0]?.id
+        }
         baseEm={inicial.baseEm ? inicial.baseEm.toISOString() : null}
         podeEditar={podeEditar}
         margemMinima={margemMinima}
@@ -186,10 +293,40 @@ export default async function EstudoPage({ params, searchParams }: { params: Pro
           tarifaOnibus3: paraNumero(p.tarifaOnibus3),
           descontoTagPct: paraNumero(p.descontoTagPct),
         }))}
-        precosEnergia={Object.fromEntries(FONTES_ENERGIA.map((f) => [f, base.parametros.get(CHAVE_PRECO_ENERGIA[f])?.valor ?? PRECO_ENERGIA_PADRAO[f]])) as Record<FonteEnergia, number>}
-        avisoInicial={salva && /^\d{1,5}$/.test(salva) ? `Versão ${salva} salva.` : null}
+        precosEnergia={
+          Object.fromEntries(
+            FONTES_ENERGIA.map((f) => [
+              f,
+              base.parametros.get(CHAVE_PRECO_ENERGIA[f])?.valor ??
+                PRECO_ENERGIA_PADRAO[f],
+            ]),
+          ) as Record<FonteEnergia, number>
+        }
+        avisoInicial={
+          salva && /^\d{1,5}$/.test(salva) ? `Versão ${salva} salva.` : null
+        }
       />
-      {estudo.regras.length > 0 && <RegrasDoEdital regras={estudo.regras.map((r) => ({ tema: r.tema, texto: r.texto, fonte: r.fonte }))} />}
+      <ArquivosDoEstudo
+        estudoId={estudo.id}
+        podeEditar={podeEditar}
+        arquivos={estudo.arquivos.map((a) => ({
+          id: a.id,
+          tipo: a.tipo,
+          nome: a.nome,
+          tamanhoBytes: a.tamanhoBytes,
+          enviadoPorNome: a.enviadoPorNome,
+          criadoEm: a.criadoEm.toISOString(),
+        }))}
+      />
+      {estudo.regras.length > 0 && (
+        <RegrasDoEdital
+          regras={estudo.regras.map((r) => ({
+            tema: r.tema,
+            texto: r.texto,
+            fonte: r.fonte,
+          }))}
+        />
+      )}
       <p className="text-xs text-slate-500">
         <Link href="/simulador" className="text-blue-700 hover:underline">
           ← Todos os estudos
@@ -212,22 +349,41 @@ const ROTULO_TEMA: Record<string, string> = {
   PENALIDADE: "Penalidades",
   OUTRO: "Outras",
 };
-function RegrasDoEdital({ regras }: { regras: { tema: string; texto: string; fonte: string | null }[] }) {
-  const temas = [...new Set(regras.map((r) => r.tema))].sort((a, b) => (a === "SUPOSICAO" ? -1 : b === "SUPOSICAO" ? 1 : 0));
+function RegrasDoEdital({
+  regras,
+}: {
+  regras: { tema: string; texto: string; fonte: string | null }[];
+}) {
+  const temas = [...new Set(regras.map((r) => r.tema))].sort((a, b) =>
+    a === "SUPOSICAO" ? -1 : b === "SUPOSICAO" ? 1 : 0,
+  );
   return (
-    <details className="rounded-xl border border-slate-200 bg-white p-4" open={regras.some((r) => r.tema === "SUPOSICAO")}>
-      <summary className="cursor-pointer text-sm font-semibold text-slate-800">Regras do edital ({regras.length})</summary>
+    <details
+      className="rounded-xl border border-slate-200 bg-white p-4"
+      open={regras.some((r) => r.tema === "SUPOSICAO")}
+    >
+      <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+        Regras do edital ({regras.length})
+      </summary>
       <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {temas.map((t) => (
           <div key={t}>
-            <p className={`mb-1 text-xs font-semibold uppercase tracking-wide ${t === "SUPOSICAO" ? "text-amber-700" : "text-slate-500"}`}>{ROTULO_TEMA[t] ?? t}</p>
+            <p
+              className={`mb-1 text-xs font-semibold uppercase tracking-wide ${t === "SUPOSICAO" ? "text-amber-700" : "text-slate-500"}`}
+            >
+              {ROTULO_TEMA[t] ?? t}
+            </p>
             <ul className="space-y-1 text-sm text-slate-700">
               {regras
                 .filter((r) => r.tema === t)
                 .map((r, k) => (
                   <li key={k}>
                     {r.texto}
-                    {r.fonte && <span className="ml-1 text-xs text-slate-400">({r.fonte})</span>}
+                    {r.fonte && (
+                      <span className="ml-1 text-xs text-slate-400">
+                        ({r.fonte})
+                      </span>
+                    )}
                   </li>
                 ))}
             </ul>

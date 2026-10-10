@@ -336,6 +336,8 @@ export default function NovoEstudoForm({ estudo, leituraDisponivel = false }: { 
   // O edital lido preenche o formulário; a chave remonta os campos para eles
   // pegarem os valores lidos.
   const [importado, setImportado] = useState<EstudoImportado | null>(null);
+  // Os arquivos do edital guardados na importação: presos ao estudo no "Criar".
+  const [arquivosGuardados, setArquivosGuardados] = useState<string[]>([]);
   const [versaoDoFormulario, setVersaoDoFormulario] = useState(0);
   const v = (campo: string) => estudo?.campos[campo] ?? importado?.campos[campo] ?? "";
   const [esfera, setEsfera] = useState<"PUBLICO" | "PRIVADO">(estudo?.esfera ?? "PUBLICO");
@@ -356,8 +358,9 @@ export default function NovoEstudoForm({ estudo, leituraDisponivel = false }: { 
     setTipo(TIPOS_POR_ESFERA[e][0][0]);
   };
 
-  const aplicarImportado = (e: EstudoImportado) => {
+  const aplicarImportado = (e: EstudoImportado, guardados: string[]) => {
     setImportado(e);
+    setArquivosGuardados(guardados);
     setEsfera(e.esfera);
     setTipo(TIPOS_POR_ESFERA[e.esfera].some(([t]) => t === e.tipo) ? e.tipo : TIPOS_POR_ESFERA[e.esfera][0][0]);
     setTipoServico(e.tipoServico);
@@ -386,6 +389,7 @@ export default function NovoEstudoForm({ estudo, leituraDisponivel = false }: { 
         if (!estudo && importado) {
           formData.set("regrasDoEdital", JSON.stringify(importado.regras));
           formData.set("habilitacaoDoEdital", JSON.stringify(importado.habilitacao));
+          formData.set("arquivosGuardados", JSON.stringify(arquivosGuardados));
         }
         iniciar(async () => {
           const r = estudo ? await atualizarEstudo(estudo.id, formData) : await criarEstudo(formData);
