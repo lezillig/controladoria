@@ -1275,3 +1275,35 @@ regras e a aba **Habilitação**, com os documentos por grupo para conferir).
 Cada versão salva é um snapshot reexecutável; a planilha Excel sai em
 fórmulas. Lances, resultado da disputa e o realizado do contrato fecham o
 ciclo: a calibração compara a versão lançada com o que o contrato custou.
+
+## 14. DRE por centro de custo
+
+Relatório à parte (menu Resultado → "DRE por centro de custo"), para ir
+ajustando sem mexer no DRE oficial. Parte do MESMO DRE mensal da tela de Custos
+(competência, mesmo recorte, mesma linha por categoria) e o abre pelos centros
+de custo da folha de pagamento.
+
+- **Quadro de pessoal**: a lista "Empregados em Excel — Apenas Ativos" do
+  sistema de folha, importada por empresa e por mês. Cria os centros de custo
+  (código da folha) e guarda nome, cargo, centro, serviço, departamento,
+  salário e admissão. **CPF, RG e PIS não são lidos nem gravados.** Sem lista
+  do mês, usa a mais recente antes dele (com aviso).
+- **Como cada valor chega a um centro**, nesta ordem:
+  1. vínculo da origem Omie — projeto > departamento > cliente/fornecedor
+     (documento) > categoria. Mesma origem em vários centros: com percentuais,
+     pelo percentual (o que faltar para 100% fica não alocado); com 100% em
+     todos, pela folha deles;
+  2. despesas com pessoas sem vínculo: divididas entre os centros da empresa do
+     título pelo salário do quadro;
+  3. o resto fica em "não alocado", por origem, com sugestão de centro pelo
+     nome (cliente do quadro, descrição do centro).
+- Retenções na fonte acompanham o título a receber (quando a configuração as
+  soma às deduções). Resultado financeiro, financiamentos, tributo sobre o
+  lucro e distribuição ficam fora dos centros.
+- **Apoio** (oficina, RH, financeiro, toda a MCZ por padrão): o resultado pode
+  ser rateado entre os operacionais pela receita ou pela folha. A margem direta
+  continua à vista ao lado.
+- Fechamento: soma dos centros + não alocado = EBIT do DRE
+  (`npm run teste:dre-centro-custo` confere no banco).
+- Ver: permissão "Custos e DRE". Ajustar (importar, tipo, vínculos) e ver os
+  nomes e salários individuais: "Classificar categorias do DRE".

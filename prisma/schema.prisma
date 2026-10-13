@@ -2205,3 +2205,100 @@ model BalancoPatrimonial {
 
   @@unique([companyId, escopo, dataBase])
 }
+
+// ---------------------------------------------------------------------------
+// DRE POR CENTRO DE CUSTO
+//
+// O quadro de pessoal vem da lista de empregados ativos do sistema de folha
+// (planilha "Empregados em Excel — Apenas Ativos"), importada uma vez por mês
+// e por empresa. Ele diz QUEM está em cada centro de custo e com que salário —
+// e o salário é a régua que divide a folha da Omie (que chega por categoria,
+// não por pessoa) entre os centros de custo.
+//
+// Guarda só o necessário para isso: nome, cargo, centro de custo, área,
+// salário e admissão. CPF, RG e PIS da planilha NÃO são gravados — não servem
+// ao relatório, e documento pessoal guardado sem necessidade é risco sem
+// retorno (LGPD).
+// ---------------------------------------------------------------------------
+
+model FolhaQuadro {
+  id               String        @id @default(cuid())
+  companyId        String
+  // A conta Omie da empresa (a folha da Azul divide a folha da Azul).
+  conexaoId        String
+  // "Cód Emp" do sistema de folha (164, 165…).
+  empresaCodigo    String
+  // Primeiro dia do mês a que a lista se refere.
+  competencia      DateTime      @db.Date
+  arquivoNome      String
+  pessoas          Int
+  salarioCents     Int
+  importadoPorNome String?
+  importadoEm      DateTime      @default(now())
+  lista            FolhaPessoa[]
+
+  @@unique([conexaoId, competencia])
+  @@index([companyId, competencia])
+}
+
+model FolhaPessoa {
+  id                   String      @id @default(cuid())
+  quadroId             String
+  quadro               FolhaQuadro @relation(fields: [quadroId], references: [id], onDelete: Cascade)
+  matricula            String
+  nome                 String
+  cargo                String?
+  categoria            String?
+  admissao             DateTime?   @db.Date
+  salarioCents         Int
+  centroCustoCodigo    String
+  centroCustoDescricao String
+  // "Descrição Serviço": o cliente/contrato em que a pessoa trabalha.
+  servico              String?
+  // "Descrição Dpto": OPERACIONAL / ADMINISTRATIVO.
+  departamento         String?
+  sindicato            String?
+
+  @@index([quadroId, centroCustoCodigo])
+}
+
+// O centro de custo, por empresa — o código é o do sistema de folha.
+model CentroCusto {
+  id           String               @id @default(cuid())
+  companyId    String
+  conexaoId    String
+  codigo       String
+  descricao    String
+  // OPERACIONAL (contrato, operação que fatura) | APOIO (oficina, RH,
+  // financeiro…: o custo dele é rateado entre os operacionais, se pedido).
+  tipo         String               @default("OPERACIONAL")
+  observacao   String?
+  criadoEm     DateTime             @default(now())
+  atualizadoEm DateTime             @updatedAt
+  vinculos     CentroCustoVinculo[]
+
+  @@unique([conexaoId, codigo])
+  @@index([companyId])
+}
+
+// DE ONDE VEM O DINHEIRO DE CADA CENTRO DE CUSTO, na Omie: o projeto (OS), o
+// departamento, o cliente/fornecedor ou a categoria do título. Precedência na
+// conta: projeto > departamento > parceiro > categoria. Uma origem pode ir a
+// mais de um centro, com percentual.
+model CentroCustoVinculo {
+  id            String      @id @default(cuid())
+  companyId     String
+  centroCustoId String
+  centroCusto   CentroCusto @relation(fields: [centroCustoId], references: [id], onDelete: Cascade)
+  conexaoId     String
+  // PROJETO | DEPARTAMENTO | PARCEIRO | CATEGORIA
+  tipoOrigem    String
+  valorOrigem   String
+  rotuloOrigem  String?
+  percentual    Float       @default(100)
+  criadoPorNome String?
+  criadoEm      DateTime    @default(now())
+
+  @@unique([centroCustoId, tipoOrigem, conexaoId, valorOrigem])
+  @@index([companyId, conexaoId])
+}

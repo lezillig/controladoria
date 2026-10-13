@@ -54,7 +54,8 @@
     "teste:horario": "tsx scripts/teste-horario.ts",
     "teste:mes-em-formacao": "tsx scripts/teste-mes-em-formacao.ts",
     "postinstall": "prisma generate",
-    "teste:edital": "tsx scripts/teste-edital.ts"
+    "teste:edital": "tsx scripts/teste-edital.ts",
+    "teste:dre-centro-custo": "tsx scripts/teste-dre-centro-custo.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

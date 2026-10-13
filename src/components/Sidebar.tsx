@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  Network,
   Banknote,
   Building2,
   Calculator,
@@ -62,6 +63,9 @@ const NAV: NavItem[] = [
   { href: "/", label: "Painel financeiro", icon: LayoutDashboard, permissao: "painel" },
 
   { secao: "Resultado", href: "/custos", label: "Custos e DRE", icon: TrendingUp, permissao: "custos" },
+  // O mesmo DRE aberto pelos centros de custo da folha — relatório à parte,
+  // logo abaixo do DRE de que ele sai.
+  { href: "/dre-centro-custo", label: "DRE por centro de custo", icon: Network, permissao: "custos" },
   { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote, permissao: "fluxo-caixa" },
   { href: "/resultados", label: "Resultado mês a mês", icon: CalendarRange, permissao: "resultados" },
   { href: "/rentabilidade", label: "Rentabilidade por contrato", icon: PiggyBank, permissao: "rentabilidade" },
