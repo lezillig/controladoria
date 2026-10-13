@@ -1,5 +1,5 @@
 import { LINHA_PESSOAS_CORPORATIVO } from "./dre";
-import { normalizar } from "./quadroDePessoal";
+import { ehNomeDeApoio, normalizar } from "./quadroDePessoal";
 
 // O DRE POR CENTRO DE CUSTO — a conta, sem banco.
 //
@@ -12,11 +12,16 @@ import { normalizar } from "./quadroDePessoal";
 //      parceiro > categoria). Origem ligada a vários centros: com percentuais,
 //      pelo percentual (o que faltar para 100% fica não alocado); com 100% em
 //      todos, pela folha dos centros.
-//   2. FOLHA: despesa com pessoas sem vínculo é dividida entre os centros da
+//   2. DEPARTAMENTO DA OMIE: título com departamento (o "centro de custo" da
+//      Omie) e sem vínculo vai para um centro com o nome do departamento — a
+//      mesma regra com que a tela de Custos já abre "Despesas com pessoas —
+//      corporativo". É o que deixa o relatório de pé antes de qualquer ajuste;
+//      ligar o departamento a um centro da folha junta os dois.
+//   3. FOLHA: despesa com pessoas sem vínculo nem departamento é dividida entre os centros da
 //      empresa do título pelo salário do quadro de pessoal importado — a folha
 //      da Omie chega por categoria (salários, INSS, FGTS, VT), não por pessoa,
 //      e o salário de quem está em cada centro é a melhor régua que existe.
-//   3. NÃO ALOCADO: o resto, à vista, por origem, para ser ligado.
+//   4. NÃO ALOCADO: o resto, à vista, por origem, para ser ligado.
 //
 // Só o resultado OPERACIONAL (até o EBIT) é dividido. Resultado financeiro,
 // financiamentos, tributo sobre o lucro e distribuição ficam fora — são da
@@ -73,7 +78,9 @@ export type GrupoDeTitulos = {
   titulos: number;
 };
 
-export type CentroDoDre = { id: string; conexaoId: string; codigo: string; descricao: string; tipo: string; empresa: string };
+// `departamentoOmie`: centro que não está cadastrado — nasceu de um
+// departamento da Omie sem vínculo (regra 2) e existe só no relatório.
+export type CentroDoDre = { id: string; conexaoId: string; codigo: string; descricao: string; tipo: string; empresa: string; departamentoOmie?: boolean };
 export type VinculoDoDre = { id?: string; centroCustoId: string; conexaoId: string; tipoOrigem: string; valorOrigem: string; percentual: number };
 // O quadro de pessoal de uma empresa: por centro, pessoas e salário.
 export type QuadroDoDre = { conexaoId: string; competencia: Date; porCentro: Map<string, { pessoas: number; salarioCents: number }> };
@@ -91,9 +98,13 @@ export type EntradaDreCentro = {
   somarRetencoes: boolean;
   // Nome de departamento e projeto por "conexaoId|codigo", para a tela.
   nomes?: { departamentos?: Map<string, string>; projetos?: Map<string, string> };
+  // O apelido de cada empresa (conexão), para os avisos e os centros da Omie.
+  empresas?: Map<string, string>;
+  // Regra 2 ligada (padrão).
+  departamentoComoCentro?: boolean;
 };
 
-export type Via = "VINCULO" | "FOLHA";
+export type Via = "VINCULO" | "DEPARTAMENTO" | "FOLHA";
 export type DetalheDoCentro = { linha: string; categoria: string; descricao: string; via: Via; efeitoCents: number };
 
 export type ResultadoDoCentro = CentroDoDre & {
@@ -108,6 +119,8 @@ export type ResultadoDoCentro = CentroDoDre & {
   margemCents: number;
   rateioCents: number;
   resultadoCents: number;
+  // Para o centro do departamento da Omie: centros da folha com nome parecido.
+  sugestoes: string[];
 };
 
 export type OrigemNaoAlocada = {
@@ -248,7 +261,31 @@ export function montarDreCentroCusto(e: EntradaDreCentro, servicosPorCentro: Map
   let semCategoriaCents = 0;
   let volumeOperacional = 0;
   let volumeAlocado = 0;
-  const empresasSemQuadro = new Set<string>();
+  // Folha sem centro por falta de quadro (e de departamento), por empresa.
+  const folhaSemQuadro = new Map<string, number>();
+  const cadastrados = e.centros;
+  const todosCentros = [...e.centros];
+
+  // O centro do departamento da Omie, criado na primeira vez que aparece.
+  const centroDoDepartamento = (g: GrupoDeTitulos) => {
+    const id = `dep:${g.conexaoId}|${g.departamento}`;
+    if (!centrosPorId.has(id)) {
+      const descricao = e.nomes?.departamentos?.get(`${g.conexaoId}|${g.departamento}`) ?? `Departamento ${g.departamento}`;
+      const c: CentroDoDre = {
+        id,
+        conexaoId: g.conexaoId,
+        codigo: g.departamento!,
+        descricao,
+        tipo: e.conexoesCorporativas.has(g.conexaoId) || ehNomeDeApoio(descricao) ? "APOIO" : "OPERACIONAL",
+        empresa: e.empresas?.get(g.conexaoId) ?? "?",
+        departamentoOmie: true,
+      };
+      centrosPorId.set(id, c);
+      acumulado.set(id, { porLinha: {}, detalhes: new Map() });
+      todosCentros.push(c);
+    }
+    return id;
+  };
 
   const rotuloDaOrigem = (tipo: TipoOrigem, g: GrupoDeTitulos, valor: string) => {
     if (tipo === "PROJETO") return `Projeto · ${e.nomes?.projetos?.get(`${g.conexaoId}|${valor}`) ?? valor}`;
@@ -256,7 +293,7 @@ export function montarDreCentroCusto(e: EntradaDreCentro, servicosPorCentro: Map
     if (tipo === "PARCEIRO") return `${g.natureza === "RECEBER" ? "Cliente" : "Fornecedor"} · ${g.parceiroNome ?? valor}`;
     return valor === "RETENCAO" ? "Tributos retidos na fonte (sem cliente identificado)" : `Categoria · ${e.descricaoDaCategoria(valor)}`;
   };
-  const candidatos = e.centros.map((c) => ({ id: c.id, conexaoId: c.conexaoId, nomes: [c.descricao, ...(servicosPorCentro.get(c.id) ?? [])] }));
+  const candidatos = cadastrados.map((c) => ({ id: c.id, conexaoId: c.conexaoId, nomes: [c.descricao, ...(servicosPorCentro.get(c.id) ?? [])] }));
 
   const naoAlocar = (g: GrupoDeTitulos, linha: string, valor: number) => {
     if (valor === 0) return;
@@ -300,7 +337,12 @@ export function montarDreCentroCusto(e: EntradaDreCentro, servicosPorCentro: Map
       }
     }
     let via: Via = "VINCULO";
-    // 2. Folha, para pessoas sem vínculo.
+    // 2. O departamento da Omie, como no DRE.
+    if (!partilha && g.departamento && e.departamentoComoCentro !== false) {
+      partilha = [[centroDoDepartamento(g), 1]];
+      via = "DEPARTAMENTO";
+    }
+    // 3. Folha, para pessoas sem vínculo nem departamento.
     if (!partilha && LINHAS_DE_PESSOAS.has(linha)) {
       const q = quadroDe.get(g.conexaoId);
       if (q) {
@@ -310,7 +352,7 @@ export function montarDreCentroCusto(e: EntradaDreCentro, servicosPorCentro: Map
           partilha = pesos.map(([id, p]) => [id, p / total]);
           via = "FOLHA";
         }
-      } else empresasSemQuadro.add(g.conexaoId);
+      } else folhaSemQuadro.set(g.conexaoId, (folhaSemQuadro.get(g.conexaoId) ?? 0) + efeito);
     }
     if (!partilha) {
       naoAlocar(g, linha, efeito);
@@ -332,11 +374,14 @@ export function montarDreCentroCusto(e: EntradaDreCentro, servicosPorCentro: Map
     if (retencao) distribuir(retencao, "DEDUCOES", { ...g, categoria: "RETENCAO" });
   }
 
-  for (const id of empresasSemQuadro)
-    avisos.push(`A folha de uma das empresas ficou não alocada: falta importar o quadro de pessoal dela (conexão ${e.centros.find((c) => c.conexaoId === id)?.empresa ?? id}).`);
+  for (const [id, cents] of folhaSemQuadro)
+    if (cents !== 0)
+      avisos.push(
+        `Folha da ${e.empresas?.get(id) ?? cadastrados.find((c) => c.conexaoId === id)?.empresa ?? "empresa"} sem departamento na Omie (${(Math.abs(cents) / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}) ficou não alocada: importe o quadro de pessoal dela para dividir pelo salário de cada centro.`
+      );
 
   // Os centros, com os totais da margem direta.
-  const centros: ResultadoDoCentro[] = e.centros.map((c) => {
+  const centros: ResultadoDoCentro[] = todosCentros.map((c) => {
     const a = acumulado.get(c.id)!;
     const q = quadroDe.get(c.conexaoId)?.porCentro.get(c.id);
     const l = a.porLinha;
@@ -357,6 +402,7 @@ export function montarDreCentroCusto(e: EntradaDreCentro, servicosPorCentro: Map
       margemCents,
       rateioCents: 0,
       resultadoCents: margemCents,
+      sugestoes: [],
     };
   });
 
@@ -387,6 +433,8 @@ export function montarDreCentroCusto(e: EntradaDreCentro, servicosPorCentro: Map
   const origens = [...origensNaoAlocadas.values()]
     .filter((o) => o.efeitoCents !== 0)
     .sort((a, b) => Math.abs(b.efeitoCents) - Math.abs(a.efeitoCents));
+  for (const c of centros)
+    if (c.departamentoOmie) c.sugestoes = sugerirCentros(c.descricao, candidatos.filter((x) => x.conexaoId === c.conexaoId));
   for (const o of origens.slice(0, 80))
     if (o.tipo !== "CATEGORIA") {
       const daEmpresa = candidatos.filter((c) => c.conexaoId === o.conexaoId);

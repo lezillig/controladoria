@@ -171,6 +171,8 @@ export function porEmpresa(pessoas: PessoaLida[]) {
 // é de área de suporte.
 const NOMES_DE_APOIO = /\b(administrativ|recursos humanos|financeir|comercial|manutencao|oficina|monitoramento|servicos gerais|logistic|diretoria|operacional|compras|juridico|contabil)/;
 
+export const ehNomeDeApoio = (descricao: string) => NOMES_DE_APOIO.test(normalizar(descricao));
+
 export function tipoSugerido(params: { conexaoCorporativa: boolean; descricao: string; pessoas: { departamento: string | null }[] }): "OPERACIONAL" | "APOIO" {
   if (params.conexaoCorporativa) return "APOIO";
   if (NOMES_DE_APOIO.test(normalizar(params.descricao))) return "APOIO";

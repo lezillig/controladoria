@@ -1293,9 +1293,13 @@ de custo da folha de pagamento.
      (documento) > categoria. Mesma origem em vários centros: com percentuais,
      pelo percentual (o que faltar para 100% fica não alocado); com 100% em
      todos, pela folha deles;
-  2. despesas com pessoas sem vínculo: divididas entre os centros da empresa do
-     título pelo salário do quadro;
-  3. o resto fica em "não alocado", por origem, com sugestão de centro pelo
+  2. sem vínculo, o departamento da Omie do título (a mesma regra com que o DRE
+     abre "Despesas com pessoas — corporativo") vira um centro no relatório —
+     apoio na MCZ ou pelo nome; ligar o departamento a um centro da folha junta
+     os dois. É o que deixa o relatório de pé antes de importar o quadro;
+  3. despesas com pessoas sem vínculo nem departamento: divididas entre os
+     centros da empresa do título pelo salário do quadro;
+  4. o resto fica em "não alocado", por origem, com sugestão de centro pelo
      nome (cliente do quadro, descrição do centro).
 - Retenções na fonte acompanham o título a receber (quando a configuração as
   soma às deduções). Resultado financeiro, financiamentos, tributo sobre o
@@ -1303,6 +1307,8 @@ de custo da folha de pagamento.
 - **Apoio** (oficina, RH, financeiro, toda a MCZ por padrão): o resultado pode
   ser rateado entre os operacionais pela receita ou pela folha. A margem direta
   continua à vista ao lado.
+- No grupo, a tabela "Por empresa" mostra Azul e MCZ e a soma das duas (sem
+  as operações entre elas, como no DRE).
 - Fechamento: soma dos centros + não alocado = EBIT do DRE
   (`npm run teste:dre-centro-custo` confere no banco).
 - Ver: permissão "Custos e DRE". Ajustar (importar, tipo, vínculos) e ver os

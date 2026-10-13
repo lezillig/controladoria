@@ -134,6 +134,7 @@ export async function dreCentroCustoNoBanco(params: { companyId: string; conexao
       quadros,
       rateio: params.rateio,
       somarRetencoes: params.somarRetencoes,
+      empresas: apelido,
       nomes: {
         departamentos: new Map(departamentos.map((d) => [`${d.conexaoId}|${d.codigo}`, d.descricao])),
         projetos: new Map(projetos.map((p) => [`${p.conexaoId}|${p.codigo}`, p.nome])),

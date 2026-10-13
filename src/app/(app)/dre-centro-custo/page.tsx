@@ -65,7 +65,7 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
   });
 
   const opcoesCentro: OpcaoCentro[] = r.centros
-    .slice()
+    .filter((c) => !c.departamentoOmie)
     .sort((a, b) => a.empresa.localeCompare(b.empresa) || a.descricao.localeCompare(b.descricao))
     .map((c) => ({ id: c.id, conexaoId: c.conexaoId, rotulo: `${c.descricao} (${c.codigo}${conexoes.length > 1 ? ` · ${c.empresa}` : ""})` }));
   const nomeDoCentro = new Map(r.centros.map((c) => [c.id, `${c.descricao} (${c.empresa})`]));
@@ -84,6 +84,20 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
     ];
   }
 
+  // A soma por empresa: o que está nos centros dela e o não alocado dela —
+  // juntas, o EBIT do grupo.
+  const porEmpresa = conexoes
+    .map((cx) => {
+      const daEmpresa = r.centros.filter((c) => c.conexaoId === cx.id);
+      const naoAlocado = r.naoAlocado.origens.filter((o) => o.conexaoId === cx.id);
+      const doNao = (linhas: string[]) => naoAlocado.reduce((s, o) => s + linhas.reduce((t, l) => t + (o.linhas[l] ?? 0), 0), 0);
+      const receita = daEmpresa.reduce((s, c) => s + c.receitaCents, 0) + doNao(["RECEITA_BRUTA", "OUTRAS_RECEITAS"]);
+      const pessoal = daEmpresa.reduce((s, c) => s + c.pessoasCents, 0) + doNao(["DESPESA_SALARIOS", "DESPESA_SALARIOS_CORPORATIVO"]);
+      const margem = daEmpresa.reduce((s, c) => s + c.margemCents, 0);
+      const naoAlocadoCents = naoAlocado.reduce((s, o) => s + o.efeitoCents, 0);
+      return { id: cx.id, apelido: cx.apelido, receita, pessoal, demais: margem + naoAlocadoCents - receita - pessoal, margem, naoAlocado: naoAlocadoCents };
+    })
+    .filter((x) => x.receita !== 0 || x.margem !== 0 || x.naoAlocado !== 0);
   const operacionais = r.centros.filter((c) => c.tipo !== "APOIO");
   const apoio = r.centros.filter((c) => c.tipo === "APOIO");
   const receitaTotal = r.centros.reduce((s, c) => s + c.receitaCents, 0) + (r.naoAlocado.porLinha.RECEITA_BRUTA ?? 0) + (r.naoAlocado.porLinha.OUTRAS_RECEITAS ?? 0);
@@ -104,7 +118,7 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
           {c.descricao}
         </a>
         <span className="ml-1 text-xs text-slate-400">
-          {c.codigo}
+          {c.departamentoOmie ? "depto. Omie" : c.codigo}
           {conexoes.length > 1 && !escopo.conexaoId ? ` · ${c.empresa}` : ""}
         </span>
       </td>
@@ -144,8 +158,8 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
           {periodo.competencia ? "" : ` até ${fmtData(mes.fim)}`}, por competência — o mesmo DRE da tela{" "}
           <Link href="/custos" className="text-blue-700 hover:underline">
             Custos e DRE
-          </Link>
-          , aberto pelos centros de custo da folha. Cada valor chega a um centro por um vínculo (projeto, departamento, cliente ou categoria da Omie) ou, nas despesas com pessoas, pela folha: o custo de pessoal do mês dividido pelo salário de quem está em cada centro no quadro importado. O resto fica em &ldquo;não alocado&rdquo;, para ser ligado.
+          </Link>{" "}
+          (com as mesmas classificações e, no grupo, Azul e MCZ somadas sem as operações entre elas), aberto por centro de custo. Cada valor chega a um centro por um vínculo (projeto, departamento, cliente ou categoria da Omie); sem vínculo, pelo departamento da Omie do título — a mesma regra com que o DRE abre as despesas com pessoas; nas despesas com pessoas sem departamento, pela folha (o custo de pessoal dividido pelo salário de quem está em cada centro no quadro importado). O resto fica em &ldquo;não alocado&rdquo;, para ser ligado.
         </p>
       </div>
 
@@ -182,6 +196,48 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
         <Kpi rotulo="Cobertura" valor={fmtPercent(r.cobertura * 100, 0)} tom={r.cobertura >= 0.8 ? "bom" : r.cobertura >= 0.5 ? "atencao" : "ruim"} apoio="do volume operacional do mês" />
         <Kpi rotulo="Quadro de pessoal" valor={fmtNumero(pessoasNoQuadro)} apoio={quadros.length ? `salários ${fmtBRL(r.centros.reduce((s, c) => s + c.salarioQuadroCents, 0))}` : "nenhuma lista importada"} />
       </div>
+
+      {!escopo.conexaoId && conexoes.length > 1 && (
+        <Secao titulo="Por empresa" descricao="Azul e MCZ somadas dão o EBIT do grupo (sem as operações entre as duas, como no DRE).">
+          <div className="-mx-6 overflow-x-auto px-6">
+            <table className="w-full min-w-[640px] text-[13px]">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <th className="px-2 py-2">Empresa</th>
+                  <th className="px-2 py-2 text-right">Receita</th>
+                  <th className="px-2 py-2 text-right">Pessoal</th>
+                  <th className="px-2 py-2 text-right">Deduções e demais</th>
+                  <th className="px-2 py-2 text-right">Nos centros</th>
+                  <th className="px-2 py-2 text-right">Não alocado</th>
+                  <th className="px-2 py-2 text-right">EBIT</th>
+                </tr>
+              </thead>
+              <tbody>
+                {porEmpresa.map((x) => (
+                  <tr key={x.id} className="border-b border-slate-100">
+                    <td className="px-2 py-2 font-medium text-slate-800">{x.apelido}</td>
+                    <td className={celula}>{reais(x.receita)}</td>
+                    <td className={celula}>{reais(x.pessoal)}</td>
+                    <td className={celula}>{reais(x.demais)}</td>
+                    <td className={`${celula} ${cor(x.margem)}`}>{reais(x.margem)}</td>
+                    <td className={`${celula} ${cor(x.naoAlocado)}`}>{reais(x.naoAlocado)}</td>
+                    <td className={`${celula} font-semibold ${cor(x.margem + x.naoAlocado)}`}>{reais(x.margem + x.naoAlocado)}</td>
+                  </tr>
+                ))}
+                <tr className="bg-slate-100 font-semibold">
+                  <td className="px-2 py-2 text-slate-900">Grupo</td>
+                  <td className={celula}>{reais(porEmpresa.reduce((s, x) => s + x.receita, 0))}</td>
+                  <td className={celula}>{reais(porEmpresa.reduce((s, x) => s + x.pessoal, 0))}</td>
+                  <td className={celula}>{reais(porEmpresa.reduce((s, x) => s + x.demais, 0))}</td>
+                  <td className={`${celula} ${cor(r.alocadoCents)}`}>{reais(r.alocadoCents)}</td>
+                  <td className={`${celula} ${cor(r.naoAlocado.totalCents)}`}>{reais(r.naoAlocado.totalCents)}</td>
+                  <td className={`${celula} ${cor(r.ebitCents)}`}>{reais(r.ebitCents)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </Secao>
+      )}
 
       {r.centros.length === 0 ? (
         <Secao titulo="Comece pelo quadro de pessoal" descricao="Os centros de custo nascem da lista de empregados ativos do sistema de folha.">
@@ -299,7 +355,11 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
                         <td className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${cor(o.efeitoCents)}`}>{fmtBRL(o.efeitoCents)}</td>
                         {podeEditar && (
                           <td className="px-3 py-2">
-                            <LigarOrigem origem={{ tipo: o.tipo, conexaoId: o.conexaoId, valor: o.valor, rotulo: o.rotulo }} centros={opcoesCentro} sugestoes={o.sugestoes} />
+                            {opcoesCentro.length > 0 ? (
+                              <LigarOrigem origem={{ tipo: o.tipo, conexaoId: o.conexaoId, valor: o.valor, rotulo: o.rotulo }} centros={opcoesCentro} sugestoes={o.sugestoes} />
+                            ) : (
+                              <span className="text-xs text-slate-400">importe o quadro de pessoal para ter centros</span>
+                            )}
                           </td>
                         )}
                       </tr>
@@ -336,6 +396,7 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
                       {c.codigo} · {c.empresa}
                     </span>
                     <span className={`${badgeClass} ${c.tipo === "APOIO" ? "bg-slate-100 text-slate-600" : "bg-blue-50 text-blue-800"}`}>{c.tipo === "APOIO" ? "Apoio" : "Operacional"}</span>
+                    {c.departamentoOmie && <span className={`${badgeClass} bg-amber-50 text-amber-800`}>Departamento da Omie</span>}
                     <span className={`ml-auto font-semibold tabular-nums ${cor(c.margemCents)}`}>{fmtBRL(c.margemCents)}</span>
                   </summary>
                   <div className="mt-3 grid gap-4 lg:grid-cols-2">
@@ -356,7 +417,7 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
                                       .slice(0, 8)
                                       .map((d) => (
                                         <li key={`${d.categoria}|${d.via}`}>
-                                          {d.descricao} · {d.via === "FOLHA" ? "pela folha" : "por vínculo"} · {fmtBRL(d.efeitoCents)}
+                                          {d.descricao} · {d.via === "FOLHA" ? "pela folha" : d.via === "DEPARTAMENTO" ? "pelo departamento da Omie" : "por vínculo"} · {fmtBRL(d.efeitoCents)}
                                         </li>
                                       ))}
                                   </ul>
@@ -368,6 +429,19 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
                         </table>
                       )}
                     </div>
+                    {c.departamentoOmie ? (
+                      <div className="space-y-2 text-sm text-slate-700">
+                        <p>
+                          Departamento <strong>{c.descricao}</strong> ({c.codigo}) da {c.empresa} na Omie, sem vínculo: os títulos com ele vêm para cá, como na abertura por centro de custo do DRE. Tipo pela empresa e pelo nome: {c.tipo === "APOIO" ? "apoio" : "operacional"}.
+                        </p>
+                        {podeEditar && opcoesCentro.some((o) => o.conexaoId === c.conexaoId) && (
+                          <div className="text-xs text-slate-500">
+                            <p className="mb-1">Juntar a um centro da folha (vale para os próximos meses):</p>
+                            <LigarOrigem origem={{ tipo: "DEPARTAMENTO", conexaoId: c.conexaoId, valor: c.codigo, rotulo: `Departamento · ${c.descricao}` }} centros={opcoesCentro} sugestoes={c.sugestoes} />
+                          </div>
+                        )}
+                      </div>
+                    ) : (
                     <div className="space-y-3">
                       <div>
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -427,6 +501,7 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
                         </p>
                       )}
                     </div>
+                    )}
                   </div>
                 </details>
               );

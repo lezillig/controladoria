@@ -133,6 +133,21 @@ function motor() {
   // Sem quadro de uma empresa: a folha dela fica não alocada, com aviso.
   const semMcz = montarDreCentroCusto({ ...base, quadros: [quadros[0]], rateio: "NENHUM" });
   conferir("sem quadro: folha não alocada e aviso", [semMcz.naoAlocado.porLinha.DESPESA_SALARIOS_CORPORATIVO, semMcz.avisos.length], [-400_000, 1]);
+  // Regra 2: departamento da Omie sem vínculo vira centro (como no DRE), antes da folha.
+  const comDepto = montarDreCentroCusto({
+    ...base,
+    quadros: [quadros[0]],
+    empresas: new Map([["AZ", "AZUL"], ["MC", "MCZ"]]),
+    nomes: { departamentos: new Map([["MC|9", "Oficina"], ["AZ|8", "Fretamento"]]) },
+    grupos: [...grupos, g({ conexaoId: "MC", categoria: "S1", natureza: "PAGAR", departamento: "9", cents: 250_000 }), g({ categoria: "D1", natureza: "PAGAR", departamento: "8", cents: 70_000 })],
+    rateio: "NENHUM",
+  });
+  const oficina = comDepto.centros.find((c) => c.id === "dep:MC|9");
+  conferir("departamento da MCZ vira centro de apoio com a folha dele", [oficina?.descricao, oficina?.tipo, oficina?.porLinha.DESPESA_SALARIOS_CORPORATIVO, oficina?.detalhes[0]?.via], ["Oficina", "APOIO", -250_000, "DEPARTAMENTO"]);
+  const fretOmie = comDepto.centros.find((c) => c.id === "dep:AZ|8");
+  conferir("departamento da Azul sugere o centro da folha de mesmo nome", [fretOmie?.tipo, fretOmie?.sugestoes], ["OPERACIONAL", ["c1"]]);
+  conferir("aviso da folha sem quadro diz a empresa", comDepto.avisos.some((x) => x.startsWith("Folha da MCZ")), true);
+  conferir("com departamentos, ainda fecha com o EBIT", comDepto.alocadoCents + comDepto.naoAlocado.totalCents, ebit - 250_000 - 70_000);
   conferir("sugerirCentros ignora palavras vazias", sugerirCentros("SPAL IND BRAS DE BEBIDAS SA OSASCO", [{ id: "x", nomes: ["FEMSA - OSASCO", "SPAL IND BRAS DE BEBIDAS SA OSASCO"] }, { id: "y", nomes: ["BANCO DE ALIMENTOS"] }]), ["x"]);
 }
 
