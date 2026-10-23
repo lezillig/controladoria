@@ -93,7 +93,13 @@ export default async function RentabilidadePage({
   return (
     <div className={`${larguraPainel} space-y-6`}>
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Rentabilidade por contrato</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h1 className="text-xl font-semibold text-slate-900">Rentabilidade por contrato</h1>
+          {/* Planilha para o importador de contratos da gestão (Cadastros › Contratos). */}
+          <a href="/api/exportar/contratos-omie" className="text-xs font-medium text-blue-700 hover:underline">
+            Exportar contratos da Omie para a gestão
+          </a>
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           {comparativo.janelas.mesParcial
             ? `${periodo.rotulo}, o último mês fechado (o mês em curso só entra quando terminar, porque contrato fatura uma vez por mês e incorre custo todo dia). `
