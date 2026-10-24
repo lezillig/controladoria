@@ -6,7 +6,7 @@ import { categoriaSql, filtroConexaoTitulo } from "./escopoSql";
 import { categoriasDoEscopo, movimentoPorCategoria } from "./dreNoBanco";
 import { linhaDaCategoria } from "./dre";
 import { classificacoesDoDre } from "./projecaoNoBanco";
-import { CATEGORIA_COMISSAO, DOCUMENTO_PLACA, PROJETO_NUMERICO, CATEGORIA_FORA_DA_OS, chaveDoProjeto, conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
+import { CATEGORIA_COMISSAO, DOCUMENTO_PLACA, PROJETO_NUMERICO, numerosCitados, type CobrancaCitada, CATEGORIA_FORA_DA_OS, chaveDoProjeto, conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
 
 // A colheita da conferência de OS: os títulos do período (competência, sem
 // cancelados, sem as operações entre as empresas na visão do grupo), somados
@@ -330,4 +330,39 @@ export async function comissoesNoBanco(params: { companyId: string; conexaoId: s
     .sort((a, b) => b.cents - a.cents);
   const oss = [...porOs.values()].sort((a, b) => b.cents - a.cents);
   return { recebedores, oss, totalCents: recebedores.reduce((s, r) => s + r.cents, 0), semOsCents: recebedores.reduce((s, r) => s + r.semOsCents, 0) };
+}
+
+// As contas a receber que citam cada OS (numerosCitados), em QUALQUER projeto,
+// da competência inicial do período até 120 dias depois do fim — a fatura sai
+// depois da viagem.
+export async function cobrancasQueCitamOs(params: { companyId: string; conexaoId: string | null; desde: Date; ate: Date; oss: string[] }): Promise<Map<string, CobrancaCitada[]>> {
+  const { companyId, conexaoId, desde, ate } = params;
+  const alvo = new Set(params.oss.map((o) => o.trim()));
+  const resultado = new Map<string, CobrancaCitada[]>();
+  if (alvo.size === 0) return resultado;
+  const ateCobranca = new Date(ate.getTime() + 120 * 86_400_000);
+  const linhas = await prisma.$queryRaw<{ id: string; empresa: string; projeto: string | null; cliente: string | null; documento: string | null; observacao: string | null; os: string | null; valor: bigint; competencia: Date | null }[]>`
+    SELECT t.id, t."conexaoApelido" AS empresa, COALESCE(p.nome, t."projetoCodigo") AS projeto, t."parceiroNome" AS cliente,
+           t."numeroDocumento" AS documento, t.observacao, t."ordemServicoNumero" AS os,
+           t."valorDocumentoCents"::bigint AS valor, ${competenciaSql("t")} AS competencia
+      FROM ${tabela("OmieTitulo")} t
+      LEFT JOIN ${tabela("OmieProjeto")} p ON p."conexaoId" = t."conexaoId" AND p.codigo = t."projetoCodigo"
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND t.natureza = 'RECEBER'
+       AND (t.observacao ~ '[0-9]{4}' OR t."numeroDocumento" ~* 'O\.?\s?S' OR t."ordemServicoNumero" IS NOT NULL)
+       AND ${competenciaSql("t")} >= ${desde}
+       AND ${competenciaSql("t")} <= ${ateCobranca}
+       ${filtroConexaoTitulo(conexaoId, companyId)}`;
+  for (const l of linhas) {
+    for (const [numero, onde] of numerosCitados(l)) {
+      if (!alvo.has(numero)) continue;
+      // A fatura no próprio projeto da OS já é cobrança dela, não citação.
+      if (l.projeto?.trim() === numero) continue;
+      const lista = resultado.get(numero) ?? [];
+      lista.push({ id: l.id, empresa: l.empresa, projeto: l.projeto, cliente: l.cliente, documento: l.documento, valorCents: Number(l.valor), competencia: l.competencia, onde });
+      resultado.set(numero, lista);
+    }
+  }
+  return resultado;
 }

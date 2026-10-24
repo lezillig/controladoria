@@ -237,3 +237,34 @@ export function conferirOs(params: {
     pagarSemProjeto: [...params.pagarSemProjeto].sort((a, b) => b.cents - a.cents),
   };
 }
+
+// A COBRANÇA QUE CITA A OS. A fatura pode sair no projeto do contrato (SMPED,
+// Fretamento) e não no da viagem; se ela cita o número da OS, o elo existe
+// mesmo assim. Onde se procura:
+//   - na OBSERVAÇÃO do título a receber: qualquer número de 4 a 6 dígitos;
+//   - no NÚMERO DO DOCUMENTO, só depois de "OS" ("OS 14641", "OS: 14641") —
+//     o documento em si é o número da nota/RPS ("RPS 10581"), da mesma faixa
+//     de numeração das OS, e casar com ele seria coincidência;
+//   - na ORDEM DE SERVIÇO (aba Diversos), quando ela é o próprio número.
+export type OndeCitou = "observação" | "documento" | "ordem de serviço";
+export type CobrancaCitada = {
+  id: string;
+  empresa: string;
+  projeto: string | null;
+  cliente: string | null;
+  documento: string | null;
+  valorCents: number;
+  competencia: Date | null;
+  onde: OndeCitou;
+};
+
+export function numerosCitados(t: { observacao: string | null; documento: string | null; os: string | null }): Map<string, OndeCitou> {
+  const achados = new Map<string, OndeCitou>();
+  // Número solto: não colado em data (12/10/2026), valor (1.874,36) ou CEP
+  // (04776-000); e ano (20xx) não é OS.
+  for (const m of (t.observacao ?? "").matchAll(/(?<![\d.,/-])(\d{4,6})(?![\d]|[.,/-]\d)/g)) if (!/^20\d\d$/.test(m[1])) achados.set(m[1], "observação");
+  for (const m of (t.documento ?? "").matchAll(/\bO\.?\s?S\.?\s*(?:n[ºo°.]?\s*)?[:#-]?\s*(\d{4,6})\b/gi)) if (!achados.has(m[1])) achados.set(m[1], "documento");
+  const os = (t.os ?? "").trim();
+  if (PROJETO_NUMERICO.test(os) && !achados.has(os)) achados.set(os, "ordem de serviço");
+  return achados;
+}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { comissoesNoBanco, conferenciaDeOsNoBanco, titulosDaConferencia, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
+import { cobrancasQueCitamOs, comissoesNoBanco, conferenciaDeOsNoBanco, titulosDaConferencia, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
 import { CATEGORIA_FORA_DA_OS, type ProjetoConferido } from "@/lib/controladoria/conferenciaDeOs";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
@@ -31,6 +31,12 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
     conferenciaDeOsNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
     comissoesNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
   ]);
+
+  // A COBRANÇA EM OUTRO PROJETO QUE CITA A OS (observação, "OS 14641" no
+  // documento, ordem de serviço): o teste da chave para as OS sem cobrança.
+  const citacoes = await cobrancasQueCitamOs({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate, oss: r.custoSemReceita.map((p) => p.nome) });
+  const citadas = r.custoSemReceita.filter((p) => citacoes.has(p.nome.trim()));
+  const valorCitado = citadas.reduce((s, p) => s + (citacoes.get(p.nome.trim()) ?? []).reduce((t, c) => t + c.valorCents, 0), 0);
 
   // O DRILL-DOWN: os títulos de uma OS (?os=) ou os sem projeto de um lado
   // (?lista=), no mesmo recorte da tela.
@@ -231,11 +237,26 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
       </section>
 
       <section id="nao-faturada">
-      <Secao titulo={`2. OS com despesa e sem cobrança (não faturada) — ${r.custoSemReceita.length}`} descricao="O projeto tem conta a pagar no período e nenhuma conta a receber: serviço prestado e não faturado, ou custo lançado no projeto errado. Data em laranja: custo do último mês, que ainda pode faturar no mês seguinte (a auditoria só aponta depois de 30 dias, regra CR-OS-NAO-FATURADA).">
+      <Secao titulo={`2. OS com despesa e sem cobrança (não faturada) — ${r.custoSemReceita.length}`} descricao={`Teste da chave: ${citadas.length} destas ${r.custoSemReceita.length} OS têm uma conta a receber, em outro projeto, que cita o número da OS (na observação, como "OS 14641" no documento, ou na ordem de serviço) — ${fmtBRL(valorCitado)} cobrados. `+"O projeto tem conta a pagar no período e nenhuma conta a receber: serviço prestado e não faturado, ou custo lançado no projeto errado. Data em laranja: custo do último mês, que ainda pode faturar no mês seguinte (a auditoria só aponta depois de 30 dias, regra CR-OS-NAO-FATURADA)."}>
         <Tabela
-          colunas={col(["Projeto", "Fornecedores", "Custo", "Último custo", "OS"])}
+          colunas={col(["Projeto", "Fornecedores", "Custo", "Último custo", "OS", "Conta a receber que cita a OS"])}
           alinharDireita={[2]}
-          linhas={r.custoSemReceita.slice(0, LISTA).map((p) => linhaProjeto(p, false))}
+          linhas={r.custoSemReceita.slice(0, LISTA).map((p) => {
+            const l = linhaProjeto(p, false);
+            const c = citacoes.get(p.nome.trim()) ?? [];
+            const celula =
+              c.length === 0 ? (
+                <span key="c" className="text-slate-400">nenhuma</span>
+              ) : (
+                <span key="c" className="text-xs">
+                  <span className="font-medium text-emerald-700">{fmtBRL(c[0].valorCents)}</span> · {c[0].cliente ?? "?"} · {c[0].documento ?? "s/ doc."} · projeto {c[0].projeto ?? "—"} ·{" "}
+                  <span className="text-slate-500">pela {c[0].onde}</span>
+                  {c.length > 1 && <span className="text-slate-500"> (+{c.length - 1})</span>}
+                </span>
+              );
+            // A coluna nova entra antes do "Investigar", quando há.
+            return podeInvestigar ? [...l.slice(0, -1), celula, l[l.length - 1]] : [...l, celula];
+          })}
           vazio="Nenhuma OS com despesa e sem cobrança."
         />
       </Secao>

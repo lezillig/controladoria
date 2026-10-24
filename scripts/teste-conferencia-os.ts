@@ -6,7 +6,7 @@
 //    item da listagem das contas a pagar.
 // 3. Com Postgres (TESTE_DATABASE_URL): a colheita no banco.
 import { PrismaClient } from "@prisma/client";
-import { chaveDoProjeto, conferirOs, type GrupoOs } from "../src/lib/controladoria/conferenciaDeOs";
+import { chaveDoProjeto, conferirOs, numerosCitados, type GrupoOs } from "../src/lib/controladoria/conferenciaDeOs";
 import { planejarEtapasProjetos, projetoDoItem } from "../src/lib/omie/sync";
 
 let falhas = 0;
@@ -87,6 +87,16 @@ function pura() {
   conferir("OS do projeto", r.projetos.find((p) => p.nome === "14638")?.osDoPagar, ["100", "555"]);
 }
 
+function citacoes() {
+  console.log("\nCobrança que cita a OS");
+  const n = (o: string | null, d: string | null, os: string | null = null) => Object.fromEntries(numerosCitados({ observacao: o, documento: d, os }));
+  conferir("observação com o número", n("Ref. viagens OS 14641 e 14650 - outubro", null), { "14641": "observação", "14650": "observação" });
+  conferir("valor e data não viram OS", n("Total 1.874,36 em 12/10/2026, CEP 04776-000", null), {});
+  conferir("documento só depois de OS", n(null, "RPS 10581"), {});
+  conferir("documento OS 14641", n(null, "OS: 14641"), { "14641": "documento" });
+  conferir("ordem de serviço numérica", n(null, null, "11972"), { "11972": "ordem de serviço" });
+}
+
 function fase() {
   console.log("\nFase projetos da sincronização");
   const e = planejarEtapasProjetos({ janelaInicio: new Date(2026, 9, 1), janelaFim: new Date(2026, 9, 24), backfill: false, mesesPendentes: [new Date(2025, 0, 1), new Date(2025, 1, 1)] });
@@ -111,7 +121,7 @@ async function banco() {
   const prisma = new PrismaClient({ datasources: { db: { url } } });
   const { fixarHojeParaTeste } = await import("../src/lib/controladoria/competencia");
   fixarHojeParaTeste(new Date(2027, 0, 1));
-  const { comissoesNoBanco, conferenciaDeOsNoBanco, titulosDaConferencia } = await import("../src/lib/controladoria/conferenciaDeOsNoBanco");
+  const { cobrancasQueCitamOs, comissoesNoBanco, conferenciaDeOsNoBanco, titulosDaConferencia } = await import("../src/lib/controladoria/conferenciaDeOsNoBanco");
   const E = "empresa-conferencia-os";
   const limpar = async () => {
     await prisma.omieTitulo.deleteMany({ where: { companyId: E } });
@@ -152,6 +162,8 @@ async function banco() {
         // Documento repetido em projeto que não é OS (SMPED): não entra.
         t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "903", parceiroNome: "AFX", parceiroDocumento: "99999999000199", numeroDocumento: "777", valorDocumentoCents: 50_00 }),
         t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "903", parceiroNome: "AFX", parceiroDocumento: "99999999000199", numeroDocumento: "777", valorDocumentoCents: 50_00 }),
+        // A fatura no projeto do contrato (SMPED) que cita a OS 14641 na observação.
+        t({ natureza: "RECEBER", categoriaCodigo: "R1", projetoCodigo: "903", parceiroNome: "SMPED", numeroDocumento: "RPS 10581", observacao: "Viagens OS 14641", valorDocumentoCents: 950_00, dataEmissao: new Date(2026, 9, 3) }),
         // Documento que é placa, repetido: não é duplicidade.
         t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "901", parceiroNome: "SEM PARAR", numeroDocumento: "GIY-7E76", valorDocumentoCents: 15_00 }),
         t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "902", parceiroNome: "SEM PARAR", numeroDocumento: "GIY7E76", valorDocumentoCents: 15_00 }),
@@ -175,6 +187,8 @@ async function banco() {
     conferir("comissões por OS", com.oss.map((o) => [o.projeto, o.ehOs, o.cents, o.receitaCents]), [["14638", true, 25_00, 500_00], [null, false, 10_00, 0]]);
     const detC = await titulosDaConferencia({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), comissoes: true, fornecedor: "VENDEDOR A" });
     conferir("drill-down das comissões", detC.total, 2);
+    const cit = await cobrancasQueCitamOs({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), oss: ["14641", "14638"] });
+    conferir("cobrança em outro projeto que cita a OS", [...cit.entries()].map(([os, l]) => [os, l.map((c) => [c.projeto, c.valorCents, c.onde])]), [["14641", [["SMPED", 950_00, "observação"]]]]);
     conferir("documento em duplicidade", r.duplicidades.map((d) => [d.documento, d.vezes, d.projetos.sort()]), [["18953", 2, ["14638", "14641"]]]);
   } finally {
     await limpar();
@@ -184,6 +198,7 @@ async function banco() {
 
 (async () => {
   pura();
+  citacoes();
   fase();
   await banco();
   console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");
