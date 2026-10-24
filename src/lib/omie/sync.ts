@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { tabela } from "@/lib/esquemaDoBanco";
 import type { TituloNormalizado } from "./types";
 import {
   OMIE_ENDPOINTS,
@@ -54,7 +55,7 @@ import type { Prisma } from "@prisma/client";
 // da fase, e uma execução parada em "notas" continua de "notas".
 // `exclusoes` (títulos apagados na Omie) é a última pelo mesmo motivo, e
 // porque confere o que as fases de título acabaram de gravar.
-export const FASES = ["cadastros", "titulos", "movimentos", "notas", "contratos", "cte", "exclusoes"] as const;
+export const FASES = ["cadastros", "titulos", "movimentos", "notas", "contratos", "cte", "projetos", "exclusoes"] as const;
 export type FaseSync = (typeof FASES)[number];
 
 export type ResultadoFase = {
@@ -672,7 +673,15 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
               // Título que volta a vir da Omie não está excluído: se uma
               // varredura o tinha dado por apagado, a marca sai aqui (e o
               // `cancelado` volta a ser o da Omie, que vem em `t`).
-              update: { ...semBaixas(t), sincronizadoEm: new Date(), excluidoNaOmieEm: null },
+              //
+              // O PROJETO DO TÍTULO A PAGAR vem da fase `projetos` (a pesquisa
+              // de títulos não o devolve desse lado): vazio aqui não apaga.
+              update: {
+                ...semBaixas(t),
+                ...(passo.natureza === "PAGAR" && !t.projetoCodigo ? { projetoCodigo: undefined } : {}),
+                sincronizadoEm: new Date(),
+                excluidoNaOmieEm: null,
+              },
               select: { id: true },
             })
           )
@@ -1348,6 +1357,143 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
   return { ...res, faseConcluida: true };
 }
 
+// ---------- Fase: projetos dos títulos a pagar ----------
+//
+// O PROJETO é o elo entre o custo e a receita da mesma OS: o terceiro, o
+// combustível e o pedágio da viagem são lançados no projeto, e a cobrança
+// sai nele. Do lado a receber ele vem na pesquisa de títulos (`cCodProjeto`);
+// do lado a pagar, não veio nas contas reais — mas está na listagem própria
+// das contas a pagar (`codigo_projeto`). Esta fase lê essa listagem e grava
+// SÓ o projeto (e a data da conferência) nos títulos a pagar já espelhados.
+//
+// O que ela percorre:
+//   - no ciclo diário, os títulos incluídos ou alterados nos últimos dias, e
+//     os meses (por emissão) que ainda têm título a pagar não conferido, do
+//     mais antigo para o mais novo, até o orçamento de tempo acabar — a
+//     primeira passada histórica se completa ao longo de alguns ciclos;
+//   - na carga histórica, a janela do mês.
+
+const DIAS_PROJETOS_RECENTES = 10;
+const PROJETOS_POR_PAGINA = 50;
+// Uma página de 50 por chamada: mês com mais que isso de páginas é sinal de
+// filtro ignorado pela conta (devolvendo a base inteira), e a etapa para.
+const PAGINAS_MAXIMAS_POR_ETAPA = 400;
+const CONFERIR_PROJETOS_DESDE = new Date(2025, 0, 1);
+
+type EtapaProjetos = { chave: string; param: Record<string, unknown>; mes?: { inicio: Date; fim: Date } };
+type CursorProjetos = { chave: string | null; pagina: number };
+
+export function planejarEtapasProjetos(params: { janelaInicio: Date; janelaFim: Date; backfill: boolean; mesesPendentes: Date[] }): EtapaProjetos[] {
+  const { janelaInicio, janelaFim, backfill, mesesPendentes } = params;
+  const porEmissao = (inicio: Date, fim: Date, chave: string): EtapaProjetos => ({
+    chave,
+    param: { filtrar_por_emissao_de: formatarDataOmie(inicio), filtrar_por_emissao_ate: formatarDataOmie(fim) },
+    mes: { inicio, fim },
+  });
+  if (backfill) return [porEmissao(janelaInicio, janelaFim, `janela:${formatarDataOmie(janelaInicio)}`)];
+  const desde = new Date(janelaFim);
+  desde.setDate(desde.getDate() - DIAS_PROJETOS_RECENTES);
+  return [
+    { chave: "recentes", param: { filtrar_por_data_de: formatarDataOmie(desde), filtrar_por_data_ate: formatarDataOmie(janelaFim) } },
+    ...mesesPendentes.map((m) => {
+      const inicio = new Date(m.getFullYear(), m.getMonth(), 1);
+      const fim = new Date(m.getFullYear(), m.getMonth() + 1, 0, 23, 59, 59, 999);
+      return porEmissao(inicio, fim, `mes:${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, "0")}`);
+    }),
+  ];
+}
+
+// O projeto de um item da listagem: o código, ou nulo quando não há (a Omie
+// manda 0 ou omite).
+export function projetoDoItem(item: Record<string, unknown>): { codigo: string | null; projeto: string | null } {
+  const bruto = item.codigo_lancamento_omie ?? item.nCodTitulo;
+  const codigo = bruto === undefined || bruto === null || bruto === "" ? null : String(bruto);
+  const p = item.codigo_projeto;
+  const projeto = p === undefined || p === null || p === "" || Number(p) === 0 ? null : String(p);
+  return { codigo, projeto };
+}
+
+async function sincronizarProjetos(ctx: ContextoFase, backfill: boolean): Promise<ResultadoFase> {
+  const res = vazio();
+  const meses = backfill
+    ? []
+    : await prisma.$queryRaw<{ mes: Date }[]>`
+        SELECT DISTINCT date_trunc('month', t."dataEmissao") AS mes
+          FROM ${tabela("OmieTitulo")} t
+         WHERE t."conexaoId" = ${ctx.conexaoId}
+           AND t.natureza = 'PAGAR'
+           AND t."projetoConferidoEm" IS NULL
+           AND t."dataEmissao" >= ${CONFERIR_PROJETOS_DESDE}
+         ORDER BY 1
+         LIMIT 36`;
+  const etapas = planejarEtapasProjetos({ janelaInicio: ctx.janelaInicio, janelaFim: ctx.janelaFim, backfill, mesesPendentes: meses.map((m) => new Date(m.mes)) });
+  const cursor = lerCursor<CursorProjetos>(ctx.cursor, { chave: null, pagina: 1 });
+  let indice = cursor.chave ? Math.max(0, etapas.findIndex((e) => e.chave === cursor.chave)) : 0;
+  let pagina = cursor.chave ? cursor.pagina : 1;
+
+  for (; indice < etapas.length; indice++, pagina = 1) {
+    const etapa = etapas[indice];
+    let completa = true;
+    for (;;) {
+      if (acabouOTempo(ctx)) return { ...res, proximoCursor: JSON.stringify({ chave: etapa.chave, pagina } satisfies CursorProjetos) };
+      let resposta;
+      try {
+        resposta = await omieCall(
+          OMIE_ENDPOINTS.listarPagar,
+          { pagina, registros_por_pagina: PROJETOS_POR_PAGINA, apenas_importado_api: "N", ...etapa.param },
+          { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true }
+        );
+      } catch (e) {
+        if (e instanceof OmieVazioError) break;
+        const pausa = pausaPorFalhaPassageira(res, `projetos ${etapa.chave}`, e, { chave: etapa.chave, pagina } satisfies CursorProjetos);
+        if (pausa) return pausa;
+        res.erros.push(`projetos ${etapa.chave}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
+        completa = false;
+        break;
+      }
+      await sleep(OMIE_PACE_MS);
+
+      const totalPaginas = extrairTotalPaginas(resposta);
+      if (totalPaginas > PAGINAS_MAXIMAS_POR_ETAPA) {
+        res.erros.push(`projetos ${etapa.chave}: a listagem devolveu ${totalPaginas} páginas — filtro de data ignorado? Etapa interrompida.`);
+        completa = false;
+        break;
+      }
+      // Agrupados pelo projeto: uma atualização por projeto distinto da
+      // página, não uma por título.
+      const porProjeto = new Map<string, string[]>();
+      for (const item of extrairItens(resposta, OMIE_ENDPOINTS.listarPagar)) {
+        const { codigo, projeto } = projetoDoItem(item);
+        if (!codigo) continue;
+        const k = projeto ?? "";
+        porProjeto.set(k, [...(porProjeto.get(k) ?? []), codigo]);
+      }
+      const agora = new Date();
+      await gravarEmLotes([...porProjeto.entries()], (lote) =>
+        prisma.$transaction(
+          lote.map(([projeto, codigos]) =>
+            prisma.omieTitulo.updateMany({
+              where: { conexaoId: ctx.conexaoId, natureza: "PAGAR", codigoLancamento: { in: codigos } },
+              data: { projetoCodigo: projeto || null, projetoConferidoEm: agora },
+            })
+          )
+        )
+      );
+      if (pagina >= totalPaginas || porProjeto.size === 0) break;
+      pagina++;
+    }
+    // O mês inteiro lido: o que a listagem não trouxe também está conferido
+    // (sem projeto ou fora do filtro de emissão), para não voltar todo dia.
+    if (completa && etapa.mes) {
+      await prisma.omieTitulo.updateMany({
+        where: { conexaoId: ctx.conexaoId, natureza: "PAGAR", projetoConferidoEm: null, dataEmissao: { gte: etapa.mes.inicio, lte: etapa.mes.fim } },
+        data: { projetoConferidoEm: new Date() },
+      });
+    }
+  }
+  return { ...res, faseConcluida: true };
+}
+
 export async function executarFase(
   fase: FaseSync,
   ctx: ContextoFase,
@@ -1366,6 +1512,8 @@ export async function executarFase(
       return sincronizarContratos(ctx, backfill);
     case "cte":
       return sincronizarCte(ctx);
+    case "projetos":
+      return sincronizarProjetos(ctx, backfill);
     case "exclusoes":
       return sincronizarExclusoes(ctx, backfill);
   }

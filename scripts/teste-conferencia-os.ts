@@ -1,0 +1,147 @@
+// A CONFERÊNCIA DE OS — `npm run teste:conferencia-os`.
+//
+// 1. A conta pura: custo sem cobrança, custo acima da cobrança, a mesma OS em
+//    projetos diferentes, o mesmo projeto nas duas empresas, cobertura.
+// 2. A fase `projetos` da sincronização: o plano das etapas e a leitura do
+//    item da listagem das contas a pagar.
+// 3. Com Postgres (TESTE_DATABASE_URL): a colheita no banco.
+import { PrismaClient } from "@prisma/client";
+import { chaveDoProjeto, conferirOs, type GrupoOs } from "../src/lib/controladoria/conferenciaDeOs";
+import { planejarEtapasProjetos, projetoDoItem } from "../src/lib/omie/sync";
+
+let falhas = 0;
+function conferir(nome: string, real: unknown, esperado: unknown) {
+  const ok = JSON.stringify(real) === JSON.stringify(esperado);
+  if (!ok) falhas++;
+  console.log(`${ok ? "  ok  " : "FALHA "} ${nome}${ok ? "" : `\n         esperado ${JSON.stringify(esperado)}\n         veio     ${JSON.stringify(real)}`}`);
+}
+
+function pura() {
+  console.log("\nConta");
+  const d = new Date(2026, 8, 10);
+  const g = (x: Partial<GrupoOs>): GrupoOs => ({ conexaoId: "AZ", natureza: "PAGAR", projeto: null, os: null, titulos: 1, cents: 0, ultimaCompetencia: d, parceiros: [], ...x });
+  const grupos = [
+    g({ projeto: "P1", cents: 300_00, parceiros: ["TRANSCOMIN"], os: "100" }),
+    g({ natureza: "RECEBER", projeto: "P1", cents: 500_00, parceiros: ["SMPED"], os: "100" }),
+    // Custo sem cobrança.
+    g({ projeto: "P2", cents: 700_00, parceiros: ["TRANSCOMIN"] }),
+    // Custo acima da cobrança.
+    g({ projeto: "P3", cents: 900_00, parceiros: ["TRANSCOMIN"] }),
+    g({ natureza: "RECEBER", projeto: "P3", cents: 400_00, parceiros: ["FEMSA"] }),
+    // Mesmo projeto pelo nome nas duas empresas: custo na MCZ, cobrança na Azul.
+    g({ conexaoId: "MC", projeto: "Q9", cents: 200_00, parceiros: ["OFICINA"] }),
+    g({ natureza: "RECEBER", projeto: "P4", cents: 250_00 }),
+    // A mesma OS 555 no projeto P1 (a pagar) e P2 (a receber): lançamento trocado.
+    g({ projeto: "P1", cents: 10_00, os: "555" }),
+    g({ natureza: "RECEBER", projeto: "P2b", cents: 10_00, os: "555" }),
+    // Sem projeto.
+    g({ cents: 1000_00, titulos: 4 }),
+    g({ natureza: "RECEBER", cents: 50_00 }),
+  ];
+  const nomes = new Map([
+    ["AZ|P1", "14638"],
+    ["AZ|P2", "14641"],
+    ["AZ|P2b", "14700"],
+    ["AZ|P3", "SMPED"],
+    ["AZ|P4", "Viagem 77"],
+    ["MC|Q9", "viagem  77"],
+  ]);
+  const r = conferirOs({ grupos, pagarSemProjeto: [], nomeDoProjeto: nomes, empresa: new Map([["AZ", "AZUL"], ["MC", "MCZ"]]), taxaImpostos: new Map([["AZ", 0.1]]) });
+  conferir("custo sem cobrança", r.custoSemReceita.map((p) => [p.nome, p.custoCents]), [["14641", 700_00]]);
+  conferir("custo acima da cobrança", r.custoAcimaDaReceita.map((p) => [p.nome, p.margemCents]), [["SMPED", -500_00]]);
+  const v77 = r.projetos.find((p) => p.chave === chaveDoProjeto("Viagem 77"));
+  conferir("mesmo projeto nas duas empresas vira um", [v77?.empresas, v77?.custoCents, v77?.receitaCents], [["MCZ", "AZUL"], 200_00, 250_00]);
+  conferir("OS em projetos diferentes", r.osEmProjetosDiferentes.map((o) => [o.os, o.projetos.map((p) => p.nome).sort()]), [["555", ["14638", "14700"]]]);
+  conferir("cobrança sem custo", r.receitaSemCusto.map((p) => p.nome), ["14700"]);
+  conferir("cobertura do a pagar", [r.cobertura.pagar.titulos, r.cobertura.pagar.comProjeto, r.cobertura.pagar.comOs], [9, 5, 2]);
+  const os1 = r.projetos.find((p) => p.nome === "14638")!;
+  conferir("resultado = receita − tributos − custo", [os1.impostosCents, os1.resultadoCents], [50_00, 500_00 - 50_00 - 310_00]);
+  conferir("faturada com prejuízo", r.comPrejuizo.map((p) => [p.nome, p.resultadoCents]), [["SMPED", 400_00 - 40_00 - 900_00]]);
+  // Fora do padrão: 4 OS do mesmo cliente com ~50% e uma com -20%.
+  const padrao = ["A", "B", "C", "D", "E"].map((x, i) => [
+    g({ projeto: x, cents: i === 4 ? 120_00 : 50_00 }),
+    g({ natureza: "RECEBER", projeto: x, cents: 100_00, parceiros: ["CLIENTE Z"] }),
+  ]).flat();
+  const fp = conferirOs({ grupos: padrao, pagarSemProjeto: [], nomeDoProjeto: new Map(), empresa: new Map() });
+  conferir("resultado fora do padrão do cliente", fp.foraDoPadrao.map((f) => [f.projeto.nome, f.medianaPercent]), [["E", 50]]);
+  conferir("OS do projeto", r.projetos.find((p) => p.nome === "14638")?.osDoPagar, ["100", "555"]);
+}
+
+function fase() {
+  console.log("\nFase projetos da sincronização");
+  const e = planejarEtapasProjetos({ janelaInicio: new Date(2026, 9, 1), janelaFim: new Date(2026, 9, 24), backfill: false, mesesPendentes: [new Date(2025, 0, 1), new Date(2025, 1, 1)] });
+  conferir("diário: recentes e os meses pendentes", e.map((x) => x.chave), ["recentes", "mes:2025-01", "mes:2025-02"]);
+  conferir("recentes: alterados nos últimos 10 dias", e[0].param, { filtrar_por_data_de: "14/10/2026", filtrar_por_data_ate: "24/10/2026" });
+  conferir("mês por emissão", e[2].param, { filtrar_por_emissao_de: "01/02/2025", filtrar_por_emissao_ate: "28/02/2025" });
+  const b = planejarEtapasProjetos({ janelaInicio: new Date(2025, 4, 1), janelaFim: new Date(2025, 4, 31), backfill: true, mesesPendentes: [] });
+  conferir("carga histórica: a janela", [b.length, b[0].param], [1, { filtrar_por_emissao_de: "01/05/2025", filtrar_por_emissao_ate: "31/05/2025" }]);
+  conferir("item com projeto", projetoDoItem({ codigo_lancamento_omie: 123456, codigo_projeto: 789 }), { codigo: "123456", projeto: "789" });
+  conferir("projeto 0 é sem projeto", projetoDoItem({ codigo_lancamento_omie: "1", codigo_projeto: 0 }), { codigo: "1", projeto: null });
+  conferir("sem código", projetoDoItem({ codigo_projeto: 5 }).codigo, null);
+}
+
+async function banco() {
+  const url = process.env.TESTE_DATABASE_URL;
+  if (!url) {
+    console.log("\nTESTE_DATABASE_URL não definida — pulando a colheita no banco.");
+    return;
+  }
+  console.log("\nNo banco");
+  process.env.DATABASE_URL = url;
+  const prisma = new PrismaClient({ datasources: { db: { url } } });
+  const { fixarHojeParaTeste } = await import("../src/lib/controladoria/competencia");
+  fixarHojeParaTeste(new Date(2027, 0, 1));
+  const { conferenciaDeOsNoBanco } = await import("../src/lib/controladoria/conferenciaDeOsNoBanco");
+  const E = "empresa-conferencia-os";
+  const limpar = async () => {
+    await prisma.omieTitulo.deleteMany({ where: { companyId: E } });
+    await prisma.omieProjeto.deleteMany({ where: { companyId: E } });
+    await prisma.omieCategoria.deleteMany({ where: { companyId: E } });
+    await prisma.omieConexao.deleteMany({ where: { companyId: E } });
+  };
+  await limpar();
+  try {
+    const az = await prisma.omieConexao.create({ data: { companyId: E, nome: "Azul OS", apelido: "AZ", credencialRef: "AZ", cnpj: "55555555000191" } });
+    await prisma.omieCategoria.createMany({
+      data: [
+        { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "R1", descricao: "Clientes - Serviços Prestados", contaReceita: true },
+        { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "T1", descricao: "Compra de Serviços", contaDespesa: true },
+      ],
+    });
+    await prisma.omieProjeto.createMany({ data: [{ companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "901", nome: "14638" }, { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "902", nome: "14641" }] });
+    let n = 0;
+    const t = (x: { natureza: "PAGAR" | "RECEBER"; categoriaCodigo: string; valorDocumentoCents: number } & Record<string, unknown>) => ({
+      companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigoLancamento: `L${++n}`, status: "ABERTO",
+      dataEmissao: new Date(2026, 8, 5), dataVencimento: new Date(2026, 8, 25), ...x,
+    });
+    await prisma.omieTitulo.createMany({
+      data: [
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "901", parceiroNome: "TRANSCOMIN", valorDocumentoCents: 300_00, projetoConferidoEm: new Date() }),
+        t({ natureza: "RECEBER", categoriaCodigo: "R1", projetoCodigo: "901", ordemServicoNumero: "11972", parceiroNome: "SMPED", valorDocumentoCents: 500_00 }),
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "902", parceiroNome: "TRANSCOMIN", valorDocumentoCents: 700_00, projetoConferidoEm: new Date() }),
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", parceiroNome: "TRANSCOMIN", valorDocumentoCents: 120_00 }),
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "902", parceiroNome: "TRANSCOMIN", valorDocumentoCents: 999_00, cancelado: true }),
+        // O mesmo documento pago duas vezes, em projetos diferentes.
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "901", parceiroNome: "TRANSCOMIN", parceiroDocumento: "12345678000199", numeroDocumento: "18953", numeroParcela: "001/001", valorDocumentoCents: 80_00 }),
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "902", parceiroNome: "TRANSCOMIN", parceiroDocumento: "12345678000199", numeroDocumento: "18953", numeroParcela: "001/001", valorDocumentoCents: 80_00 }),
+      ],
+    });
+    const r = await conferenciaDeOsNoBanco({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30) });
+    conferir("custo sem cobrança no banco", r.custoSemReceita.map((p) => [p.nome, p.custoCents, p.fornecedores]), [["14641", 780_00, ["TRANSCOMIN"]]]);
+    conferir("OS do a receber", r.projetos.find((p) => p.nome === "14638")?.osDoReceber, ["11972"]);
+    conferir("custo de operação sem projeto", r.pagarSemProjeto.map((s) => [s.parceiro, s.categoria, s.cents]), [["TRANSCOMIN", "Compra de Serviços", 120_00]]);
+    conferir("conferidos do a pagar", r.pagarConferidos, { total: 5, conferidos: 2 });
+    conferir("documento em duplicidade", r.duplicidades.map((d) => [d.documento, d.vezes, d.projetos.sort()]), [["18953", 2, ["14638", "14641"]]]);
+  } finally {
+    await limpar();
+    await prisma.$disconnect();
+  }
+}
+
+(async () => {
+  pura();
+  fase();
+  await banco();
+  console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");
+  process.exit(falhas ? 1 : 0);
+})();

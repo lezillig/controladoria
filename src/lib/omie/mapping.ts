@@ -468,7 +468,10 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
     departamentoCodigo:
       str(cabec, "cCodDepartamento", "codigo_departamento") ??
       str(departamentos[0], "cCodDepartamento", "codigo_departamento", "cCodDepto"),
-    // A receber devolve `cCodProjeto`; a pagar nao devolve projeto nenhum.
+    // A receber devolve `cCodProjeto`. A pagar, na pesquisa de títulos, não
+    // devolveu projeto nas contas reais (agosto/2026) — por isso a fase
+    // `projetos` (sync.ts) o confere na listagem das contas a pagar, e a
+    // gravação do título a pagar não apaga o projeto quando ele vem vazio.
     projetoCodigo: str(cabec, "cCodProjeto", "nCodProjeto", "codigo_projeto"),
     contaCorrenteCodigo: str(cabec, "nCodCC", "id_conta_corrente", "codigo_conta_corrente"),
     dataEmissao: data(cabec, "dDtEmissao", "data_emissao"),
@@ -513,6 +516,8 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
     origemLancamento: str(cabec, "cOrigem"),
     contratoCodigo: str(cabec, "nCodCtr", "cNumCtr"),
     ordemServicoCodigo: str(cabec, "nCodOS", "cNumOS"),
+    // O número que a tela da Omie mostra na aba Diversos ("Ordem de Serviço").
+    ordemServicoNumero: str(cabec, "cNumOS"),
     baixas,
   };
 }

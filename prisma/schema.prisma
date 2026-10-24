@@ -509,6 +509,13 @@ model OmieTitulo {
   origemLancamento   String?
   contratoCodigo     String?
   ordemServicoCodigo String?
+  // O NÚMERO da ordem de serviço como a tela da Omie mostra (`cNumOS`, ex.:
+  // 11972). `ordemServicoCodigo` é o código interno (`nCodOS`).
+  ordemServicoNumero String?
+  // Quando o projeto do título A PAGAR foi conferido na listagem própria das
+  // contas a pagar (ListarContasPagar, `codigo_projeto`): a pesquisa de
+  // títulos não devolve o projeto do lado a pagar. Nulo = ainda não conferido.
+  projetoConferidoEm DateTime?
   sincronizadoEm     DateTime  @default(now())
   // EXCLUSÃO NA OMIE. A sincronização só inclui e atualiza: título apagado
   // na Omie ficava no espelho para sempre, somando no DRE (setembro/2026 da
@@ -536,6 +543,7 @@ model OmieTitulo {
   @@index([companyId, parceiroDocumento])
   @@index([companyId, numeroDocumento])
   @@index([companyId, projetoCodigo])
+  @@index([conexaoId, natureza, projetoConferidoEm])
 }
 
 // Cada pagamento/recebimento de um título. É aqui que moram juros, multa,

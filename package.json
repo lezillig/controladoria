@@ -55,7 +55,8 @@
     "teste:mes-em-formacao": "tsx scripts/teste-mes-em-formacao.ts",
     "postinstall": "prisma generate",
     "teste:edital": "tsx scripts/teste-edital.ts",
-    "teste:dre-centro-custo": "tsx scripts/teste-dre-centro-custo.ts"
+    "teste:dre-centro-custo": "tsx scripts/teste-dre-centro-custo.ts",
+    "teste:conferencia-os": "tsx scripts/teste-conferencia-os.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

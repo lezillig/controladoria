@@ -132,6 +132,7 @@ export type TituloNormalizado = {
   origemLancamento: string | null;
   contratoCodigo: string | null;
   ordemServicoCodigo: string | null;
+  ordemServicoNumero: string | null;
   baixas: BaixaNormalizada[];
 };
 

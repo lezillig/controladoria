@@ -330,7 +330,7 @@ export default async function SincronizacaoPage() {
       {podeSincronizar && (
         <Secao
           titulo="Executar agora"
-          descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → contratos → CT-e → exclusões → auditoria → relatório."
+          descricao="Roda a mesma máquina de estados do agendamento diário: cadastros → títulos → movimentos → notas → contratos → CT-e → projetos a pagar → exclusões → auditoria → relatório."
         >
           <SyncButton temExecucaoTravada={travada} emAndamento={Boolean(emAndamento) && !travada} />
 

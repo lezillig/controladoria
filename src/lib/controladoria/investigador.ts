@@ -417,12 +417,19 @@ export function ferramentasDeAuditoria(escopo: { companyId: string; conexaoId: s
     name: "ordem_de_servico",
     description:
       "Tudo de uma ordem de serviço (projeto da Omie): custos lançados nela e o que foi faturado contra ela. Use para a pergunta 'esta OS foi paga e não faturada?'.",
-    inputSchema: z.object({ codigo: z.string().describe("Código do projeto/OS, ex.: 14516.") }),
+    inputSchema: z.object({ codigo: z.string().describe("Código do projeto na Omie ou o NOME dele como aparece na tela (ex.: 14638, SMPED).") }),
     run: async (input) => {
-      const [projeto, titulos] = await Promise.all([
-        prisma.omieProjeto.findFirst({ where: { ...base, codigo: input.codigo }, select: { nome: true, inativo: true, conexaoApelido: true } }),
+      // Pelo código interno ou pelo nome que a tela da Omie mostra no campo
+      // Projeto — quem pergunta conhece o nome, não o código.
+      const projetos = await prisma.omieProjeto.findMany({
+        where: { ...base, OR: [{ codigo: input.codigo }, { nome: { equals: input.codigo.trim(), mode: "insensitive" } }] },
+        select: { codigo: true, nome: true, inativo: true, conexaoApelido: true },
+      });
+      const projeto = projetos[0] ?? null;
+      const codigos = [...new Set([input.codigo, ...projetos.map((p) => p.codigo)])];
+      const [titulos] = await Promise.all([
         prisma.omieTitulo.findMany({
-          where: { ...base, projetoCodigo: input.codigo },
+          where: { ...base, projetoCodigo: { in: codigos } },
           orderBy: [{ natureza: "asc" }, { dataVencimento: "asc" }],
           take: LIMITE_DE_LINHAS,
           select: {

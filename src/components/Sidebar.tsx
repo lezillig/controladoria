@@ -4,6 +4,7 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ListChecks,
   Network,
   Banknote,
   Building2,
@@ -80,6 +81,8 @@ const NAV: NavItem[] = [
   // documento fiscal que a justifica? A Omie não expõe CT-e pela API, então é
   // a única tela que depende de alguém colar uma lista.
   { href: "/cte", label: "Conferência de CT-e", icon: FileCheck, permissao: "cte" },
+  // O projeto (OS) do custo contra o da cobrança: serviço pago e não faturado.
+  { href: "/conferencia-os", label: "Conferência de OS", icon: ListChecks, permissao: "titulos" },
 
   // As duas leituras do mesmo risco — a que o sistema faz nos dados e a que a
   // consultoria faz na empresa.

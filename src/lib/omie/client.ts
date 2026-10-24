@@ -192,6 +192,10 @@ export const OMIE_ENDPOINTS = {
   // espelho faria uma receita verdadeira desaparecer do DRE.
   consultarReceber: { path: "financas/contareceber/", call: "ConsultarContaReceber", listKey: [] },
   consultarPagar: { path: "financas/contapagar/", call: "ConsultarContaPagar", listKey: [] },
+  // A LISTAGEM DAS CONTAS A PAGAR — só para o PROJETO (`codigo_projeto`), que a
+  // pesquisa de títulos não devolve do lado a pagar (fase `projetos`, sync.ts).
+  // Até 50 registros por página, pela documentação.
+  listarPagar: { path: "financas/contapagar/", call: "ListarContasPagar", listKey: ["conta_pagar_cadastro"] },
   cteDocumentos: {
     path: "contador/xml/",
     call: "ListarDocumentos",
