@@ -130,7 +130,7 @@ async function banco() {
         { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "C1", descricao: "Comissões sobre Vendas", contaDespesa: true },
       ],
     });
-    await prisma.omieProjeto.createMany({ data: [{ companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "901", nome: "14638" }, { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "902", nome: "14641" }] });
+    await prisma.omieProjeto.createMany({ data: [{ companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "901", nome: "14638" }, { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "902", nome: "14641" }, { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "903", nome: "SMPED" }] });
     let n = 0;
     const t = (x: { natureza: "PAGAR" | "RECEBER"; categoriaCodigo: string; valorDocumentoCents: number } & Record<string, unknown>) => ({
       companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigoLancamento: `L${++n}`, status: "ABERTO",
@@ -149,24 +149,30 @@ async function banco() {
         // Comissões: uma na OS 14638 (receita 500), uma sem OS.
         t({ natureza: "PAGAR", categoriaCodigo: "C1", projetoCodigo: "901", parceiroNome: "VENDEDOR A", valorDocumentoCents: 25_00, valorPagoCents: 25_00 }),
         t({ natureza: "PAGAR", categoriaCodigo: "C1", parceiroNome: "VENDEDOR A", valorDocumentoCents: 10_00 }),
+        // Documento repetido em projeto que não é OS (SMPED): não entra.
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "903", parceiroNome: "AFX", parceiroDocumento: "99999999000199", numeroDocumento: "777", valorDocumentoCents: 50_00 }),
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "903", parceiroNome: "AFX", parceiroDocumento: "99999999000199", numeroDocumento: "777", valorDocumentoCents: 50_00 }),
+        // Documento que é placa, repetido: não é duplicidade.
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "901", parceiroNome: "SEM PARAR", numeroDocumento: "GIY-7E76", valorDocumentoCents: 15_00 }),
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "902", parceiroNome: "SEM PARAR", numeroDocumento: "GIY7E76", valorDocumentoCents: 15_00 }),
         // Multa de trânsito repetida: desconsiderada (não é duplicidade de OS).
         t({ natureza: "PAGAR", categoriaCodigo: "M1", projetoCodigo: "901", parceiroNome: "DETRAN", numeroDocumento: "AIT1", valorDocumentoCents: 30_00 }),
         t({ natureza: "PAGAR", categoriaCodigo: "M1", projetoCodigo: "902", parceiroNome: "DETRAN", numeroDocumento: "AIT1", valorDocumentoCents: 30_00 }),
       ],
     });
     const r = await conferenciaDeOsNoBanco({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30) });
-    conferir("custo sem cobrança no banco", r.custoSemReceita.map((p) => [p.nome, p.custoCents, p.fornecedores]), [["14641", 780_00, ["TRANSCOMIN"]]]);
+    conferir("custo sem cobrança no banco", r.custoSemReceita.map((p) => [p.nome, p.custoCents, p.fornecedores]), [["14641", 795_00, ["SEM PARAR", "TRANSCOMIN"]]]);
     conferir("OS do a receber", r.projetos.find((p) => p.nome === "14638")?.osDoReceber, ["11972"]);
     conferir("custo de operação sem projeto", r.pagarSemProjeto.map((s) => [s.parceiro, s.categoria, s.cents]), [["TRANSCOMIN", "Compra de Serviços", 120_00], ["VENDEDOR A", "Comissões sobre Vendas", 10_00]]);
-    conferir("conferidos do a pagar", r.pagarConferidos, { total: 9, conferidos: 2 });
-    conferir("multa fora do custo da OS", r.custoSemReceita.find((p) => p.nome === "14641")?.custoCents, 780_00);
+    conferir("conferidos do a pagar", r.pagarConferidos, { total: 13, conferidos: 2 });
+    conferir("multa fora do custo da OS", r.custoSemReceita.find((p) => p.nome === "14641")?.custoCents, 795_00);
     const det = await titulosDaConferencia({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), projetoNome: "14641" });
-    conferir("drill-down da OS pelo nome (mostra a multa também)", [det.total, det.titulos.map((x) => x.valorCents).sort((a, b) => a - b)], [3, [30_00, 80_00, 700_00]]);
+    conferir("drill-down da OS pelo nome (mostra a multa também)", [det.total, det.titulos.map((x) => x.valorCents).sort((a, b) => a - b)], [4, [15_00, 30_00, 80_00, 700_00]]);
     const sem = await titulosDaConferencia({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), semProjeto: "PAGAR", fornecedor: "TRANSCOMIN" });
     conferir("drill-down do a pagar sem projeto", [sem.total, sem.titulos[0]?.valorCents], [1, 120_00]);
     const com = await comissoesNoBanco({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30) });
     conferir("comissões por recebedor", com.recebedores.map((c) => [c.recebedor, c.cents, c.pagoCents, c.oss, c.receitaDasOsCents, c.semOsCents]), [["VENDEDOR A", 35_00, 25_00, 1, 500_00, 10_00]]);
-    conferir("comissões por OS", com.oss.map((o) => [o.projeto, o.cents, o.receitaCents]), [["14638", 25_00, 500_00], [null, 10_00, 0]]);
+    conferir("comissões por OS", com.oss.map((o) => [o.projeto, o.ehOs, o.cents, o.receitaCents]), [["14638", true, 25_00, 500_00], [null, false, 10_00, 0]]);
     const detC = await titulosDaConferencia({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), comissoes: true, fornecedor: "VENDEDOR A" });
     conferir("drill-down das comissões", detC.total, 2);
     conferir("documento em duplicidade", r.duplicidades.map((d) => [d.documento, d.vezes, d.projetos.sort()]), [["18953", 2, ["14638", "14641"]]]);

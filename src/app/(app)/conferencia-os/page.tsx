@@ -264,7 +264,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
           </div>
           <div>
             <h3 className="mb-1 text-sm font-semibold text-slate-800">Documento em duplicidade — {r.duplicidades.length}</h3>
-            <p className="mb-2 text-xs text-slate-500">Mesmo fornecedor (ou cliente), mesmo número de documento, mesma parcela e mesmo valor em mais de um título de OS: pagamento ou cobrança em dobro.</p>
+            <p className="mb-2 text-xs text-slate-500">Mesmo fornecedor (ou cliente), mesmo número de documento, mesma parcela e mesmo valor em mais de um título de OS: pagamento ou cobrança em dobro. Só títulos de OS (projeto numérico); documento que é placa (GIY7E76) não conta: pedágio, estacionamento e multa repetem a placa.</p>
             <Tabela
               colunas={["Lado", "Empresa", "Parceiro", "Documento", "Valor", "Vezes", "Projetos"]}
               alinharDireita={[4, 5]}
@@ -367,7 +367,14 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
                 colunas={["OS (projeto)", "Empresa", "Recebedores", "Títulos", "Comissão", "Receita da OS", "% da receita"]}
                 alinharDireita={[3, 4, 5, 6]}
                 linhas={comissoes.oss.slice(0, 150).map((o) => [
-                  o.projeto ? <NomeOs key="n" nome={o.projeto} /> : <span key="n" className="text-amber-700">Sem OS</span>,
+                  o.projeto ? (
+                    <span key="n">
+                      <NomeOs nome={o.projeto} />
+                      {!o.ehOs && <span className="ml-1 text-xs text-slate-400">(projeto, não é OS)</span>}
+                    </span>
+                  ) : (
+                    <span key="n" className="text-amber-700">Sem OS</span>
+                  ),
                   o.empresa,
                   lista(o.recebedores, 3),
                   fmtNumero(o.titulos),

@@ -6,7 +6,7 @@ import { categoriaSql, filtroConexaoTitulo } from "./escopoSql";
 import { categoriasDoEscopo, movimentoPorCategoria } from "./dreNoBanco";
 import { linhaDaCategoria } from "./dre";
 import { classificacoesDoDre } from "./projecaoNoBanco";
-import { CATEGORIA_COMISSAO, CATEGORIA_FORA_DA_OS, chaveDoProjeto, conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
+import { CATEGORIA_COMISSAO, DOCUMENTO_PLACA, PROJETO_NUMERICO, CATEGORIA_FORA_DA_OS, chaveDoProjeto, conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
 
 // A colheita da conferência de OS: os títulos do período (competência, sem
 // cancelados, sem as operações entre as empresas na visão do grupo), somados
@@ -89,11 +89,18 @@ export async function conferenciaDeOsNoBanco(params: { companyId: string; conexa
              array_agg(DISTINCT t."projetoCodigo") AS projetos
         FROM ${tabela("OmieTitulo")} t
         LEFT JOIN ${tabela("OmieCategoria")} c ON c."conexaoId" = t."conexaoId" AND c.codigo = t."categoriaCodigo"
+        LEFT JOIN ${tabela("OmieProjeto")} p ON p."conexaoId" = t."conexaoId" AND p.codigo = t."projetoCodigo"
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
          AND COALESCE(t."categoriaDescricao", c.descricao, '') !~* ${CATEGORIA_FORA_DA_OS.source}
+         -- Só títulos de OS: o projeto do título tem nome numérico (PROJETO_NUMERICO).
+         AND btrim(COALESCE(p.nome, t."projetoCodigo")) ~ ${PROJETO_NUMERICO.source}
          AND NULLIF(t."projetoCodigo", '') IS NOT NULL
          AND NULLIF(btrim(t."numeroDocumento"), '') IS NOT NULL
+         -- Documento que é PLACA (GIY7E76, ABC1234): pedágio, estacionamento e
+         -- multa usam a placa como número, e o mesmo número repete sem ser
+         -- pagamento em dobro.
+         AND upper(regexp_replace(t."numeroDocumento", '[^A-Za-z0-9]', '', 'g')) !~ ${DOCUMENTO_PLACA.source}
          AND ${competenciaSql("t")} >= ${desde}
          AND ${competenciaSql("t")} <= ${ate}
          ${filtro}
@@ -250,7 +257,7 @@ export async function titulosDaConferencia(params: {
 // receita da OS (a comissão em % do que foi cobrado nela). A categoria é a de
 // comissão do plano de contas (CATEGORIA_COMISSAO).
 export type ComissaoPorRecebedor = { recebedor: string; empresa: string; titulos: number; cents: number; pagoCents: number; oss: number; receitaDasOsCents: number; semOsCents: number };
-export type ComissaoPorOs = { projeto: string | null; empresa: string; recebedores: string[]; titulos: number; cents: number; receitaCents: number; categoria: string };
+export type ComissaoPorOs = { projeto: string | null; ehOs: boolean; empresa: string; recebedores: string[]; titulos: number; cents: number; receitaCents: number; categoria: string };
 
 export async function comissoesNoBanco(params: { companyId: string; conexaoId: string | null; desde: Date; ate: Date }) {
   const { companyId, conexaoId, desde, ate } = params;
@@ -311,7 +318,8 @@ export async function comissoesNoBanco(params: { companyId: string; conexaoId: s
     porRecebedor.set(kr, r);
 
     const ko = `${l.conexaoId}|${l.projeto ?? ""}`;
-    const o = porOs.get(ko) ?? { projeto: l.projeto ? (nomeProjeto.get(ko) ?? l.projeto) : null, empresa: apelido.get(l.conexaoId) ?? "?", recebedores: [], titulos: 0, cents: 0, receitaCents: l.projeto ? (receitaDe.get(ko) ?? 0) : 0, categoria: l.categoria };
+    const nomeDaOs = l.projeto ? (nomeProjeto.get(ko) ?? l.projeto) : null;
+    const o = porOs.get(ko) ?? { projeto: nomeDaOs, ehOs: !!nomeDaOs && PROJETO_NUMERICO.test(nomeDaOs.trim()), empresa: apelido.get(l.conexaoId) ?? "?", recebedores: [], titulos: 0, cents: 0, receitaCents: l.projeto ? (receitaDe.get(ko) ?? 0) : 0, categoria: l.categoria };
     if (!o.recebedores.includes(recebedor)) o.recebedores.push(recebedor);
     o.titulos += Number(l.titulos);
     o.cents += Number(l.cents);

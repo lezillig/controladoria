@@ -35,6 +35,8 @@ export const PROJETO_NUMERICO = /^\d{4,6}$/;
 export const CATEGORIA_FORA_DA_OS = /multa|diretoria/i;
 // A categoria das comissões sobre vendas ("Comissões sobre Vendas", "Comissões").
 export const CATEGORIA_COMISSAO = /comiss/i;
+// Placa de veículo, no padrão antigo (ABC1234) e no Mercosul (GIY7E76).
+export const DOCUMENTO_PLACA = /^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/;
 
 export type ForaDaConferencia = { nome: string; empresas: string[]; custoCents: number; receitaCents: number; titulos: number; categorias: string[] };
 export type LancamentoExcluido = { projeto: string; categoria: string; natureza: string; cents: number; titulos: number };
