@@ -22,16 +22,14 @@ export type GrupoOs = {
   parceiros: string[];
 };
 
-// O QUE É OS NESTA CONFERÊNCIA (pedido da operação):
-//   - projeto cujo nome é só número (14638) — a OS da operação; ou
-//   - projeto que envolve compra de serviços (a pagar) ou receita de serviços
-//     (a receber), mesmo com nome de texto (SMPED).
+// O QUE É OS NESTA CONFERÊNCIA (pedido da operação): o projeto cujo nome é
+// SÓ NÚMERO (14638). Projeto com nome de texto é contrato (SMPED, Escolar
+// Cajamar) ou veículo (SSB0F16), não ordem de serviço — mesmo quando tem
+// compra ou receita de serviços — e o resultado dele não é o de uma viagem.
 // E, dentro de qualquer OS, multa e despesa da diretoria NÃO entram: não são
 // custo da viagem. Tudo o que fica de fora vai para a lista "fora da
 // conferência", para ser visto.
 export const PROJETO_NUMERICO = /^\d+$/;
-export const CATEGORIA_SERVICO_A_PAGAR = /compra\s+de\s+servi/i;
-export const CATEGORIA_SERVICO_A_RECEBER = /servi[cç]/i;
 export const CATEGORIA_FORA_DA_OS = /multa|diretoria/i;
 
 export type ForaDaConferencia = { nome: string; empresas: string[]; custoCents: number; receitaCents: number; titulos: number; categorias: string[] };
@@ -83,7 +81,7 @@ export type ResultadoConferenciaOs = {
   duplicidades: Duplicidade[];
   osEmProjetosDiferentes: OsEmProjetos[];
   pagarSemProjeto: PagarSemProjeto[];
-  // Projetos que não são OS pela regra (PROJETO_NUMERICO / categorias de
+  // Projetos que não são OS pela regra (PROJETO_NUMERICO; antes também as categorias de
   // serviço), e os lançamentos de multa e diretoria tirados das OS.
   foraDaConferencia: ForaDaConferencia[];
   lancamentosExcluidos: LancamentoExcluido[];
@@ -134,14 +132,9 @@ export function conferirOs(params: {
     excluidos.set(k, e);
     return false;
   });
-  // 2. É OS: nome só com números, ou envolve compra/receita de serviços.
+  // 2. É OS: o nome do projeto é só número.
   const ehOs = new Set<string>();
-  for (const g of semExcluidos) {
-    if (!g.projeto) continue;
-    const n = nome(g);
-    const servico = g.natureza === "PAGAR" ? CATEGORIA_SERVICO_A_PAGAR.test(g.categoria ?? "") : CATEGORIA_SERVICO_A_RECEBER.test(g.categoria ?? "");
-    if (PROJETO_NUMERICO.test(n.trim()) || servico) ehOs.add(chaveDoProjeto(n));
-  }
+  for (const g of semExcluidos) if (g.projeto && PROJETO_NUMERICO.test(nome(g).trim())) ehOs.add(chaveDoProjeto(nome(g)));
   const fora = new Map<string, ForaDaConferencia & { cats: Map<string, number> }>();
   const grupos = semExcluidos.filter((g) => {
     if (!g.projeto || ehOs.has(chaveDoProjeto(nome(g)))) return true;

@@ -324,7 +324,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
 
       <Secao
         titulo={`Fora da conferência — ${r.foraDaConferencia.length} projeto(s) e ${r.lancamentosExcluidos.length} lançamento(s)`}
-        descricao="Entra como OS o projeto com nome só de números, ou que envolva compra de serviços (a pagar) ou receita de serviços (a receber). Multa e despesa da diretoria não entram em OS nenhuma. Confira se algo aqui deveria estar dentro."
+        descricao="Entra como OS só o projeto com nome de números (14638). Projeto com nome de texto — contrato (SMPED, Escolar Cajamar) ou veículo (SSB0F16) — fica aqui. Multa e despesa da diretoria não entram em OS nenhuma. Confira se algo aqui deveria estar dentro."
       >
         <div className="space-y-6">
           <div>

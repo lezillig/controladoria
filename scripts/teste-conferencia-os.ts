@@ -42,21 +42,21 @@ function pura() {
     ["AZ|P1", "14638"],
     ["AZ|P2", "14641"],
     ["AZ|P2b", "14700"],
-    ["AZ|P3", "SMPED"],
-    ["AZ|P4", "Viagem 77"],
-    ["MC|Q9", "viagem  77"],
+    ["AZ|P3", "14650"],
+    ["AZ|P4", "15077"],
+    ["MC|Q9", " 15077 "],
   ]);
   const r = conferirOs({ grupos, pagarSemProjeto: [], nomeDoProjeto: nomes, empresa: new Map([["AZ", "AZUL"], ["MC", "MCZ"]]), taxaImpostos: new Map([["AZ", 0.1]]) });
   conferir("custo sem cobrança", r.custoSemReceita.map((p) => [p.nome, p.custoCents]), [["14641", 700_00]]);
-  conferir("custo acima da cobrança", r.custoAcimaDaReceita.map((p) => [p.nome, p.margemCents]), [["SMPED", -500_00]]);
-  const v77 = r.projetos.find((p) => p.chave === chaveDoProjeto("Viagem 77"));
+  conferir("custo acima da cobrança", r.custoAcimaDaReceita.map((p) => [p.nome, p.margemCents]), [["14650", -500_00]]);
+  const v77 = r.projetos.find((p) => p.chave === chaveDoProjeto("15077"));
   conferir("mesmo projeto nas duas empresas vira um", [v77?.empresas, v77?.custoCents, v77?.receitaCents], [["MCZ", "AZUL"], 200_00, 250_00]);
   conferir("OS em projetos diferentes", r.osEmProjetosDiferentes.map((o) => [o.os, o.projetos.map((p) => p.nome).sort()]), [["555", ["14638", "14700"]]]);
   conferir("cobrança sem custo", r.receitaSemCusto.map((p) => p.nome), ["14700"]);
   conferir("cobertura do a pagar", [r.cobertura.pagar.titulos, r.cobertura.pagar.comProjeto, r.cobertura.pagar.comOs], [9, 5, 2]);
   const os1 = r.projetos.find((p) => p.nome === "14638")!;
   conferir("resultado = receita − tributos − custo", [os1.impostosCents, os1.resultadoCents], [50_00, 500_00 - 50_00 - 310_00]);
-  conferir("faturada com prejuízo", r.comPrejuizo.map((p) => [p.nome, p.resultadoCents]), [["SMPED", 400_00 - 40_00 - 900_00]]);
+  conferir("faturada com prejuízo", r.comPrejuizo.map((p) => [p.nome, p.resultadoCents]), [["14650", 400_00 - 40_00 - 900_00]]);
   // Fora do padrão: 4 OS do mesmo cliente com ~50% e uma com -20%.
   const padrao = ["901", "902", "903", "904", "905"].map((x, i) => [
     g({ projeto: x, cents: i === 4 ? 120_00 : 50_00 }),
@@ -79,9 +79,9 @@ function pura() {
     nomeDoProjeto: new Map([["AZ|D1", "DIRETORIA"], ["AZ|M1", "MULTAS"], ["AZ|N1", "15001"], ["AZ|S1", "SMPED"], ["AZ|E1", "ESCRITORIO"]]),
     empresa: new Map([["AZ", "AZUL"]]),
   });
-  conferir("só números ou serviços entram como OS", regra.projetos.map((p) => p.nome).sort(), ["15001", "SMPED"]);
+  conferir("só nome numérico entra como OS (SMPED com compra de serviços fica fora)", regra.projetos.map((p) => p.nome).sort(), ["15001"]);
   conferir("multa sai da OS numérica", regra.projetos.find((p) => p.nome === "15001")?.custoCents, 500_00);
-  conferir("fora da conferência: o projeto de texto sem serviço", regra.foraDaConferencia.map((f) => f.nome), ["ESCRITORIO"]);
+  conferir("fora da conferência: o projeto de texto sem serviço", regra.foraDaConferencia.map((f) => f.nome).sort(), ["ESCRITORIO", "SMPED"]);
   conferir("multas e diretoria listadas", regra.lancamentosExcluidos.map((e) => [e.projeto, e.cents]).sort(), [["15001", 80_00], ["DIRETORIA", 900_00], ["MULTAS", 300_00]].sort());
   conferir("OS do projeto", r.projetos.find((p) => p.nome === "14638")?.osDoPagar, ["100", "555"]);
 }
