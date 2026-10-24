@@ -175,9 +175,20 @@ const t = (
 {
   const r = cruzarCte(
     [lerListaDeCte(JANEIRO).itens[0]!],
-    [t({ id: "a", numero: "1149", valorCents: 3_000_000, data: "2026-01-15", parceiro: "SPAL" })]
+    [t({ id: "a", numero: "1149", valorCents: 3_000_000, data: "2026-01-30", parceiro: "SPAL" })]
   );
   conferir("CT-e espelhado sem par na lista aparece", r.linhas[0]?.tipo, "titulo_sem_cte");
+}
+
+// 3j2. O título da FOLGA (dias antes do primeiro CT-e colado) não é acusado:
+//      o CT-e dele está fora da lista. Caso real: a lista começava em 01/09 e
+//      os títulos de CT-e de 25 a 27/08 apareciam como "sem CT-e na lista".
+{
+  const r = cruzarCte(
+    [lerListaDeCte(JANEIRO).itens[0]!], // 30/01
+    [t({ id: "a", numero: "1149", valorCents: 3_000_000, data: "2026-01-25", parceiro: "SPAL" })]
+  );
+  conferir("título antes da primeira data da lista não vira diferença", [r.linhas.length, r.foraDasDatasDaLista], [0, 1]);
 }
 
 // 3k. Ordem de leitura: o que custa dinheiro primeiro.

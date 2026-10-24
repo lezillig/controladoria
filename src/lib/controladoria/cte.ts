@@ -78,6 +78,9 @@ export type ResultadoConferencia = {
   // Quantos títulos do período estão sem o número do documento fiscal. É a
   // causa-raiz de a conferência precisar cair no casamento por valor.
   titulosSemNumero: number;
+  // Títulos de CT-e na folga antes/depois das datas da lista, sem CT-e casado:
+  // o CT-e deles está fora da lista colada, então não são acusados.
+  foraDasDatasDaLista: number;
 };
 
 // LEITURA TOLERANTE DA LISTA COLADA.
@@ -406,7 +409,20 @@ export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoC
   // de outros documentos que casariam por valor — sem este recorte, cada NFS-e
   // do mês com valor coincidente viraria uma linha "título sem CT-e", e a lista
   // de diferenças ficaria mais longa que a lista conferida.
-  const titulosCte = titulos.filter((t) => ehTipoCte(t.tipo));
+  //
+  // E SÓ DENTRO DAS DATAS DA LISTA. A consulta busca títulos 7 dias antes do
+  // primeiro e depois do último CT-e colado (a folga do casamento por valor e
+  // data), mas a lista não cobre esses dias: o título emitido 3 dias antes do
+  // primeiro CT-e da lista tem o seu CT-e FORA da lista, e acusá-lo de "sem
+  // CT-e" era falso alarme — foram os de 25 a 27/08 de uma lista que começava
+  // em 01/09. Esses ficam contados em `foraDasDatasDaLista`, sem virar linha.
+  const datasDaLista = lista.map((c) => c.data.getTime());
+  const primeiroDia = datasDaLista.length ? new Date(Math.min(...datasDaLista)) : null;
+  const ultimoDia = datasDaLista.length ? new Date(Math.max(...datasDaLista)) : null;
+  const dentroDaLista = (d: Date) =>
+    !!primeiroDia && !!ultimoDia && dias(d, primeiroDia) >= 0 && dias(d, ultimoDia) <= 0;
+  const titulosCte = titulos.filter((t) => ehTipoCte(t.tipo) && (usados.has(t.id) || dentroDaLista(t.data)));
+  const foraDasDatasDaLista = titulos.filter((t) => ehTipoCte(t.tipo) && !usados.has(t.id) && !t.cancelado && !dentroDaLista(t.data)).length;
   for (const t of titulosCte) {
     if (usados.has(t.id) || t.cancelado) continue;
     linhas.push({
@@ -440,6 +456,7 @@ export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoC
       .filter((l) => l.tipo === "valor_divergente")
       .reduce((a, l) => a + Math.abs((l.valorTituloCents ?? 0) - (l.valorCteCents ?? 0)), 0),
     titulosSemNumero: titulosCte.filter((t) => soDigitos(t.numero) === "").length,
+    foraDasDatasDaLista,
   };
 }
 
