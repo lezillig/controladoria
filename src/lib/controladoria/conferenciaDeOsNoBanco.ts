@@ -1,11 +1,12 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { tabela } from "@/lib/esquemaDoBanco";
+import { tabela, tipoDoBanco } from "@/lib/esquemaDoBanco";
 import { competenciaSql, semProvisaoFuturaSql } from "./competencia";
 import { categoriaSql, filtroConexaoTitulo } from "./escopoSql";
 import { categoriasDoEscopo, movimentoPorCategoria } from "./dreNoBanco";
 import { linhaDaCategoria } from "./dre";
 import { classificacoesDoDre } from "./projecaoNoBanco";
-import { conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
+import { CATEGORIA_FORA_DA_OS, chaveDoProjeto, conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
 
 // A colheita da conferência de OS: os títulos do período (competência, sem
 // cancelados, sem as operações entre as empresas na visão do grupo), somados
@@ -16,7 +17,7 @@ import { conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeO
 // financeiro e tributos não são de uma viagem.
 const LINHAS_DE_CUSTO_DA_OS = new Set(["CUSTO_SERVICO", "DESPESA_VEICULOS", "DESPESA_SERVICOS_TERCEIROS", "DESPESA_GERAL", "DESPESA_COMERCIAL"]);
 
-type Linha = { conexaoId: string; natureza: string; projeto: string | null; os: string | null; titulos: bigint; cents: bigint; ultima: Date | null; parceiros: string[] | null };
+type Linha = { conexaoId: string; natureza: string; projeto: string | null; os: string | null; categoria: string | null; titulos: bigint; cents: bigint; ultima: Date | null; parceiros: string[] | null };
 type LinhaCategoria = { conexaoId: string; categoria: string; cents: bigint; retencao: bigint };
 type LinhaDup = { conexaoId: string; natureza: string; parceiro: string | null; documento: string; valor: bigint; vezes: bigint; projetos: string[] };
 type LinhaSem = { conexaoId: string; categoria: string; descricao: string | null; parceiro: string | null; titulos: bigint; cents: bigint; ultima: Date | null };
@@ -28,17 +29,19 @@ export async function conferenciaDeOsNoBanco(params: { companyId: string; conexa
     prisma.$queryRaw<Linha[]>`
       SELECT t."conexaoId" AS "conexaoId", t.natureza::text AS natureza,
              NULLIF(t."projetoCodigo", '') AS projeto, NULLIF(t."ordemServicoNumero", '') AS os,
+             COALESCE(t."categoriaDescricao", c.descricao, t."categoriaCodigo") AS categoria,
              COUNT(*)::bigint AS titulos, COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
              MAX(${competenciaSql("t")}) AS ultima,
              (array_agg(DISTINCT t."parceiroNome") FILTER (WHERE t."parceiroNome" IS NOT NULL))[1:6] AS parceiros
         FROM ${tabela("OmieTitulo")} t
+        LEFT JOIN ${tabela("OmieCategoria")} c ON c."conexaoId" = t."conexaoId" AND c.codigo = t."categoriaCodigo"
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
          AND ${semProvisaoFuturaSql("t")}
          AND ${competenciaSql("t")} >= ${desde}
          AND ${competenciaSql("t")} <= ${ate}
          ${filtro}
-       GROUP BY 1, 2, 3, 4`,
+       GROUP BY 1, 2, 3, 4, 5`,
     prisma.$queryRaw<LinhaSem[]>`
       SELECT t."conexaoId" AS "conexaoId", ${categoriaSql()} AS categoria, MAX(t."categoriaDescricao") AS descricao,
              t."parceiroNome" AS parceiro, COUNT(*)::bigint AS titulos,
@@ -103,6 +106,7 @@ export async function conferenciaDeOsNoBanco(params: { companyId: string; conexa
   const [categorias, movimento] = await Promise.all([categoriasDoEscopo(escopo), movimentoPorCategoria(escopo)]);
   const pagarSemProjeto: PagarSemProjeto[] = semProjeto
     .filter((l) => LINHAS_DE_CUSTO_DA_OS.has(linhaDaCategoria(l.categoria, classificacoes, categorias, movimento)))
+    .filter((l) => !CATEGORIA_FORA_DA_OS.test(categorias.get(l.categoria)?.descricao ?? l.descricao ?? ""))
     .map((l) => ({
       conexaoId: l.conexaoId,
       parceiro: l.parceiro ?? "(sem fornecedor)",
@@ -133,6 +137,7 @@ export async function conferenciaDeOsNoBanco(params: { companyId: string; conexa
     conexaoId: l.conexaoId,
     natureza: l.natureza === "RECEBER" ? "RECEBER" : "PAGAR",
     projeto: l.projeto,
+    categoria: l.categoria,
     os: l.os,
     titulos: Number(l.titulos),
     cents: Number(l.cents),
@@ -157,4 +162,80 @@ export async function conferenciaDeOsNoBanco(params: { companyId: string; conexa
   });
   const c = conferidos[0];
   return { ...resultado, taxaImpostos, pagarConferidos: { total: Number(c?.total ?? 0), conferidos: Number(c?.conferidos ?? 0) }, empresa: apelido };
+}
+
+// O DRILL-DOWN: os títulos por trás de uma linha da conferência — os de uma OS
+// (pelo nome do projeto, nas duas empresas) ou os sem projeto de um lado. O
+// mesmo recorte da conferência (competência, sem cancelados, sem as operações
+// entre as empresas na visão do grupo).
+export type TituloDaOs = {
+  id: string;
+  empresa: string;
+  natureza: string;
+  projeto: string | null;
+  os: string | null;
+  competencia: Date | null;
+  vencimento: Date | null;
+  parceiro: string | null;
+  categoria: string | null;
+  documento: string | null;
+  parcela: string | null;
+  valorCents: number;
+  pagoCents: number;
+  status: string | null;
+};
+
+export const TITULOS_NO_DETALHE = 400;
+
+export async function titulosDaConferencia(params: {
+  companyId: string;
+  conexaoId: string | null;
+  desde: Date;
+  ate: Date;
+  // O nome do projeto (OS) ou, sem ele, os títulos SEM projeto da natureza.
+  projetoNome?: string;
+  semProjeto?: "PAGAR" | "RECEBER";
+  fornecedor?: string;
+}): Promise<{ titulos: TituloDaOs[]; total: number }> {
+  const { companyId, conexaoId, desde, ate } = params;
+  let codigos: { conexaoId: string; codigo: string }[] = [];
+  if (params.projetoNome) {
+    const alvo = params.projetoNome.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+    const todos = await prisma.omieProjeto.findMany({ where: { companyId }, select: { conexaoId: true, codigo: true, nome: true } });
+    codigos = todos.filter((p) => p.nome.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim() === alvo);
+    // Projeto que não está no cadastro: o nome é o próprio código.
+    if (codigos.length === 0) codigos = [{ conexaoId: "", codigo: params.projetoNome }];
+  }
+  const projetoSql = params.projetoNome
+    ? Prisma.sql`AND (${Prisma.join(codigos.map((c) => (c.conexaoId ? Prisma.sql`(t."conexaoId" = ${c.conexaoId} AND t."projetoCodigo" = ${c.codigo})` : Prisma.sql`t."projetoCodigo" = ${c.codigo}`)), " OR ")})`
+    : Prisma.sql`AND NULLIF(t."projetoCodigo", '') IS NULL AND t.natureza = ${params.semProjeto ?? "PAGAR"}::${tipoDoBanco("OmieNaturezaTitulo")}`;
+  const fornecedorSql = params.fornecedor ? Prisma.sql`AND t."parceiroNome" = ${params.fornecedor}` : Prisma.empty;
+  const linhas = await prisma.$queryRaw<(Omit<TituloDaOs, "valorCents" | "pagoCents"> & { valorCents: bigint; pagoCents: bigint | null; total: bigint })[]>`
+    SELECT t.id, t."conexaoApelido" AS empresa, t.natureza::text AS natureza,
+           COALESCE(p.nome, t."projetoCodigo") AS projeto, t."ordemServicoNumero" AS os,
+           ${competenciaSql("t")} AS competencia, t."dataVencimento" AS vencimento, t."parceiroNome" AS parceiro,
+           COALESCE(t."categoriaDescricao", c.descricao, t."categoriaCodigo") AS categoria,
+           t."numeroDocumento" AS documento, t."numeroParcela" AS parcela,
+           t."valorDocumentoCents"::bigint AS "valorCents", t."valorPagoCents"::bigint AS "pagoCents", t.status,
+           COUNT(*) OVER ()::bigint AS total
+      FROM ${tabela("OmieTitulo")} t
+      LEFT JOIN ${tabela("OmieCategoria")} c ON c."conexaoId" = t."conexaoId" AND c.codigo = t."categoriaCodigo"
+      LEFT JOIN ${tabela("OmieProjeto")} p ON p."conexaoId" = t."conexaoId" AND p.codigo = t."projetoCodigo"
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND ${semProvisaoFuturaSql("t")}
+       AND ${competenciaSql("t")} >= ${desde}
+       AND ${competenciaSql("t")} <= ${ate}
+       ${filtroConexaoTitulo(conexaoId, companyId)}
+       ${projetoSql}
+       ${fornecedorSql}
+     ORDER BY t.natureza, ${competenciaSql("t")}, t."valorDocumentoCents" DESC
+     LIMIT ${TITULOS_NO_DETALHE}`;
+  return {
+    total: Number(linhas[0]?.total ?? 0),
+    titulos: linhas.map(({ total, valorCents, pagoCents, ...t }) => {
+      void total;
+      return { ...t, valorCents: Number(valorCents), pagoCents: Number(pagoCents ?? 0) };
+    }),
+  };
 }

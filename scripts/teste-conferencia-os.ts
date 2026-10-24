@@ -27,9 +27,9 @@ function pura() {
     g({ projeto: "P2", cents: 700_00, parceiros: ["TRANSCOMIN"] }),
     // Custo acima da cobrança.
     g({ projeto: "P3", cents: 900_00, parceiros: ["TRANSCOMIN"] }),
-    g({ natureza: "RECEBER", projeto: "P3", cents: 400_00, parceiros: ["FEMSA"] }),
+    g({ natureza: "RECEBER", projeto: "P3", cents: 400_00, parceiros: ["FEMSA"], categoria: "Clientes - Serviços Prestados" }),
     // Mesmo projeto pelo nome nas duas empresas: custo na MCZ, cobrança na Azul.
-    g({ conexaoId: "MC", projeto: "Q9", cents: 200_00, parceiros: ["OFICINA"] }),
+    g({ conexaoId: "MC", projeto: "Q9", cents: 200_00, parceiros: ["OFICINA"], categoria: "Compra de Serviços" }),
     g({ natureza: "RECEBER", projeto: "P4", cents: 250_00 }),
     // A mesma OS 555 no projeto P1 (a pagar) e P2 (a receber): lançamento trocado.
     g({ projeto: "P1", cents: 10_00, os: "555" }),
@@ -58,12 +58,31 @@ function pura() {
   conferir("resultado = receita − tributos − custo", [os1.impostosCents, os1.resultadoCents], [50_00, 500_00 - 50_00 - 310_00]);
   conferir("faturada com prejuízo", r.comPrejuizo.map((p) => [p.nome, p.resultadoCents]), [["SMPED", 400_00 - 40_00 - 900_00]]);
   // Fora do padrão: 4 OS do mesmo cliente com ~50% e uma com -20%.
-  const padrao = ["A", "B", "C", "D", "E"].map((x, i) => [
+  const padrao = ["901", "902", "903", "904", "905"].map((x, i) => [
     g({ projeto: x, cents: i === 4 ? 120_00 : 50_00 }),
     g({ natureza: "RECEBER", projeto: x, cents: 100_00, parceiros: ["CLIENTE Z"] }),
   ]).flat();
   const fp = conferirOs({ grupos: padrao, pagarSemProjeto: [], nomeDoProjeto: new Map(), empresa: new Map() });
-  conferir("resultado fora do padrão do cliente", fp.foraDoPadrao.map((f) => [f.projeto.nome, f.medianaPercent]), [["E", 50]]);
+  conferir("resultado fora do padrão do cliente", fp.foraDoPadrao.map((f) => [f.projeto.nome, f.medianaPercent]), [["905", 50]]);
+  // A regra do que é OS: só números, ou compra/receita de serviços; multa e
+  // diretoria fora.
+  const regra = conferirOs({
+    grupos: [
+      g({ projeto: "D1", cents: 900_00, categoria: "Despesas da Diretoria" }),
+      g({ projeto: "M1", cents: 300_00, categoria: "Multas de Trânsito" }),
+      g({ projeto: "N1", cents: 500_00, categoria: "Combustível" }),
+      g({ projeto: "N1", cents: 80_00, categoria: "Multas de Trânsito" }),
+      g({ projeto: "S1", cents: 100_00, categoria: "Compra de Serviços" }),
+      g({ projeto: "E1", cents: 40_00, categoria: "Aluguel de imóveis" }),
+    ],
+    pagarSemProjeto: [],
+    nomeDoProjeto: new Map([["AZ|D1", "DIRETORIA"], ["AZ|M1", "MULTAS"], ["AZ|N1", "15001"], ["AZ|S1", "SMPED"], ["AZ|E1", "ESCRITORIO"]]),
+    empresa: new Map([["AZ", "AZUL"]]),
+  });
+  conferir("só números ou serviços entram como OS", regra.projetos.map((p) => p.nome).sort(), ["15001", "SMPED"]);
+  conferir("multa sai da OS numérica", regra.projetos.find((p) => p.nome === "15001")?.custoCents, 500_00);
+  conferir("fora da conferência: o projeto de texto sem serviço", regra.foraDaConferencia.map((f) => f.nome), ["ESCRITORIO"]);
+  conferir("multas e diretoria listadas", regra.lancamentosExcluidos.map((e) => [e.projeto, e.cents]).sort(), [["15001", 80_00], ["DIRETORIA", 900_00], ["MULTAS", 300_00]].sort());
   conferir("OS do projeto", r.projetos.find((p) => p.nome === "14638")?.osDoPagar, ["100", "555"]);
 }
 
@@ -91,7 +110,7 @@ async function banco() {
   const prisma = new PrismaClient({ datasources: { db: { url } } });
   const { fixarHojeParaTeste } = await import("../src/lib/controladoria/competencia");
   fixarHojeParaTeste(new Date(2027, 0, 1));
-  const { conferenciaDeOsNoBanco } = await import("../src/lib/controladoria/conferenciaDeOsNoBanco");
+  const { conferenciaDeOsNoBanco, titulosDaConferencia } = await import("../src/lib/controladoria/conferenciaDeOsNoBanco");
   const E = "empresa-conferencia-os";
   const limpar = async () => {
     await prisma.omieTitulo.deleteMany({ where: { companyId: E } });
@@ -131,6 +150,10 @@ async function banco() {
     conferir("OS do a receber", r.projetos.find((p) => p.nome === "14638")?.osDoReceber, ["11972"]);
     conferir("custo de operação sem projeto", r.pagarSemProjeto.map((s) => [s.parceiro, s.categoria, s.cents]), [["TRANSCOMIN", "Compra de Serviços", 120_00]]);
     conferir("conferidos do a pagar", r.pagarConferidos, { total: 5, conferidos: 2 });
+    const det = await titulosDaConferencia({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), projetoNome: "14641" });
+    conferir("drill-down da OS pelo nome", [det.total, det.titulos.map((x) => x.valorCents).sort((a, b) => a - b)], [2, [80_00, 700_00]]);
+    const sem = await titulosDaConferencia({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), semProjeto: "PAGAR", fornecedor: "TRANSCOMIN" });
+    conferir("drill-down do a pagar sem projeto", [sem.total, sem.titulos[0]?.valorCents], [1, 120_00]);
     conferir("documento em duplicidade", r.duplicidades.map((d) => [d.documento, d.vezes, d.projetos.sort()]), [["18953", 2, ["14638", "14641"]]]);
   } finally {
     await limpar();

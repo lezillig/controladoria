@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { conferenciaDeOsNoBanco } from "@/lib/controladoria/conferenciaDeOsNoBanco";
+import { conferenciaDeOsNoBanco, titulosDaConferencia, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
 import type { ProjetoConferido } from "@/lib/controladoria/conferenciaDeOs";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
@@ -14,7 +14,7 @@ const PERIODOS = [1, 3, 6, 12, 0];
 const LISTA = 60;
 const lista = (l: string[], n = 3) => (l.length === 0 ? "—" : l.slice(0, n).join(", ") + (l.length > n ? ` +${l.length - n}` : ""));
 
-export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string; ano?: string }> }) {
+export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string; ano?: string; os?: string; lista?: string; fornecedor?: string }> }) {
   const params = await searchParams;
   const { session, escopo, periodo, conexoes, config } = await escopoDaPagina("titulos", params.empresa);
   const meses = params.meses !== undefined && PERIODOS.includes(Number(params.meses)) ? Number(params.meses) : 3;
@@ -28,6 +28,41 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
   const desde = ano ? new Date(ano, 0, 1) : meses === 0 ? config.dataInicioBase : new Date(ate.getFullYear(), ate.getMonth() - (meses - 1), 1);
   const podeInvestigar = await podeAcao(session, "investigar");
   const r = await conferenciaDeOsNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate });
+
+  // O DRILL-DOWN: os títulos de uma OS (?os=) ou os sem projeto de um lado
+  // (?lista=), no mesmo recorte da tela.
+  const semProjeto = params.lista === "receber-sem-projeto" ? "RECEBER" : params.lista === "pagar-sem-projeto" ? "PAGAR" : null;
+  const detalhe =
+    params.os || semProjeto
+      ? await titulosDaConferencia({
+          companyId: session.companyId,
+          conexaoId: escopo.conexaoId,
+          desde,
+          ate,
+          projetoNome: params.os,
+          semProjeto: semProjeto ?? undefined,
+          fornecedor: params.fornecedor,
+        })
+      : null;
+  const filtroDaTela = () => {
+    const q = new URLSearchParams();
+    if (params.empresa) q.set("empresa", params.empresa);
+    if (ano) q.set("ano", String(ano));
+    else if (meses !== 3) q.set("meses", String(meses));
+    return q;
+  };
+  const abrir = (extra: Record<string, string>) => {
+    const q = filtroDaTela();
+    for (const [k, v] of Object.entries(extra)) q.set(k, v);
+    return `/conferencia-os?${q}#detalhe`;
+  };
+  const fechar = () => `/conferencia-os${filtroDaTela().size ? `?${filtroDaTela()}` : ""}`;
+  const NomeOs = ({ nome, empresas = [] }: { nome: string; empresas?: string[] }) => (
+    <Link href={abrir({ os: nome })} className="font-medium text-blue-800 hover:underline" title="Ver os títulos desta OS">
+      {nome}
+      {empresas.length > 1 && <span className="ml-1 text-xs text-amber-700">({empresas.join(" + ")})</span>}
+    </Link>
+  );
 
   const rotaAno = (a: number) => `/conferencia-os?${new URLSearchParams({ ...(params.empresa ? { empresa: params.empresa } : {}), ano: String(a) })}`;
   const rota = (m: number) => {
@@ -56,10 +91,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
   const pctTexto = (v: number | null) => (v === null ? "—" : fmtPercent(v, 1));
 
   const linhaProjeto = (p: ProjetoConferido, comReceita = true) => [
-    <span key="n" className="font-medium text-slate-800">
-      {p.nome}
-      {p.empresas.length > 1 && <span className="ml-1 text-xs text-amber-700">({p.empresas.join(" + ")})</span>}
-    </span>,
+    <NomeOs key="n" nome={p.nome} empresas={p.empresas} />,
     lista(p.fornecedores),
     comReceita ? lista(p.clientes) : null,
     fmtBRL(p.custoCents),
@@ -107,12 +139,66 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi rotulo="A pagar com projeto" valor={fmtPercent(pct(pagar.comProjetoCents, pagar.cents), 0)} apoio={`${fmtNumero(pagar.comProjeto)} de ${fmtNumero(pagar.titulos)} títulos · ${fmtNumero(pagar.comOs)} com OS`} tom={pct(pagar.comProjetoCents, pagar.cents) === null ? "neutro" : (pct(pagar.comProjetoCents, pagar.cents) ?? 0) >= 60 ? "bom" : "atencao"} />
-        <Kpi rotulo="A receber com projeto" valor={fmtPercent(pct(receber.comProjetoCents, receber.cents), 0)} apoio={`${fmtNumero(receber.comProjeto)} de ${fmtNumero(receber.titulos)} títulos · ${fmtNumero(receber.comOs)} com OS`} />
-        <Kpi rotulo="Custo sem cobrança" valor={fmtBRL(r.custoSemReceita.reduce((s, p) => s + p.custoCents, 0))} apoio={`${r.custoSemReceita.length} projetos`} tom={r.custoSemReceita.length > 0 ? "ruim" : "bom"} />
-        <Kpi rotulo="OS com prejuízo" valor={fmtBRL(r.comPrejuizo.reduce((s, p) => s + p.resultadoCents, 0))} apoio={`${r.comPrejuizo.length} OS faturadas`} tom={r.comPrejuizo.length > 0 ? "ruim" : "bom"} />
+        <Link href={abrir({ lista: "pagar-sem-projeto" })} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
+          <Kpi rotulo="A pagar com projeto" valor={fmtPercent(pct(pagar.comProjetoCents, pagar.cents), 0)} apoio={`${fmtNumero(pagar.comProjeto)} de ${fmtNumero(pagar.titulos)} títulos · ${fmtNumero(pagar.comOs)} com OS`} tom={pct(pagar.comProjetoCents, pagar.cents) === null ? "neutro" : (pct(pagar.comProjetoCents, pagar.cents) ?? 0) >= 60 ? "bom" : "atencao"} />
+        </Link>
+        <Link href={abrir({ lista: "receber-sem-projeto" })} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
+          <Kpi rotulo="A receber com projeto" valor={fmtPercent(pct(receber.comProjetoCents, receber.cents), 0)} apoio={`${fmtNumero(receber.comProjeto)} de ${fmtNumero(receber.titulos)} títulos · ${fmtNumero(receber.comOs)} com OS`} />
+        </Link>
+        <Link href={"#nao-faturada"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
+          <Kpi rotulo="Custo sem cobrança" valor={fmtBRL(r.custoSemReceita.reduce((s, p) => s + p.custoCents, 0))} apoio={`${r.custoSemReceita.length} projetos`} tom={r.custoSemReceita.length > 0 ? "ruim" : "bom"} />
+        </Link>
+        <Link href={"#prejuizo"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
+          <Kpi rotulo="OS com prejuízo" valor={fmtBRL(r.comPrejuizo.reduce((s, p) => s + p.resultadoCents, 0))} apoio={`${r.comPrejuizo.length} OS faturadas`} tom={r.comPrejuizo.length > 0 ? "ruim" : "bom"} />
+        </Link>
       </div>
 
+      {detalhe && (
+        <section id="detalhe">
+          <Secao
+            titulo={
+              params.os
+                ? `OS ${params.os} — ${detalhe.total} título(s) no período`
+                : `${semProjeto === "RECEBER" ? "A receber" : "A pagar"} sem projeto${params.fornecedor ? ` — ${params.fornecedor}` : ""} — ${detalhe.total} título(s)`
+            }
+            descricao={detalhe.total > TITULOS_NO_DETALHE ? `Mostrando os ${TITULOS_NO_DETALHE} primeiros.` : "Todos os títulos do recorte, a pagar e a receber, por competência."}
+            acao={
+              <Link href={fechar()} className="text-xs text-slate-500 hover:text-slate-800">
+                Fechar ✕
+              </Link>
+            }
+          >
+            <Tabela
+              colunas={["Lado", "Empresa", "Competência", "Vencimento", "Parceiro", "Categoria", "Documento", "Parcela", "Projeto", "OS", "Valor", "Pago", "Situação"]}
+              alinharDireita={[10, 11]}
+              linhas={detalhe.titulos.map((t) => [
+                t.natureza === "PAGAR" ? <span key="l" className="text-red-700">a pagar</span> : <span key="l" className="text-emerald-700">a receber</span>,
+                t.empresa,
+                t.competencia ? fmtData(t.competencia) : "—",
+                t.vencimento ? fmtData(t.vencimento) : "—",
+                t.parceiro ?? "—",
+                t.categoria ?? "—",
+                t.documento ?? "—",
+                t.parcela ?? "—",
+                t.projeto ?? "—",
+                t.os ?? "—",
+                fmtBRL(t.valorCents),
+                fmtBRL(t.pagoCents),
+                t.status ?? "—",
+              ])}
+              vazio="Nenhum título no recorte."
+            />
+            {params.os && detalhe.titulos.length > 0 && (
+              <p className="mt-3 text-xs text-slate-500">
+                A pagar {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "PAGAR").reduce((s, t) => s + t.valorCents, 0))} · a receber{" "}
+                {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "RECEBER").reduce((s, t) => s + t.valorCents, 0))}. Multa e diretoria aparecem aqui, mas ficam fora da conta da OS.
+              </p>
+            )}
+          </Secao>
+        </section>
+      )}
+
+      <section id="prejuizo">
       <Secao
         titulo={`1. OS faturada com prejuízo — ${r.comPrejuizo.length}`}
         descricao={`Receita a receber − tributos sobre a receita − despesas do a pagar, no mesmo projeto. Tributos pela taxa efetiva de deduções do DRE no período (${taxas || "sem receita no período"}).`}
@@ -121,10 +207,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
           colunas={col(["Projeto", "Clientes", "Fornecedores", "Receita", "Tributos", "Custo", "Resultado", "%", "OS"])}
           alinharDireita={[3, 4, 5, 6, 7]}
           linhas={r.comPrejuizo.slice(0, LISTA).map((p) => [
-            <span key="n" className="font-medium text-slate-800">
-              {p.nome}
-              {p.empresas.length > 1 && <span className="ml-1 text-xs text-amber-700">({p.empresas.join(" + ")})</span>}
-            </span>,
+            <NomeOs key="n" nome={p.nome} empresas={p.empresas} />,
             lista(p.clientes),
             lista(p.fornecedores),
             fmtBRL(p.receitaCents),
@@ -138,7 +221,9 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
           vazio="Nenhuma OS faturada com prejuízo no período."
         />
       </Secao>
+      </section>
 
+      <section id="nao-faturada">
       <Secao titulo={`2. OS com despesa e sem cobrança (não faturada) — ${r.custoSemReceita.length}`} descricao="O projeto tem conta a pagar no período e nenhuma conta a receber: serviço prestado e não faturado, ou custo lançado no projeto errado. Data em laranja: custo do último mês, que ainda pode faturar no mês seguinte (a auditoria só aponta depois de 30 dias, regra CR-OS-NAO-FATURADA).">
         <Tabela
           colunas={col(["Projeto", "Fornecedores", "Custo", "Último custo", "OS"])}
@@ -147,6 +232,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
           vazio="Nenhuma OS com despesa e sem cobrança."
         />
       </Secao>
+      </section>
 
       <Secao titulo="3. Inconsistências entre as OS" descricao="Lançamentos que não fecham entre si: a mesma OS em projetos diferentes, o mesmo documento duas vezes, a OS muito abaixo do padrão do cliente, o custo de operação sem OS e a OS cobrada sem custo.">
         <div className="space-y-6">
@@ -155,7 +241,17 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
             <p className="mb-2 text-xs text-slate-500">A ordem de serviço (aba Diversos) aparece em mais de um projeto, no a pagar, no a receber ou entre os dois: um dos lançamentos está no projeto errado.</p>
             <Tabela
               colunas={["OS", "Empresa", "Projetos"]}
-              linhas={r.osEmProjetosDiferentes.slice(0, LISTA).map((o) => [o.os, o.empresa, o.projetos.map((p) => `${p.nome} (${p.natureza}, ${fmtBRL(p.cents)})`).join(" · ")])}
+              linhas={r.osEmProjetosDiferentes.slice(0, LISTA).map((o) => [
+                o.os,
+                o.empresa,
+                <span key="p" className="space-x-3">
+                  {o.projetos.map((p) => (
+                    <span key={p.nome}>
+                      <NomeOs nome={p.nome} /> <span className="text-xs text-slate-500">({p.natureza}, {fmtBRL(p.cents)})</span>
+                    </span>
+                  ))}
+                </span>,
+              ])}
               vazio={pagar.comOs + receber.comOs === 0 ? "Nenhum título com ordem de serviço no período." : "Nenhuma OS em mais de um projeto."}
             />
           </div>
@@ -165,7 +261,19 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
             <Tabela
               colunas={["Lado", "Empresa", "Parceiro", "Documento", "Valor", "Vezes", "Projetos"]}
               alinharDireita={[4, 5]}
-              linhas={r.duplicidades.slice(0, LISTA).map((d) => [d.natureza, d.empresa, d.parceiro, d.documento, fmtBRL(d.valorCents), d.vezes, lista(d.projetos, 4)])}
+              linhas={r.duplicidades.slice(0, LISTA).map((d) => [
+                d.natureza,
+                d.empresa,
+                d.parceiro,
+                d.documento,
+                fmtBRL(d.valorCents),
+                d.vezes,
+                <span key="p" className="space-x-2">
+                  {d.projetos.slice(0, 4).map((p) => (
+                    <NomeOs key={p} nome={p} />
+                  ))}
+                </span>,
+              ])}
               vazio="Nenhum documento repetido."
             />
           </div>
@@ -176,7 +284,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
               colunas={col(["Projeto", "Cliente", "Resultado", "%", "Mediana do cliente", "OS do cliente"])}
               alinharDireita={[2, 3, 4, 5]}
               linhas={r.foraDoPadrao.slice(0, LISTA).map((f) => [
-                f.projeto.nome,
+                <NomeOs key="n" nome={f.projeto.nome} />,
                 f.cliente,
                 fmtBRL(f.projeto.resultadoCents),
                 pctTexto(f.projeto.resultadoPercent),
@@ -193,7 +301,11 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
             <Tabela
               colunas={["Fornecedor", "Categoria", "Empresa", "Títulos", "Valor", "Última competência"]}
               alinharDireita={[3, 4]}
-              linhas={r.pagarSemProjeto.slice(0, LISTA).map((x) => [x.parceiro, x.categoria, r.empresa.get(x.conexaoId) ?? "?", fmtNumero(x.titulos), fmtBRL(x.cents), x.ultimaCompetencia ? fmtData(x.ultimaCompetencia) : "—"])}
+              linhas={r.pagarSemProjeto.slice(0, LISTA).map((x) => [
+                <Link key="f" href={abrir({ lista: "pagar-sem-projeto", fornecedor: x.parceiro })} className="text-blue-800 hover:underline">
+                  {x.parceiro}
+                </Link>,
+                x.categoria, r.empresa.get(x.conexaoId) ?? "?", fmtNumero(x.titulos), fmtBRL(x.cents), x.ultimaCompetencia ? fmtData(x.ultimaCompetencia) : "—"])}
               vazio="Todo o custo de operação do período tem projeto."
             />
           </div>
@@ -203,8 +315,34 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
             <Tabela
               colunas={["Projeto", "Clientes", "Cobrança", "Última cobrança", "OS"]}
               alinharDireita={[2]}
-              linhas={r.receitaSemCusto.slice(0, LISTA).map((p) => [p.nome, lista(p.clientes), fmtBRL(p.receitaCents), p.ultimaReceita ? fmtData(p.ultimaReceita) : "—", lista(p.osDoReceber, 4)])}
+              linhas={r.receitaSemCusto.slice(0, LISTA).map((p) => [<NomeOs key="n" nome={p.nome} empresas={p.empresas} />, lista(p.clientes), fmtBRL(p.receitaCents), p.ultimaReceita ? fmtData(p.ultimaReceita) : "—", lista(p.osDoReceber, 4)])}
               vazio="Nenhuma."
+            />
+          </div>
+        </div>
+      </Secao>
+
+      <Secao
+        titulo={`Fora da conferência — ${r.foraDaConferencia.length} projeto(s) e ${r.lancamentosExcluidos.length} lançamento(s)`}
+        descricao="Entra como OS o projeto com nome só de números, ou que envolva compra de serviços (a pagar) ou receita de serviços (a receber). Multa e despesa da diretoria não entram em OS nenhuma. Confira se algo aqui deveria estar dentro."
+      >
+        <div className="space-y-6">
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-800">Projetos que não são OS — {r.foraDaConferencia.length}</h3>
+            <Tabela
+              colunas={["Projeto", "Empresa", "Categorias", "Títulos", "A pagar", "A receber"]}
+              alinharDireita={[3, 4, 5]}
+              linhas={r.foraDaConferencia.slice(0, 100).map((f) => [<NomeOs key="n" nome={f.nome} />, f.empresas.join(", "), lista(f.categorias, 3), fmtNumero(f.titulos), fmtBRL(f.custoCents), fmtBRL(f.receitaCents)])}
+              vazio="Todos os projetos do período são OS."
+            />
+          </div>
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-slate-800">Multa e diretoria tiradas das OS — {r.lancamentosExcluidos.length}</h3>
+            <Tabela
+              colunas={["Projeto", "Categoria", "Lado", "Títulos", "Valor"]}
+              alinharDireita={[3, 4]}
+              linhas={r.lancamentosExcluidos.slice(0, 100).map((e) => [<NomeOs key="n" nome={e.projeto} />, e.categoria, e.natureza, fmtNumero(e.titulos), fmtBRL(e.cents)])}
+              vazio="Nenhum lançamento de multa ou diretoria em projeto."
             />
           </div>
         </div>

@@ -14,11 +14,28 @@ export type GrupoOs = {
   natureza: "PAGAR" | "RECEBER";
   projeto: string | null;
   os: string | null;
+  // A descrição da categoria (os grupos vêm somados por categoria também).
+  categoria?: string | null;
   titulos: number;
   cents: number;
   ultimaCompetencia: Date | null;
   parceiros: string[];
 };
+
+// O QUE É OS NESTA CONFERÊNCIA (pedido da operação):
+//   - projeto cujo nome é só número (14638) — a OS da operação; ou
+//   - projeto que envolve compra de serviços (a pagar) ou receita de serviços
+//     (a receber), mesmo com nome de texto (SMPED).
+// E, dentro de qualquer OS, multa e despesa da diretoria NÃO entram: não são
+// custo da viagem. Tudo o que fica de fora vai para a lista "fora da
+// conferência", para ser visto.
+export const PROJETO_NUMERICO = /^\d+$/;
+export const CATEGORIA_SERVICO_A_PAGAR = /compra\s+de\s+servi/i;
+export const CATEGORIA_SERVICO_A_RECEBER = /servi[cç]/i;
+export const CATEGORIA_FORA_DA_OS = /multa|diretoria/i;
+
+export type ForaDaConferencia = { nome: string; empresas: string[]; custoCents: number; receitaCents: number; titulos: number; categorias: string[] };
+export type LancamentoExcluido = { projeto: string; categoria: string; natureza: string; cents: number; titulos: number };
 
 export type PagarSemProjeto = { conexaoId: string; parceiro: string; categoria: string; titulos: number; cents: number; ultimaCompetencia: Date | null };
 
@@ -66,6 +83,10 @@ export type ResultadoConferenciaOs = {
   duplicidades: Duplicidade[];
   osEmProjetosDiferentes: OsEmProjetos[];
   pagarSemProjeto: PagarSemProjeto[];
+  // Projetos que não são OS pela regra (PROJETO_NUMERICO / categorias de
+  // serviço), e os lançamentos de multa e diretoria tirados das OS.
+  foraDaConferencia: ForaDaConferencia[];
+  lancamentosExcluidos: LancamentoExcluido[];
 };
 
 // A mesma OS escrita como projeto nas duas empresas ("14638" na Azul e na
@@ -86,10 +107,10 @@ export function conferirOs(params: {
   taxaImpostos?: Map<string, number>;
   duplicidades?: Duplicidade[];
 }): ResultadoConferenciaOs {
-  const { grupos, nomeDoProjeto, empresa } = params;
+  const { nomeDoProjeto, empresa } = params;
   const taxa = (conexaoId: string) => params.taxaImpostos?.get(conexaoId) ?? 0;
   const cobertura = (natureza: "PAGAR" | "RECEBER"): Cobertura => {
-    const l = grupos.filter((g) => g.natureza === natureza);
+    const l = params.grupos.filter((g) => g.natureza === natureza);
     const com = l.filter((g) => g.projeto);
     return {
       titulos: l.reduce((s, g) => s + g.titulos, 0),
@@ -101,6 +122,42 @@ export function conferirOs(params: {
   };
 
   const nome = (g: GrupoOs) => nomeDoProjeto.get(`${g.conexaoId}|${g.projeto}`) ?? g.projeto!;
+
+  // 1. Multa e diretoria saem de qualquer OS.
+  const excluidos = new Map<string, LancamentoExcluido>();
+  const semExcluidos = params.grupos.filter((g) => {
+    if (!g.projeto || !CATEGORIA_FORA_DA_OS.test(g.categoria ?? "")) return true;
+    const k = `${chaveDoProjeto(nome(g))}|${g.categoria}|${g.natureza}`;
+    const e = excluidos.get(k) ?? { projeto: nome(g), categoria: g.categoria ?? "", natureza: g.natureza === "PAGAR" ? "a pagar" : "a receber", cents: 0, titulos: 0 };
+    e.cents += g.cents;
+    e.titulos += g.titulos;
+    excluidos.set(k, e);
+    return false;
+  });
+  // 2. É OS: nome só com números, ou envolve compra/receita de serviços.
+  const ehOs = new Set<string>();
+  for (const g of semExcluidos) {
+    if (!g.projeto) continue;
+    const n = nome(g);
+    const servico = g.natureza === "PAGAR" ? CATEGORIA_SERVICO_A_PAGAR.test(g.categoria ?? "") : CATEGORIA_SERVICO_A_RECEBER.test(g.categoria ?? "");
+    if (PROJETO_NUMERICO.test(n.trim()) || servico) ehOs.add(chaveDoProjeto(n));
+  }
+  const fora = new Map<string, ForaDaConferencia & { cats: Map<string, number> }>();
+  const grupos = semExcluidos.filter((g) => {
+    if (!g.projeto || ehOs.has(chaveDoProjeto(nome(g)))) return true;
+    const k = chaveDoProjeto(nome(g));
+    const f = fora.get(k) ?? { nome: nome(g), empresas: [], custoCents: 0, receitaCents: 0, titulos: 0, categorias: [], cats: new Map() };
+    f.empresas = unicos([...f.empresas, empresa.get(g.conexaoId) ?? "?"]);
+    if (g.natureza === "PAGAR") f.custoCents += g.cents;
+    else f.receitaCents += g.cents;
+    f.titulos += g.titulos;
+    if (g.categoria) f.cats.set(g.categoria, (f.cats.get(g.categoria) ?? 0) + Math.abs(g.cents));
+    fora.set(k, f);
+    return false;
+  });
+  const foraDaConferencia: ForaDaConferencia[] = [...fora.values()]
+    .map(({ cats, ...f }) => ({ ...f, categorias: [...cats.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c) }))
+    .sort((a, b) => b.custoCents + b.receitaCents - (a.custoCents + a.receitaCents));
   const porChave = new Map<string, ProjetoConferido>();
   for (const g of grupos) {
     if (!g.projeto) continue;
@@ -172,7 +229,9 @@ export function conferirOs(params: {
     custoAcimaDaReceita: projetos.filter((p) => p.receitaCents > 0 && p.custoCents > p.receitaCents).sort((a, b) => a.margemCents - b.margemCents),
     comPrejuizo: projetos.filter((p) => p.receitaCents > 0 && p.custoCents > 0 && p.resultadoCents < 0).sort((a, b) => a.resultadoCents - b.resultadoCents),
     foraDoPadrao,
-    duplicidades: [...(params.duplicidades ?? [])].sort((a, b) => b.valorCents * (b.vezes - 1) - a.valorCents * (a.vezes - 1)),
+    foraDaConferencia,
+    lancamentosExcluidos: [...excluidos.values()].sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents)),
+    duplicidades: (params.duplicidades ?? []).filter((d) => d.projetos.some((p) => ehOs.has(chaveDoProjeto(p)))).sort((a, b) => b.valorCents * (b.vezes - 1) - a.valorCents * (a.vezes - 1)),
     receitaSemCusto: projetos.filter((p) => p.receitaCents > 0 && p.custoCents === 0).sort((a, b) => b.receitaCents - a.receitaCents),
     osEmProjetosDiferentes,
     pagarSemProjeto: [...params.pagarSemProjeto].sort((a, b) => b.cents - a.cents),
