@@ -88,8 +88,10 @@ export async function conferenciaDeOsNoBanco(params: { companyId: string; conexa
              t."numeroDocumento" AS documento, t."valorDocumentoCents"::bigint AS valor, COUNT(*)::bigint AS vezes,
              array_agg(DISTINCT t."projetoCodigo") AS projetos
         FROM ${tabela("OmieTitulo")} t
+        LEFT JOIN ${tabela("OmieCategoria")} c ON c."conexaoId" = t."conexaoId" AND c.codigo = t."categoriaCodigo"
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
+         AND COALESCE(t."categoriaDescricao", c.descricao, '') !~* ${CATEGORIA_FORA_DA_OS.source}
          AND NULLIF(t."projetoCodigo", '') IS NOT NULL
          AND NULLIF(btrim(t."numeroDocumento"), '') IS NOT NULL
          AND ${competenciaSql("t")} >= ${desde}

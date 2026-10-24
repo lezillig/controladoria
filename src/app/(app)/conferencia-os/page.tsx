@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { conferenciaDeOsNoBanco, titulosDaConferencia, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
-import type { ProjetoConferido } from "@/lib/controladoria/conferenciaDeOs";
+import { CATEGORIA_FORA_DA_OS, type ProjetoConferido } from "@/lib/controladoria/conferenciaDeOs";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
 import { escopoDaPagina, podeAcao } from "../_dados";
@@ -184,14 +184,14 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
                 t.os ?? "—",
                 fmtBRL(t.valorCents),
                 fmtBRL(t.pagoCents),
-                t.status ?? "—",
+                CATEGORIA_FORA_DA_OS.test(t.categoria ?? "") ? <span key="s" className="text-slate-400">desconsiderada</span> : (t.status ?? "—"),
               ])}
               vazio="Nenhum título no recorte."
             />
             {params.os && detalhe.titulos.length > 0 && (
               <p className="mt-3 text-xs text-slate-500">
                 A pagar {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "PAGAR").reduce((s, t) => s + t.valorCents, 0))} · a receber{" "}
-                {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "RECEBER").reduce((s, t) => s + t.valorCents, 0))}. Multa e diretoria aparecem aqui, mas ficam fora da conta da OS.
+                {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "RECEBER").reduce((s, t) => s + t.valorCents, 0))}. Multa (ex.: Multa de Trânsito) e diretoria aparecem como &ldquo;desconsiderada&rdquo; e ficam fora da conta da OS.
               </p>
             )}
           </Secao>
@@ -324,7 +324,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
 
       <Secao
         titulo={`Fora da conferência — ${r.foraDaConferencia.length} projeto(s) e ${r.lancamentosExcluidos.length} lançamento(s)`}
-        descricao="Entra como OS só o projeto com nome de números (14638). Projeto com nome de texto — contrato (SMPED, Escolar Cajamar) ou veículo (SSB0F16) — fica aqui. Multa e despesa da diretoria não entram em OS nenhuma. Confira se algo aqui deveria estar dentro."
+        descricao="Entra como OS só o projeto cujo nome é um número de 4 a 6 dígitos (14638). Número comprido (5935413299) também fica fora. Projeto com nome de texto — contrato (SMPED, Escolar Cajamar) ou veículo (SSB0F16) — fica aqui. Multa e despesa da diretoria não entram em OS nenhuma. Confira se algo aqui deveria estar dentro."
       >
         <div className="space-y-6">
           <div>

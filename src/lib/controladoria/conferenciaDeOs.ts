@@ -23,13 +23,15 @@ export type GrupoOs = {
 };
 
 // O QUE É OS NESTA CONFERÊNCIA (pedido da operação): o projeto cujo nome é
-// SÓ NÚMERO (14638). Projeto com nome de texto é contrato (SMPED, Escolar
+// SÓ NÚMERO, com 4 a 6 dígitos (14638). Projeto com nome de texto é contrato (SMPED, Escolar
 // Cajamar) ou veículo (SSB0F16), não ordem de serviço — mesmo quando tem
 // compra ou receita de serviços — e o resultado dele não é o de uma viagem.
 // E, dentro de qualquer OS, multa e despesa da diretoria NÃO entram: não são
 // custo da viagem. Tudo o que fica de fora vai para a lista "fora da
 // conferência", para ser visto.
-export const PROJETO_NUMERICO = /^\d+$/;
+// De 4 a 6 dígitos: a numeração das OS (14638). Número comprido
+// (5935413299) é outra coisa lançada como projeto — fatura, cadastro.
+export const PROJETO_NUMERICO = /^\d{4,6}$/;
 export const CATEGORIA_FORA_DA_OS = /multa|diretoria/i;
 
 export type ForaDaConferencia = { nome: string; empresas: string[]; custoCents: number; receitaCents: number; titulos: number; categorias: string[] };
@@ -108,7 +110,8 @@ export function conferirOs(params: {
   const { nomeDoProjeto, empresa } = params;
   const taxa = (conexaoId: string) => params.taxaImpostos?.get(conexaoId) ?? 0;
   const cobertura = (natureza: "PAGAR" | "RECEBER"): Cobertura => {
-    const l = params.grupos.filter((g) => g.natureza === natureza);
+    // Multa e diretoria fora também da cobertura: são desconsideradas aqui.
+    const l = params.grupos.filter((g) => g.natureza === natureza && !CATEGORIA_FORA_DA_OS.test(g.categoria ?? ""));
     const com = l.filter((g) => g.projeto);
     return {
       titulos: l.reduce((s, g) => s + g.titulos, 0),
