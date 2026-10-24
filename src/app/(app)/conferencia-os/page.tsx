@@ -5,6 +5,7 @@ import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/form
 import { larguraPainel } from "@/lib/ui";
 import { escopoDaPagina, podeAcao } from "../_dados";
 import { Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
+import FiltroCategorias from "./FiltroCategorias";
 
 // CONFERÊNCIA DE OS — o projeto das contas a pagar contra o das contas a
 // receber. Ver src/lib/controladoria/conferenciaDeOs.ts.
@@ -14,7 +15,7 @@ const PERIODOS = [1, 3, 6, 12, 0];
 const LISTA = 60;
 const lista = (l: string[], n = 3) => (l.length === 0 ? "—" : l.slice(0, n).join(", ") + (l.length > n ? ` +${l.length - n}` : ""));
 
-export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string; ano?: string; os?: string; lista?: string; fornecedor?: string }> }) {
+export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string; ano?: string; os?: string; lista?: string; fornecedor?: string; cat?: string | string[] }> }) {
   const params = await searchParams;
   const { session, escopo, periodo, conexoes, config } = await escopoDaPagina("titulos", params.empresa);
   const meses = params.meses !== undefined && PERIODOS.includes(Number(params.meses)) ? Number(params.meses) : 3;
@@ -31,6 +32,17 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
     conferenciaDeOsNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
     comissoesNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
   ]);
+
+  // O FILTRO DE CATEGORIAS do custo sem projeto (`cat` repetido; "*" = todas).
+  const categoriasSemProjeto = [...r.pagarSemProjeto.reduce((m, x) => {
+    const c = m.get(x.categoria) ?? { nome: x.categoria, cents: 0, titulos: 0 };
+    c.cents += x.cents;
+    c.titulos += x.titulos;
+    return m.set(x.categoria, c);
+  }, new Map<string, { nome: string; cents: number; titulos: number }>()).values()].sort((a, b) => b.cents - a.cents);
+  const catParam = params.cat === undefined ? null : Array.isArray(params.cat) ? params.cat : [params.cat];
+  const catsSelecionadas = catParam === null ? null : catParam.includes("*") ? categoriasSemProjeto.map((c) => c.nome) : catParam;
+  const semProjetoFiltrado = catsSelecionadas === null ? r.pagarSemProjeto : r.pagarSemProjeto.filter((x) => catsSelecionadas.includes(x.categoria));
 
   // A COBRANÇA EM OUTRO PROJETO QUE CITA A OS (observação, "OS 14641" no
   // documento, ordem de serviço): o teste da chave para as OS sem cobrança.
@@ -324,12 +336,17 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
             />
           </div>
           <div>
-            <h3 className="mb-1 text-sm font-semibold text-slate-800">Custo de operação sem projeto — {r.pagarSemProjeto.length} fornecedor(es)</h3>
+            <div id="sem-projeto" className="mb-1 flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-slate-800">
+                Custo de operação sem projeto — {semProjetoFiltrado.length} fornecedor(es) · {fmtBRL(semProjetoFiltrado.reduce((s, x) => s + x.cents, 0))}
+              </h3>
+              {categoriasSemProjeto.length > 0 && <FiltroCategorias categorias={categoriasSemProjeto} selecionadas={catsSelecionadas} />}
+            </div>
             <p className="mb-2 text-xs text-slate-500">Contas a pagar das linhas de operação (custo do serviço, veículos, terceiros e despesas gerais) sem projeto: custo que não chega a nenhuma OS.</p>
             <Tabela
               colunas={["Fornecedor", "Categoria", "Empresa", "Títulos", "Valor", "Última competência"]}
               alinharDireita={[3, 4]}
-              linhas={r.pagarSemProjeto.slice(0, LISTA).map((x) => [
+              linhas={semProjetoFiltrado.slice(0, LISTA).map((x) => [
                 <Link key="f" href={abrir({ lista: "pagar-sem-projeto", fornecedor: x.parceiro })} className="text-blue-800 hover:underline">
                   {x.parceiro}
                 </Link>,
