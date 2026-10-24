@@ -14,22 +14,29 @@ const PERIODOS = [1, 3, 6, 12, 0];
 const LISTA = 60;
 const lista = (l: string[], n = 3) => (l.length === 0 ? "—" : l.slice(0, n).join(", ") + (l.length > n ? ` +${l.length - n}` : ""));
 
-export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string }> }) {
+export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string; ano?: string }> }) {
   const params = await searchParams;
   const { session, escopo, periodo, conexoes, config } = await escopoDaPagina("titulos", params.empresa);
   const meses = params.meses !== undefined && PERIODOS.includes(Number(params.meses)) ? Number(params.meses) : 3;
-  const ate = periodo.dataReferencia;
-  const desde = meses === 0 ? config.dataInicioBase : new Date(ate.getFullYear(), ate.getMonth() - (meses - 1), 1);
+  // UM ANO INTEIRO (2026, 2025…): de janeiro a dezembro, ou até hoje no ano
+  // corrente — o recorte da investigação do histórico por exercício.
+  const hoje = periodo.dataReferencia;
+  const anos: number[] = [];
+  for (let a = hoje.getFullYear(); a >= config.dataInicioBase.getFullYear(); a--) anos.push(a);
+  const ano = anos.includes(Number(params.ano)) ? Number(params.ano) : null;
+  const ate = ano ? (ano === hoje.getFullYear() ? hoje : new Date(ano, 11, 31)) : hoje;
+  const desde = ano ? new Date(ano, 0, 1) : meses === 0 ? config.dataInicioBase : new Date(ate.getFullYear(), ate.getMonth() - (meses - 1), 1);
   const podeInvestigar = await podeAcao(session, "investigar");
   const r = await conferenciaDeOsNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate });
 
+  const rotaAno = (a: number) => `/conferencia-os?${new URLSearchParams({ ...(params.empresa ? { empresa: params.empresa } : {}), ano: String(a) })}`;
   const rota = (m: number) => {
     const q = new URLSearchParams();
     if (params.empresa) q.set("empresa", params.empresa);
     if (m !== 3) q.set("meses", String(m));
     return `/conferencia-os${q.size ? `?${q}` : ""}`;
   };
-  const rotaEmpresa = meses !== 3 ? `/conferencia-os?meses=${meses}` : "/conferencia-os";
+  const rotaEmpresa = ano ? `/conferencia-os?ano=${ano}` : meses !== 3 ? `/conferencia-os?meses=${meses}` : "/conferencia-os";
   const pct = (a: number, b: number) => (b > 0 ? (a / b) * 100 : null);
   const { pagar, receber } = r.cobertura;
   const recente = (d: Date | null) => !!d && ate.getTime() - d.getTime() < 31 * 86_400_000;
@@ -79,8 +86,14 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-xs text-slate-500">Período:</span>
           {PERIODOS.map((m) => (
-            <Link key={m} href={rota(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${m === meses ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+            <Link key={m} href={rota(m)} className={`rounded-full px-3 py-1 text-xs font-medium ${!ano && m === meses ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
               {m === 1 ? "Mês atual" : m === 0 ? "Desde o início" : `${m} meses`}
+            </Link>
+          ))}
+          <span className="ml-2 mr-1 text-xs text-slate-500">Ano:</span>
+          {anos.map((a) => (
+            <Link key={a} href={rotaAno(a)} className={`rounded-full px-3 py-1 text-xs font-medium ${a === ano ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}>
+              {a}
             </Link>
           ))}
         </div>
@@ -197,8 +210,13 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
         </div>
       </Secao>
 
-      <Secao titulo="4. Investigação do histórico" descricao="Para procurar erros e fraudes no passado: escolha o período “Desde o início” acima, e use “Investigar” em cada OS — a IA abre os títulos da OS, o histórico do fornecedor e do cliente e diz o que não fecha (cada pergunta tem custo). A auditoria diária também passa a apontar a OS não faturada (CR-OS-NAO-FATURADA) agora que o projeto do a pagar vem da Omie.">
+      <Secao titulo="4. Investigação do histórico" descricao="Para procurar erros e fraudes no passado: escolha o ano (2026, 2025…) ou “Desde o início” acima, e use “Investigar” em cada OS — a IA abre os títulos da OS, o histórico do fornecedor e do cliente e diz o que não fecha (cada pergunta tem custo). A auditoria diária também passa a apontar a OS não faturada (CR-OS-NAO-FATURADA) agora que o projeto do a pagar vem da Omie.">
         <div className="flex flex-wrap gap-3 text-sm">
+          {ano !== hoje.getFullYear() && (
+            <Link href={rotaAno(hoje.getFullYear())} className="rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50">
+              Ver {hoje.getFullYear()} inteiro
+            </Link>
+          )}
           {meses !== 0 && (
             <Link href={rota(0)} className="rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50">
               Ver desde o início da base
@@ -207,14 +225,14 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
           {podeInvestigar && (
             <Link
               href={`/auditoria/investigar?pergunta=${encodeURIComponent(
-                `Investigue o histórico das ordens de serviço (projetos da Omie) desde ${fmtData(desde)}: OS com custo e sem cobrança, OS com prejuízo, a mesma OS em projetos diferentes e documentos pagos em dobro. Concentre nos fornecedores terceirizados (ex.: TRANSCOMIN) e diga quais casos parecem erro de lançamento e quais merecem apuração de fraude, com os títulos que sustentam cada um. Maiores casos de custo sem cobrança: ${r.custoSemReceita
+                `Investigue o histórico das ordens de serviço (projetos da Omie) ${ano ? `de ${ano} (${fmtData(desde)} a ${fmtData(ate)})` : `desde ${fmtData(desde)}`}: OS com custo e sem cobrança, OS com prejuízo, a mesma OS em projetos diferentes e documentos pagos em dobro. Concentre nos fornecedores terceirizados (ex.: TRANSCOMIN) e diga quais casos parecem erro de lançamento e quais merecem apuração de fraude, com os títulos que sustentam cada um. Maiores casos de custo sem cobrança: ${r.custoSemReceita
                   .slice(0, 8)
                   .map((p) => `${p.nome} (${fmtBRL(p.custoCents)})`)
                   .join(", ") || "nenhum"}.`
               )}`}
               className="rounded-md border border-blue-200 px-3 py-1.5 font-medium text-blue-800 hover:bg-blue-50"
             >
-              Investigar o histórico com a IA
+              Investigar {ano ? `${ano} ` : "o histórico "}com a IA
             </Link>
           )}
           <Link href="/auditoria" className="rounded-md border border-slate-300 px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-50">

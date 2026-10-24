@@ -1369,7 +1369,8 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
 // O que ela percorre:
 //   - no ciclo diário, os títulos incluídos ou alterados nos últimos dias, e
 //     os meses (por emissão) que ainda têm título a pagar não conferido, do
-//     mais antigo para o mais novo, até o orçamento de tempo acabar — a
+//     mais NOVO para o mais antigo (o ano corrente fica pronto primeiro),
+//     até o orçamento de tempo acabar — a
 //     primeira passada histórica se completa ao longo de alguns ciclos;
 //   - na carga histórica, a janela do mês.
 
@@ -1424,7 +1425,7 @@ async function sincronizarProjetos(ctx: ContextoFase, backfill: boolean): Promis
            AND t.natureza = 'PAGAR'
            AND t."projetoConferidoEm" IS NULL
            AND t."dataEmissao" >= ${CONFERIR_PROJETOS_DESDE}
-         ORDER BY 1
+         ORDER BY 1 DESC
          LIMIT 36`;
   const etapas = planejarEtapasProjetos({ janelaInicio: ctx.janelaInicio, janelaFim: ctx.janelaFim, backfill, mesesPendentes: meses.map((m) => new Date(m.mes)) });
   const cursor = lerCursor<CursorProjetos>(ctx.cursor, { chave: null, pagina: 1 });
