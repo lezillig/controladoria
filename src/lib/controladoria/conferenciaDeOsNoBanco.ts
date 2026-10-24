@@ -6,7 +6,7 @@ import { categoriaSql, filtroConexaoTitulo } from "./escopoSql";
 import { categoriasDoEscopo, movimentoPorCategoria } from "./dreNoBanco";
 import { linhaDaCategoria } from "./dre";
 import { classificacoesDoDre } from "./projecaoNoBanco";
-import { CATEGORIA_FORA_DA_OS, chaveDoProjeto, conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
+import { CATEGORIA_COMISSAO, CATEGORIA_FORA_DA_OS, chaveDoProjeto, conferirOs, type GrupoOs, type PagarSemProjeto } from "./conferenciaDeOs";
 
 // A colheita da conferência de OS: os títulos do período (competência, sem
 // cancelados, sem as operações entre as empresas na visão do grupo), somados
@@ -198,6 +198,8 @@ export async function titulosDaConferencia(params: {
   projetoNome?: string;
   semProjeto?: "PAGAR" | "RECEBER";
   fornecedor?: string;
+  // Só as comissões (categoria de comissão), com ou sem projeto.
+  comissoes?: boolean;
 }): Promise<{ titulos: TituloDaOs[]; total: number }> {
   const { companyId, conexaoId, desde, ate } = params;
   let codigos: { conexaoId: string; codigo: string }[] = [];
@@ -208,7 +210,9 @@ export async function titulosDaConferencia(params: {
     // Projeto que não está no cadastro: o nome é o próprio código.
     if (codigos.length === 0) codigos = [{ conexaoId: "", codigo: params.projetoNome }];
   }
-  const projetoSql = params.projetoNome
+  const projetoSql = params.comissoes
+    ? Prisma.sql`AND t.natureza = 'PAGAR' AND COALESCE(t."categoriaDescricao", c.descricao, '') ~* ${CATEGORIA_COMISSAO.source}`
+    : params.projetoNome
     ? Prisma.sql`AND (${Prisma.join(codigos.map((c) => (c.conexaoId ? Prisma.sql`(t."conexaoId" = ${c.conexaoId} AND t."projetoCodigo" = ${c.codigo})` : Prisma.sql`t."projetoCodigo" = ${c.codigo}`)), " OR ")})`
     : Prisma.sql`AND NULLIF(t."projetoCodigo", '') IS NULL AND t.natureza = ${params.semProjeto ?? "PAGAR"}::${tipoDoBanco("OmieNaturezaTitulo")}`;
   const fornecedorSql = params.fornecedor ? Prisma.sql`AND t."parceiroNome" = ${params.fornecedor}` : Prisma.empty;
@@ -240,4 +244,82 @@ export async function titulosDaConferencia(params: {
       return { ...t, valorCents: Number(valorCents), pagoCents: Number(pagoCents ?? 0) };
     }),
   };
+}
+
+// AS COMISSÕES SOBRE VENDAS do período: por recebedor e por OS, contra a
+// receita da OS (a comissão em % do que foi cobrado nela). A categoria é a de
+// comissão do plano de contas (CATEGORIA_COMISSAO).
+export type ComissaoPorRecebedor = { recebedor: string; empresa: string; titulos: number; cents: number; pagoCents: number; oss: number; receitaDasOsCents: number; semOsCents: number };
+export type ComissaoPorOs = { projeto: string | null; empresa: string; recebedores: string[]; titulos: number; cents: number; receitaCents: number; categoria: string };
+
+export async function comissoesNoBanco(params: { companyId: string; conexaoId: string | null; desde: Date; ate: Date }) {
+  const { companyId, conexaoId, desde, ate } = params;
+  const filtro = filtroConexaoTitulo(conexaoId, companyId);
+  const linhas = await prisma.$queryRaw<
+    { conexaoId: string; projeto: string | null; recebedor: string | null; categoria: string; titulos: bigint; cents: bigint; pago: bigint }[]
+  >`
+    SELECT t."conexaoId" AS "conexaoId", NULLIF(t."projetoCodigo", '') AS projeto, t."parceiroNome" AS recebedor,
+           MAX(COALESCE(t."categoriaDescricao", c.descricao, t."categoriaCodigo")) AS categoria,
+           COUNT(*)::bigint AS titulos, COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
+           COALESCE(SUM(t."valorPagoCents"), 0)::bigint AS pago
+      FROM ${tabela("OmieTitulo")} t
+      LEFT JOIN ${tabela("OmieCategoria")} c ON c."conexaoId" = t."conexaoId" AND c.codigo = t."categoriaCodigo"
+     WHERE t."companyId" = ${companyId}
+       AND t.cancelado = false
+       AND t.natureza = 'PAGAR'
+       AND COALESCE(t."categoriaDescricao", c.descricao, '') ~* ${CATEGORIA_COMISSAO.source}
+       AND ${semProvisaoFuturaSql("t")}
+       AND ${competenciaSql("t")} >= ${desde}
+       AND ${competenciaSql("t")} <= ${ate}
+       ${filtro}
+     GROUP BY 1, 2, 3`;
+  const projetosComComissao = [...new Set(linhas.filter((l) => l.projeto).map((l) => `${l.conexaoId}|${l.projeto}`))];
+  // A receita das OS que pagaram comissão, no mesmo período.
+  const receitas = projetosComComissao.length
+    ? await prisma.$queryRaw<{ conexaoId: string; projeto: string; cents: bigint }[]>`
+        SELECT t."conexaoId" AS "conexaoId", t."projetoCodigo" AS projeto, COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
+          FROM ${tabela("OmieTitulo")} t
+         WHERE t."companyId" = ${companyId}
+           AND t.cancelado = false
+           AND t.natureza = 'RECEBER'
+           AND (t."conexaoId" || '|' || t."projetoCodigo") IN (${Prisma.join(projetosComComissao)})
+           AND ${semProvisaoFuturaSql("t")}
+           AND ${competenciaSql("t")} >= ${desde}
+           AND ${competenciaSql("t")} <= ${ate}
+           ${filtro}
+         GROUP BY 1, 2`
+    : [];
+  const [projetos, conexoes] = await Promise.all([
+    prisma.omieProjeto.findMany({ where: { companyId }, select: { conexaoId: true, codigo: true, nome: true } }),
+    prisma.omieConexao.findMany({ where: { companyId }, select: { id: true, apelido: true } }),
+  ]);
+  const nomeProjeto = new Map(projetos.map((p) => [`${p.conexaoId}|${p.codigo}`, p.nome]));
+  const apelido = new Map(conexoes.map((c) => [c.id, c.apelido]));
+  const receitaDe = new Map(receitas.map((r) => [`${r.conexaoId}|${r.projeto}`, Number(r.cents)]));
+
+  const porRecebedor = new Map<string, ComissaoPorRecebedor & { _oss: Set<string> }>();
+  const porOs = new Map<string, ComissaoPorOs>();
+  for (const l of linhas) {
+    const recebedor = l.recebedor ?? "(sem recebedor)";
+    const kr = `${l.conexaoId}|${recebedor}`;
+    const r = porRecebedor.get(kr) ?? { recebedor, empresa: apelido.get(l.conexaoId) ?? "?", titulos: 0, cents: 0, pagoCents: 0, oss: 0, receitaDasOsCents: 0, semOsCents: 0, _oss: new Set<string>() };
+    r.titulos += Number(l.titulos);
+    r.cents += Number(l.cents);
+    r.pagoCents += Number(l.pago);
+    if (l.projeto) r._oss.add(`${l.conexaoId}|${l.projeto}`);
+    else r.semOsCents += Number(l.cents);
+    porRecebedor.set(kr, r);
+
+    const ko = `${l.conexaoId}|${l.projeto ?? ""}`;
+    const o = porOs.get(ko) ?? { projeto: l.projeto ? (nomeProjeto.get(ko) ?? l.projeto) : null, empresa: apelido.get(l.conexaoId) ?? "?", recebedores: [], titulos: 0, cents: 0, receitaCents: l.projeto ? (receitaDe.get(ko) ?? 0) : 0, categoria: l.categoria };
+    if (!o.recebedores.includes(recebedor)) o.recebedores.push(recebedor);
+    o.titulos += Number(l.titulos);
+    o.cents += Number(l.cents);
+    porOs.set(ko, o);
+  }
+  const recebedores = [...porRecebedor.values()]
+    .map(({ _oss, ...r }) => ({ ...r, oss: _oss.size, receitaDasOsCents: [..._oss].reduce((s, k) => s + (receitaDe.get(k) ?? 0), 0) }))
+    .sort((a, b) => b.cents - a.cents);
+  const oss = [...porOs.values()].sort((a, b) => b.cents - a.cents);
+  return { recebedores, oss, totalCents: recebedores.reduce((s, r) => s + r.cents, 0), semOsCents: recebedores.reduce((s, r) => s + r.semOsCents, 0) };
 }

@@ -33,6 +33,8 @@ export type GrupoOs = {
 // (5935413299) é outra coisa lançada como projeto — fatura, cadastro.
 export const PROJETO_NUMERICO = /^\d{4,6}$/;
 export const CATEGORIA_FORA_DA_OS = /multa|diretoria/i;
+// A categoria das comissões sobre vendas ("Comissões sobre Vendas", "Comissões").
+export const CATEGORIA_COMISSAO = /comiss/i;
 
 export type ForaDaConferencia = { nome: string; empresas: string[]; custoCents: number; receitaCents: number; titulos: number; categorias: string[] };
 export type LancamentoExcluido = { projeto: string; categoria: string; natureza: string; cents: number; titulos: number };

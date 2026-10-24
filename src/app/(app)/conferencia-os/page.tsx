@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { conferenciaDeOsNoBanco, titulosDaConferencia, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
+import { comissoesNoBanco, conferenciaDeOsNoBanco, titulosDaConferencia, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
 import { CATEGORIA_FORA_DA_OS, type ProjetoConferido } from "@/lib/controladoria/conferenciaDeOs";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
@@ -27,13 +27,17 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
   const ate = ano ? (ano === hoje.getFullYear() ? hoje : new Date(ano, 11, 31)) : hoje;
   const desde = ano ? new Date(ano, 0, 1) : meses === 0 ? config.dataInicioBase : new Date(ate.getFullYear(), ate.getMonth() - (meses - 1), 1);
   const podeInvestigar = await podeAcao(session, "investigar");
-  const r = await conferenciaDeOsNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate });
+  const [r, comissoes] = await Promise.all([
+    conferenciaDeOsNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
+    comissoesNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
+  ]);
 
   // O DRILL-DOWN: os títulos de uma OS (?os=) ou os sem projeto de um lado
   // (?lista=), no mesmo recorte da tela.
   const semProjeto = params.lista === "receber-sem-projeto" ? "RECEBER" : params.lista === "pagar-sem-projeto" ? "PAGAR" : null;
+  const verComissoes = params.lista === "comissoes";
   const detalhe =
-    params.os || semProjeto
+    params.os || semProjeto || verComissoes
       ? await titulosDaConferencia({
           companyId: session.companyId,
           conexaoId: escopo.conexaoId,
@@ -41,6 +45,7 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
           ate,
           projetoNome: params.os,
           semProjeto: semProjeto ?? undefined,
+          comissoes: verComissoes,
           fornecedor: params.fornecedor,
         })
       : null;
@@ -159,6 +164,8 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
             titulo={
               params.os
                 ? `OS ${params.os} — ${detalhe.total} título(s) no período`
+                : verComissoes
+                ? `Comissões${params.fornecedor ? ` — ${params.fornecedor}` : ""} — ${detalhe.total} título(s)`
                 : `${semProjeto === "RECEBER" ? "A receber" : "A pagar"} sem projeto${params.fornecedor ? ` — ${params.fornecedor}` : ""} — ${detalhe.total} título(s)`
             }
             descricao={detalhe.total > TITULOS_NO_DETALHE ? `Mostrando os ${TITULOS_NO_DETALHE} primeiros.` : "Todos os títulos do recorte, a pagar e a receber, por competência."}
@@ -321,6 +328,59 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
           </div>
         </div>
       </Secao>
+
+      <section id="comissoes">
+        <Secao
+          titulo={`Comissões sobre vendas — ${fmtBRL(comissoes.totalCents)}`}
+          descricao={`Contas a pagar da categoria de comissões, de ${fmtData(desde)} a ${fmtData(ate)}, por recebedor e por OS, contra a receita da OS no mesmo período. ${comissoes.semOsCents ? `${fmtBRL(comissoes.semOsCents)} sem OS (sem projeto). ` : ""}Clique no recebedor para ver os títulos.`}
+          acao={
+            <Link href={abrir({ lista: "comissoes" })} className="text-xs text-blue-700 hover:underline">
+              Ver todos os títulos
+            </Link>
+          }
+        >
+          <div className="space-y-6">
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800">Por recebedor — {comissoes.recebedores.length}</h3>
+              <Tabela
+                colunas={["Recebedor", "Empresa", "Títulos", "Comissão", "Pago", "OS", "Receita das OS", "% da receita", "Sem OS"]}
+                alinharDireita={[2, 3, 4, 5, 6, 7, 8]}
+                linhas={comissoes.recebedores.slice(0, 100).map((c) => [
+                  <Link key="r" href={abrir({ lista: "comissoes", fornecedor: c.recebedor })} className="font-medium text-blue-800 hover:underline">
+                    {c.recebedor}
+                  </Link>,
+                  c.empresa,
+                  fmtNumero(c.titulos),
+                  fmtBRL(c.cents),
+                  fmtBRL(c.pagoCents),
+                  fmtNumero(c.oss),
+                  c.receitaDasOsCents ? fmtBRL(c.receitaDasOsCents) : "—",
+                  pctTexto(c.receitaDasOsCents > 0 ? ((c.cents - c.semOsCents) / c.receitaDasOsCents) * 100 : null),
+                  c.semOsCents ? fmtBRL(c.semOsCents) : "—",
+                ])}
+                vazio="Nenhuma comissão no período."
+              />
+            </div>
+            <div>
+              <h3 className="mb-2 text-sm font-semibold text-slate-800">Por OS — {comissoes.oss.length}</h3>
+              <Tabela
+                colunas={["OS (projeto)", "Empresa", "Recebedores", "Títulos", "Comissão", "Receita da OS", "% da receita"]}
+                alinharDireita={[3, 4, 5, 6]}
+                linhas={comissoes.oss.slice(0, 150).map((o) => [
+                  o.projeto ? <NomeOs key="n" nome={o.projeto} /> : <span key="n" className="text-amber-700">Sem OS</span>,
+                  o.empresa,
+                  lista(o.recebedores, 3),
+                  fmtNumero(o.titulos),
+                  fmtBRL(o.cents),
+                  o.projeto ? (o.receitaCents ? fmtBRL(o.receitaCents) : <span key="x" className="text-red-700">sem receita</span>) : "—",
+                  pctTexto(o.receitaCents > 0 ? (o.cents / o.receitaCents) * 100 : null),
+                ])}
+                vazio="Nenhuma comissão no período."
+              />
+            </div>
+          </div>
+        </Secao>
+      </section>
 
       <Secao
         titulo={`Fora da conferência — ${r.foraDaConferencia.length} projeto(s) e ${r.lancamentosExcluidos.length} lançamento(s)`}
