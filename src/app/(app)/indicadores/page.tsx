@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { prisma } from "@/lib/prisma";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import { fmtBRL, fmtBRLCompacto, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { GRUPOS_INDICADORES, dreDaJanela, resultadoPorMes, type Indicador } from "@/lib/controladoria/indicadores";
@@ -54,6 +55,26 @@ export default async function IndicadoresPage({
   const podeEditar = await podeAcao(session, "gerir-indicadores");
   const painel = await painelDeIndicadores({ companyId: session.companyId, conexaoId: escopo.conexaoId }, periodo.dataReferencia);
 
+  // Balanço é lançado por escopo (grupo ou empresa). Sem nenhum na visão
+  // escolhida, a tela diz onde estão os que existem — os da Azul, importados
+  // dos PDFs, ficam na Azul e não aparecem no Grupo enquanto faltar a MCZ.
+  const outrosEscopos = painel.balanco
+    ? []
+    : (
+        await prisma.balancoPatrimonial.groupBy({
+          by: ["escopo"],
+          where: { companyId: session.companyId, escopo: { not: escopo.conexaoId ?? "GRUPO" } },
+          _count: { _all: true },
+          _min: { dataBase: true },
+          _max: { dataBase: true },
+        })
+      ).map((g) => ({
+        escopo: g.escopo,
+        rotulo: g.escopo === "GRUPO" ? "Grupo" : (conexoes.find((c) => c.id === g.escopo)?.apelido ?? g.escopo),
+        quantos: g._count._all,
+        de: g._min.dataBase,
+        ate: g._max.dataBase,
+      }));
   const porChave = new Map(painel.indicadores.map((i) => [i.chave, i]));
   const destaque = ["ROIC", "MARGEM_EBITDA", "COBERTURA", "LIQUIDEZ"].map((c) => porChave.get(c)).filter((i): i is Indicador => !!i);
   const meses = resultadoPorMes(painel.dre, painel.competencias);
@@ -114,6 +135,17 @@ export default async function IndicadoresPage({
         <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-900">
           Sem balanço lançado para {rotuloEscopo}: ROIC, ROE, ROA, EVA, alavancagem e liquidez ficam em branco.
           {podeEditar ? " Lance abaixo o balanço do último exercício (e o do anterior, para as médias)." : " Peça a quem cuida da controladoria para lançá-lo."}
+          {outrosEscopos.map((o) => (
+            <p key={o.escopo} className="mt-2">
+              Há {o.quantos} balanço(s) lançado(s) em <strong>{o.rotulo}</strong> ({o.de ? o.de.getUTCFullYear() : "—"} a {o.ate ? o.ate.getUTCFullYear() : "—"}).{" "}
+              <Link href={o.escopo === "GRUPO" ? "/indicadores" : `/indicadores?empresa=${o.escopo}`} className="font-medium underline">
+                Ver em {o.rotulo} →
+              </Link>
+            </p>
+          ))}
+          {!escopo.conexaoId && outrosEscopos.length > 0 && (
+            <p className="mt-2">O Grupo só tem balanço próprio quando o consolidado (Azul + MCZ) é lançado aqui; os de uma empresa não são somados sozinhos para não parecer o grupo inteiro.</p>
+          )}
         </div>
       )}
 
