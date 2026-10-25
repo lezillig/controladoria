@@ -26,6 +26,7 @@ import {
   TrendingUp,
   UsersRound,
   Database,
+  Wallet,
 } from "lucide-react";
 import type { Permissao } from "@/lib/acessos";
 
@@ -68,6 +69,8 @@ const NAV: NavItem[] = [
   // logo abaixo do DRE de que ele sai.
   { href: "/dre-centro-custo", label: "DRE por centro de custo", icon: Network, permissao: "custos" },
   { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote, permissao: "fluxo-caixa" },
+  // O caixa que já passou, mês a mês, e a auditoria de uma conta (a Omie.CASH).
+  { href: "/caixa-mensal", label: "Caixa mês a mês", icon: Wallet, permissao: "fluxo-caixa" },
   { href: "/resultados", label: "Resultado mês a mês", icon: CalendarRange, permissao: "resultados" },
   { href: "/rentabilidade", label: "Rentabilidade por contrato", icon: PiggyBank, permissao: "rentabilidade" },
   // O retorno sobre o capital fecha a seção: DRE, caixa e margem respondem
