@@ -201,6 +201,43 @@ const t = (
   conferir("o que confere vem por último", r.linhas[r.linhas.length - 1]?.tipo, "titulo_sem_cte");
 }
 
+// 3l. Um título para dois CT-e: "1304 / 1305" da SESI Suzano (R$ 2.900 =
+//     1.450 + 1.450). Antes: 1304 "valor divergente" e 1305 "emitido e não
+//     cobrado".
+{
+  const lista = lerListaDeCte(
+    "Data\tStatus\tCTE\tTomador (CNPJ/CPF)\tTomador (Razão Social)\tTotal Frete\n" +
+      "13/08/2026\tAutorizada\t1304\t03.777.341/0001-66\tSESI\t1.450,00\n" +
+      "14/08/2026\tAutorizada\t1305\t03.777.341/0001-66\tSESI\t1.450,00"
+  ).itens;
+  conferir("CNPJ do tomador lido", lista[0]?.tomadorDocumento, "03777341000166");
+  const r = cruzarCte(lista, [t({ id: "a", numero: "1304 / 1305", valorCents: 290_000, data: "2026-08-14", parceiro: "SESI SUZANO" })]);
+  conferir("os dois CT-e conferem com o título", r.linhas.map((l) => [l.numero, l.tipo, l.casadoPor]), [
+    ["1304", "casado", "número (fatura de vários CT-e)"],
+    ["1305", "casado", "número (fatura de vários CT-e)"],
+  ]);
+}
+
+// 3m. Valor e data NÃO casam CT-e com título de OUTRO cliente (CNPJ): o
+//     1342 da Bondi, cancelado, contra um título de R$ 3.600 de outro
+//     cliente, virava "cancelado com título vivo".
+{
+  const lista = lerListaDeCte(
+    "Data\tStatus\tCTE\tTomador (CNPJ/CPF)\tTomador (Razão Social)\tTotal Frete\n28/09/2026\tCancelada\t1342\t11.222.333/0001-81\tBONDI\t3.600,00"
+  ).itens;
+  const outro = cruzarCte(lista, [t({ id: "a", numero: null, valorCents: 360_000, data: "2026-09-29", documento: "99888777000166", situacao: "A VENCER" })]);
+  conferir("título de outro CNPJ não casa", outro.linhas.length, 0);
+  const semDoc = cruzarCte(lista, [t({ id: "a", numero: null, valorCents: 360_000, data: "2026-09-29", situacao: "A VENCER" })]);
+  conferir("CT-e cancelado não casa por valor e data", semDoc.linhas.length, 0);
+  const autorizado = lerListaDeCte(
+    "Data\tStatus\tCTE\tTomador (CNPJ/CPF)\tTomador (Razão Social)\tTotal Frete\n28/09/2026\tAutorizada\t1342\t11.222.333/0001-81\tBONDI\t3.600,00"
+  ).itens;
+  const filial = cruzarCte(autorizado, [t({ id: "a", numero: null, valorCents: 360_000, data: "2026-09-29", documento: "11222333000262" })]);
+  conferir("autorizado casa com outra filial do mesmo CNPJ", filial.linhas[0]?.casadoPor, "valor+data");
+  const outroAut = cruzarCte(autorizado, [t({ id: "a", numero: null, valorCents: 360_000, data: "2026-09-28", documento: "99888777000166" })]);
+  conferir("autorizado não casa com outro CNPJ", outroAut.linhas.map((l) => l.tipo).sort(), ["autorizado_sem_titulo", "titulo_sem_cte"]);
+}
+
 // ---------------------------------------------------------------- 4. regressão
 //
 // TRÊS CASOS REAIS QUE UMA ANÁLISE MINHA, FEITA POR FORA, DEU COMO "EMITIDO E

@@ -31,6 +31,12 @@ export default function ConferenciaForm({
   conexoes: { id: string; apelido: string; nome: string }[];
 }) {
   const [estado, setEstado] = useState<EstadoConferencia | null>(null);
+  // O DRILL-DOWN: o cartão clicado filtra a tabela por aquele tipo.
+  const [filtro, setFiltro] = useState<LinhaConferencia["tipo"] | null>(null);
+  const abrir = (tipo: LinhaConferencia["tipo"]) => {
+    setFiltro((f) => (f === tipo ? null : tipo));
+    requestAnimationFrame(() => document.getElementById("diferencas")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  };
   // O TEXTO COLADO É CONTROLADO, e isso não é preferência de estilo.
   //
   // React reinicia o formulário sozinho depois de uma action, então a caixa
@@ -145,34 +151,50 @@ export default function ConferenciaForm({
       {r && (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Kpi
-              rotulo="Cancelado com título vivo"
-              valor={fmtBRL(r.canceladoComTituloCents)}
-              apoio={`${r.linhas.filter((l) => l.tipo === "cancelado_com_titulo").length} CT-e — receita sem documento fiscal válido`}
-              tom={r.canceladoComTituloCents > 0 ? "ruim" : "bom"}
-            />
-            <Kpi
-              rotulo="Emitido e não cobrado"
-              valor={fmtBRL(r.autorizadoSemTituloCents)}
-              apoio={`${r.linhas.filter((l) => l.tipo === "autorizado_sem_titulo").length} CT-e — imposto devido, cliente sem fatura`}
-              tom={r.autorizadoSemTituloCents > 0 ? "ruim" : "bom"}
-            />
-            <Kpi
-              rotulo="Divergência de valor"
-              valor={fmtBRL(r.divergenciaDeValorCents)}
-              apoio={`${r.linhas.filter((l) => l.tipo === "valor_divergente").length} CT-e — cobrança fora do documento`}
-              tom={r.divergenciaDeValorCents > 0 ? "atencao" : "bom"}
-            />
-            <Kpi
-              rotulo="Conferem"
-              valor={fmtNumero(r.casados)}
-              apoio={`de ${fmtNumero(r.lidos)} lidos (${fmtNumero(r.autorizados)} autorizados, ${fmtNumero(r.cancelados)} cancelados)`}
-              tom={r.casados === r.lidos ? "bom" : "neutro"}
-            />
+            <button type="button" onClick={() => abrir("cancelado_com_titulo")} className={`block rounded-2xl text-left transition hover:ring-2 hover:ring-blue-200 ${filtro === "cancelado_com_titulo" ? "ring-2 ring-blue-500" : ""}`}>
+              <Kpi
+                rotulo="Cancelado com título vivo"
+                valor={fmtBRL(r.canceladoComTituloCents)}
+                apoio={`${r.linhas.filter((l) => l.tipo === "cancelado_com_titulo").length} CT-e — receita sem documento fiscal válido`}
+                tom={r.canceladoComTituloCents > 0 ? "ruim" : "bom"}
+              />
+            </button>
+            <button type="button" onClick={() => abrir("autorizado_sem_titulo")} className={`block rounded-2xl text-left transition hover:ring-2 hover:ring-blue-200 ${filtro === "autorizado_sem_titulo" ? "ring-2 ring-blue-500" : ""}`}>
+              <Kpi
+                rotulo="Emitido e não cobrado"
+                valor={fmtBRL(r.autorizadoSemTituloCents)}
+                apoio={`${r.linhas.filter((l) => l.tipo === "autorizado_sem_titulo").length} CT-e — imposto devido, cliente sem fatura`}
+                tom={r.autorizadoSemTituloCents > 0 ? "ruim" : "bom"}
+              />
+            </button>
+            <button type="button" onClick={() => abrir("valor_divergente")} className={`block rounded-2xl text-left transition hover:ring-2 hover:ring-blue-200 ${filtro === "valor_divergente" ? "ring-2 ring-blue-500" : ""}`}>
+              <Kpi
+                rotulo="Divergência de valor"
+                valor={fmtBRL(r.divergenciaDeValorCents)}
+                apoio={`${r.linhas.filter((l) => l.tipo === "valor_divergente").length} CT-e — cobrança fora do documento`}
+                tom={r.divergenciaDeValorCents > 0 ? "atencao" : "bom"}
+              />
+            </button>
+            <button type="button" onClick={() => abrir("casado")} className={`block rounded-2xl text-left transition hover:ring-2 hover:ring-blue-200 ${filtro === "casado" ? "ring-2 ring-blue-500" : ""}`}>
+              <Kpi
+                rotulo="Conferem"
+                valor={fmtNumero(r.casados)}
+                apoio={`de ${fmtNumero(r.lidos)} lidos (${fmtNumero(r.autorizados)} autorizados, ${fmtNumero(r.cancelados)} cancelados)`}
+                tom={r.casados === r.lidos ? "bom" : "neutro"}
+              />
+            </button>
           </div>
 
+          <div id="diferencas" />
           <Secao
-            titulo="Diferenças"
+            titulo={filtro ? ROTULO[filtro].texto : "Diferenças"}
+            acao={
+              filtro ? (
+                <button type="button" className="text-xs text-blue-700 hover:underline" onClick={() => setFiltro(null)}>
+                  Ver todas as diferenças
+                </button>
+              ) : undefined
+            }
             descricao={
               `${fmtNumero(r.titulosNoPeriodo)} títulos de CT-e espelhados` +
               (estado?.periodo ? ` entre ${estado.periodo.inicio} e ${estado.periodo.fim}` : "") +
@@ -191,11 +213,11 @@ export default function ConferenciaForm({
             )}
 
             <Tabela
-              colunas={["", "CT-e", "Data", "Tomador", "Valor do CT-e", "Valor do título", "Situação", "Casado por"]}
-              alinharDireita={[4, 5]}
-              vazio="Nenhuma diferença: todos os CT-e da lista casaram com títulos, e nenhum título ficou sobrando."
+              colunas={["", "CT-e", "Data", "Tomador", "Valor do CT-e", "Título na Omie", "Valor do título", "Situação", "Casado por"]}
+              alinharDireita={[4, 6]}
+              vazio={filtro ? "Nenhum CT-e neste grupo." : "Nenhuma diferença: todos os CT-e da lista casaram com títulos, e nenhum título ficou sobrando."}
               linhas={r.linhas
-                .filter((l) => l.tipo !== "casado")
+                .filter((l) => (filtro ? l.tipo === filtro : l.tipo !== "casado"))
                 .map((l) => [
                   <span key="t" className={`rounded-full px-2 py-0.5 text-xs font-medium ${ROTULO[l.tipo].classe}`}>
                     {ROTULO[l.tipo].texto}
@@ -204,6 +226,15 @@ export default function ConferenciaForm({
                   fmtData(l.data),
                   l.tomador,
                   l.valorCteCents === null ? "—" : fmtBRL(l.valorCteCents),
+                  l.tituloNumero !== undefined || l.tituloData ? (
+                    <span key="ti" className="text-xs">
+                      {l.tituloNumero ?? <span className="text-slate-400">sem número</span>}
+                      {l.tituloData ? ` · ${fmtData(l.tituloData)}` : ""}
+                      {l.tituloParceiro && l.tituloParceiro !== l.tomador ? <span className="block text-slate-500">{l.tituloParceiro}</span> : null}
+                    </span>
+                  ) : (
+                    <span key="ti" className="text-slate-400">nenhum</span>
+                  ),
                   l.valorTituloCents === null ? "—" : fmtBRL(l.valorTituloCents),
                   l.situacaoTitulo ?? "—",
                   l.casadoPor ?? "—",

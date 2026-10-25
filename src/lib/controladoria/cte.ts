@@ -40,6 +40,8 @@ export type CteDaLista = {
   data: Date;
   valorCents: number;
   tomador: string;
+  // CNPJ/CPF do tomador, só dígitos, quando a lista traz a coluna.
+  tomadorDocumento?: string | null;
   cancelado: boolean;
 };
 
@@ -56,11 +58,17 @@ export type LinhaConferencia = {
   valorTituloCents: number | null;
   tomador: string;
   situacaoTitulo: string | null;
+  // O TÍTULO DA OMIE do outro lado, para o drill-down: número, data
+  // (competência) e cliente como estão no título — o cliente pode ter outro
+  // nome que o tomador do CT-e.
+  tituloNumero?: string | null;
+  tituloData?: Date | null;
+  tituloParceiro?: string | null;
   // Como o casamento foi feito. "valor+data" é mais fraco que "número", e a
   // tela precisa dizer isso: 43% dos títulos de CT-e estão sem o número
   // preenchido na Omie, e dois CT-e de mesmo valor no mesmo dia são
   // indistinguíveis por esse caminho.
-  casadoPor: "número" | "valor+data" | null;
+  casadoPor: "número" | "número (fatura de vários CT-e)" | "valor+data" | null;
 };
 
 export type ResultadoConferencia = {
@@ -95,6 +103,7 @@ export type ResultadoConferencia = {
 // cabeçalho, aceita tabulação, ponto e vírgula ou vírgula como separador, e
 // diz o que não entendeu em vez de engolir.
 const COLUNAS: Record<keyof Omit<CteDaLista, "cancelado"> | "status", string[]> = {
+  tomadorDocumento: ["tomadorcnpjcpf", "tomadorcnpj", "cnpjcpf", "cpfcnpj", "cnpj", "cnpjdotomador"],
   numero: ["cte", "ct-e", "no", "n", "numero", "número", "num", "documento"],
   data: ["data", "emissao", "emissão", "dataemissao", "datadeemissao"],
   valorCents: ["valor", "totalfrete", "total", "valortotal", "vlr", "valordoct-e"],
@@ -186,6 +195,7 @@ export function lerListaDeCte(texto: string): { itens: CteDaLista[]; ignoradas: 
       data,
       valorCents,
       tomador: pegar("tomador") || "(sem tomador)",
+      tomadorDocumento: pegar("tomadorDocumento").replace(/\D/g, "") || null,
       // Mesma lição do status da NFS-e: "Cancelamento Rejeitado" contém a
       // palavra e significa o contrário. Ver `notaCancelada` em mapping.ts.
       cancelado: /cancel/i.test(pegar("status")) && !/rejeitad|negad|recusad/i.test(pegar("status")),
@@ -203,6 +213,7 @@ export type TituloCte = {
   situacao: string;
   cancelado: boolean;
   parceiro: string | null;
+  documento?: string | null;
   tipo: string | null;
 };
 
@@ -260,6 +271,7 @@ export async function conferirCte(params: {
            t.status AS situacao,
            t.cancelado,
            t."parceiroNome" AS parceiro,
+           t."parceiroDocumento" AS documento,
            t."tipoDocumento" AS tipo
       FROM ${tabela("OmieTitulo")} t
      WHERE t."companyId" = ${companyId}
@@ -271,7 +283,7 @@ export async function conferirCte(params: {
          UPPER(COALESCE(TRIM(t."tipoDocumento"), '')) IN ('CTE', 'CT-E', 'CTRC')
          ${
            numeros.length > 0
-             ? Prisma.sql`OR LTRIM(COALESCE(SUBSTRING(t."numeroDocumento" FROM '[0-9]+'), ''), '0') IN (${Prisma.join(numeros)})`
+             ? Prisma.sql`OR EXISTS (SELECT 1 FROM regexp_matches(COALESCE(t."numeroDocumento", ''), '[0-9]+', 'g') m WHERE LTRIM(m[1], '0') IN (${Prisma.join(numeros)}))`
              : Prisma.empty
          }
          OR t."valorDocumentoCents" IN (${Prisma.join(valores)})
@@ -309,6 +321,10 @@ export type CteCasavel = {
   numero: string | null;
   data: Date;
   valorCents: number;
+  // CNPJ/CPF do tomador e se o documento foi cancelado — refinam o casamento
+  // fraco por valor e data (passada 3).
+  tomadorDocumento?: string | null;
+  cancelado?: boolean;
 };
 
 export type TituloCasavel = {
@@ -318,9 +334,17 @@ export type TituloCasavel = {
   data: Date;
   valorCents: number;
   tipo: string | null;
+  documento?: string | null;
 };
 
 export type ComoCasou = "chave" | "número" | "valor+data";
+
+// TODOS OS NÚMEROS DO DOCUMENTO do título: "1304 / 1305" é UM título que
+// cobra DOIS CT-e (SESI Suzano). Só grupos de 3 dígitos ou mais — "1279/2" é
+// o 1279, parcela 2.
+export function numerosDoDocumento(numero: string | null): string[] {
+  return [...new Set([...(numero ?? "").matchAll(/\d+/g)].map((m) => m[0].replace(/^0+/, "")).filter((n) => n.length >= 3))];
+}
 
 export function casarCtesComTitulos<C extends CteCasavel, T extends TituloCasavel>(
   ctes: C[],
@@ -341,23 +365,44 @@ export function casarCtesComTitulos<C extends CteCasavel, T extends TituloCasave
     if (t) marcar(c, t, "chave");
   }
 
-  // Passada 2: número.
+  // Passada 2: número — qualquer dos números do documento do título. O título
+  // que cita N CT-e ("1304 / 1305") pode casar com os N; os demais, com um só.
+  const vagas = new Map(titulos.map((x) => [x.id, usados.has(x.id) ? 0 : Math.max(1, numerosDoDocumento(x.numero).length)]));
   for (const c of ctes) {
     if (resultado.has(c.id)) continue;
     const alvo = soDigitos(c.numero);
     if (alvo === "") continue;
-    const t = titulos.find((x) => !usados.has(x.id) && soDigitos(x.numero) === alvo);
-    if (t) marcar(c, t, "número");
+    const t =
+      titulos.find((x) => (vagas.get(x.id) ?? 0) > 0 && soDigitos(x.numero) === alvo) ??
+      titulos.find((x) => (vagas.get(x.id) ?? 0) > 0 && numerosDoDocumento(x.numero).includes(alvo));
+    if (t) {
+      vagas.set(t.id, (vagas.get(t.id) ?? 1) - 1);
+      usados.add(t.id);
+      resultado.set(c.id, { titulo: t, como: "número" });
+    }
   }
 
-  // Passada 3: valor e data. Desempate, nesta ordem: (1) título que É CT-e;
+  // Passada 3: valor e data. É a passada fraca, e por isso tem duas travas:
+  //   - CLIENTE: com o CNPJ dos dois lados, a raiz (8 dígitos) tem de ser a
+  //     mesma. Sem isso, o CT-e 1342 da Bondi, cancelado, casava com um
+  //     título de R$ 3.600 de OUTRO cliente e virava "cancelado com título
+  //     vivo" — os quatro casos da conferência de 26/06 a 28/10 eram assim.
+  //   - CT-e CANCELADO não casa por valor e data: um cancelado e o seu
+  //     substituto (reemitido com o mesmo valor, como o 1342 → 1368 da Bondi)
+  //     são indistinguíveis por esse caminho, e o falso positivo acusaria
+  //     receita sem documento. Mesma regra do agente fiscal.
+  // Desempate, nesta ordem: (1) título que É CT-e;
   // (2) título SEM número — o que carrega um número que não é o deste CT-e
   // quase sempre é outro documento; (3) o mais próximo na data.
   for (const c of ctes) {
-    if (resultado.has(c.id)) continue;
+    if (resultado.has(c.id) || c.cancelado) continue;
     const candidatos = titulos
       .filter(
-        (x) => !usados.has(x.id) && x.valorCents === c.valorCents && Math.abs(dias(x.data, c.data)) <= DIAS_DE_TOLERANCIA
+        (x) =>
+          !usados.has(x.id) &&
+          x.valorCents === c.valorCents &&
+          Math.abs(dias(x.data, c.data)) <= DIAS_DE_TOLERANCIA &&
+          mesmoCliente(c.tomadorDocumento, x.documento)
       )
       .sort(
         (a, b) =>
@@ -383,12 +428,21 @@ export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoC
   const casaveis = lista.map((c, i) => ({ ...c, id: String(i) }));
   const casamentos = casarCtesComTitulos(casaveis, titulos);
   const usados = new Set<string>();
+  // O título que cobra vários CT-e: a conta do valor é contra a SOMA deles.
+  const ctesDoTitulo = new Map<string, number[]>();
+  for (const c of casaveis) {
+    const a = casamentos.get(c.id);
+    if (a) ctesDoTitulo.set(a.titulo.id, [...(ctesDoTitulo.get(a.titulo.id) ?? []), c.valorCents]);
+  }
 
   for (const c of casaveis) {
     const achado = casamentos.get(c.id);
     if (achado) {
       usados.add(achado.titulo.id);
-      linhas.push(montar(c, achado.titulo, achado.como === "valor+data" ? "valor+data" : "número"));
+      const doTitulo = ctesDoTitulo.get(achado.titulo.id) ?? [c.valorCents];
+      linhas.push(
+        montar(c, achado.titulo, achado.como === "valor+data" ? "valor+data" : doTitulo.length > 1 ? "número (fatura de vários CT-e)" : "número", doTitulo.reduce((a, v) => a + v, 0))
+      );
     } else if (!c.cancelado) {
       // CT-e cancelado e sem título é o caso CERTO: documento anulado, cobrança
       // inexistente. Não vira linha para não afogar o que importa.
@@ -427,6 +481,9 @@ export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoC
     if (usados.has(t.id) || t.cancelado) continue;
     linhas.push({
       tipo: "titulo_sem_cte",
+      tituloNumero: t.numero,
+      tituloData: t.data,
+      tituloParceiro: t.parceiro,
       numero: t.numero,
       data: t.data,
       valorCteCents: null,
@@ -460,7 +517,7 @@ export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoC
   };
 }
 
-function montar(c: CteDaLista, t: TituloCte, como: "número" | "valor+data"): LinhaConferencia {
+function montar(c: CteDaLista, t: TituloCte, como: NonNullable<LinhaConferencia["casadoPor"]>, somaDosCtes = c.valorCents): LinhaConferencia {
   const base = {
     numero: c.numero,
     data: c.data,
@@ -469,18 +526,32 @@ function montar(c: CteDaLista, t: TituloCte, como: "número" | "valor+data"): Li
     tomador: c.tomador,
     situacaoTitulo: t.situacao,
     casadoPor: como,
+    tituloNumero: t.numero,
+    tituloData: t.data,
+    tituloParceiro: t.parceiro,
   };
   // A ordem dos testes é a ordem da gravidade. Um CT-e cancelado com título
   // vivo é receita sem documento válido; um valor divergente é cobrança fora
   // do que o documento autoriza. O primeiro engole o segundo de propósito:
   // conserta-se o título antes de discutir centavos.
   if (c.cancelado && !t.cancelado) return { ...base, tipo: "cancelado_com_titulo" };
-  if (!t.cancelado && t.valorCents !== c.valorCents) return { ...base, tipo: "valor_divergente" };
+  // Título de vários CT-e: confere quando o valor dele é a soma dos CT-e.
+  if (!t.cancelado && t.valorCents !== somaDosCtes) return { ...base, tipo: "valor_divergente" };
   return { ...base, tipo: "casado" };
 }
 
 function ordem(tipo: LinhaConferencia["tipo"]): number {
   return { cancelado_com_titulo: 0, valor_divergente: 1, autorizado_sem_titulo: 2, titulo_sem_cte: 3, casado: 4 }[tipo];
+}
+
+// A raiz do CNPJ (8 dígitos) ou o CPF inteiro, dos dois lados. Faltando um
+// deles, não há como dizer — vale (o casamento fraco segue como antes).
+export function mesmoCliente(tomador: string | null | undefined, parceiro: string | null | undefined): boolean {
+  const a = (tomador ?? "").replace(/\D/g, "");
+  const b = (parceiro ?? "").replace(/\D/g, "");
+  if (a.length < 11 || b.length < 11) return true;
+  const raiz = (d: string) => (d.length === 14 ? d.slice(0, 8) : d);
+  return raiz(a) === raiz(b);
 }
 
 export function dias(a: Date, b: Date): number {
