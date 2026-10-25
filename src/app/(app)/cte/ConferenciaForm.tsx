@@ -200,7 +200,7 @@ export default function ConferenciaForm({
               (estado?.periodo ? ` entre ${estado.periodo.inicio} e ${estado.periodo.fim}` : "") +
               `. O conserto é na Omie — esta tela não altera nada.` +
               (r.foraDasDatasDaLista > 0
-                ? ` ${fmtNumero(r.foraDasDatasDaLista)} título(s) de CT-e de dias antes do primeiro ou depois do último CT-e colado não foram acusados: o CT-e deles está fora da lista.`
+                ? ` ${fmtNumero(r.foraDasDatasDaLista)} título(s) de CT-e fora das datas ou da numeração da lista colada não foram acusados: o CT-e deles está fora da lista.`
                 : "")
             }
           >

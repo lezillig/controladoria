@@ -475,8 +475,23 @@ export function cruzarCte(lista: CteDaLista[], titulos: TituloCte[]): ResultadoC
   const ultimoDia = datasDaLista.length ? new Date(Math.max(...datasDaLista)) : null;
   const dentroDaLista = (d: Date) =>
     !!primeiroDia && !!ultimoDia && dias(d, primeiroDia) >= 0 && dias(d, ultimoDia) <= 0;
-  const titulosCte = titulos.filter((t) => ehTipoCte(t.tipo) && (usados.has(t.id) || dentroDaLista(t.data)));
-  const foraDasDatasDaLista = titulos.filter((t) => ehTipoCte(t.tipo) && !usados.has(t.id) && !t.cancelado && !dentroDaLista(t.data)).length;
+  //
+  // E DENTRO DA NUMERAÇÃO DA LISTA. A numeração do CT-e é sequencial: título
+  // com número abaixo do menor (ou acima do maior) CT-e colado tem o CT-e fora
+  // da lista, mesmo que a data do título caia no período — o 1223 (abril) e o
+  // 1262 (junho) de uma lista que começava no 1283 vinham com emissão
+  // 25/08/2026 no título e eram acusados.
+  const numerosDaLista = lista.map((c) => Number(soDigitos(c.numero))).filter((n) => Number.isFinite(n) && n > 0);
+  const menorNumero = numerosDaLista.length ? Math.min(...numerosDaLista) : null;
+  const maiorNumero = numerosDaLista.length ? Math.max(...numerosDaLista) : null;
+  const naNumeracao = (t: TituloCte) => {
+    const n = Number(soDigitos(t.numero));
+    if (!n || menorNumero === null || maiorNumero === null) return true;
+    return n >= menorNumero && n <= maiorNumero;
+  };
+  const acusavel = (t: TituloCte) => dentroDaLista(t.data) && naNumeracao(t);
+  const titulosCte = titulos.filter((t) => ehTipoCte(t.tipo) && (usados.has(t.id) || acusavel(t)));
+  const foraDasDatasDaLista = titulos.filter((t) => ehTipoCte(t.tipo) && !usados.has(t.id) && !t.cancelado && !acusavel(t)).length;
   for (const t of titulosCte) {
     if (usados.has(t.id) || t.cancelado) continue;
     linhas.push({

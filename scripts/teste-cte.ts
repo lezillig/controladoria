@@ -175,7 +175,7 @@ const t = (
 {
   const r = cruzarCte(
     [lerListaDeCte(JANEIRO).itens[0]!],
-    [t({ id: "a", numero: "1149", valorCents: 3_000_000, data: "2026-01-30", parceiro: "SPAL" })]
+    [t({ id: "a", numero: null, valorCents: 3_000_000, data: "2026-01-30", parceiro: "SPAL" })]
   );
   conferir("CT-e espelhado sem par na lista aparece", r.linhas[0]?.tipo, "titulo_sem_cte");
 }
@@ -195,10 +195,22 @@ const t = (
 {
   const r = cruzarCte(lerListaDeCte(JANEIRO).itens, [
     t({ id: "a", numero: "1151", valorCents: 8_200_000, data: "2026-01-02" }),
-    t({ id: "b", numero: "1149", valorCents: 100, data: "2026-01-15" }),
+    t({ id: "b", numero: null, valorCents: 100, data: "2026-01-15" }),
   ]);
   conferir("cancelado com título vivo vem primeiro", r.linhas[0]?.tipo, "cancelado_com_titulo");
   conferir("o que confere vem por último", r.linhas[r.linhas.length - 1]?.tipo, "titulo_sem_cte");
+}
+
+// 3k2. Título com número fora da numeração da lista não é acusado, mesmo com
+//      a data dentro: o 1223 (abril) com emissão gravada em 25/08 numa lista
+//      de 1150 a 1166.
+{
+  const r = cruzarCte(lerListaDeCte(JANEIRO).itens, [t({ id: "a", numero: "1123", valorCents: 115_000, data: "2026-01-20" })]);
+  conferir("número abaixo da lista não vira diferença", [r.linhas.filter((l) => l.tipo === "titulo_sem_cte").length, r.foraDasDatasDaLista], [0, 1]);
+  // Lista com 1150 e 1166 só: o 1158 está na numeração e não está na lista.
+  const pontas = lerListaDeCte(JANEIRO).itens.filter((c) => c.numero === "1150" || c.numero === "1166");
+  const dentro = cruzarCte(pontas, [t({ id: "a", numero: "1158", valorCents: 115_000, data: "2026-01-20" })]);
+  conferir("número dentro da lista e sem CT-e, sim", dentro.linhas.some((l) => l.tipo === "titulo_sem_cte"), true);
 }
 
 // 3l. Um título para dois CT-e: "1304 / 1305" da SESI Suzano (R$ 2.900 =
