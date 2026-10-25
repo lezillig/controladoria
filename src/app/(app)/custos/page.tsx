@@ -357,20 +357,24 @@ export default async function CustosPage({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
         {/* RECEITA BRUTA ao lado da líquida: o faturamento como a empresa o
             conhece, e quanto as deduções levam dele. */}
-        <Kpi
-          rotulo={anual ? `Receita bruta ${anoDaTela}` : "Receita bruta"}
-          valor={fmtBRL(valorDaLinha("RECEITA_BRUTA"))}
-          apoio={
-            valorDaLinha("RECEITA_BRUTA") > 0
-              ? `Deduções de ${fmtBRL(valorDaLinha("DEDUCOES"))} (${fmtPercent((valorDaLinha("DEDUCOES") / valorDaLinha("RECEITA_BRUTA")) * 100)})`
-              : "Receita operacional, antes das deduções"
-          }
-        />
-        <Kpi
-          rotulo={anual ? `Receita líquida ${anoDaTela}` : "Receita líquida"}
-          valor={fmtBRL(dreAnual?.receitaLiquidaCents ?? dre.receitaLiquidaCents)}
-          apoio="Receita bruta menos as deduções"
-        />
+        <a href={anual ? "#tabela-dre" : "#dre=RECEITA_BRUTA,DEDUCOES"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Ver o que compõe este número">
+          <Kpi
+            rotulo={anual ? `Receita bruta ${anoDaTela}` : "Receita bruta"}
+            valor={fmtBRL(valorDaLinha("RECEITA_BRUTA"))}
+            apoio={
+              valorDaLinha("RECEITA_BRUTA") > 0
+                ? `Deduções de ${fmtBRL(valorDaLinha("DEDUCOES"))} (${fmtPercent((valorDaLinha("DEDUCOES") / valorDaLinha("RECEITA_BRUTA")) * 100)})`
+                : "Receita operacional, antes das deduções"
+            }
+          />
+        </a>
+        <a href={anual ? "#tabela-dre" : "#dre=RECEITA_BRUTA,DEDUCOES"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Ver o que compõe este número">
+          <Kpi
+            rotulo={anual ? `Receita líquida ${anoDaTela}` : "Receita líquida"}
+            valor={fmtBRL(dreAnual?.receitaLiquidaCents ?? dre.receitaLiquidaCents)}
+            apoio="Receita bruta menos as deduções"
+          />
+        </a>
         {/* RESULTADO ANTES DOS INVESTIMENTOS no lugar do lucro bruto.
             Enquanto nenhuma categoria está em "custo dos serviços" — e a
             operação desta empresa está em veículos e pessoas, abaixo do lucro
@@ -378,41 +382,49 @@ export default async function CustosPage({
             dela, 100%, todo mês. Este é o número que separa o que a operação
             gerou do que se gasta renovando a frota. Os dois cartões saem da
             MESMA demonstração da tabela (mês ou ano, empresa, regime). */}
-        <Kpi
-          rotulo="Resultado antes dos investimentos"
-          valor={fmtBRL(valorDaLinha("LAIR"))}
-          apoio={`${fmtPercent(linhaDaTela("LAIR")?.percentReceitaLiquida ?? null)} da receita líquida`}
-          tom={valorDaLinha("LAIR") >= 0 ? "bom" : "ruim"}
-        />
+        <a href={anual ? "#tabela-dre" : "#dre=todas"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Ver o que compõe este número">
+          <Kpi
+            rotulo="Resultado antes dos investimentos"
+            valor={fmtBRL(valorDaLinha("LAIR"))}
+            apoio={`${fmtPercent(linhaDaTela("LAIR")?.percentReceitaLiquida ?? null)} da receita líquida`}
+            tom={valorDaLinha("LAIR") >= 0 ? "bom" : "ruim"}
+          />
+        </a>
         {/* INVESTIMENTOS entre os dois resultados: a linha que os separa no
             DRE (financiamentos e consórcios da frota), para a diferença entre
             eles não precisar ser procurada na tabela. */}
-        <Kpi
-          rotulo="Investimentos"
-          valor={fmtBRL(valorDaLinha("FINANCIAMENTO_INVESTIMENTO"))}
-          apoio={`Financiamentos, consórcios e empréstimos · ${fmtPercent(linhaDaTela("FINANCIAMENTO_INVESTIMENTO")?.percentReceitaLiquida ?? null)} da receita líquida`}
-        />
-        <Kpi
-          rotulo="Resultado líquido do período"
-          valor={fmtBRL(valorDaLinha("RESULTADO_LIQUIDO"))}
-          apoio={`${fmtPercent(linhaDaTela("RESULTADO_LIQUIDO")?.percentReceitaLiquida ?? null)} da receita líquida`}
-          tom={valorDaLinha("RESULTADO_LIQUIDO") >= 0 ? "bom" : "ruim"}
-        />
-        <Kpi
-          rotulo="Por classificar"
-          valor={fmtBRL(
-            (dreAnual?.naoConfirmadoCents ?? dre.naoConfirmadoCents) +
-              (dreAnual?.semCategoriaCents ?? dre.semCategoriaCents)
-          )}
-          apoio="Movimento em categoria que ninguém confirmou ainda"
-          tom={
-            (dreAnual?.naoConfirmadoCents ?? dre.naoConfirmadoCents) +
-              (dreAnual?.semCategoriaCents ?? dre.semCategoriaCents) >
-            0
-              ? "atencao"
-              : "bom"
-          }
-        />
+        <a href={anual ? "#tabela-dre" : "#dre=FINANCIAMENTO_INVESTIMENTO"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Ver o que compõe este número">
+          <Kpi
+            rotulo="Investimentos"
+            valor={fmtBRL(valorDaLinha("FINANCIAMENTO_INVESTIMENTO"))}
+            apoio={`Financiamentos, consórcios e empréstimos · ${fmtPercent(linhaDaTela("FINANCIAMENTO_INVESTIMENTO")?.percentReceitaLiquida ?? null)} da receita líquida`}
+          />
+        </a>
+        <a href={anual ? "#tabela-dre" : "#dre=todas"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Ver o que compõe este número">
+          <Kpi
+            rotulo="Resultado líquido do período"
+            valor={fmtBRL(valorDaLinha("RESULTADO_LIQUIDO"))}
+            apoio={`${fmtPercent(linhaDaTela("RESULTADO_LIQUIDO")?.percentReceitaLiquida ?? null)} da receita líquida`}
+            tom={valorDaLinha("RESULTADO_LIQUIDO") >= 0 ? "bom" : "ruim"}
+          />
+        </a>
+        <a href={anual ? "#tabela-dre" : "#dre=nao-confirmadas"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Ver o que compõe este número">
+          <Kpi
+            rotulo="Por classificar"
+            valor={fmtBRL(
+              (dreAnual?.naoConfirmadoCents ?? dre.naoConfirmadoCents) +
+                (dreAnual?.semCategoriaCents ?? dre.semCategoriaCents)
+            )}
+            apoio="Movimento em categoria que ninguém confirmou ainda"
+            tom={
+              (dreAnual?.naoConfirmadoCents ?? dre.naoConfirmadoCents) +
+                (dreAnual?.semCategoriaCents ?? dre.semCategoriaCents) >
+              0
+                ? "atencao"
+                : "bom"
+            }
+          />
+        </a>
       </div>
 
       {/* A ELIMINAÇÃO É DITA, com os números. Receita do grupo que "cai" de
@@ -446,7 +458,7 @@ export default async function CustosPage({
       )}
 
       {(dre.naoConfirmadoCents > 0 || dre.semCategoriaCents > 0) && (
-        <div className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div id="por-classificar" className="scroll-mt-4 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <strong>Este DRE ainda não foi conferido por inteiro.</strong>{" "}
           {dre.naoConfirmadoCents > 0 && (
             <>

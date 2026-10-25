@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { fmtBRL, fmtPercent } from "@/lib/controladoria/format";
 import type { LinhaDreCalculada } from "@/lib/controladoria/dre";
@@ -50,11 +50,39 @@ export default function TabelaDre({
     });
 
   const gruposComItens = linhas.filter((l) => l.tipo === "GRUPO" && l.itens.length > 0);
+
+  // O DRILL-DOWN DOS CARTÕES: o cartão leva a "#dre=RECEITA_BRUTA,DEDUCOES"
+  // (ou "#dre=todas"); a tabela abre essas linhas e rola até a primeira.
+  useEffect(() => {
+    const abrirDoEndereco = () => {
+      const m = /^#dre=(.+)$/.exec(window.location.hash);
+      if (!m) return;
+      const pedidas = decodeURIComponent(m[1]).split(",");
+      // "nao-confirmadas": as linhas com categoria que ninguém confirmou ainda
+      // (o cartão "Por classificar"); sem nenhuma, o aviso de por classificar.
+      const chaves = pedidas.includes("todas")
+        ? gruposComItens.map((l) => l.chave)
+        : pedidas.includes("nao-confirmadas")
+          ? gruposComItens.filter((l) => l.itens.some((i) => !i.confirmada)).map((l) => l.chave)
+          : pedidas.filter((c) => gruposComItens.some((l) => l.chave === c));
+      if (pedidas.includes("nao-confirmadas") && chaves.length === 0) {
+        document.getElementById("por-classificar")?.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      setAbertas(new Set(chaves));
+      const alvo = document.getElementById(`dre-${chaves[0] ?? pedidas[0]}`) ?? document.getElementById("tabela-dre");
+      requestAnimationFrame(() => alvo?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    };
+    abrirDoEndereco();
+    window.addEventListener("hashchange", abrirDoEndereco);
+    return () => window.removeEventListener("hashchange", abrirDoEndereco);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const todasAbertas = gruposComItens.length > 0 && gruposComItens.every((l) => abertas.has(l.chave));
 
   return (
     <>
-      <div className="mb-2 flex justify-end">
+      <div id="tabela-dre" className="mb-2 flex scroll-mt-4 justify-end">
         <button
           type="button"
           onClick={() => setAbertas(todasAbertas ? new Set() : new Set(gruposComItens.map((l) => l.chave)))}
@@ -88,13 +116,14 @@ export default function TabelaDre({
               return (
                 <Fragment key={linha.chave}>
                   <tr
-                    className={
+                    id={`dre-${linha.chave}`}
+                    className={`scroll-mt-4 ${
                       resultado
                         ? "border-t-2 border-slate-900 bg-slate-50 font-semibold text-slate-900"
                         : subtotal
                           ? "border-t border-slate-300 bg-slate-50/60 font-semibold text-slate-800"
                           : `border-b border-slate-100 text-slate-700 ${abrivel ? "cursor-pointer hover:bg-slate-50" : ""}`
-                    }
+                    }`}
                     onClick={abrivel ? () => alternar(linha.chave) : undefined}
                   >
                     <td className="px-3 py-2.5">
