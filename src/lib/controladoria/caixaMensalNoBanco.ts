@@ -36,16 +36,43 @@ export async function caixaMensalNoBanco(params: EscopoCaixa & { desde: Date; at
   const janela = { desde: new Date(desde.getTime() - 400 * 86_400_000), ate };
 
   const [somas, previsto, antes, contas, classificacoes, todasCategorias, categorias, movimento] = await Promise.all([
+    // Sem subconsulta correlacionada: os candidatos a transferência (linhas sem
+    // categoria no período) são casados entre si de uma vez, por hash no valor.
+    // A versão linha a linha estourava o tempo da página com o extrato real.
+    // A baixa entra por DISTINCT ON: um lançamento que baixou vários títulos
+    // (pagamento em lote) não pode multiplicar a linha do extrato.
     prisma.$queryRaw<LinhaSoma[]>`
-      WITH linhas AS (
-        SELECT m.id, m.data, m."valorCents", m."conexaoApelido", m."companyId", m."contaCorrenteCodigo", m."conexaoId",
+      WITH cand AS (
+        SELECT o.id, o.data, o."valorCents", o."conexaoId", o."contaCorrenteCodigo"
+          FROM ${tabela("OmieMovimento")} o
+         WHERE o."companyId" = ${companyId}
+           AND o."categoriaCodigo" IS NULL
+           AND o.data >= ${desde}::timestamp - INTERVAL '1 day' AND o.data <= ${ate}::timestamp + INTERVAL '1 day'
+      ),
+      pares AS (
+        SELECT DISTINCT a.id
+          FROM cand a
+          JOIN cand o ON o."valorCents" = -a."valorCents"
+                     AND o.data BETWEEN a.data - INTERVAL '1 day' AND a.data + INTERVAL '1 day'
+                     AND (o."conexaoId" <> a."conexaoId" OR o."contaCorrenteCodigo" <> a."contaCorrenteCodigo")
+      ),
+      baixas AS (
+        SELECT DISTINCT ON (b."conexaoId", b."lancamentoCCCodigo") b."conexaoId", b."lancamentoCCCodigo", b."tituloId"
+          FROM ${tabela("OmieBaixa")} b
+         WHERE b."companyId" = ${companyId} AND b."lancamentoCCCodigo" IS NOT NULL
+         ORDER BY b."conexaoId", b."lancamentoCCCodigo", b."dataBaixa" DESC
+      ),
+      linhas AS (
+        SELECT m.data, m."valorCents", m."conexaoApelido",
                COALESCE(m."categoriaCodigo", tb."categoriaCodigo", tt."categoriaCodigo") AS categoria,
                (tb.id IS NOT NULL OR tt.id IS NOT NULL) AS com_titulo,
+               (p.id IS NOT NULL) AS tem_par,
                CONCAT_WS(' ', m.tipo, m.observacao, m."parceiroNome") AS texto
           FROM ${tabela("OmieMovimento")} m
-          LEFT JOIN ${tabela("OmieBaixa")} b ON b."conexaoId" = m."conexaoId" AND b."lancamentoCCCodigo" = m."codigoLancamento"
+          LEFT JOIN baixas b ON b."conexaoId" = m."conexaoId" AND b."lancamentoCCCodigo" = m."codigoLancamento"
           LEFT JOIN ${tabela("OmieTitulo")} tb ON tb.id = b."tituloId"
-          LEFT JOIN ${tabela("OmieTitulo")} tt ON tt."conexaoId" = m."conexaoId" AND tt."codigoLancamento" = m."tituloCodigo" AND b.id IS NULL
+          LEFT JOIN ${tabela("OmieTitulo")} tt ON b."tituloId" IS NULL AND m."tituloCodigo" IS NOT NULL AND tt."conexaoId" = m."conexaoId" AND tt."codigoLancamento" = m."tituloCodigo"
+          LEFT JOIN pares p ON p.id = m.id
          WHERE m."companyId" = ${companyId}
            AND m.data >= ${desde} AND m.data <= ${ate}
            ${doMovimento}
@@ -54,16 +81,7 @@ export async function caixaMensalNoBanco(params: EscopoCaixa & { desde: Date; at
              l."conexaoApelido" AS empresa,
              l.categoria,
              (l."valorCents" > 0) AS entrada,
-             (l.categoria IS NULL AND (
-                (NOT l.com_titulo AND l.texto ~* 'transf')
-                OR EXISTS (
-                  SELECT 1 FROM ${tabela("OmieMovimento")} o
-                   WHERE o."companyId" = l."companyId"
-                     AND o."valorCents" = -l."valorCents"
-                     AND o."categoriaCodigo" IS NULL
-                     AND o.data BETWEEN l.data - INTERVAL '1 day' AND l.data + INTERVAL '1 day'
-                     AND (o."conexaoId" <> l."conexaoId" OR o."contaCorrenteCodigo" <> l."contaCorrenteCodigo"))
-             )) AS transferencia,
+             (l.categoria IS NULL AND (l.tem_par OR (NOT l.com_titulo AND l.texto ~* 'transf'))) AS transferencia,
              SUM(l."valorCents")::bigint AS cents
         FROM linhas l
        GROUP BY 1, 2, 3, 4, 5`,

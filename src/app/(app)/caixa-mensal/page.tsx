@@ -23,6 +23,10 @@ import { Kpi, Secao, Tabela } from "../_componentes";
 // não foi para funcionário da Azul ou da MCZ, e as checagens de fraude. E a
 // busca por nome varre todas as contas das duas empresas.
 
+// Doze meses de extrato das duas empresas, mais a auditoria da conta: com folga
+// acima do limite padrão da hospedagem.
+export const maxDuration = 60;
+
 const OPCOES_MESES = [6, 12, 24];
 const reais = (cents: number) => (Math.round(cents / 100) === 0 ? "—" : fmtBRL(Math.round(cents / 100) * 100).replace(/,00$/, ""));
 const pct = (v: number | null) => (v === null ? "—" : fmtPercent(v * 100, 0));
