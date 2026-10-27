@@ -164,7 +164,8 @@ export function montarJanelas(dataReferencia: Date): JanelasRelatorio {
 // Corpus Christi, Sexta-Feira Santa) exigiria calendario externo, e um
 // falso-negativo aqui e melhor que uma tabela desatualizada em producao
 // dando alerta errado.
-const FERIADOS_FIXOS = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "12-25"];
+// 20/11 (Consciência Negra) é feriado nacional desde 2024 (Lei 14.759/2023).
+export const FERIADOS_FIXOS = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"];
 
 export function ehDiaNaoUtil(d: Date): boolean {
   const diaSemana = d.getDay();

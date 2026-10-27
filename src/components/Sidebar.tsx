@@ -27,6 +27,7 @@ import {
   UsersRound,
   Database,
   Wallet,
+  ClipboardCheck,
 } from "lucide-react";
 import type { Permissao } from "@/lib/acessos";
 
@@ -86,6 +87,8 @@ const NAV: NavItem[] = [
   { href: "/cte", label: "Conferência de CT-e", icon: FileCheck, permissao: "cte" },
   // O projeto (OS) do custo contra o da cobrança: serviço pago e não faturado.
   { href: "/conferencia-os", label: "Conferência de OS", icon: ListChecks, permissao: "titulos" },
+  // O checklist mensal do fluxograma da folha validado pelo RH e pela Contabilidade.
+  { href: "/folha", label: "Fechamento da folha", icon: ClipboardCheck, permissao: "folha" },
 
   // As duas leituras do mesmo risco — a que o sistema faz nos dados e a que a
   // consultoria faz na empresa.

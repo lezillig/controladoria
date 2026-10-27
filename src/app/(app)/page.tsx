@@ -11,7 +11,8 @@ import { inicioDoDia, somarDias } from "@/lib/controladoria/periodos";
 import { avaliarQualidadeDaBase } from "@/lib/controladoria/supervisor";
 import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { rotuloCompetencia } from "@/lib/conformidade/tipos";
-import { competenciasDisponiveis, contextoDaPagina } from "./_dados";
+import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "./_dados";
+import { alertasDaFolha } from "@/lib/controladoria/fechamentoFolhaNoBanco";
 import {
   AvisoVazio,
   BadgeSeveridade,
@@ -44,7 +45,7 @@ export default async function ControladoriaPage({
   searchParams: Promise<{ empresa?: string; competencia?: string }>;
 }) {
   const params = await searchParams;
-  const { ctx, escopo, periodo } = await contextoDaPagina("painel", params.empresa, params.competencia);
+  const { session, ctx, escopo, periodo } = await contextoDaPagina("painel", params.empresa, params.competencia);
   const competencias = competenciasDisponiveis(ctx.config.dataInicioBase);
 
   const panorama = await montarPanorama(ctx);
@@ -56,6 +57,14 @@ export default async function ControladoriaPage({
   const c = panorama.comparativo;
   const qualidade = avaliarQualidadeDaBase(ctx);
   const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);
+  // Prazos do fechamento da folha (atrasado ou vencendo em 2 dias), para quem
+  // vê a tela da folha. Falhar a leitura não derruba o painel.
+  const alertasFolha = (await podeAcao(session, "folha"))
+    ? await alertasDaFolha(session.companyId).catch((e) => {
+        console.warn("[painel] alertas da folha indisponíveis", e instanceof Error ? e.message.slice(0, 200) : e);
+        return [];
+      })
+    : [];
 
   // A composição dos dois primeiros números do painel: de onde vem cada
   // real. Somada no banco, no mesmo recorte de empresa e mês do comparativo.
@@ -200,6 +209,22 @@ export default async function ControladoriaPage({
         competenciaAtiva={periodo.competencia}
         rota="/"
       />
+
+      {alertasFolha.length > 0 && (
+        <Link href="/folha" className="block rounded-xl border border-red-200 bg-red-50 px-4 py-3 hover:bg-red-100">
+          <p className="text-sm font-medium text-red-900">
+            Fechamento da folha: {alertasFolha.filter((a) => a.status === "atrasado").length} atrasado(s), {alertasFolha.filter((a) => a.status === "vence-logo").length} vencendo em até 2 dias
+          </p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-red-800">
+            {alertasFolha.slice(0, 6).map((a, i) => (
+              <li key={i}>
+                {a.titulo} — {a.empresa}, prazo {fmtData(a.prazo)}
+              </li>
+            ))}
+            {alertasFolha.length > 6 && <li>… e mais {alertasFolha.length - 6}</li>}
+          </ul>
+        </Link>
+      )}
 
       {qualidade.limitacoes.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">

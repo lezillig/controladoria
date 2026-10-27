@@ -2310,3 +2310,22 @@ model CentroCustoVinculo {
   @@unique([centroCustoId, tipoOrigem, conexaoId, valorOrigem])
   @@index([companyId, conexaoId])
 }
+
+// FECHAMENTO DA FOLHA — o checklist mensal do fluxograma validado pelo RH e
+// pela Contabilidade (calendário em src/lib/controladoria/fechamentoFolha.ts).
+// Uma marca por item, competência e empresa: quem marcou e quando. Desmarcar
+// apaga a marca (a trilha de auditoria guarda as duas ações).
+model FolhaFechamentoMarca {
+  id          String   @id @default(cuid())
+  companyId   String
+  conexaoId   String
+  // "AAAA-MM": a folha do mês (outubro = 2026-10).
+  competencia String
+  chave       String
+  feitoEm     DateTime @default(now())
+  feitoPor    String?
+  observacao  String?
+
+  @@unique([companyId, conexaoId, competencia, chave])
+  @@index([companyId, competencia])
+}
