@@ -48,6 +48,14 @@ on:
   # encontra o dia já concluído e não faz nada.
   schedule:
     - cron: "10 6 * * *"
+    # VIGIA: a cada 30 minutos, confere se a sincronização do dia rodou. Se
+    # alguém estiver trabalhando nela (batimento com menos de 30 min), não
+    # entra; se ela caiu ou parou há 30 minutos ou mais, retoma de onde ficou.
+    # Com o dia concluído, a rota responde na hora que não há o que fazer.
+    # Só das 06h às 23h59 UTC (03h às 20h59 de Brasília): antes disso o
+    # vigia começaria o ciclo do dia seguinte antes da hora combinada.
+    # Repositório público: os minutos do Actions não custam nada.
+    - cron: "*/30 6-23 * * *"
 
 # Uma carga por vez. Duas correndo juntas não corrompem nada (toda escrita é
 # upsert por chave natural), mas gastam invocação em dobro e embaralham o log.
@@ -82,6 +90,26 @@ jobs:
 
           base="${APP_URL%/}"
           rota="$base/api/cron/controladoria"
+
+          # O VIGIA (execução agendada) pergunta antes de agir. Rota de estado
+          # ausente (deploy antigo) ou fora do ar: conduz assim mesmo — na
+          # dúvida, retomar é o lado seguro, porque o ciclo é idempotente.
+          if [ "${GITHUB_EVENT_NAME:-}" = "schedule" ]; then
+            vargs=(-sS --max-time 60 -H "Authorization: Bearer $CRON_SECRET")
+            if [ -n "${BYPASS:-}" ]; then
+              vargs+=(-H "x-vercel-protection-bypass: $BYPASS")
+            fi
+            estado=$(curl "${vargs[@]}" "$rota/estado")
+            agir=$(printf '%s' "$estado" | jq -r 'if has("agir") then .agir else "true" end' 2>/dev/null || echo true)
+            motivo=$(printf '%s' "$estado" | jq -r '.motivo // "estado indisponível"' 2>/dev/null || echo "estado indisponível")
+            echo "Vigia: $motivo"
+            if [ "$agir" = "false" ]; then
+              echo "## Vigia: nada a fazer" >> "$GITHUB_STEP_SUMMARY"
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "$motivo" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
 
           # Teto de rodadas. A rota já tem o seu (MAX_CICLOS), mas ele só vale
           # para o auto-encadeamento; conduzindo de fora, o teto é aqui.

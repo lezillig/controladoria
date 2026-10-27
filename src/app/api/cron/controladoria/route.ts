@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { redigir } from "@/lib/controladoria/falhas";
-import { timingSafeEqual } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { disponibilidadeGestao, listarEmpresasAtivas } from "@/lib/gestao/leitura";
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/encadear";
+import { autorizado } from "@/lib/controladoria/autorizacaoDoCiclo";
 import { parseLocalDate } from "@/lib/date";
 import { limparTentativasAntigas } from "@/lib/seguranca/freioDeLogin";
 import { limparFalhasAntigas } from "@/lib/controladoria/falhas";
@@ -35,20 +35,6 @@ const DEADLINE_MS = 50_000;
 // janelas mensais) não virar um laço infinito caso alguma fase pare de
 // avançar: sem isso, um bug de cursor consumiria invocações indefinidamente.
 const MAX_CICLOS = 120;
-
-function autorizado(req: NextRequest): boolean {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return false;
-  const recebido = req.headers.get("authorization") ?? "";
-  const esperado = `Bearer ${secret}`;
-  // Comparação em tempo constante: `===` em string vaza, pelo tempo de
-  // resposta, o tamanho do prefixo correto — o suficiente para descobrir o
-  // segredo caractere a caractere com requisições repetidas.
-  const a = Buffer.from(recebido);
-  const b = Buffer.from(esperado);
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(a, b);
-}
 
 export async function GET(req: NextRequest) {
   if (!autorizado(req)) {

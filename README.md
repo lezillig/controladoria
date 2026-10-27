@@ -78,7 +78,7 @@ Se a URL já tiver parâmetros (ex.: `?sslmode=require`), use `&schema=controlad
 | `RESEND_API_KEY` | para enviar | envio do relatório diário |
 | `EMAIL_REMETENTE` | não | remetente; o domínio precisa estar verificado no Resend |
 | `ANTHROPIC_API_KEY` | não | leitura executiva por IA no relatório |
-| `APP_URL` | não | link do e-mail para o painel |
+| `APP_URL` | não | endereço do sistema fora da Vercel (em produção na Vercel vale o domínio de produção que ela informa) |
 | `OMIE_DATA_INICIO_BASE` | não | início da carga histórica (padrão `2025-01-01`) |
 | `RELATORIO_EMAILS` | não | destinatário padrão na primeira execução |
 | `OMIE_PACE_MS` | não | espaçamento entre chamadas à Omie (padrão 350 ms) |
