@@ -9,6 +9,7 @@ import { gerarEEnviarRelatorio } from "./relatorio";
 import { enviarAlertaPorExcecao } from "./alerta";
 import { fimDoDia, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
 import { competenciasDaJanela, recalcularHistorico } from "./historico";
+import { dataDeCompetencia } from "./competencia";
 import { aplicarRetencao } from "./retencao";
 import { enriquecerParceiros } from "@/lib/receita/enriquecer";
 
@@ -179,12 +180,12 @@ export async function executarPasso(params: {
         // nesta execução: a varredura volta até jan/2025, bem antes da janela.
         const excluidos = await prisma.omieTitulo.findMany({
           where: { conexaoId: conexao.id, excluidoNaOmieEm: { gte: run.iniciadoEm } },
-          select: { dataEmissao: true, dataVencimento: true, dataUltimaBaixa: true },
+          select: { natureza: true, dataEmissao: true, dataVencimento: true, dataUltimaBaixa: true },
         });
         const competencias = [
           ...competenciasDaJanela(run.janelaInicio, run.janelaFim),
           ...excluidos.flatMap((t) =>
-            [t.dataEmissao ?? t.dataVencimento, t.dataUltimaBaixa].filter((d): d is Date => d !== null).flatMap((d) => competenciasDaJanela(d, d))
+            [dataDeCompetencia(t), t.dataUltimaBaixa].filter((d): d is Date => d !== null).flatMap((d) => competenciasDaJanela(d, d))
           ),
         ];
         const resumo = await recalcularHistorico(companyId, conexao.id, competencias);

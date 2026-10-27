@@ -272,7 +272,10 @@ export default async function CustosPage({
             comparado ao mês anterior fechado e ao mesmo mês do ano passado fechado.{" "}
             {regime === "caixa"
               ? "Regime de CAIXA: entra o que foi pago ou recebido no mês, pela data da baixa."
-              : "Regime de COMPETÊNCIA, pela data de emissão do documento."}
+              : "Regime de COMPETÊNCIA: despesas pelo vencimento, receitas pela emissão da nota."}{" "}
+            <Link href={`/custos/auditoria${escopo.conexaoId ? `?empresa=${escopo.conexaoId}` : ""}`} className="font-medium text-blue-700 hover:underline">
+              Auditar o mês →
+            </Link>
           </p>
         </div>
         {/* Corrigir categorização é trabalho de lista, não de tela: exige
@@ -507,7 +510,7 @@ export default async function CustosPage({
           `Percentuais sobre a receita líquida. ` +
           (regime === "caixa"
             ? "Regime de CAIXA — o que se moveu na conta, pela data da baixa."
-            : "Regime de COMPETÊNCIA — o que aconteceu, pela data de emissão.") +
+            : "Regime de COMPETÊNCIA — despesas pelo vencimento, receitas pela emissão da nota.") +
           (anual
             ? ""
             : " A coluna do ano anterior é o MESMO MÊS, fechado — comparar um mês pela metade com um mês inteiro daria uma queda que é só de calendário.")
@@ -614,7 +617,7 @@ export default async function CustosPage({
           <br />
           <br />
           <strong>Como esta demonstração difere do DRE contábil oficial.</strong> Aqui o regime é o de competência dos
-          títulos, pela data de emissão do documento. Não há provisão, apropriação de despesa antecipada nem
+          títulos: despesas pelo vencimento, receitas pela emissão da nota. Não há provisão, apropriação de despesa antecipada nem
           depreciação — depreciação não passa por título, e este sistema espelha títulos. É uma leitura gerencial na
           estrutura legal: serve para decidir no dia 5, não para assinar balanço. O DRE oficial é o da contabilidade.
         </p>

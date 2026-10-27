@@ -102,11 +102,12 @@ async function principal() {
       parceiroNome: "Posto Alfa",
       categoriaCodigo: "C1",
       categoriaDescricao: "Combustível",
-      // ÚLTIMO DIA DO MÊS, com hora. O recorte passou a ser por faixa de data, e
-      // é aqui que um `<=` no lugar de `< primeiro dia do mês seguinte` deixaria
-      // este título de fora sem ninguém perceber.
-      dataEmissao: new Date(2026, 2, 31, 23, 30),
-      dataVencimento: new Date(2026, 3, 10),
+      // ÚLTIMO DIA DO MÊS, com hora — no VENCIMENTO, que é a competência da
+      // despesa. O recorte passou a ser por faixa de data, e é aqui que um `<=`
+      // no lugar de `< primeiro dia do mês seguinte` deixaria este título de
+      // fora sem ninguém perceber.
+      dataEmissao: new Date(2026, 2, 1),
+      dataVencimento: new Date(2026, 2, 31, 23, 30),
       valorDocumentoCents: 50_000,
     },
   });
@@ -338,7 +339,7 @@ async function principal() {
     await prisma.omieTitulo.createMany({
       data: [
         { ...emJunho, codigoLancamento: "j1", dataEmissao: new Date(2026, 5, 5), dataVencimento: new Date(2026, 5, 15), valorDocumentoCents: 100_000 },
-        { ...emJunho, codigoLancamento: "j2", dataEmissao: new Date(2026, 5, 30, 23, 30), dataVencimento: new Date(2026, 6, 10), valorDocumentoCents: 50_000 },
+        { ...emJunho, codigoLancamento: "j2", dataEmissao: new Date(2026, 5, 1), dataVencimento: new Date(2026, 5, 30, 23, 30), valorDocumentoCents: 50_000 },
         // Cancelado: não entra em nenhum dos dois lados.
         { ...emJunho, codigoLancamento: "j3", dataEmissao: new Date(2026, 5, 20), dataVencimento: new Date(2026, 5, 25), valorDocumentoCents: 999_999, cancelado: true },
         // Categoria com espaço sobrando: o painel mostra "Combustível" (o

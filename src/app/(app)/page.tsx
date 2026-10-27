@@ -550,7 +550,7 @@ export default async function ControladoriaPage({
         {/* O critério é o de competencia.ts — data de EMISSÃO (vencimento só
             quando a emissão falta). O rótulo ainda dizia "vencimento", de
             antes da troca, e mandava quem confere procurar pela data errada. */}
-        <Secao titulo="Comparativos" descricao="Regime de competência, pela data de emissão do documento.">
+        <Secao titulo="Comparativos" descricao="Regime de competência: despesas pelo vencimento, receitas pela emissão da nota.">
           <Tabela
             colunas={["Período", "Receita", "Despesa", "Resultado"]}
             alinharDireita={[1, 2, 3]}

@@ -400,6 +400,18 @@ model OmieContaCorrente {
   // transferência interna) para transformar a marca em suspeita automática.
   naoEntraNoResumo  Boolean     @default(false)
   naoEntraNoFluxo   Boolean     @default(false)
+  // O SALDO QUE A PRÓPRIA OMIE CALCULA, devolvido no cabeçalho do extrato
+  // (ListarExtrato): atual, conciliado e disponível (com limite), e o tipo da
+  // conta (corrente, caixa, aplicação…). Gravado só pela janela mais recente
+  // — a carga histórica relê meses antigos e não pode sobrescrever o de hoje.
+  tipoCodigo               String?
+  tipoDescricao            String?
+  saldoOmieCents           Int?
+  saldoConciliadoOmieCents Int?
+  saldoDisponivelOmieCents Int?
+  limiteCreditoCents       Int?
+  // Fim do período do extrato de onde o saldo veio.
+  saldoOmieEm              DateTime?
   sincronizadoEm    DateTime    @default(now())
 
   @@unique([conexaoId, codigo])
@@ -2328,4 +2340,22 @@ model FolhaFechamentoMarca {
 
   @@unique([companyId, conexaoId, competencia, chave])
   @@index([companyId, competencia])
+}
+
+// SALDO INFORMADO À MÃO — o que o banco mostra e a Omie não tem (aplicação
+// que não está cadastrada, rendimento que ninguém lançou). Uma linha por conta
+// e data; vale a mais recente. `contaCodigo` nulo = conta fora da Omie.
+model SaldoBancarioInformado {
+  id          String   @id @default(cuid())
+  companyId   String
+  conexaoId   String
+  contaCodigo String?
+  descricao   String
+  aplicacao   Boolean  @default(false)
+  data        DateTime @db.Date
+  valorCents  BigInt
+  autorNome   String?
+  criadoEm    DateTime @default(now())
+
+  @@index([companyId, conexaoId])
 }

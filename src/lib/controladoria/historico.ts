@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
 import { mediana } from "./agents/comum";
+import { competenciaSql } from "./competencia";
 
 // A MEMÓRIA LONGA DA AUDITORIA.
 //
@@ -40,8 +41,9 @@ export type Dimensao = "PARCEIRO" | "CATEGORIA";
 // `COMPETENCIA` é o texto "AAAA-MM" e serve ao agrupamento e à coluna gravada.
 // Comparar o texto contra uma data seria erro de tipo no Postgres; usar a data
 // no GROUP BY agruparia por dia em vez de por mês.
-const DATA_COMPETENCIA = Prisma.raw(`COALESCE(t."dataEmissao", t."dataVencimento")`);
-const COMPETENCIA = Prisma.raw(`to_char(COALESCE(t."dataEmissao", t."dataVencimento"), 'YYYY-MM')`);
+// A MESMA regra de competencia.ts (despesa pelo vencimento, receita pela nota).
+const DATA_COMPETENCIA = competenciaSql("t");
+const COMPETENCIA = Prisma.sql`to_char(${competenciaSql("t")}, 'YYYY-MM')`;
 
 // UMA COMPETÊNCIA, UMA DIMENSÃO, DE UMA VEZ.
 //
@@ -273,9 +275,13 @@ export async function competenciasPendentes(
 export async function recalcularPendentes(
   companyId: string,
   prazo: Date
-): Promise<{ feitas: number; restantes: number }> {
+): Promise<{ feitas: number; restantes: number; linhas: number }> {
   const pendentes = await competenciasPendentes(companyId);
   let feitas = 0;
+  // Linhas gravadas: mês sem título nenhum não grava linha e continua
+  // "pendente" para sempre; quem repete o lote usa isto para saber se ainda
+  // está avançando.
+  let linhas = 0;
 
   for (const p of pendentes) {
     // Confere ANTES de começar mais uma, e não depois: uma competência no meio
@@ -283,11 +289,11 @@ export async function recalcularPendentes(
     // ficaria gravada e a CATEGORIA não — e a próxima passada a consideraria
     // pronta, já que "pronta" é ter qualquer linha.
     if (new Date() >= prazo) break;
-    await recalcularHistorico(companyId, p.conexaoId, [p.competencia]);
+    linhas += (await recalcularHistorico(companyId, p.conexaoId, [p.competencia])).linhas;
     feitas++;
   }
 
-  return { feitas, restantes: pendentes.length - feitas };
+  return { feitas, restantes: pendentes.length - feitas, linhas };
 }
 
 // AS COMPETÊNCIAS QUE UMA JANELA TOCA.

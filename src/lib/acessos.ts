@@ -48,6 +48,7 @@ export const PERMISSOES = [
   { chave: "classificar-dre", rotulo: "Classificar categorias do DRE", grupo: "Ações" },
   { chave: "conferir-cte", rotulo: "Conferir lista de CT-e", grupo: "Ações" },
   { chave: "marcar-folha", rotulo: "Marcar itens do fechamento da folha", grupo: "Ações" },
+  { chave: "informar-saldo", rotulo: "Informar saldo do banco (conciliação)", grupo: "Ações" },
   { chave: "gerir-bsc", rotulo: "Definir metas do Balanced Scorecard", grupo: "Ações" },
   { chave: "gerir-cenarios", rotulo: "Salvar cenários e gravar orçamento", grupo: "Ações" },
   { chave: "gerir-simulador", rotulo: "Criar estudos, salvar versões, lances e base de custos", grupo: "Ações" },

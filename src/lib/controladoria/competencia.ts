@@ -2,51 +2,50 @@ import { Prisma } from "@prisma/client";
 
 // QUAL DATA DECIDE O MÊS DE UM TÍTULO.
 //
-// Até aqui era a data de VENCIMENTO. A conferência contra a declaração de
-// faturamento assinada pela contabilidade — doze meses, extraída da própria
-// Omie — mostrou que essa escolha estava errada para medir resultado:
+// DESPESA PELO VENCIMENTO, RECEITA PELA NOTA (decisão de 27/10/2026).
 //
-//   julho/2026, títulos com documento fiscal
-//     por vencimento .... R$ 9.288.190,67   (+32% sobre a declaração)
-//     por emissão ....... R$ 7.099.201,88   (+1,1%)
-//     declaração ........ R$ 7.024.730,48
+// A Omie tem três datas e cada uma responde uma pergunta:
+//   lançamento/emissão — quando o título foi lançado (ou o documento emitido);
+//   vencimento ......... a que mês a obrigação pertence;
+//   pagamento .......... quando o dinheiro saiu ou entrou (regime de CAIXA).
 //
-// Vencimento responde "quanto tenho a receber neste mês". Emissão responde
-// "quanto faturei neste mês". As duas perguntas são legítimas; a segunda é a
-// que se chama competência, e era a primeira que estava no lugar dela.
+// DESPESA (a pagar) pelo VENCIMENTO. Pela emissão, tudo o que se lança com
+// antecedência ia para o mês do lançamento: as 48 parcelas de um financiamento
+// lançadas no dia do contrato caíam todas naquele mês, e o mês em que cada
+// parcela vence e é paga ficava sem ela — outubro/2026 apareceu com metade das
+// prestações e dos custos de veículos, com tudo pago.
 //
-// COALESCE COM O VENCIMENTO, e não `dataEmissao` puro: a coluna é opcional no
-// modelo. Na base real da Omie ela vem preenchida em 100% dos 12.931 títulos
-// conferidos, mas um nulo faria o título SUMIR do resultado do mês — e título
-// que some é pior que título no mês errado, porque ninguém procura o que não
-// sabe que falta.
+// RECEITA (a receber) pela EMISSÃO da nota, que é o faturamento: em
+// julho/2026, por vencimento a receita dava R$ 9,29 mi (+32% sobre a
+// declaração de faturamento da contabilidade); pela emissão, R$ 7,10 mi
+// (+1,1%). COALESCE com o vencimento porque a emissão é opcional no modelo, e
+// título sem data sumiria do resultado.
 //
-// O QUE NÃO MUDA, DE PROPÓSITO: atraso, aging, "vence até", pontualidade de
-// pagamento e projeção de fluxo continuam pelo VENCIMENTO. Ali a pergunta é
-// mesmo sobre quando o dinheiro deve entrar ou sair, e trocar a data
-// transformaria um título vencido há 600 dias em um título recém-emitido.
-//
-// E o regime de CAIXA continua pela data da BAIXA, como sempre foi.
+// O regime de CAIXA continua pela data da BAIXA; atraso, aging e projeção de
+// fluxo continuam pelo vencimento.
 
 // Para consulta em SQL cru. Recebe o alias da tabela de títulos.
 export function competenciaSql(alias = "t"): Prisma.Sql {
-  return Prisma.raw(`COALESCE(${alias}."dataEmissao", ${alias}."dataVencimento")`);
+  return Prisma.raw(
+    `(CASE WHEN ${alias}.natureza = 'PAGAR' THEN ${alias}."dataVencimento" ELSE COALESCE(${alias}."dataEmissao", ${alias}."dataVencimento") END)`
+  );
 }
 
-// Para os agentes e o BSC, que cruzam registro a registro na memória.
-export function dataDeCompetencia(titulo: { dataEmissao: Date | null; dataVencimento: Date }): Date {
-  return titulo.dataEmissao ?? titulo.dataVencimento;
+// Para os agentes e o BSC, que cruzam registro a registro na memória. A
+// natureza é obrigatória: sem ela uma despesa cairia no mês da emissão.
+export function dataDeCompetencia(titulo: { natureza: string; dataEmissao: Date | null; dataVencimento: Date }): Date {
+  return titulo.natureza === "PAGAR" ? titulo.dataVencimento : (titulo.dataEmissao ?? titulo.dataVencimento);
 }
 
 // Texto único do critério, para a tela e para o cabeçalho da planilha. Existe
 // para os dois nunca divergirem: uma planilha que circula por e-mail dizendo um
 // critério enquanto a tela diz outro é como se perde a confiança num relatório.
 export const CRITERIO_COMPETENCIA =
-  "Competência pela DATA DE EMISSÃO do título — é o critério que bate com a declaração de faturamento da contabilidade.";
+  "Competência: despesas pela DATA DE VENCIMENTO, receitas pela DATA DE EMISSÃO da nota (o faturamento). A data de lançamento não entra.";
 
 // SEM AS PROVISÕES FUTURAS NO RESULTADO (decisão de 04/10/2026).
 //
-// No regime de competência, o título continua no mês da EMISSÃO, mas o
+// No regime de competência, o título continua no mês da competência, mas o
 // título A VENCER — em aberto, com vencimento de hoje em diante — fica fora
 // do resultado (DRE e sua planilha de conferência, análise de custos e base
 // de custos do simulador). Entram o pago/recebido (`liquidado`) e o EM ATRASO: atraso é
@@ -85,4 +84,4 @@ export function naoEhProvisaoFutura(titulo: { natureza?: string | null; liquidad
   return titulo.natureza === "RECEBER" || titulo.liquidado === true || titulo.dataVencimento < hoje;
 }
 
-export const CRITERIO_SEM_PROVISAO = "Sem as provisões futuras: conta a pagar em aberto com vencimento de hoje em diante fica fora até ser paga; pagas e em atraso entram. A receita faturada entra pela emissão, mesmo a receber.";
+export const CRITERIO_SEM_PROVISAO = "Sem as provisões futuras: conta a pagar em aberto com vencimento de hoje em diante fica fora até ser paga; pagas e em atraso entram. A receita faturada entra pela emissão da nota, mesmo a receber.";

@@ -6,6 +6,7 @@ import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { autorizado } from "@/lib/controladoria/autorizacaoDoCiclo";
+import { recalcularPendentes } from "@/lib/controladoria/historico";
 import { parseLocalDate } from "@/lib/date";
 import { limparTentativasAntigas } from "@/lib/seguranca/freioDeLogin";
 import { limparFalhasAntigas } from "@/lib/controladoria/falhas";
@@ -134,6 +135,25 @@ export async function GET(req: NextRequest) {
         where: { companyId: empresa.id, status: "EXECUTANDO" },
         data: { status: "ERRO", finalizadoEm: new Date(), erro: mensagem.slice(0, 2000) },
       });
+    }
+  }
+
+  // O RESUMO MENSAL QUE FALTA, com o tempo que sobrar da rodada: meses sem
+  // resumo (base nova, recálculo que falhou ou mudança de regra que apagou o
+  // resumo) são refeitos aqui, do mais recente para o mais antigo. Sobrando
+  // mês, a rodada pede outra — o condutor segue até zerar.
+  if (!continua && Date.now() - iniciado < ORCAMENTO_MS - 5_000) {
+    for (const empresa of empresas) {
+      try {
+        const { feitas, restantes, linhas } = await recalcularPendentes(empresa.id, new Date(iniciado + ORCAMENTO_MS));
+        if (linhas > 0) resultados.push({ empresa: empresa.name, resumoMensal: { feitas, restantes, linhas } });
+        // Só pede outra rodada se ESTA gravou algo: o que sobra sem gravar
+        // linha são meses sem título, que nunca saem da lista.
+        if (restantes > 0 && linhas > 0) continua = true;
+      } catch (e) {
+        resultados.push({ empresa: empresa.name, resumoMensal: { erro: redigir(e instanceof Error ? e.message : "erro desconhecido").slice(0, 300) } });
+      }
+      if (Date.now() - iniciado > ORCAMENTO_MS) break;
     }
   }
 

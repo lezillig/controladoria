@@ -371,6 +371,33 @@ export function normalizarContaCorrente(bruto: Bruto): ContaCorrenteNormalizada 
   };
 }
 
+// O CABEÇALHO DO EXTRATO (ListarExtrato): o saldo que a Omie calcula para a
+// conta e o tipo dela. Nulo quando a resposta não traz saldo nenhum — aí não
+// se grava nada, em vez de zerar o saldo que já estava lá.
+export type SaldosDoExtrato = {
+  tipoCodigo: string | null;
+  tipoDescricao: string | null;
+  saldoOmieCents: number | null;
+  saldoConciliadoOmieCents: number | null;
+  saldoDisponivelOmieCents: number | null;
+  limiteCreditoCents: number | null;
+  periodoFinal: Date | null;
+};
+
+export function normalizarSaldosDoExtrato(bruto: Bruto | null | undefined): SaldosDoExtrato | null {
+  if (!bruto) return null;
+  const r: SaldosDoExtrato = {
+    tipoCodigo: str(bruto, "cCodTipo"),
+    tipoDescricao: str(bruto, "cDesTipo"),
+    saldoOmieCents: cents(bruto, "nSaldoAtual"),
+    saldoConciliadoOmieCents: cents(bruto, "nSaldoConciliado"),
+    saldoDisponivelOmieCents: cents(bruto, "nSaldoDisponivel"),
+    limiteCreditoCents: cents(bruto, "nLimiteCreditoTotal"),
+    periodoFinal: data(bruto, "dPeriodoFinal"),
+  };
+  return r.saldoOmieCents === null && r.saldoDisponivelOmieCents === null && r.saldoConciliadoOmieCents === null ? null : r;
+}
+
 // Status que significam titulo cancelado — nao entram em nenhuma soma de
 // custo/receita, mas continuam no espelho (cancelamento e justamente um dos
 // pontos que a auditoria olha).

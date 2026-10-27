@@ -190,7 +190,7 @@ export async function detalharTitulos(params: {
     {
       titulo: `Títulos ${lado}${criterioFatia} — ${periodo.rotulo}`,
       criterio:
-        `Título ${lado} não cancelado cuja competência (data de emissão, ou o vencimento quando não há emissão) ` +
+        `Título ${lado} não cancelado cuja competência (a pagar: vencimento; a receber: emissão da nota, ou o vencimento quando não há emissão) ` +
         `cai em ${periodo.rotulo}${criterioFatia}. É o mesmo recorte do cartão do painel.`,
       rotuloData: "Competência",
       rotuloValor: "Valor do título",

@@ -189,7 +189,7 @@ export default async function ResultadosPage({
         subtitle={
           noCaixa
             ? "Regime de CAIXA: pelo dinheiro que entrou e saiu, na data da baixa. Responde \u201Csobrou dinheiro no mês?\u201D."
-            : "Regime de COMPETÊNCIA: pela data de emissão do documento — o critério que bate com a declaração de faturamento da contabilidade. Responde \u201Ca operação deu lucro no mês?\u201D. O acumulado zera em janeiro."
+            : "Regime de COMPETÊNCIA: despesas pelo vencimento, receitas pela emissão da nota — o que bate com a declaração de faturamento da contabilidade. Responde \u201Ca operação deu lucro no mês?\u201D. O acumulado zera em janeiro."
         }
       />
 
@@ -537,7 +537,7 @@ export default async function ResultadosPage({
 
       <Secao
         titulo="Competência — o mês em que o resultado foi gerado"
-        descricao="Receita e despesa pela data de emissão dos títulos, independentemente de terem sido pagos. Responde 'a operação deu lucro no mês?'."
+        descricao="Receita pela emissão da nota e despesa pelo vencimento, independentemente de terem sido pagos. Responde 'a operação deu lucro no mês?'."
       >
         <Tabela
           colunas={[

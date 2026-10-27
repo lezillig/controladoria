@@ -32,7 +32,7 @@ import type { ConsultaFeita } from "./investigador";
 // As garantias do investigador continuam: só leitura, escopo por fechamento
 // (o modelo não escolhe de que empresa lê), toda consulta registrada.
 
-const REGIME = z.enum(["competencia", "caixa"]).optional().describe("Padrão: competência (pela data de emissão).");
+const REGIME = z.enum(["competencia", "caixa"]).optional().describe("Padrão: competência (despesas pelo vencimento, receitas pela emissão da nota).");
 const COMPETENCIA = z
   .string()
   .regex(/^\d{4}-\d{2}$/)

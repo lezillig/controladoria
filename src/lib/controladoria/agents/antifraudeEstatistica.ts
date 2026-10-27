@@ -1,6 +1,7 @@
 import type { OmieTitulo } from "@prisma/client";
 import { fmtBRL, fmtPercent } from "../format";
 import type { AchadoNovo, ContextoAuditoria } from "../types";
+import { dataDeCompetencia } from "../competencia";
 import { agrupar, chaveAchado, chaveMes, chaveParceiro, mediana, nomeParceiro, somar, titulosAtivos } from "./comum";
 
 // ANTIFRAUDE — OS TESTES ESTATÍSTICOS
@@ -195,7 +196,7 @@ export function kickbackPorCategoria(ctx: ContextoAuditoria, materialidade: numb
   const mesAtual = competencia(ctx.dataReferencia);
   const mesInicial = competencia(ctx.janelaDesde);
   const inteiros = (t: OmieTitulo) => {
-    const c = competencia(t.dataEmissao ?? t.dataVencimento);
+    const c = competencia(dataDeCompetencia(t));
     return c >= mesInicial && c < mesAtual ? c : null;
   };
   const pagar = titulosAtivos(ctx, "PAGAR").filter((t) => t.parceiroCodigo && inteiros(t));

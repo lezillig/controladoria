@@ -29,6 +29,7 @@ import {
   normalizarTitulo,
   normalizarContrato,
   normalizarCte,
+  normalizarSaldosDoExtrato,
 } from "./mapping";
 import type { OmieNatureza, VersaoContrato } from "./types";
 import type { Prisma } from "@prisma/client";
@@ -756,6 +757,18 @@ async function sincronizarMovimentos(ctx: ContextoFase): Promise<ResultadoFase> 
       continue;
     } finally {
       await sleep(OMIE_PACE_MS);
+    }
+
+    // O saldo que a Omie calcula para a conta vem no cabeçalho da resposta.
+    // Só a janela mais recente grava: a carga histórica relê meses antigos, e
+    // o saldo de março não pode sobrescrever o de hoje.
+    const saldos = normalizarSaldosDoExtrato(resposta as Parameters<typeof normalizarSaldosDoExtrato>[0]);
+    if (saldos) {
+      const { periodoFinal, ...campos } = saldos;
+      await prisma.omieContaCorrente.updateMany({
+        where: { conexaoId: ctx.conexaoId, codigo, OR: [{ saldoOmieEm: null }, { saldoOmieEm: { lte: ctx.janelaFim } }] },
+        data: { ...campos, saldoOmieEm: periodoFinal ?? ctx.janelaFim },
+      });
     }
 
     // A chave do extrato é derivada do conteúdo (a Omie não devolve código de

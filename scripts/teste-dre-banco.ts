@@ -152,7 +152,7 @@ async function principal() {
     { ...comum(cx1, "AZ"), codigoLancamento: "A4", natureza: "PAGAR" as const, categoriaCodigo: "D2",
       dataEmissao: new Date(2026, 8, 5), dataVencimento: new Date(2026, 8, 19), valorDocumentoCents: 220_400 },
     { ...comum(cx1, "AZ"), codigoLancamento: "A5", natureza: "PAGAR" as const, categoriaCodigo: "D3",
-      dataEmissao: new Date(2026, 8, 6), dataVencimento: new Date(2026, 8, 25), valorDocumentoCents: 40_500 },
+      dataEmissao: new Date(2026, 8, 6), dataVencimento: new Date(2026, 8, 22), valorDocumentoCents: 40_500 },
     // Cancelado: não é resultado, e nenhuma das duas colheitas pode contá-lo.
     { ...comum(cx1, "AZ"), codigoLancamento: "A6", natureza: "PAGAR" as const, categoriaCodigo: "D1",
       dataEmissao: new Date(2026, 8, 7), dataVencimento: new Date(2026, 8, 21), valorDocumentoCents: 777_700,
@@ -164,15 +164,16 @@ async function principal() {
     // ele se agrupa pelo nome.
     { ...comum(cx1, "AZ"), codigoLancamento: "A8", natureza: "PAGAR" as const, categoriaCodigo: "DX",
       parceiroCodigo: null, parceiroNome: "Fornecedor Sem Código",
-      dataEmissao: new Date(2026, 8, 10), dataVencimento: new Date(2026, 8, 23), valorDocumentoCents: 70_700 },
+      dataEmissao: new Date(2026, 8, 10), dataVencimento: new Date(2026, 8, 21), valorDocumentoCents: 70_700 },
     // Estorno: valor negativo dentro de uma linha de despesa.
     { ...comum(cx1, "AZ"), codigoLancamento: "A9", natureza: "PAGAR" as const, categoriaCodigo: "D1",
-      dataEmissao: new Date(2026, 8, 11), dataVencimento: new Date(2026, 8, 24), valorDocumentoCents: -15_800 },
+      dataEmissao: new Date(2026, 8, 11), dataVencimento: new Date(2026, 8, 21), valorDocumentoCents: -15_800 },
     // Outra empresa, mesmo mês: entra no consolidado e sai no filtro por empresa.
     { ...comum(cx2, "MC"), codigoLancamento: "B1", natureza: "PAGAR" as const, categoriaCodigo: "D4",
-      dataEmissao: new Date(2026, 8, 12), dataVencimento: new Date(2026, 8, 26), valorDocumentoCents: 130_900 },
-    // EMISSÃO EM SETEMBRO, VENCIMENTO EM OUTUBRO já está em A1; aqui o inverso:
-    // emitido em agosto e vencendo em setembro, pertence a AGOSTO.
+      dataEmissao: new Date(2026, 8, 12), dataVencimento: new Date(2026, 8, 21), valorDocumentoCents: 130_900 },
+    // EMISSÃO EM SETEMBRO, VENCIMENTO EM OUTUBRO já está em A1 (receita: fica
+    // em setembro, pela nota); aqui a despesa emitida em agosto e vencendo em
+    // setembro, que pertence a SETEMBRO — despesa é pelo vencimento.
     { ...comum(cx1, "AZ"), codigoLancamento: "A10", natureza: "PAGAR" as const, categoriaCodigo: "D1",
       dataEmissao: new Date(2026, 7, 28), dataVencimento: new Date(2026, 8, 15), valorDocumentoCents: 91_100 },
 
@@ -224,7 +225,7 @@ async function principal() {
       dataEmissao: new Date(2026, 7, 7), dataVencimento: new Date(2026, 7, 7), valorDocumentoCents: 55_500, liquidado: true },
     // Comissão paga pela MCZ no código D1 (que na Azul é combustível).
     { ...comum(cx2, "MC"), codigoLancamento: "C1", natureza: "PAGAR" as const, categoriaCodigo: "D1",
-      dataEmissao: new Date(2026, 8, 8), dataVencimento: new Date(2026, 8, 23), valorDocumentoCents: 123_400 },
+      dataEmissao: new Date(2026, 8, 8), dataVencimento: new Date(2026, 8, 20), valorDocumentoCents: 123_400 },
 
     // --- fora de qualquer mês da tela, dentro da janela: só movimento ---
     { ...comum(cx1, "AZ"), codigoLancamento: "A15", natureza: "RECEBER" as const, categoriaCodigo: "R9",
@@ -390,10 +391,11 @@ async function principal() {
       incluirTitulos: false,
     });
     conferir(
-      // Agosto FECHADO: A12 (já liquidado) e o título emitido em 28/08.
+      // Agosto FECHADO: A12 (já liquidado). O A10, emitido em 28/08, vence em
+      // setembro e é despesa de setembro.
       "o mês anterior da planilha é agosto inteiro, com o título já liquidado",
       dre.linhas.find((l) => l.chave === "CUSTO_SERVICO")?.valorAnteriorCents,
-      210_700 + 91_100
+      210_700
     );
   }
 
@@ -434,7 +436,7 @@ async function principal() {
         const memoriaHoje = montarDreMemoria(ctx, mes, janelas.mesAnterior, classificacoes, { regime: "competencia" });
         conferir("provisão futura: memória igual ao banco", [item(memoriaHoje as unknown as typeof dre, "R1"), item(memoriaHoje as unknown as typeof dre, "D3")], [900_100 + 450_200, 0]);
         fixarHojeParaTeste(new Date(2027, 0, 1));
-        conferir("grupo: pagamento da Azul à MCZ não é custo", item(dre, "D1@AZ"), 310_300 - 15_800);
+        conferir("grupo: pagamento da Azul à MCZ não é custo", item(dre, "D1@AZ"), 310_300 - 15_800 + 91_100);
         // No caixa até o dia 22: A3 (18/09); o estorno A9 é baixado dia 24.
         conferir("grupo: nem no caixa", item(dreCaixa, "D1@AZ"), 310_300);
         // A comissão da MCZ no mesmo código D1: categoria própria, nome com a
@@ -453,7 +455,7 @@ async function principal() {
           titulos: 1,
         });
       } else {
-        conferir("uma empresa: o pagamento à MCZ é custo da Azul", item(dre, "D1@AZ"), 310_300 - 15_800 + 200_000);
+        conferir("uma empresa: o pagamento à MCZ é custo da Azul", item(dre, "D1@AZ"), 310_300 - 15_800 + 91_100 + 200_000);
         conferir("uma empresa: nada eliminado", await intercompanyEliminado(escopo, mes, "competencia"), {
           receitaCents: 0,
           despesaCents: 0,

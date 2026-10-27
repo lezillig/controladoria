@@ -22,8 +22,8 @@ import type { ContextoAuditoria } from "./types";
 // "Pessoal operacional", "Sede" — que viram subtotais sem alterar a espinha.
 //
 // COMO ISTO SE DIFERENCIA DO DRE CONTÁBIL OFICIAL, e por que a tela precisa
-// dizer: aqui o regime é o de COMPETÊNCIA dos títulos, pela data de emissão do
-// documento. Não há provisão, não há apropriação de despesa antecipada, não há
+// dizer: aqui o regime é o de COMPETÊNCIA dos títulos (despesa pelo
+// vencimento, receita pela emissão da nota — competencia.ts). Não há provisão, não há apropriação de despesa antecipada, não há
 // depreciação — a depreciação não passa por título e este sistema espelha
 // títulos. É uma demonstração GERENCIAL na estrutura legal: serve para decidir
 // no dia 5, não para assinar balanço.

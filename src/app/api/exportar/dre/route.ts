@@ -98,7 +98,7 @@ export async function GET(req: NextRequest) {
       criterio:
         (regime === "caixa"
           ? "Regime de CAIXA: o que foi pago ou recebido no mês, pela data da baixa. "
-          : "Regime de COMPETÊNCIA, pela data de emissão do documento. ") +
+          : "Regime de COMPETÊNCIA: despesas pelo vencimento, receitas pela emissão da nota. ") +
         // O mês parcial é dito, como a tela diz: um arquivo que circula com
         // "setembro" no nome e metade de setembro dentro é lido como queda.
         (janelas.mesParcial
@@ -240,7 +240,7 @@ export async function GET(req: NextRequest) {
   linhas.push([]);
   linhas.push([
     "",
-    regime === "caixa" ? "TÍTULOS DO MÊS — cada pagamento ou recebimento, pela data da baixa" : "TÍTULOS DO MÊS — todos os documentos, pela data de emissão",
+    regime === "caixa" ? "TÍTULOS DO MÊS — cada pagamento ou recebimento, pela data da baixa" : "TÍTULOS DO MÊS — despesas pelo vencimento, receitas pela emissão da nota",
   ]);
   linhas.push([
     "Linha do DRE",
@@ -252,7 +252,7 @@ export async function GET(req: NextRequest) {
     "Documento",
     "Parcela",
     "Tipo de documento",
-    regime === "caixa" ? "Data da baixa" : "Data de emissão",
+    regime === "caixa" ? "Data da baixa" : "Data de competência",
     "Vencimento",
     regime === "caixa" ? "Valor da baixa (R$)" : "Valor do documento (R$)",
     "Status na Omie",
