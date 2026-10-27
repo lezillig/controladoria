@@ -15,3 +15,13 @@ export function urlDoSistema(): string | null {
   const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL;
   return vercel ? `https://${vercel}` : null;
 }
+
+// Os endereços em que o sistema tenta alcançar a si mesmo, em ordem: o
+// APP_URL cadastrado e, depois, o domínio de produção que a própria Vercel
+// informa. O encadeamento do ciclo passa para o seguinte quando um endereço
+// responde 404 ou não responde — um APP_URL apontando para outro projeto
+// (controladoria.vercel.app, por exemplo, é de outra conta) parava a carga.
+export function urlsCandidatasDoSistema(): string[] {
+  const lista = [process.env.APP_URL?.replace(/\/$/, ""), process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : undefined];
+  return [...new Set(lista.filter((u): u is string => !!u))];
+}

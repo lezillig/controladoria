@@ -42,6 +42,8 @@ export type ProgressoCarga = {
     // É a resposta para "parou, e por quê" — a pergunta nasce nesta tela, e
     // sem isto ela só teria resposta no log da hospedagem.
     encadeamentoRecusado: string | null;
+    // O encadeamento seguiu, mas por outro endereço: APP_URL errado.
+    encadeamentoAviso: string | null;
     // Quando o sistema tentou continuar sozinho pela última vez. Nulo significa
     // que nunca tentou — que é uma causa de parada diferente de ter tentado e
     // sido recusado, e exige conduta diferente.
@@ -62,14 +64,15 @@ function mesesAte(inicio: Date, mesCorrente: Date): number {
 
 // `detalhes` é Json livre; só interessa o texto que o disparo do ciclo grava
 // quando é recusado (ver encadear.ts).
-function lerEncadeamento(detalhes: unknown): { recusa: string | null; ultimoDisparo: Date | null } {
-  const vazio = { recusa: null, ultimoDisparo: null };
+function lerEncadeamento(detalhes: unknown): { recusa: string | null; aviso: string | null; ultimoDisparo: Date | null } {
+  const vazio = { recusa: null, aviso: null, ultimoDisparo: null };
   if (!detalhes || typeof detalhes !== "object" || Array.isArray(detalhes)) return vazio;
   const d = detalhes as Record<string, unknown>;
   const texto = d.encadeamento;
   const em = typeof d.em === "string" ? new Date(d.em) : null;
   return {
     recusa: typeof texto === "string" && texto.trim() !== "" ? texto : null,
+    aviso: typeof d.encadeamentoAviso === "string" && d.encadeamentoAviso.trim() !== "" ? d.encadeamentoAviso : null,
     ultimoDisparo: em && !Number.isNaN(em.getTime()) ? em : null,
   };
 }
@@ -147,6 +150,7 @@ export async function progressoDaCarga(
             ),
             invocacoes: emAndamento.invocacoes,
             encadeamentoRecusado: lerEncadeamento(emAndamento.detalhes).recusa,
+            encadeamentoAviso: lerEncadeamento(emAndamento.detalhes).aviso,
             ultimoDisparo: lerEncadeamento(emAndamento.detalhes).ultimoDisparo,
           }
         : null,

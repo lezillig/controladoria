@@ -1,7 +1,7 @@
 import { waitUntil } from "@vercel/functions";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { urlDoSistema } from "@/lib/appUrl";
+import { urlsCandidatasDoSistema } from "@/lib/appUrl";
 
 // Disparo da próxima invocação do ciclo.
 //
@@ -63,10 +63,11 @@ export async function anotarNaExecucao(
   }
 }
 
-async function registrarDesfecho(companyId: string | undefined, texto: string | null): Promise<void> {
+async function registrarDesfecho(companyId: string | undefined, texto: string | null, aviso: string | null = null): Promise<void> {
   await anotarNaExecucao(companyId, {
     encadeamento: texto,
     encadeamentoOk: texto === null,
+    encadeamentoAviso: aviso,
     em: new Date().toISOString(),
   });
 }
@@ -76,15 +77,22 @@ export function dispararProximaInvocacao(params?: {
   data?: string | null;
   companyId?: string;
 }): ResultadoDisparo {
-  const base = urlDoSistema();
+  const bases = urlsCandidatasDoSistema();
   const secret = process.env.CRON_SECRET;
 
-  if (!base) return { disparado: false, motivo: "Sem URL pública (APP_URL não configurada)." };
+  if (bases.length === 0) return { disparado: false, motivo: "Sem URL pública (APP_URL não configurada)." };
   if (!secret) return { disparado: false, motivo: "CRON_SECRET não configurado." };
 
   const cabecalhos: Record<string, string> = { Authorization: `Bearer ${secret}` };
   const bypass = process.env.VERCEL_AUTOMATION_BYPASS_SECRET;
   if (bypass) cabecalhos[CABECALHO_BYPASS] = bypass;
+
+  const alvoEm = (base: string) => {
+    const alvo = new URL(`${base}/api/cron/controladoria`);
+    if (params?.ciclo !== undefined) alvo.searchParams.set("ciclo", String(params.ciclo));
+    if (params?.data) alvo.searchParams.set("data", params.data);
+    return alvo.toString();
+  };
 
   // `waitUntil` garante o disparo antes de a instância congelar. Sem ele, a
   // Vercel pode encerrar a função com o fetch ainda na fila.
@@ -93,13 +101,32 @@ export function dispararProximaInvocacao(params?: {
   // calado é indistinguível de um ciclo que terminou, e foi exatamente isso
   // que fez a primeira carga parar por horas sem ninguém saber por quê. Quem
   // olha a tela vê pelo batimento que parou; quem abre o log vê por quê.
-  const alvo = new URL(`${base}/api/cron/controladoria`);
-  if (params?.ciclo !== undefined) alvo.searchParams.set("ciclo", String(params.ciclo));
-  if (params?.data) alvo.searchParams.set("data", params.data);
-
+  //
+  // ENDEREÇO ERRADO NÃO PARA A CARGA: 404 ou falta de resposta num endereço
+  // passa para o seguinte (ver urlsCandidatasDoSistema), e o endereço que
+  // falhou vira aviso na tela de sincronização — o link do e-mail usa o mesmo
+  // APP_URL e também precisa ser corrigido.
   waitUntil(
-    fetch(alvo.toString(), { headers: cabecalhos })
-      .then(async (r) => {
+    (async () => {
+      const falhas: string[] = [];
+      for (const [i, base] of bases.entries()) {
+        const ultima = i === bases.length - 1;
+        let r: Response;
+        try {
+          r = await fetch(alvoEm(base), { headers: cabecalhos });
+        } catch (e) {
+          const texto = `Encadeamento falhou em ${base}: ${e instanceof Error ? e.message : "erro desconhecido"}.`;
+          console.error(`[ciclo] ${texto}`);
+          falhas.push(texto);
+          if (!ultima) continue;
+          await registrarDesfecho(params?.companyId, falhas.join(" "));
+          return;
+        }
+        if (r.status === 404 && !ultima) {
+          falhas.push(`${base} respondeu 404 à rota do ciclo.`);
+          continue;
+        }
+
         // O CORPO também é lido, não só o código. Uma rota pode responder 200
         // e dizer no corpo que não fez nada — e foi exatamente assim que a
         // carga ficou parada parecendo saudável. Aceitar o 200 sem olhar
@@ -110,7 +137,11 @@ export function dispararProximaInvocacao(params?: {
           // Registrar o sucesso também é o que separa "tentou e foi recusado"
           // de "nem chegou a tentar". Sem os dois lados, um encadeamento que
           // simplesmente não acontece fica idêntico a um que deu errado.
-          await registrarDesfecho(params?.companyId, null);
+          const aviso = falhas.length
+            ? `${falhas.join(" ")} O ciclo seguiu por ${base}. Corrija APP_URL na Vercel (Settings → Environment Variables) para ${base} — o link do e-mail usa o mesmo endereço.`
+            : null;
+          if (aviso) console.warn(`[ciclo] ${aviso}`);
+          await registrarDesfecho(params?.companyId, null, aviso);
           return;
         }
 
@@ -118,17 +149,14 @@ export function dispararProximaInvocacao(params?: {
           r.status === 401
             ? "A proteção de deploy da Vercel está barrando a chamada que o sistema faz a si mesmo. Em Settings → Deployment Protection, gere o Protection Bypass for Automation e cadastre o valor como VERCEL_AUTOMATION_BYPASS_SECRET — ou desligue a proteção para Production. (Se o bypass já existe, o CRON_SECRET é que está divergente.)"
             : r.status === 404
-              ? "A URL do próprio sistema não respondeu à rota do ciclo. Confira se APP_URL aponta para o domínio de produção."
+              ? `Nenhum endereço do sistema respondeu à rota do ciclo (${bases.join(", ")}). Confira se APP_URL aponta para o domínio de produção.`
               : (corpo?.error ?? "");
-        const texto = `Encadeamento recusado com HTTP ${r.status}. ${causa}`.trim();
+        const texto = `${falhas.length ? `${falhas.join(" ")} ` : ""}Encadeamento recusado com HTTP ${r.status} em ${base}. ${causa}`.trim();
         console.error(`[ciclo] ${texto}`);
         await registrarDesfecho(params?.companyId, texto);
-      })
-      .catch(async (e) => {
-        const texto = `Encadeamento falhou: ${e instanceof Error ? e.message : "erro desconhecido"}.`;
-        console.error(`[ciclo] ${texto}`);
-        await registrarDesfecho(params?.companyId, texto);
-      })
+        return;
+      }
+    })()
   );
 
   return { disparado: true };

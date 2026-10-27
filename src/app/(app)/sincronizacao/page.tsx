@@ -298,6 +298,9 @@ export default async function SincronizacaoPage() {
                   {progresso.emAndamento.encadeamentoRecusado}
                 </p>
               )}
+              {progresso.emAndamento.encadeamentoAviso && !progresso.emAndamento.encadeamentoRecusado && (
+                <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">{progresso.emAndamento.encadeamentoAviso}</p>
+              )}
               {progresso.emAndamento.segundosDesdeUltimoAvanco <= 120 ? (
                 <p className="mt-1 flex items-center gap-1.5 text-xs text-emerald-700">
                   <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
