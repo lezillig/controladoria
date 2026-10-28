@@ -1,5 +1,6 @@
 // AUDITORIA DO DRE DO MÊS — `npm run teste:auditoria-mes` (precisa de TESTE_DATABASE_URL).
 import { PrismaClient, type Prisma } from "@prisma/client";
+import { compararComOmie } from "../src/lib/controladoria/conferenciaOmie";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -9,7 +10,28 @@ function conferir(nome: string, real: unknown, esperado: unknown) {
 }
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
+function pura() {
+  console.log("\nComparação com a Omie");
+  const t = (codigo: string, x: Partial<import("../src/lib/controladoria/conferenciaOmie").TituloComparavel> = {}) => ({
+    codigo, parceiro: "P", documento: null, parcela: null, categoria: null, emissao: d("2026-10-01"), vencimento: d("2026-10-15"), valorCents: 100_00, cancelado: false, baixadoNoMesCents: 0, ultimaBaixaNoMes: null, ...x,
+  });
+  const omie = [t("1"), t("2", { valorCents: 150_00 }), t("3"), t("4", { cancelado: true }), t("5"), t("6", { cancelado: true })];
+  const sistema = [t("1"), t("2"), t("4"), t("7"), t("6", { cancelado: true })];
+  const r = compararComOmie({ omie, sistema, sistemaPorCodigo: new Map([...sistema, t("5", { vencimento: d("2026-11-15") })].map((x) => [x.codigo, x])), criterio: "competencia", natureza: "PAGAR" });
+  conferir("divergências por tipo", r.diferencas.map((x) => [x.tipo, x.codigo, x.impactoCents]).sort((a, b) => String(a[1]).localeCompare(String(b[1]))), [["valor", "2", 50_00], ["falta", "3", 100_00], ["cancelado", "4", -100_00], ["data", "5", 100_00], ["sobra", "7", -100_00]]);
+  conferir("totais e iguais", [r.totalOmieCents, r.totalSistemaCents, r.iguais], [450_00, 400_00, 2]);
+  const c = compararComOmie({
+    omie: [t("1", { baixadoNoMesCents: 100_00, ultimaBaixaNoMes: d("2026-10-10") }), t("2")],
+    sistema: [t("1", { baixadoNoMesCents: 60_00, ultimaBaixaNoMes: d("2026-10-10") })],
+    sistemaPorCodigo: new Map(),
+    criterio: "caixa",
+    natureza: "RECEBER",
+  });
+  conferir("caixa: baixa parcial faltando; título sem baixa no mês não conta", [c.diferencas.map((x) => [x.tipo, x.impactoCents]), c.totalOmieCents, c.titulosOmie], [[["valor", 40_00]], 100_00, 1]);
+}
+
 (async () => {
+  pura();
   const url = process.env.TESTE_DATABASE_URL;
   if (!url) {
     console.log("TESTE_DATABASE_URL não definida — pulando.");
