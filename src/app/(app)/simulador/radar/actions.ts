@@ -6,6 +6,7 @@ import { registrarEvento } from "@/lib/controladoria/trilha";
 import { criarEstudo } from "@/lib/simulador/estudos";
 import { tipoServicoProvavel } from "@/lib/radar/aderencia";
 import { varrerPendentes, type ResultadoVarredura } from "@/lib/radar/varrer";
+import { destinatariosDoRadar } from "@/lib/radar/aviso";
 import { exigirPermissao } from "../../_dados";
 
 // Decidir o que fazer com uma licitação do radar é trabalho do comercial
@@ -93,4 +94,23 @@ export async function abrirEstudo(id: string): Promise<Resultado> {
   revalidatePath("/simulador/radar");
   revalidatePath("/simulador");
   return { ok: true, estudoId };
+}
+
+export async function salvarEmailsRadar(texto: string): Promise<Resultado> {
+  const session = await exigirPermissao("gerir-simulador");
+  const lista = destinatariosDoRadar(texto.slice(0, 2000));
+  const r = await prisma.controladoriaConfig.updateMany({ where: { companyId: session.companyId }, data: { emailsRadar: lista.join(", ") } });
+  if (r.count === 0) return { erro: "A controladoria desta empresa ainda não foi configurada (Configuração)." };
+  await registrarEvento({
+    companyId: session.companyId,
+    userId: session.userId,
+    userNome: session.name,
+    userEmail: session.email,
+    acao: "RADAR_EMAILS_ALTERADOS",
+    entidadeTipo: "ControladoriaConfig",
+    entidadeId: session.companyId,
+    descricao: `Destinatários do e-mail do radar: ${lista.join(", ") || "nenhum"}.`,
+  });
+  revalidatePath("/simulador/radar");
+  return { ok: true };
 }

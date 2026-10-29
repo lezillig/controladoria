@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { abrirEstudo, decidir, varrerAgora } from "./actions";
+import { abrirEstudo, decidir, salvarEmailsRadar, varrerAgora } from "./actions";
 
 const botao = "rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50";
 
@@ -72,6 +72,42 @@ export function VarrerAgora() {
       >
         {pendente ? "Varrendo o PNCP (até 45 s)..." : "Varrer agora"}
       </button>
+      {msg && <span className="text-xs text-slate-600">{msg}</span>}
+    </div>
+  );
+}
+
+export function EmailsDoRadar({ atual, podeEditar }: { atual: string; podeEditar: boolean }) {
+  const [valor, setValor] = useState(atual);
+  const [pendente, iniciar] = useTransition();
+  const [msg, setMsg] = useState<string | null>(null);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      <label className="text-slate-600" htmlFor="emails-radar">
+        E-mail diário do radar para:
+      </label>
+      <input
+        id="emails-radar"
+        className="min-w-[280px] flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm disabled:bg-slate-50"
+        value={valor}
+        disabled={!podeEditar || pendente}
+        placeholder="comercial@azulmob.com.br, fulano@azulmob.com.br"
+        onChange={(e) => setValor(e.target.value)}
+      />
+      {podeEditar && (
+        <button
+          className={botao}
+          disabled={pendente || valor === atual}
+          onClick={() =>
+            iniciar(async () => {
+              const r = await salvarEmailsRadar(valor);
+              setMsg(r.erro ?? "Salvo.");
+            })
+          }
+        >
+          Salvar
+        </button>
+      )}
       {msg && <span className="text-xs text-slate-600">{msg}</span>}
     </div>
   );

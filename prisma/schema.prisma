@@ -885,6 +885,9 @@ model ControladoriaConfig {
   id                                  String    @id @default(cuid())
   companyId                           String    @unique
   emailsRelatorio                     String    @default("")
+  // Quem recebe o e-mail do radar de licitações (comercial), separado do
+  // relatório da controladoria: são outras pessoas.
+  emailsRadar                         String    @default("")
   dataInicioBase                      DateTime
   limiteAlcadaCents                   Int?
   metaMargemPercent                   Float?
@@ -2399,6 +2402,8 @@ model RadarLicitacao {
   decididoPor            String?
   decididoEm             DateTime?
   estudoId               String?
+  // Quando entrou no e-mail do radar: cada licitação nova é avisada uma vez.
+  avisadoEm              DateTime?
   criadoEm               DateTime  @default(now())
   atualizadoEm           DateTime  @updatedAt
 
