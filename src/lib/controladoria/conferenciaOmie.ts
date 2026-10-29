@@ -237,23 +237,3 @@ export async function conferirComOmie(params: { companyId: string; conexaoId: st
   return { empresa: conexao.apelido, paginas, incompleto, ...resultado };
 }
 
-// As quatro leituras (a pagar e a receber, por competência e por caixa) de
-// cada empresa, uma de cada vez, até o prazo da página.
-export async function conferirTudoComOmie(params: { companyId: string; conexoes: { id: string; apelido: string }[]; ano: number; mes: number; segundos?: number }) {
-  const prazo = Date.now() + (params.segundos ?? 240) * 1000;
-  const r: (Awaited<ReturnType<typeof conferirComOmie>> & { natureza: Natureza; criterio: Criterio; erro?: string })[] = [];
-  for (const cx of params.conexoes)
-    for (const natureza of ["PAGAR", "RECEBER"] as const)
-      for (const criterio of ["competencia", "caixa"] as const) {
-        if (Date.now() > prazo) {
-          r.push({ empresa: cx.apelido, natureza, criterio, paginas: 0, incompleto: true, totalOmieCents: 0, totalSistemaCents: 0, titulosOmie: 0, titulosSistema: 0, iguais: 0, diferencas: [], erro: "sem tempo — confira esta empresa sozinha" });
-          continue;
-        }
-        try {
-          r.push({ ...(await conferirComOmie({ companyId: params.companyId, conexaoId: cx.id, natureza, criterio, ano: params.ano, mes: params.mes, prazo })), natureza, criterio });
-        } catch (e) {
-          r.push({ empresa: cx.apelido, natureza, criterio, paginas: 0, incompleto: true, totalOmieCents: 0, totalSistemaCents: 0, titulosOmie: 0, titulosSistema: 0, iguais: 0, diferencas: [], erro: e instanceof Error ? e.message.slice(0, 200) : "erro" });
-        }
-      }
-  return r;
-}

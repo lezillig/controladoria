@@ -134,6 +134,10 @@ export type TituloNormalizado = {
   ordemServicoCodigo: string | null;
   ordemServicoNumero: string | null;
   baixas: BaixaNormalizada[];
+  // A lista de baixas veio INTEIRA: o total pago do resumo da Omie bate com a
+  // soma das baixas da resposta. Só assim a gravação pode apagar a baixa que
+  // deixou de vir (estorno, ou a mesma baixa gravada antes com outra chave).
+  baixasCompletas: boolean;
 };
 
 export type MovimentoNormalizado = {

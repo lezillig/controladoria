@@ -6,6 +6,7 @@ import { categoriasDoEscopo, movimentoPorCategoria } from "./dreNoBanco";
 import { classificacoesDoDre } from "./projecaoNoBanco";
 import { categoriaSql, filtroConexaoTitulo } from "./escopoSql";
 import { competenciaSql } from "./competencia";
+import { redigir } from "./falhas";
 
 // AUDITORIA DO DRE DE UM MÊS — "estão entrando todas as despesas?".
 //
@@ -213,7 +214,7 @@ export async function contagemNaOmie(params: { companyId: string; ano: number; m
           const r = await omieCall(OMIE_ENDPOINTS.titulos, { nPagina: 1, nRegPorPagina: 1, cNatureza: natureza === "PAGAR" ? "P" : "R", ...filtroOmie }, { credencialRef: cx.credencialRef, toleraVazio: true, deadline: Date.now() + 20_000 });
           omie = extrairTotalRegistros(r as Record<string, unknown>);
         } catch (e) {
-          erro = e instanceof Error ? e.message.slice(0, 160) : "erro";
+          erro = redigir(e instanceof Error ? e.message : "erro").slice(0, 160);
           if (/vazio|n[aã]o existem registros/i.test(erro)) {
             omie = 0;
             erro = null;

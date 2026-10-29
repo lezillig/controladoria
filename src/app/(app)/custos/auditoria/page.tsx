@@ -1,20 +1,19 @@
 import Link from "next/link";
 import { auditoriaDoMes, contagemNaOmie } from "@/lib/controladoria/auditoriaDoMes";
-import { conferirTudoComOmie } from "@/lib/controladoria/conferenciaOmie";
+import ConferenciaOmie from "./ConferenciaOmie";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
 import { escopoDaPagina } from "../../_dados";
 import { Kpi, Secao, Tabela } from "../../_componentes";
 
 // AUDITORIA DO DRE DO MÊS — por que o mês parece vazio. Ver auditoriaDoMes.ts.
-// A conferência título a título lê todas as páginas da Omie: até 5 minutos.
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 const NOME_MES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const rotulo = (k: string) => `${NOME_MES[Number(k.slice(5)) - 1]}/${k.slice(0, 4)}`;
 const reais = (c: number) => (Math.round(c / 100) === 0 ? "—" : fmtBRL(Math.round(c / 100) * 100).replace(/,00$/, ""));
 
-export default async function AuditoriaDoMesPage({ searchParams }: { searchParams: Promise<{ empresa?: string; mes?: string; omie?: string; conferir?: string }> }) {
+export default async function AuditoriaDoMesPage({ searchParams }: { searchParams: Promise<{ empresa?: string; mes?: string; omie?: string }> }) {
   const params = await searchParams;
   const { session, escopo, conexoes } = await escopoDaPagina("custos", params.empresa);
   const hoje = new Date();
@@ -30,9 +29,6 @@ export default async function AuditoriaDoMesPage({ searchParams }: { searchParam
     params.omie === "1" ? contagemNaOmie({ companyId: session.companyId, ano, mes }) : null,
   ]);
 
-  // CONFERÊNCIA TÍTULO A TÍTULO: as quatro leituras de cada empresa.
-  const conferencias =
-    params.conferir === "1" ? await conferirTudoComOmie({ companyId: session.companyId, conexoes: escopo.conexaoId ? conexoes.filter((c) => c.id === escopo.conexaoId) : conexoes, ano, mes }) : [];
   const despesas = a.linhas.filter((l) => l.natureza === "PAGAR");
   const soma = (f: (l: (typeof despesas)[number]) => number) => despesas.reduce((s, l) => s + f(l), 0);
   const comp = soma((l) => l.competenciaCents);
@@ -189,57 +185,8 @@ export default async function AuditoriaDoMesPage({ searchParams }: { searchParam
       <Secao
         titulo="Conferência título a título com a Omie"
         descricao="Busca na Omie, agora, todos os títulos do mês pelo mesmo critério do DRE — a pagar pelo vencimento, a receber pela emissão; caixa pelas baixas no mês — e compara um a um com o sistema: o que falta, o que sobra, valor, data e cancelamento diferentes."
-        acao={
-          params.conferir !== "1" ? (
-            <Link href={q({ conferir: "1" })} className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-              Conferir com a Omie agora
-            </Link>
-          ) : undefined
-        }
       >
-        {conferencias.length === 0 ? (
-          <p className="text-sm text-slate-500">Leva de 30 segundos a alguns minutos (lê todas as páginas da Omie de cada empresa). Não feche a aba.</p>
-        ) : (
-          <div className="space-y-4">
-            <Tabela
-              colunas={["Empresa", "Natureza", "Critério", "Na Omie", "No sistema", "Diferença", "Títulos (Omie / sistema)", "Divergências"]}
-              alinharDireita={[3, 4, 5, 6, 7]}
-              linhas={conferencias.map((c) => [
-                c.empresa,
-                c.natureza === "PAGAR" ? "A pagar" : "A receber",
-                c.criterio === "caixa" ? "Caixa (baixas)" : c.natureza === "PAGAR" ? "Competência (vencimento)" : "Competência (emissão)",
-                c.erro ? <span key="e" className="text-xs text-red-700">{c.erro}</span> : fmtBRL(c.totalOmieCents),
-                fmtBRL(c.totalSistemaCents),
-                c.erro ? "—" : c.totalOmieCents === c.totalSistemaCents ? <span key="d" className="text-emerald-700">bate</span> : <span key="d" className="font-semibold text-red-700">{fmtBRL(c.totalOmieCents - c.totalSistemaCents)}</span>,
-                `${fmtNumero(c.titulosOmie)} / ${fmtNumero(c.titulosSistema)}${c.incompleto ? " (incompleto)" : ""}`,
-                fmtNumero(c.diferencas.length),
-              ])}
-            />
-            {conferencias
-              .filter((c) => c.diferencas.length > 0)
-              .map((c) => (
-                <details key={`${c.empresa}${c.natureza}${c.criterio}`} open={c.diferencas.length <= 30}>
-                  <summary className="cursor-pointer text-sm font-medium text-slate-800">
-                    {c.empresa} · {c.natureza === "PAGAR" ? "a pagar" : "a receber"} · {c.criterio === "caixa" ? "caixa" : "competência"} — {c.diferencas.length} divergência(s)
-                  </summary>
-                  <Tabela
-                    colunas={["Tipo", "Parceiro", "Documento", "Categoria", "Na Omie", "No sistema", "Impacto", "Código Omie"]}
-                    alinharDireita={[6]}
-                    linhas={c.diferencas.slice(0, 150).map((d) => [
-                      { falta: "falta no sistema", sobra: "sobra no sistema", valor: "valor diferente", data: "data diferente", cancelado: "cancelamento diferente" }[d.tipo],
-                      d.parceiro ?? "—",
-                      `${d.documento ?? "—"}${d.parcela ? ` · ${d.parcela}` : ""}`,
-                      d.categoria ?? "—",
-                      <span key="o" className="text-xs">{d.omie}</span>,
-                      <span key="s" className="text-xs">{d.sistema}</span>,
-                      fmtBRL(d.impactoCents),
-                      <span key="c" className="text-xs text-slate-400">{d.codigo}</span>,
-                    ])}
-                  />
-                </details>
-              ))}
-          </div>
-        )}
+        <ConferenciaOmie empresas={(escopo.conexaoId ? conexoes.filter((c) => c.id === escopo.conexaoId) : conexoes).map((c) => ({ id: c.id, apelido: c.apelido }))} ano={ano} mes={mes} />
       </Secao>
 
       <Secao

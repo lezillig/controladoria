@@ -467,7 +467,9 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
   // eram lidos das baixas (campos ainda não confirmados), enquanto o valor
   // pago vinha do resumo. Comparar um com o outro dava "pago acima do devido"
   // com excedente igual ao desconto, em 230 títulos.
-  const valorPagoCents = cents(resumo, "nValPago", "nValRecebido", "valor_pago") ?? somaBaixas("valorCents");
+  const pagoNoResumo = cents(resumo, "nValPago", "nValRecebido", "valor_pago");
+  const valorPagoCents = pagoNoResumo ?? somaBaixas("valorCents");
+  const baixasCompletas = pagoNoResumo !== null && Math.abs(pagoNoResumo - somaBaixas("valorCents")) <= 1;
   const jurosCents = cents(resumo, "nJuros", "nValJuros", "juros") ?? somaBaixas("jurosCents");
   const multaCents = cents(resumo, "nMulta", "nValMulta", "multa") ?? somaBaixas("multaCents");
   const descontoCents = cents(resumo, "nDesconto", "nValDesconto", "desconto") ?? somaBaixas("descontoCents");
@@ -546,6 +548,7 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
     // O número que a tela da Omie mostra na aba Diversos ("Ordem de Serviço").
     ordemServicoNumero: str(cabec, "cNumOS"),
     baixas,
+    baixasCompletas,
   };
 }
 

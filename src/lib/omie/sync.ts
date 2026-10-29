@@ -160,10 +160,11 @@ export function detectarVersoes(
 }
 
 // As baixas são gravadas em tabela própria, então saem do objeto do título
-// antes do upsert.
-function semBaixas<T extends { baixas: unknown }>(t: T): Omit<T, "baixas"> {
-  const { baixas, ...resto } = t;
+// antes do upsert — e a marca de lista completa, que não é coluna.
+function semBaixas<T extends { baixas: unknown; baixasCompletas?: unknown }>(t: T): Omit<T, "baixas" | "baixasCompletas"> {
+  const { baixas, baixasCompletas, ...resto } = t;
   void baixas;
+  void baixasCompletas;
   return resto;
 }
 
@@ -701,6 +702,21 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         )
       );
       await gravarEmLotes(baixasDaPagina, (lote) => prisma.$transaction(lote));
+
+      // A BAIXA QUE DEIXOU DE VIR SAI. Sem isto, o estorno feito na Omie
+      // ficava aqui para sempre, e a mesma baixa gravada antes com outra chave
+      // (vinda uma vez sem código, ou com a data corrigida) contava em dobro:
+      // em outubro/2026 eram R$ 498 mil de recebimentos a mais na Azul. Só
+      // quando a Omie mandou a lista inteira (baixasCompletas) — resposta
+      // parcial não apaga nada.
+      const completas = comNome.map((t, i) => ({ t, id: gravados[i].id })).filter(({ t }) => t.baixasCompletas);
+      for (let i = 0; i < completas.length; i += 100) {
+        await prisma.$transaction(
+          completas.slice(i, i + 100).map(({ t, id }) =>
+            prisma.omieBaixa.deleteMany({ where: { tituloId: id, chave: { notIn: t.baixas.map((b) => b.chave) } } })
+          )
+        );
+      }
 
       res.baixas += baixasDaPagina.length;
       if (passo.natureza === "PAGAR") res.titulosPagar += comNome.length;
@@ -1271,8 +1287,12 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
               nPagina: c.pagina,
               nRegPorPagina: REGISTROS_POR_PAGINA,
               cNatureza: natureza === "PAGAR" ? "P" : "R",
-              dDtEmisDe: formatarDataOmie(inicio),
-              dDtEmisAte: formatarDataOmie(fim),
+              // O mesmo critério da competência (competencia.ts): a pagar
+              // pelo vencimento — parcela de contrato antigo apagada na Omie
+              // só aparece no mês em que vence —, a receber pela emissão.
+              ...(natureza === "PAGAR"
+                ? { dDtVencDe: formatarDataOmie(inicio), dDtVencAte: formatarDataOmie(fim) }
+                : { dDtEmisDe: formatarDataOmie(inicio), dDtEmisAte: formatarDataOmie(fim) }),
             },
             { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true }
           );
@@ -1284,14 +1304,28 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
           break;
         }
         await sleep(OMIE_PACE_MS);
-        const codigos = extrairItens(resposta, OMIE_ENDPOINTS.titulos)
-          .map((bruto) => normalizarTitulo(bruto, natureza)?.codigoLancamento)
-          .filter((x): x is string => !!x);
+        const lidos = extrairItens(resposta, OMIE_ENDPOINTS.titulos)
+          .map((bruto) => normalizarTitulo(bruto, natureza))
+          .filter((x): x is NonNullable<typeof x> => !!x);
+        const codigos = lidos.map((t) => t.codigoLancamento);
         if (codigos.length > 0) {
           await prisma.omieTitulo.updateMany({
             where: { conexaoId: ctx.conexaoId, natureza, codigoLancamento: { in: codigos } },
             data: { vistoNaListagemEm: new Date() },
           });
+          // De passagem, a mesma limpeza de baixas da fase de títulos (ver lá):
+          // a varredura relê meses que o ciclo diário não relê mais.
+          const completos = lidos.filter((t) => t.baixasCompletas);
+          if (completos.length > 0) {
+            const ids = new Map(
+              (await prisma.omieTitulo.findMany({ where: { conexaoId: ctx.conexaoId, natureza, codigoLancamento: { in: completos.map((t) => t.codigoLancamento) } }, select: { id: true, codigoLancamento: true } })).map((t) => [t.codigoLancamento, t.id])
+            );
+            await prisma.$transaction(
+              completos
+                .filter((t) => ids.has(t.codigoLancamento))
+                .map((t) => prisma.omieBaixa.deleteMany({ where: { tituloId: ids.get(t.codigoLancamento)!, chave: { notIn: t.baixas.map((b) => b.chave) } } }))
+            );
+          }
         }
         if (codigos.length === 0 || c.pagina >= extrairTotalPaginas(resposta)) c.listado = true;
         else c.pagina++;
@@ -1303,7 +1337,9 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
         conexaoId: ctx.conexaoId,
         natureza,
         cancelado: false,
-        OR: [{ dataEmissao: { gte: inicio, lte: fim } }, { dataEmissao: null, dataVencimento: { gte: inicio, lte: fim } }],
+        ...(natureza === "PAGAR"
+          ? { dataVencimento: { gte: inicio, lte: fim } }
+          : { OR: [{ dataEmissao: { gte: inicio, lte: fim } }, { dataEmissao: null, dataVencimento: { gte: inicio, lte: fim } }] }),
       };
       const desde = new Date(c.desde);
       const naoVistos = () => ({

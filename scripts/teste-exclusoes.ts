@@ -128,6 +128,8 @@ async function noBanco() {
 
   // A Omie simulada.
   const naListagem = new Set(["100"]);
+  // Campos além do cabeçalho, por código (resumo e baixas, no item 6).
+  const extras: Record<string, Record<string, unknown>> = {};
   const existem = new Set(["100", "300"]);
   const naoCadastrados = new Set(["200"]);
   const vazios = new Set(["500"]);
@@ -145,7 +147,7 @@ async function noBanco() {
         JSON.stringify({
           nPagina: 1,
           nTotPaginas: 1,
-          titulosEncontrados: [...naListagem].map((c) => ({ cabecTitulo: { nCodTitulo: Number(c), nValorTitulo: 9190, dDtVenc: "09/09/2026", dDtEmissao: "09/09/2026", cStatus: "A VENCER" } })),
+          titulosEncontrados: [...naListagem].map((c) => ({ cabecTitulo: { nCodTitulo: Number(c), nValorTitulo: 9190, dDtVenc: "09/09/2026", dDtEmissao: "09/09/2026", cStatus: "A VENCER" }, ...(extras[c] ?? {}) })),
         }),
         { status: 200 }
       );
@@ -196,6 +198,31 @@ async function noBanco() {
     const sem = dre.linhas.find((l) => l.itens.some((i) => i.categoriaCodigo === "SEM_CATEGORIA"));
     // 100, 200 (voltou), 300 e 400 ficam; 500 saiu e 600 já era cancelado.
     conferir("receita do mês: quatro títulos de R$ 9.190,00", dre.semCategoriaCents || sem?.valorCents || 0, 4 * 919000);
+
+    console.log("\n6. A baixa que deixou de vir da Omie sai (só com a lista completa)");
+    // 700: a mesma baixa gravada duas vezes (com e sem código). 800: estornada
+    // na Omie (pago zero, sem baixas). 900: resposta parcial (resumo diz R$
+    // 183,80 pagos, veio uma baixa de R$ 91,90) — não apaga nada.
+    for (const c of ["700", "800", "900"]) {
+      const novo = await prisma.omieTitulo.create({ data: titulo(c, set) });
+      await prisma.omieBaixa.createMany({
+        data: [
+          { companyId: EMPRESA, conexaoId: cx.id, tituloId: novo.id, chave: `RECEBER:${c}:1`, dataBaixa: new Date(2026, 8, 15), valorCents: 919000 },
+          { companyId: EMPRESA, conexaoId: cx.id, tituloId: novo.id, chave: `RECEBER:${c}:2026-09-15:919000`, dataBaixa: new Date(2026, 8, 15), valorCents: 919000 },
+        ],
+      });
+      naListagem.add(c);
+    }
+    const baixa = { nCodBaixa: 1, dDtPagamento: "15/09/2026", nValPago: 9190 };
+    extras["700"] = { resumo: { nValPago: 9190 }, lancamentos: [baixa] };
+    extras["800"] = { resumo: { nValPago: 0 }, lancamentos: [] };
+    extras["900"] = { resumo: { nValPago: 18380 }, lancamentos: [baixa] };
+    const t3 = await executarFase("titulos", { ...ctx, janelaInicio: new Date(2026, 8, 1), janelaFim: new Date(2026, 8, 30, 23, 59, 59) }, true);
+    conferir("a fase de títulos conclui", t3.faseConcluida, true);
+    const baixasDe = async (c: string) => (await prisma.omieBaixa.findMany({ where: { titulo: { conexaoId: cx.id, codigoLancamento: c } }, select: { chave: true } })).map((b) => b.chave).sort();
+    conferir("baixa em dobro: fica só a que a Omie devolve", await baixasDe("700"), ["RECEBER:700:1"]);
+    conferir("estornada na Omie: sai", await baixasDe("800"), []);
+    conferir("resposta parcial: nada sai", (await baixasDe("900")).length, 2);
   } finally {
     globalThis.fetch = fetchOriginal;
     await limpar();
