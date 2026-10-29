@@ -5,12 +5,16 @@ import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/form
 import { larguraPainel } from "@/lib/ui";
 import { escopoDaPagina, podeAcao } from "../_dados";
 import { Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
+import ConferirOsNaOmie from "./ConferirOsNaOmie";
 import FiltroCategorias from "./FiltroCategorias";
 
 // CONFERÊNCIA DE OS — o projeto das contas a pagar contra o das contas a
 // receber. Ver src/lib/controladoria/conferenciaDeOs.ts.
 
 // 0 = desde o início da base: a investigação do histórico.
+// O botão "Conferir esta OS na Omie" roda nesta página (uma leva por chamada).
+export const maxDuration = 60;
+
 const PERIODOS = [1, 3, 6, 12, 0];
 const LISTA = 60;
 const lista = (l: string[], n = 3) => (l.length === 0 ? "—" : l.slice(0, n).join(", ") + (l.length > n ? ` +${l.length - n}` : ""));
@@ -218,6 +222,11 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
                 A pagar {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "PAGAR").reduce((s, t) => s + t.valorCents, 0))} · a receber{" "}
                 {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "RECEBER").reduce((s, t) => s + t.valorCents, 0))}. Multa (ex.: Multa de Trânsito) e diretoria aparecem como &ldquo;desconsiderada&rdquo; e ficam fora da conta da OS.
               </p>
+            )}
+            {params.os && detalhe.titulos.length > 0 && (
+              <ConferirOsNaOmie
+                titulos={detalhe.titulos.map((t) => ({ id: t.id, rotulo: `${t.natureza === "PAGAR" ? "a pagar" : "a receber"} · ${t.parceiro ?? "—"} · ${t.documento ?? "s/ doc."} ${t.parcela ?? ""} · ${fmtBRL(t.valorCents)}` }))}
+              />
             )}
           </Secao>
         </section>
