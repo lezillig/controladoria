@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
-import { competenciaSql, semProvisaoFuturaSql } from "@/lib/controladoria/competencia";
+import { competenciaSql, semProvisaoFuturaSql, type RegraCompetencia } from "@/lib/controladoria/competencia";
 import { categoriaSql, ehCorporativoSql, filtroConexaoTitulo, naJanela, type EscopoSql } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE, RETENCOES_ZERADAS, montarDreDeInsumos, type Retencoes } from "@/lib/controladoria/dre";
 import { categoriasDoEscopo, movimentoPorCategoria, retencoes } from "@/lib/controladoria/dreNoBanco";
@@ -966,7 +966,7 @@ export type DreDosMeses = Pick<DadosReais, "meses" | "linhasDre" | "categorias" 
 // O DRE DOS DOZE MESES FECHADOS, mês a mês. Na visão do grupo (sem conexão),
 // sem as operações entre as empresas e com a folha da empresa corporativa na
 // linha própria — os mesmos números da tela de Custos e DRE.
-export async function carregarDreDosMeses(companyId: string, conexaoId: string | null, dataReferencia: Date): Promise<DreDosMeses> {
+export async function carregarDreDosMeses(companyId: string, conexaoId: string | null, dataReferencia: Date, regra: RegraCompetencia = "atual"): Promise<DreDosMeses> {
   const fechado = ultimoMesFechado(dataReferencia);
   const inicio = new Date(fechado.inicio.getFullYear(), fechado.inicio.getMonth() - 11, 1, 0, 0, 0, 0);
   const fim = fechado.fim;
@@ -976,15 +976,15 @@ export async function carregarDreDosMeses(companyId: string, conexaoId: string |
   const [somas, movimento, categoriasDaOmie, guardadas, config] = await Promise.all([
     prisma.$queryRaw<LinhaCategoriaMes[]>`
       SELECT ${categoriaSql()} AS categoria,
-             to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+             to_char(${competenciaSql("t", regra)}, 'YYYY-MM') AS mes,
              COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
              COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(companyId)}), 0)::bigint AS corp
         FROM ${tabela("OmieTitulo")} t
        WHERE t."companyId" = ${companyId}
          AND t.cancelado = false
          AND ${semProvisaoFuturaSql("t")}
-         AND ${competenciaSql("t")} >= ${inicio}
-         AND ${competenciaSql("t")} <= ${fim}
+         AND ${competenciaSql("t", regra)} >= ${inicio}
+         AND ${competenciaSql("t", regra)} <= ${fim}
          ${filtroConexaoTitulo(conexaoId, companyId)}
          ${naJanela(escopo.janela)}
        GROUP BY 1, 2
@@ -1183,4 +1183,30 @@ export async function carregarDadosReais(companyId: string, conexaoId: string | 
     conexaoFiltrada: conexaoId !== null,
     avisos,
   };
+}
+
+// AS DESPESAS DE CADA EMPRESA, MÊS A MÊS, nos doze meses fechados — para ver
+// se falta dado de alguma (a MCZ ficou semanas sem sincronizar em out/2026, e
+// a administração central do simulador sai em boa parte dela).
+export async function despesasPorEmpresaEMes(companyId: string, meses: string[]): Promise<{ empresa: string; porMes: { titulos: number; cents: number }[] }[]> {
+  if (meses.length === 0) return [];
+  const [ano, mes] = meses[0].split("-").map(Number);
+  const [anoF, mesF] = meses[meses.length - 1].split("-").map(Number);
+  const inicio = new Date(ano, mes - 1, 1);
+  const fim = new Date(anoF, mesF, 0, 23, 59, 59, 999);
+  const linhas = await prisma.$queryRaw<{ empresa: string; mes: string; titulos: bigint; cents: bigint }[]>`
+    SELECT t."conexaoApelido" AS empresa, to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+           COUNT(*)::bigint AS titulos, COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
+      FROM ${tabela("OmieTitulo")} t
+     WHERE t."companyId" = ${companyId} AND t.natureza = 'PAGAR' AND t.cancelado = false
+       AND ${competenciaSql("t")} >= ${inicio} AND ${competenciaSql("t")} <= ${fim}
+     GROUP BY 1, 2`;
+  const empresas = [...new Set(linhas.map((l) => l.empresa))].sort();
+  return empresas.map((empresa) => ({
+    empresa,
+    porMes: meses.map((m) => {
+      const l = linhas.find((x) => x.empresa === empresa && x.mes === m);
+      return { titulos: Number(l?.titulos ?? 0), cents: Number(l?.cents ?? 0) };
+    }),
+  }));
 }

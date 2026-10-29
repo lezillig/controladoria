@@ -24,8 +24,14 @@ import { Prisma } from "@prisma/client";
 // O regime de CAIXA continua pela data da BAIXA; atraso, aging e projeção de
 // fluxo continuam pelo vencimento.
 
+// A regra ANTIGA (tudo pela emissão), só para comparação: a tela Custos base
+// do simulador mostra os indiretos pelas duas regras, para separar o que mudou
+// pela regra do que mudou nos dados. Nenhuma demonstração usa esta.
+export type RegraCompetencia = "atual" | "emissao";
+
 // Para consulta em SQL cru. Recebe o alias da tabela de títulos.
-export function competenciaSql(alias = "t"): Prisma.Sql {
+export function competenciaSql(alias = "t", regra: RegraCompetencia = "atual"): Prisma.Sql {
+  if (regra === "emissao") return Prisma.raw(`COALESCE(${alias}."dataEmissao", ${alias}."dataVencimento")`);
   return Prisma.raw(
     `(CASE WHEN ${alias}.natureza = 'PAGAR' THEN ${alias}."dataVencimento" ELSE COALESCE(${alias}."dataEmissao", ${alias}."dataVencimento") END)`
   );
