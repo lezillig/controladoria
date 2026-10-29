@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { tabela } from "@/lib/esquemaDoBanco";
-import { competenciaSql, semProvisaoFuturaSql } from "@/lib/controladoria/competencia";
+import { competenciaSql, semProvisaoFuturaSql, type RegraCompetencia } from "@/lib/controladoria/competencia";
 import { Prisma } from "@prisma/client";
 import { categoriaSql, ehCorporativoSql, filtroConexaoTitulo, naJanela } from "@/lib/controladoria/escopoSql";
 import { LINHAS_DRE } from "@/lib/controladoria/dre";
@@ -310,13 +310,13 @@ type LinhaFornecedor = { categoria: string; mes: string; cents: bigint };
 // Os pagamentos ao fornecedor nos doze meses fechados, na visão do grupo (sem
 // as operações entre as empresas), por categoria e mês de competência — o
 // mesmo recorte do DRE.
-export async function pagamentosDoFornecedor(companyId: string, nomes: string, dataReferencia: Date, meses: string[]): Promise<PagamentosDoFornecedor | null> {
+export async function pagamentosDoFornecedor(companyId: string, nomes: string, dataReferencia: Date, meses: string[], regra: RegraCompetencia = "atual"): Promise<PagamentosDoFornecedor | null> {
   const lista = nomesDosFornecedores(nomes).filter((n) => padraoDoNome(n) !== null);
   if (lista.length === 0 || meses.length === 0) return null;
   const porCategoria = new Map<string, number[]>();
   const porNome = new Map<string, number[]>();
   for (const nome of lista) {
-    const um = await pagamentosDeUmFornecedor(companyId, nome, dataReferencia, meses);
+    const um = await pagamentosDeUmFornecedor(companyId, nome, dataReferencia, meses, regra);
     const total = new Array<number>(meses.length).fill(0);
     for (const [categoria, v] of um) {
       const acumulado = porCategoria.get(categoria) ?? new Array<number>(meses.length).fill(0);
@@ -331,14 +331,14 @@ export async function pagamentosDoFornecedor(companyId: string, nomes: string, d
   return { nome: lista.join(" e "), porCategoria, porNome };
 }
 
-async function pagamentosDeUmFornecedor(companyId: string, nome: string, dataReferencia: Date, meses: string[]): Promise<Map<string, number[]>> {
+async function pagamentosDeUmFornecedor(companyId: string, nome: string, dataReferencia: Date, meses: string[], regra: RegraCompetencia): Promise<Map<string, number[]>> {
   const padrao = padraoDoNome(nome)!;
   const fechado = ultimoMesFechado(dataReferencia);
   const [ano, mes] = meses[0].split("-").map(Number);
   const inicio = new Date(ano, mes - 1, 1, 0, 0, 0, 0);
   const linhas = await prisma.$queryRaw<LinhaFornecedor[]>`
     SELECT ${categoriaSql()} AS categoria,
-           to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+           to_char(${competenciaSql("t", regra)}, 'YYYY-MM') AS mes,
            COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
       FROM ${tabela("OmieTitulo")} t
      WHERE t."companyId" = ${companyId}
@@ -346,8 +346,8 @@ async function pagamentosDeUmFornecedor(companyId: string, nome: string, dataRef
        AND t.cancelado = false
        AND translate(upper(COALESCE(t."parceiroNome", '')), 'ÁÀÂÃÉÊÍÓÔÕÚÇ', 'AAAAEEIOOOUC') LIKE ${padrao}
        AND ${semProvisaoFuturaSql("t")}
-       AND ${competenciaSql("t")} >= ${inicio}
-       AND ${competenciaSql("t")} <= ${fechado.fim}
+       AND ${competenciaSql("t", regra)} >= ${inicio}
+       AND ${competenciaSql("t", regra)} <= ${fechado.fim}
        ${filtroConexaoTitulo(null, companyId)}
      GROUP BY 1, 2
   `;
@@ -367,14 +367,14 @@ type LinhaOficina = { centro: string; mes: string; cents: bigint };
 // A folha da empresa corporativa nos centros de custo de oficina, por mês, no
 // recorte do DRE (competência, visão do grupo, doze meses fechados) e nas
 // categorias que o DRE pôs na linha corporativa.
-export async function folhaDaOficina(companyId: string, dataReferencia: Date, dre: DreDosMeses): Promise<FolhaDaOficina | null> {
+export async function folhaDaOficina(companyId: string, dataReferencia: Date, dre: DreDosMeses, regra: RegraCompetencia = "atual"): Promise<FolhaDaOficina | null> {
   const categorias = [...new Set(dre.categorias.filter((c) => c.linha === "DESPESA_SALARIOS_CORPORATIVO").map((c) => c.codigo.replace(/@corporativo$/, "")))];
   if (categorias.length === 0 || dre.meses.length === 0) return null;
   const fechado = ultimoMesFechado(dataReferencia);
   const [ano, mes] = dre.meses[0].split("-").map(Number);
   const linhas = await prisma.$queryRaw<LinhaOficina[]>`
     SELECT d.descricao AS centro,
-           to_char(${competenciaSql("t")}, 'YYYY-MM') AS mes,
+           to_char(${competenciaSql("t", regra)}, 'YYYY-MM') AS mes,
            COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents
       FROM ${tabela("OmieTitulo")} t
       JOIN ${tabela("OmieDepartamento")} d ON d."conexaoId" = t."conexaoId" AND d.codigo = t."departamentoCodigo"
@@ -384,8 +384,8 @@ export async function folhaDaOficina(companyId: string, dataReferencia: Date, dr
        AND ${ehCorporativoSql(companyId)}
        AND ${categoriaSql()} IN (${Prisma.join(categorias)})
        AND ${semProvisaoFuturaSql("t")}
-       AND ${competenciaSql("t")} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
-       AND ${competenciaSql("t")} <= ${fechado.fim}
+       AND ${competenciaSql("t", regra)} >= ${new Date(ano, mes - 1, 1, 0, 0, 0, 0)}
+       AND ${competenciaSql("t", regra)} <= ${fechado.fim}
        ${filtroConexaoTitulo(null, companyId)}
      GROUP BY 1, 2
   `;
@@ -410,9 +410,9 @@ export function textosForaDaAdministracao(texto: (chave: string) => string | nul
   return { fornecedores: ou(texto(CHAVE_FORNECEDORES_FORA), FORNECEDORES_FORA_PADRAO), categorias: ou(texto(CHAVE_CATEGORIAS_FORA), CATEGORIAS_FORA_PADRAO) };
 }
 
-export async function foraDaAdministracao(companyId: string, dataReferencia: Date, meses: string[], textos: { fornecedores: string; categorias: string }): Promise<ForaDaAdministracao> {
+export async function foraDaAdministracao(companyId: string, dataReferencia: Date, meses: string[], textos: { fornecedores: string; categorias: string }, regra: RegraCompetencia = "atual"): Promise<ForaDaAdministracao> {
   return {
-    fornecedores: await pagamentosDoFornecedor(companyId, comFornecedoresSempreFora(nomesDosFornecedores(textos.fornecedores)).join("; "), dataReferencia, meses),
+    fornecedores: await pagamentosDoFornecedor(companyId, comFornecedoresSempreFora(nomesDosFornecedores(textos.fornecedores)).join("; "), dataReferencia, meses, regra),
     categorias: comSempreFora(nomesDosFornecedores(textos.categorias)),
   };
 }

@@ -13,6 +13,7 @@ import { montarPanoramaConformidade } from "@/lib/conformidade/panorama";
 import { rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "./_dados";
 import { alertasDaFolha } from "@/lib/controladoria/fechamentoFolhaNoBanco";
+import { saudeDaSincronizacao } from "@/lib/controladoria/ciclo";
 import {
   AvisoVazio,
   BadgeSeveridade,
@@ -59,6 +60,9 @@ export default async function ControladoriaPage({
   const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);
   // Prazos do fechamento da folha (atrasado ou vencendo em 2 dias), para quem
   // vê a tela da folha. Falhar a leitura não derruba o painel.
+  // Empresa sem sincronizar (conta recusada pela Omie, ou dias sem sync bom):
+  // o painel inteiro estaria mostrando números velhos dela.
+  const saudeSync = (await saudeDaSincronizacao(session.companyId).catch(() => [])).filter((s) => s.alerta);
   const alertasFolha = (await podeAcao(session, "folha"))
     ? await alertasDaFolha(session.companyId).catch((e) => {
         console.warn("[painel] alertas da folha indisponíveis", e instanceof Error ? e.message.slice(0, 200) : e);
@@ -209,6 +213,20 @@ export default async function ControladoriaPage({
         competenciaAtiva={periodo.competencia}
         rota="/"
       />
+
+      {saudeSync.length > 0 && (
+        <Link href="/sincronizacao" className="block rounded-xl border border-red-300 bg-red-50 px-4 py-3 hover:bg-red-100">
+          <p className="text-sm font-semibold text-red-900">Sincronização com a Omie com problema — os números destas empresas estão desatualizados</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-red-800">
+            {saudeSync.map((s) => (
+              <li key={s.apelido}>
+                <strong>{s.apelido}</strong>: {s.ultimaBoa ? `última sincronização completa em ${fmtData(s.ultimaBoa)}` : "nunca sincronizou por completo"}
+                {s.recusa ? ` — a Omie está recusando a conta: ${s.recusa}` : ""}
+              </li>
+            ))}
+          </ul>
+        </Link>
+      )}
 
       {alertasFolha.length > 0 && (
         <Link href="/folha" className="block rounded-xl border border-red-200 bg-red-50 px-4 py-3 hover:bg-red-100">

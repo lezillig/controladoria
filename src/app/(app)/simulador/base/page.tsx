@@ -7,7 +7,8 @@ import { PERFIS_PADRAO, PREMISSAS_PADRAO } from "@/lib/simulador/premissas";
 import { CATEGORIA_DO_TIPO, ROTULO_ENERGIA, ROTULO_TIPO_VEICULO, VARIANTE_DO_TIPO } from "@/lib/simulador/tipos";
 import { funcaoAdministrativa, funcaoPelaConvencao } from "@/lib/simulador/convencoes";
 import { energiaDoPerfil } from "@/lib/simulador/energia";
-import { carregarDreDosMeses } from "@/lib/simulador/custosReais";
+import { carregarDreDosMeses, despesasPorEmpresaEMes } from "@/lib/simulador/custosReais";
+import type { RegraCompetencia } from "@/lib/controladoria/competencia";
 import {
   CHAVE_FORNECEDOR_CONTABILIDADE,
   FORNECEDOR_CONTABILIDADE_PADRAO,
@@ -52,6 +53,12 @@ function paraTela(tipo: TipoTabela, linhas: Linha[]): RegistroTela[] {
   }));
 }
 
+// O DRE dos doze meses é lido duas vezes (regra nova e antiga).
+export const maxDuration = 60;
+
+// Reais, sem centavos (os indiretos da base são R$/mês).
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+
 export default async function BaseDeCustosPage() {
   const session = await exigirPermissao("simulador");
   const podeEditar = await podeAcao(session, "gerir-simulador");
@@ -66,21 +73,40 @@ export default async function BaseDeCustosPage() {
   const vazia = parametros.length + veiculos.length + funcoes.length + pedagios.length === 0;
   // Os indiretos do DRE consolidado: o padrão de cada custo indireto que a
   // base não tem digitado (ver indiretosDoDre.ts). Sem o DRE, a tela segue.
-  let doDre = new Map<string, IndiretoDoDre>();
-  try {
-    const referencia = dataReferenciaPadrao();
-    const dre = await carregarDreDosMeses(session.companyId, null, referencia);
-    const nome = parametros.find((p) => p.chave === CHAVE_FORNECEDOR_CONTABILIDADE)?.texto?.trim() ?? FORNECEDOR_CONTABILIDADE_PADRAO;
-    const textos = textosForaDaAdministracao((chave) => parametros.find((p) => p.chave === chave)?.texto);
+  // Os indiretos pelas duas regras de competência (a atual — despesa pelo
+  // vencimento — e a antiga, tudo pela emissão), para separar o que mudou por
+  // causa da regra do que mudou nos dados; e as despesas por empresa e mês,
+  // para ver se falta dado de alguma.
+  const referencia = dataReferenciaPadrao();
+  const nomeContabilidade = parametros.find((p) => p.chave === CHAVE_FORNECEDOR_CONTABILIDADE)?.texto?.trim() ?? FORNECEDOR_CONTABILIDADE_PADRAO;
+  const textos = textosForaDaAdministracao((chave) => parametros.find((p) => p.chave === chave)?.texto);
+  const calcular = async (regra: RegraCompetencia) => {
+    const dre = await carregarDreDosMeses(session.companyId, null, referencia, regra);
     const [fornecedor, oficina, fora] = await Promise.all([
-      pagamentosDoFornecedor(session.companyId, nome, referencia, dre.meses),
-      folhaDaOficina(session.companyId, referencia, dre),
-      foraDaAdministracao(session.companyId, referencia, dre.meses, textos),
+      pagamentosDoFornecedor(session.companyId, nomeContabilidade, referencia, dre.meses, regra),
+      folhaDaOficina(session.companyId, referencia, dre, regra),
+      foraDaAdministracao(session.companyId, referencia, dre.meses, textos, regra),
     ]);
-    doDre = indiretosDoDre(dre, fornecedor, oficina, fora);
+    return { dre, indiretos: indiretosDoDre(dre, fornecedor, oficina, fora) };
+  };
+  let doDre = new Map<string, IndiretoDoDre>();
+  let pelaEmissao = new Map<string, IndiretoDoDre>();
+  let meses: string[] = [];
+  let porEmpresa: Awaited<ReturnType<typeof despesasPorEmpresaEMes>> = [];
+  try {
+    const [atual, antiga] = await Promise.all([calcular("atual"), calcular("emissao")]);
+    doDre = atual.indiretos;
+    pelaEmissao = antiga.indiretos;
+    meses = atual.dre.meses;
+    porEmpresa = await despesasPorEmpresaEMes(session.companyId, meses);
   } catch (e) {
     console.warn("[simulador] base: DRE indisponível para os indiretos", e instanceof Error ? e.message.slice(0, 200) : e);
   }
+  const comparacao = [...doDre.entries()].map(([chave, v]) => ({
+    rotulo: CATALOGO_PARAMETROS.find((d) => d.chave === chave)?.rotulo ?? chave,
+    atual: v.valor,
+    antiga: pelaEmissao.get(chave)?.valor ?? null,
+  }));
   const atualPorChave = new Map(parametros.map((p) => [p.chave, p]));
   const anteriorPorChave = new Map<string, (typeof encerrados)[number]>();
   for (const e of encerrados) if (!anteriorPorChave.has(e.chave)) anteriorPorChave.set(e.chave, e);
@@ -207,6 +233,82 @@ export default async function BaseDeCustosPage() {
 
         </div>
       </details>
+
+      {(comparacao.length > 0 || porEmpresa.length > 0) && (
+        <Secao
+          titulo="Indiretos: regra nova × regra antiga"
+          descricao={`Média mensal dos doze meses fechados (${meses[0] ?? ""} a ${meses[meses.length - 1] ?? ""}). Regra nova: despesa no mês do vencimento (desde 27/10/2026). Regra antiga: tudo pelo mês da emissão/lançamento. A diferença entre as duas é só efeito da regra; buraco de dados aparece na tabela de despesas por empresa logo abaixo.`}
+        >
+          {comparacao.length === 0 && <p className="text-sm text-slate-500">Sem indiretos calculados do DRE (categorias ainda não classificadas ou sem meses fechados).</p>}
+          <div className={`overflow-x-auto ${comparacao.length === 0 ? "hidden" : ""}`}>
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs text-slate-500">
+                  <th className="py-2 pr-3 text-left font-medium">Indireto</th>
+                  <th className="px-2 py-2 text-right font-medium">Regra nova (R$/mês)</th>
+                  <th className="px-2 py-2 text-right font-medium">Regra antiga (R$/mês)</th>
+                  <th className="px-2 py-2 text-right font-medium">Diferença</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comparacao.map((c) => {
+                  const dif = c.antiga === null ? null : c.atual - c.antiga;
+                  return (
+                    <tr key={c.rotulo} className="border-b border-slate-100">
+                      <td className="py-1.5 pr-3 text-slate-700">{c.rotulo}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{brl(c.atual)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{c.antiga === null ? "—" : brl(c.antiga)}</td>
+                      <td className={`px-2 py-1.5 text-right tabular-nums ${dif !== null && dif < 0 ? "text-emerald-700" : dif ? "text-red-700" : ""}`}>
+                        {dif === null ? "—" : `${brl(dif)}${c.antiga ? ` (${((dif / c.antiga) * 100).toFixed(1).replace(".", ",")}%)` : ""}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+                <tr className="font-semibold">
+                  <td className="py-1.5 pr-3">Total</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(comparacao.reduce((a, c) => a + c.atual, 0))}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(comparacao.reduce((a, c) => a + (c.antiga ?? 0), 0))}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(comparacao.reduce((a, c) => a + c.atual - (c.antiga ?? c.atual), 0))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {porEmpresa.length > 0 && (
+            <div className="mt-5 overflow-x-auto">
+              <p className="mb-2 text-sm font-medium text-slate-700">Despesas (títulos a pagar) por empresa e mês — regra nova</p>
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-500">
+                    <th className="py-1.5 pr-3 text-left font-medium">Empresa</th>
+                    {meses.map((m) => (
+                      <th key={m} className="px-2 py-1.5 text-right font-medium">
+                        {m.slice(5)}/{m.slice(2, 4)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {porEmpresa.map((e) => {
+                    const valores = e.porMes.map((x) => x.cents).filter((v) => v > 0).sort((a, b) => a - b);
+                    const mediana = valores.length ? valores[Math.floor(valores.length / 2)] : 0;
+                    return (
+                      <tr key={e.empresa} className="border-b border-slate-100">
+                        <td className="py-1.5 pr-3 font-medium text-slate-700">{e.empresa}</td>
+                        {e.porMes.map((x, i) => (
+                          <td key={i} className={`px-2 py-1.5 text-right tabular-nums ${mediana > 0 && x.cents < mediana * 0.5 ? "bg-red-50 font-semibold text-red-700" : "text-slate-700"}`} title={`${x.titulos} título(s)`}>
+                            {brl(x.cents / 100)}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <p className="mt-2 text-xs text-slate-500">Em vermelho, mês com menos da metade da mediana da empresa: provável falta de dado (sincronização), não economia.</p>
+            </div>
+          )}
+        </Secao>
+      )}
 
       <Secao titulo="Parâmetros" descricao="Diesel, tributos, prazos, jornada, administração e margens. “Estimativa” é o padrão do simulador enquanto a empresa não informa o seu número.">
         <p className="mb-3 text-sm text-slate-600">
