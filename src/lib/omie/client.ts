@@ -716,7 +716,10 @@ export async function omieCall(
     // rodada seguinte do condutor (11 s depois) também. Sai na hora; quem
     // chamou decide pular o pedido ou esperar.
     const redundante = fault !== null && /redundante/i.test(fault);
-    if (!redundante && tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
+    // CONSUMO INDEVIDO: a Omie bloqueia a conta por um tempo e diz quanto
+    // ("Tente novamente em 1765 segundos"). Insistir no bloqueio não adianta.
+    const bloqueio = segundosDeBloqueio(fault);
+    if (!redundante && bloqueio === null && tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
       return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
@@ -756,6 +759,12 @@ function dicaDeCredencial(fault: string, credencialRef: string): string {
     return ` — ${chave} e ${segredo} existem e têm o formato esperado, então o par foi recusado pela própria Omie: confira se as duas vieram do mesmo app (⚙️ → Resumo do App da empresa certa) e se a chave não foi regenerada depois de cadastrada aqui.`;
   }
   return ` — ${problemas.map((p) => `${p.variavel} ${p.problema}`).join(" ")}`;
+}
+
+// "Tente novamente em 1765 segundos" → 1765. Nulo quando a Omie não diz.
+export function segundosDeBloqueio(fault: string | null | undefined): number | null {
+  const m = /em\s+(\d+)\s+segundos?/i.exec(fault ?? "");
+  return m ? Number(m[1]) : null;
 }
 
 function backoffMs(tentativa: number): number {

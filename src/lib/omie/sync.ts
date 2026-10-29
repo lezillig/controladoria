@@ -6,6 +6,7 @@ import {
   OMIE_PACE_MS,
   OmieVazioError,
   OmieTransitorioError,
+  segundosDeBloqueio,
   extrairItens,
   extrairTotalPaginas,
   omieCall,
@@ -197,15 +198,19 @@ function acabouOTempo(ctx: ContextoFase): boolean {
 // na carga histórica — a janela concluía sem ela e nunca era relida. A linha
 // de erro continua indo para o run, para o diagnóstico ver o que aconteceu.
 //
-// Consumo REDUNDANTE (o mesmo pedido em menos de um minuto): o cursor leva
-// `aguardarAte`, e a invocação seguinte espera esse minuto antes de repetir
+// Consumo REDUNDANTE (o mesmo pedido em menos de um minuto) ou BLOQUEIO por
+// consumo indevido (com o prazo que a Omie informa): o cursor leva
+// `aguardarAte`, e as invocações seguintes esperam sem chamar a Omie
 // (executarFase) — repetir antes só renovaria a recusa, rodada após rodada.
 export const ESPERA_CONSUMO_REDUNDANTE_MS = 65_000;
 
 function pausaPorFalhaPassageira(res: ResultadoFase, rotulo: string, e: unknown, cursor: object): ResultadoFase | null {
   if (!(e instanceof OmieTransitorioError)) return null;
   res.erros.push(`${rotulo}: ${e.message} Retomada na próxima invocação, da mesma página.`);
-  const aguardarAte = /redundante/i.test(e.message) ? new Date(Date.now() + ESPERA_CONSUMO_REDUNDANTE_MS).toISOString() : undefined;
+  // Bloqueio com prazo dito pela Omie: espera o prazo (mais uma folga).
+  const bloqueio = segundosDeBloqueio(e.message);
+  const esperaMs = bloqueio !== null ? bloqueio * 1000 + 5_000 : /redundante/i.test(e.message) ? ESPERA_CONSUMO_REDUNDANTE_MS : 0;
+  const aguardarAte = esperaMs > 0 ? new Date(Date.now() + esperaMs).toISOString() : undefined;
   return { ...res, proximoCursor: JSON.stringify(aguardarAte ? { ...cursor, aguardarAte } : cursor) };
 }
 

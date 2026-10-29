@@ -47,6 +47,8 @@ async function puros() {
   conferir("o mês vai do dia 1 ao último dia, 23:59:59", [set.inicio.getDate(), set.fim.getDate(), set.fim.getHours()], [1, 30, 23]);
 
   console.log("\n1b. Recusa de consumo: esperar e retomar");
+  const { segundosDeBloqueio } = await import("../src/lib/omie/client");
+  conferir("prazo do bloqueio dito pela Omie", [segundosDeBloqueio("ERROR: API bloqueada por consumo indevido. Tente novamente em 1765 segundos."), segundosDeBloqueio("Consumo redundante detectado")], [1765, null]);
   conferir("cursor sem espera: 0", esperaDoCursor(JSON.stringify({ pagina: 2 })), 0);
   conferir("espera que falta", esperaDoCursor(JSON.stringify({ aguardarAte: new Date(1_000_000 + 30_000).toISOString() }), 1_000_000), 30_000);
   conferir("espera vencida e cursor ilegível: 0", [esperaDoCursor(JSON.stringify({ aguardarAte: new Date(0).toISOString() })), esperaDoCursor("{")], [0, 0]);
