@@ -226,6 +226,10 @@ model OmieConexao {
   // `exclusoes`). Nula: a próxima sincronização do dia varre o histórico;
   // depois, só os últimos meses. Apagar o valor refaz a varredura.
   exclusoesVarridasEm DateTime?
+  // Onde a varredura histórica de exclusões parou quando a Omie limitou o
+  // consumo (cursor da fase, com o mês por data): o ciclo seguinte continua
+  // dali em vez de recomeçar de jan/2025. Nulo quando não há varredura parada.
+  exclusoesCursor     String?
   criadoEm            DateTime  @default(now())
   atualizadoEm        DateTime  @updatedAt
 

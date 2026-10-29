@@ -196,10 +196,29 @@ function acabouOTempo(ctx: ContextoFase): boolean {
 // erro e pular para o passo seguinte. Pular era perder a página para sempre
 // na carga histórica — a janela concluía sem ela e nunca era relida. A linha
 // de erro continua indo para o run, para o diagnóstico ver o que aconteceu.
+//
+// Consumo REDUNDANTE (o mesmo pedido em menos de um minuto): o cursor leva
+// `aguardarAte`, e a invocação seguinte espera esse minuto antes de repetir
+// (executarFase) — repetir antes só renovaria a recusa, rodada após rodada.
+export const ESPERA_CONSUMO_REDUNDANTE_MS = 65_000;
+
 function pausaPorFalhaPassageira(res: ResultadoFase, rotulo: string, e: unknown, cursor: object): ResultadoFase | null {
   if (!(e instanceof OmieTransitorioError)) return null;
   res.erros.push(`${rotulo}: ${e.message} Retomada na próxima invocação, da mesma página.`);
-  return { ...res, proximoCursor: JSON.stringify(cursor) };
+  const aguardarAte = /redundante/i.test(e.message) ? new Date(Date.now() + ESPERA_CONSUMO_REDUNDANTE_MS).toISOString() : undefined;
+  return { ...res, proximoCursor: JSON.stringify(aguardarAte ? { ...cursor, aguardarAte } : cursor) };
+}
+
+// Quanto falta para poder repetir o pedido recusado como redundante (0 = já).
+export function esperaDoCursor(cursor: string | null, agora = Date.now()): number {
+  if (!cursor) return 0;
+  try {
+    const ate = (JSON.parse(cursor) as { aguardarAte?: string }).aguardarAte;
+    const t = ate ? Date.parse(ate) : NaN;
+    return Number.isFinite(t) ? Math.max(0, t - agora) : 0;
+  } catch {
+    return 0;
+  }
 }
 
 function lerCursor<T>(cursor: string | null, padrao: T): T {
@@ -1256,7 +1275,7 @@ const NATUREZAS_EXCLUSAO: readonly OmieNatureza[] = ["RECEBER", "PAGAR"];
 
 async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promise<ResultadoFase> {
   const res = vazio();
-  const conexao = await prisma.omieConexao.findUnique({ where: { id: ctx.conexaoId }, select: { exclusoesVarridasEm: true } });
+  const conexao = await prisma.omieConexao.findUnique({ where: { id: ctx.conexaoId }, select: { exclusoesVarridasEm: true, exclusoesCursor: true } });
   const config = await prisma.controladoriaConfig.findUnique({ where: { companyId: ctx.companyId }, select: { dataInicioBase: true } });
   const meses = mesesDaVerificacao({
     janelaInicio: ctx.janelaInicio,
@@ -1267,6 +1286,28 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
   });
   const c = lerCursor<CursorExclusoes>(ctx.cursor, { mes: 0, natureza: 0, pagina: 1, desde: null, listado: false, pulados: [] });
   const pausa = () => ({ ...res, proximoCursor: JSON.stringify(c) });
+  // A VARREDURA HISTÓRICA PARADA num ciclo anterior pelo limite de consumo:
+  // continua do mês (por data) e da natureza em que parou.
+  if (!ctx.cursor && !backfill && !conexao?.exclusoesVarridasEm && conexao?.exclusoesCursor) {
+    const salvo = cursorDeExclusoesSalvo(conexao.exclusoesCursor, meses);
+    if (salvo) Object.assign(c, salvo);
+  }
+  // Quando a Omie limita a consulta um a um: o lançamento fica para depois e
+  // a varredura segue com o próximo; três recusas seguidas encerram a fase
+  // por hoje (a próxima empresa do ciclo não espera), com o ponto guardado.
+  let recusasSeguidas = 0;
+  // Os pulados por recusa de consumo voltam a ser consultados na retomada;
+  // os de resposta ambígua, não.
+  const recusados = new Set<string>();
+  const pararPorHoje = async (rotulo: string, e: unknown) => {
+    const mesInicio = meses[c.mes]?.inicio.toISOString() ?? null;
+    if (!backfill && !conexao?.exclusoesVarridasEm) {
+      const salvo = { ...c, pulados: c.pulados.filter((id) => !recusados.has(id)), mesInicio };
+      await prisma.omieConexao.update({ where: { id: ctx.conexaoId }, data: { exclusoesCursor: JSON.stringify(salvo) } });
+    }
+    res.erros.push(`${rotulo}: ${e instanceof Error ? e.message : String(e)} Varredura de exclusões interrompida por hoje pelo limite de consumo da Omie; continua no próximo ciclo de onde parou.`);
+    return { ...res, faseConcluida: true };
+  };
 
   for (; c.mes < meses.length; c.mes++, c.natureza = 0) {
     const { inicio, fim } = meses[c.mes];
@@ -1370,10 +1411,16 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
             { credencialRef: ctx.credencialRef, deadline: ctx.deadline, toleraVazio: true }
           );
         } catch (e) {
-          const p = pausaPorFalhaPassageira(res, `${rotulo}, lançamento ${t.codigoLancamento}`, e, c);
-          if (p) return p;
+          if (e instanceof OmieTransitorioError) {
+            c.pulados.push(t.id);
+            recusados.add(t.id);
+            if (++recusasSeguidas >= 3) return pararPorHoje(`${rotulo}, lançamento ${t.codigoLancamento}`, e);
+            await sleep(OMIE_PACE_MS);
+            continue;
+          }
           erro = e;
         }
+        recusasSeguidas = 0;
         await sleep(OMIE_PACE_MS);
         const existencia = existenciaDaConsulta(resposta, erro, t.codigoLancamento);
         if (existencia === "existe") {
@@ -1401,9 +1448,31 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
   }
 
   if (!backfill && !conexao?.exclusoesVarridasEm) {
-    await prisma.omieConexao.update({ where: { id: ctx.conexaoId }, data: { exclusoesVarridasEm: new Date() } });
+    await prisma.omieConexao.update({ where: { id: ctx.conexaoId }, data: { exclusoesVarridasEm: new Date(), exclusoesCursor: null } });
   }
   return { ...res, faseConcluida: true };
+}
+
+// O cursor guardado (com o mês por data) traduzido para o índice do mês na
+// lista de hoje. Mês que não está mais na lista, ou texto ilegível: nulo
+// (recomeça do início).
+export function cursorDeExclusoesSalvo(texto: string, meses: MesDeVerificacao[]): CursorExclusoes | null {
+  try {
+    const salvo = JSON.parse(texto) as Partial<CursorExclusoes> & { mesInicio?: string | null };
+    if (!salvo.mesInicio) return null;
+    const mes = meses.findIndex((m) => m.inicio.toISOString() === salvo.mesInicio);
+    if (mes < 0) return null;
+    return {
+      mes,
+      natureza: Number(salvo.natureza ?? 0),
+      pagina: Number(salvo.pagina ?? 1),
+      desde: salvo.desde ?? null,
+      listado: !!salvo.listado,
+      pulados: Array.isArray(salvo.pulados) ? salvo.pulados.slice(0, 500) : [],
+    };
+  } catch {
+    return null;
+  }
 }
 
 // ---------- Fase: projetos dos títulos a pagar ----------
@@ -1549,6 +1618,14 @@ export async function executarFase(
   ctx: ContextoFase,
   backfill: boolean
 ): Promise<ResultadoFase> {
+  const espera = esperaDoCursor(ctx.cursor);
+  if (espera > 0) {
+    // Espera o que couber no orçamento desta invocação; se não couber tudo,
+    // devolve o mesmo cursor sem chamar a Omie.
+    const cabe = Math.max(0, ctx.fimDoOrcamento - Date.now() - 2_000);
+    await sleep(Math.min(espera, cabe));
+    if (esperaDoCursor(ctx.cursor) > 0) return { ...vazio(), proximoCursor: ctx.cursor };
+  }
   switch (fase) {
     case "cadastros":
       return sincronizarCadastros(ctx, backfill);
