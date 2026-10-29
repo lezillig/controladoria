@@ -2359,3 +2359,56 @@ model SaldoBancarioInformado {
 
   @@index([companyId, conexaoId])
 }
+
+// RADAR DE LICITAÇÕES (plano azul-gestao, spec 07, agente radar_pncp).
+//
+// O PNCP publica toda contratação pública do país numa API aberta. O radar
+// varre, dia a dia, as publicações das UFs e modalidades de interesse e guarda
+// só o que o objeto indica ser serviço da Azul (transporte escolar,
+// fretamento, transporte de pacientes, locação com motorista). A decisão de
+// participar é de gente: o radar não cria estudo sozinho.
+model RadarLicitacao {
+  id                     String    @id @default(cuid())
+  companyId              String
+  // numeroControlePNCP, ex. "43052497000102-1-000615/2025": a chave do PNCP.
+  numeroControle         String
+  orgaoCnpj              String
+  orgaoNome              String
+  unidadeNome            String?
+  uf                     String?
+  municipio              String?
+  modalidade             String
+  numeroCompra           String?
+  processo               String?
+  objeto                 String
+  // Centavos em BigInt: licitação de transporte passa fácil do teto do Int
+  // (R$ 21 milhões).
+  valorEstimadoCents     BigInt?
+  srp                    Boolean   @default(false)
+  publicadaEm            DateTime
+  aberturaPropostaEm     DateTime?
+  encerramentoPropostaEm DateTime?
+  urlPncp                String
+  urlOrigem              String?
+  // ALTA | MEDIA (ver src/lib/radar/aderencia.ts); BAIXA não é gravada.
+  aderencia              String
+  termos                 String[]  @default([])
+  // NOVA | ANALISANDO | PARTICIPANDO | DESCARTADA
+  status                 String    @default("NOVA")
+  motivoDescarte         String?
+  decididoPor            String?
+  decididoEm             DateTime?
+  estudoId               String?
+  criadoEm               DateTime  @default(now())
+  atualizadoEm           DateTime  @updatedAt
+
+  @@unique([companyId, numeroControle])
+  @@index([companyId, status, encerramentoPropostaEm])
+}
+
+// Até que dia de publicação o radar já varreu por completo, por empresa.
+model RadarVarredura {
+  companyId    String   @id
+  ultimoDia    DateTime
+  atualizadoEm DateTime @updatedAt
+}

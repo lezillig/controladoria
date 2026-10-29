@@ -26,6 +26,7 @@ import {
   TrendingUp,
   UsersRound,
   Database,
+  Radar,
   Wallet,
   ClipboardCheck,
 } from "lucide-react";
@@ -102,6 +103,7 @@ const NAV: NavItem[] = [
   { href: "/cenarios", label: "Cenários e orçamento", icon: Compass, permissao: "cenarios" },
   { href: "/simulador", label: "Simulador de custos", icon: Calculator, permissao: "simulador" },
   { href: "/simulador/base", label: "Custos base", icon: Database, permissao: "simulador", sub: true },
+  { href: "/simulador/radar", label: "Radar de licitações", icon: Radar, permissao: "simulador", sub: true },
 
   // Por último: o que muda como o sistema se comporta, e não o que ele mostra
   // sobre a empresa.
