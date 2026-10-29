@@ -16,6 +16,10 @@ import { larguraPainel } from "@/lib/ui";
 // sobrescrever um com o outro — e para conseguir dizer, no relatório, se o
 // problema é da Azul ou da MCZ.
 
+// O "Testar conexão" faz umas quarenta chamadas à Omie, em ritmo controlado:
+// no tempo padrão da função, a tela caía antes do diagnóstico voltar.
+export const maxDuration = 300;
+
 export default async function ConexoesPage() {
   const session = await exigirPermissao("conexoes");
   const podeEditar = await podeAcao(session, "gerir-conexoes");
