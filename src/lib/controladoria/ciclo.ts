@@ -1,7 +1,7 @@
 import type { OmieConexao, OmieSyncRun, Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
-import { credencialConfigurada } from "@/lib/omie/client";
+import { credencialConfigurada, PREFIXO_RECUSA, RECUSA_DA_CONTA } from "@/lib/omie/client";
 import { executarFase, FASES, proximaFase, type FaseSync } from "@/lib/omie/sync";
 import { carregarContexto, garantirConfig, janelaDeAuditoria } from "./contexto";
 import { executarAuditoria } from "./engine";
@@ -143,6 +143,21 @@ export async function executarPasso(params: {
       },
       run.backfill
     );
+
+    // A OMIE RECUSOU A CONTA INTEIRA (chave, add-on, aplicativo suspenso): a
+    // execução da empresa termina em ERRO, com a causa na frente. Antes, cada
+    // fase anotava o erro e seguia, o dia saía "concluído" e a MCZ ficou
+    // semanas sem sincronizar sem alarme nenhum. O período perdido volta no
+    // primeiro dia em que a conta for aceita (janela de recuperação, em
+    // obterOuCriarRun).
+    const recusa = resultado.erros.find((e) => RECUSA_DA_CONTA.test(e));
+    if (recusa) {
+      await prisma.omieSyncRun.update({
+        where: { id: run.id },
+        data: { status: "ERRO", finalizadoEm: new Date(), invocacoes: { increment: 1 }, erro: `${PREFIXO_RECUSA}: ${recusa}`.slice(0, 2000) },
+      });
+      return { runId: run.id, fase, conexaoApelido: conexao.apelido, backfill: run.backfill, concluido: false, continua: true, detalhes: [`[${conexao.apelido}] ${PREFIXO_RECUSA}: ${recusa}`] };
+    }
 
     const proxima = resultado.faseConcluida ? proximaFase(fase as FaseSync) : null;
     // Fim das fases de sync: a execução da conexão termina aqui. A auditoria e
@@ -581,7 +596,7 @@ export async function obterOuCriarRun(
         companyId,
         conexaoId: conexao.id,
         fase: "cadastros",
-        janelaInicio: janelaInicioDoDia,
+        janelaInicio: await inicioDaJanelaDaConexao(conexao.id, janelaInicioDoDia),
         janelaFim: janelaFimDoDia,
         backfill: false,
       },
@@ -633,4 +648,52 @@ export function dataReferenciaPadrao(agora = new Date()): Date {
   // Meia-noite do fuso do SERVIDOR, que é como todo dia de calendário é
   // guardado aqui (ver o cabeçalho de format.ts).
   return inicioDoDia(new Date(ano, mes - 1, dia - 1));
+}
+
+// A JANELA DE RECUPERAÇÃO. A diária relê três dias; se a empresa ficou dias
+// sem sincronizar de verdade (conta recusada pela Omie, erro no meio), ela
+// começa três dias antes da última sincronização diária BEM-SUCEDIDA — o
+// período perdido volta sozinho no primeiro dia em que a conta é aceita.
+// Teto de 120 dias: além disso, a carga histórica (backfill) é o caminho.
+const DIAS_MAXIMOS_DE_RECUPERACAO = 120;
+
+// Execução diária concluída SEM recusa da conta (as anteriores a esta regra
+// terminavam "concluídas" com a recusa só anotada no erro).
+const SEM_RECUSA = {
+  backfill: false,
+  status: "CONCLUIDO" as const,
+  AND: ["chave de acesso", "addon", "suspenso", PREFIXO_RECUSA].map((t) => ({ OR: [{ erro: null }, { NOT: { erro: { contains: t } } }] })),
+};
+
+export async function ultimaSincronizacaoBoa(conexaoId: string): Promise<Date | null> {
+  const r = await prisma.omieSyncRun.findFirst({ where: { conexaoId, ...SEM_RECUSA }, orderBy: { janelaFim: "desc" }, select: { janelaFim: true } });
+  return r?.janelaFim ?? null;
+}
+
+// A SAÚDE DA SINCRONIZAÇÃO, por empresa ativa, para o alerta do painel: a
+// última sincronização diária bem-sucedida e, se a última execução foi recusada
+// pela Omie, a causa.
+export async function saudeDaSincronizacao(companyId: string, agora = new Date()) {
+  const conexoes = await prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" }, select: { id: true, apelido: true } });
+  return Promise.all(
+    conexoes.map(async (c) => {
+      const [ultimaBoa, ultima] = await Promise.all([
+        ultimaSincronizacaoBoa(c.id),
+        prisma.omieSyncRun.findFirst({ where: { conexaoId: c.id, backfill: false }, orderBy: { iniciadoEm: "desc" }, select: { erro: true, status: true } }),
+      ]);
+      const recusa = ultima?.erro && RECUSA_DA_CONTA.test(ultima.erro) ? ultima.erro.replace(`${PREFIXO_RECUSA}: `, "").slice(0, 220) : null;
+      const diasSem = ultimaBoa ? Math.floor((agora.getTime() - ultimaBoa.getTime()) / 86_400_000) : null;
+      return { apelido: c.apelido, ultimaBoa, diasSem, recusa, alerta: !!recusa || (diasSem !== null && diasSem > 2) };
+    })
+  );
+}
+
+export async function inicioDaJanelaDaConexao(conexaoId: string, inicioNormal: Date): Promise<Date> {
+  const ultimaBoa = await prisma.omieSyncRun.findFirst({ where: { conexaoId, ...SEM_RECUSA }, orderBy: { janelaFim: "desc" }, select: { janelaFim: true } });
+  // Sem lacuna (a última boa ainda cai dentro da janela normal): nada muda.
+  if (!ultimaBoa || ultimaBoa.janelaFim >= inicioNormal) return inicioNormal;
+  const recuperacao = inicioDoDia(somarDias(ultimaBoa.janelaFim, -3));
+  const teto = inicioDoDia(somarDias(inicioNormal, -DIAS_MAXIMOS_DE_RECUPERACAO));
+  if (recuperacao >= inicioNormal) return inicioNormal;
+  return recuperacao < teto ? teto : recuperacao;
 }

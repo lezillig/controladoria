@@ -16,6 +16,7 @@ import {
   type ProblemaCredencial,
   paramsContratos,
   paramsCte,
+  RECUSA_DA_CONTA,
 } from "./client";
 import {
   formatarDataOmie,
@@ -497,10 +498,9 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
 // O sync continua com o comportamento antigo de propósito: lá, insistir em
 // quatro variantes a cada página multiplicaria por quatro o consumo da conta.
 // Descobrir é trabalho do diagnóstico; o sync usa o que foi descoberto.
-// RECUSA QUE VALE PARA TODA A CONTA — credencial, add-on de API não ativado,
-// aplicativo suspenso. Vista na primeira consulta, as outras quarenta dariam
-// o mesmo erro, e repeti-las só deixava o teste lento a ponto de a tela cair.
-const RECUSA_DA_CONTA = /chave de acesso|aplicativo est[aá] suspenso|API_ADDON_REQUIRED|addon na Omie Store/i;
+// RECUSA QUE VALE PARA TODA A CONTA (RECUSA_DA_CONTA, client.ts). Vista na
+// primeira consulta, as outras quarenta dariam o mesmo erro, e repeti-las só
+// deixava o teste lento a ponto de a tela cair.
 const recusaDaConta = new Map<string, string>();
 
 async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpoint> {

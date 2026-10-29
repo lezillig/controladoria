@@ -551,6 +551,13 @@ const RATE_LIMIT_PATTERNS = [
 
 export class OmieVazioError extends Error {}
 
+// RECUSA DA CONTA INTEIRA — credencial recusada, add-on de API não ativado na
+// Omie Store, aplicativo suspenso. Não é falha de um endpoint: nada da empresa
+// sincroniza enquanto durar, e por isso o ciclo trata como erro da execução
+// (ciclo.ts) e o teste de conexão para na primeira (diagnostico.ts).
+export const RECUSA_DA_CONTA = /chave de acesso|aplicativo est[aá] suspenso|API_ADDON_REQUIRED|addon na Omie Store/i;
+export const PREFIXO_RECUSA = "CONTA RECUSADA PELA OMIE";
+
 // FALHA TRANSITÓRIA — limite de consumo, rede, gateway fora — que não coube
 // retentar dentro da invocação. É diferente de recusa de negócio (tag,
 // credencial, método): a mesma chamada, feita de novo daqui a pouco, passa.
