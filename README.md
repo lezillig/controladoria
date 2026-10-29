@@ -79,6 +79,7 @@ Se a URL já tiver parâmetros (ex.: `?sslmode=require`), use `&schema=controlad
 | `EMAIL_REMETENTE` | não | remetente; o domínio precisa estar verificado no Resend |
 | `ANTHROPIC_API_KEY` | não | leitura executiva por IA no relatório |
 | `APP_URL` | não | endereço do sistema fora da Vercel (em produção na Vercel vale o domínio de produção que ela informa) |
+| `GITHUB_DISPATCH_TOKEN` | não | token fine-grained do repositório (Actions: read and write): o agendamento diário da Vercel aciona na hora o workflow "Carga da Controladoria", que conduz o ciclo; sem ele, o ciclo depende da autochamada e do agendamento do GitHub, que atrasa horas |
 | `OMIE_DATA_INICIO_BASE` | não | início da carga histórica (padrão `2025-01-01`) |
 | `RELATORIO_EMAILS` | não | destinatário padrão na primeira execução |
 | `OMIE_PACE_MS` | não | espaçamento entre chamadas à Omie (padrão 350 ms) |

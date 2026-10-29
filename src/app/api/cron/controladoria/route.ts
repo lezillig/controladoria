@@ -6,6 +6,7 @@ import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/encadear";
 import { autorizado } from "@/lib/controladoria/autorizacaoDoCiclo";
+import { acionarCondutorGithub, condutorGithubConfigurado } from "@/lib/controladoria/condutorGithub";
 import { recalcularPendentes } from "@/lib/controladoria/historico";
 import { parseLocalDate } from "@/lib/date";
 import { limparTentativasAntigas } from "@/lib/seguranca/freioDeLogin";
@@ -68,6 +69,15 @@ export async function GET(req: NextRequest) {
 
   if (Number.isNaN(dataReferencia.getTime())) {
     return NextResponse.json({ error: "Parâmetro `data` inválido (use AAAA-MM-DD)." }, { status: 400 });
+  }
+
+  // A chamada do agendamento da Vercel (sem condutor de fora, primeira
+  // rodada) entrega a condução ao GitHub Actions quando ele está configurado
+  // (condutorGithub.ts). Se o acionamento falhar, segue como sempre.
+  if (!conduzidoDeFora && ciclo === 0 && condutorGithubConfigurado()) {
+    const acionado = await acionarCondutorGithub(dataParam);
+    if (acionado.ok) return NextResponse.json({ conduzidoDeFora: true, continua: true, detalhes: [acionado.detalhe] });
+    console.warn(acionado.detalhe);
   }
 
   // Multiempresa: o ciclo roda para cada tenant ativo. Uma empresa que falhe
