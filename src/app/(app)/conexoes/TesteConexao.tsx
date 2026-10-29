@@ -96,9 +96,17 @@ export default function TesteConexao({ conexaoId }: { conexaoId: string }) {
           setErro(null);
           setResultado(null);
           iniciar(async () => {
-            const r = await testarConexao(formData);
-            if (r.erro) setErro(r.erro);
-            if (r.diagnostico) setResultado(r.diagnostico);
+            // A chamada pode cair (tempo esgotado, publicação nova no meio):
+            // o erro fica aqui, na linha da empresa, sem derrubar a tela.
+            try {
+              const r = await testarConexao(formData);
+              if (r.erro) setErro(r.erro);
+              if (r.diagnostico) setResultado(r.diagnostico);
+            } catch (e) {
+              setErro(
+                `O teste não chegou ao fim (${e instanceof Error ? e.message.slice(0, 160) : "falha na chamada"}). Recarregue a página com Ctrl+F5 e tente de novo; se repetir, a lista de falhas em Sincronização traz a causa.`
+              );
+            }
           });
         }}
       >

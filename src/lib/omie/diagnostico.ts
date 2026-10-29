@@ -206,6 +206,7 @@ const SONDAS: Sonda[] = [
 ];
 
 export async function diagnosticarConexao(conexaoId: string, companyId: string): Promise<ResultadoDiagnostico> {
+  recusaDaConta.clear();
   const conexao = await prisma.omieConexao.findFirst({
     where: { id: conexaoId, companyId },
     select: { id: true, nome: true, apelido: true, credencialRef: true },
@@ -496,7 +497,28 @@ export async function diagnosticarConexao(conexaoId: string, companyId: string):
 // O sync continua com o comportamento antigo de propósito: lá, insistir em
 // quatro variantes a cada página multiplicaria por quatro o consumo da conta.
 // Descobrir é trabalho do diagnóstico; o sync usa o que foi descoberto.
+// RECUSA QUE VALE PARA TODA A CONTA — credencial, add-on de API não ativado,
+// aplicativo suspenso. Vista na primeira consulta, as outras quarenta dariam
+// o mesmo erro, e repeti-las só deixava o teste lento a ponto de a tela cair.
+const RECUSA_DA_CONTA = /chave de acesso|aplicativo est[aá] suspenso|API_ADDON_REQUIRED|addon na Omie Store/i;
+const recusaDaConta = new Map<string, string>();
+
 async function testar(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpoint> {
+  const recusa = recusaDaConta.get(credencialRef);
+  if (recusa) {
+    return {
+      chave: alvo.chave, rotulo: alvo.rotulo, call: alvo.endpoint.call, estado: "ERRO", registros: 0, totalNaConta: 0, listaEncontradaEm: null,
+      filtroAceito: null, camposRecebidos: [], camposMapeados: [], camposVazios: [], valoresDeAmostra: {},
+      erro: `Não consultado: a Omie já recusou a conta inteira na primeira consulta — ${recusa}`,
+      duracaoMs: 0,
+    };
+  }
+  const r = await testarNaOmie(alvo, credencialRef);
+  if (r.estado === "ERRO" && r.erro && RECUSA_DA_CONTA.test(r.erro)) recusaDaConta.set(credencialRef, r.erro.slice(0, 300));
+  return r;
+}
+
+async function testarNaOmie(alvo: Alvo, credencialRef: string): Promise<ResultadoEndpoint> {
   const inicio = Date.now();
   const base = {
     chave: alvo.chave,
