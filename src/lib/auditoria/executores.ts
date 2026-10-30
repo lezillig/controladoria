@@ -1,102 +1,15 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { registrarAlteracao } from "./trilha";
-import { criarPendencia } from "./pendencias";
 
 // O QUE ACONTECE QUANDO UMA PENDÊNCIA É APROVADA (ADR-005): a ação proposta
 // executa só depois da aprovação, e o resultado (executada ou erro) fica na
-// própria pendência. Tipos sem executor são só registro de decisão.
+// própria pendência. Tipos sem executor são só registro de decisão — hoje,
+// todos: os fluxos que mudavam cadastro de veículo, contrato, compra e multa
+// são da gestão.
 
 type Pendencia = { id: string; companyId: string; tipo: string; acaoProposta: Prisma.JsonValue; decididaPor: string | null };
 
-const EXECUTORES: Record<string, (p: Pendencia) => Promise<string>> = {
-  "saida-veiculo": async (p) => {
-    const a = p.acaoProposta as { veiculoId: string; status: "vendido" | "baixado"; dataVenda?: string; valorVendaCents?: string | null; compradorNome?: string | null; transferenciaSituacao?: string | null; dataBaixa?: string; motivoBaixa?: string; contratos?: string | null };
-    const v = await prisma.cadVeiculo.findFirst({ where: { id: a.veiculoId, companyId: p.companyId } });
-    if (!v) throw new Error("veículo não encontrado");
-    const depois =
-      a.status === "vendido"
-        ? { status: "vendido", dataVenda: a.dataVenda ? new Date(a.dataVenda) : null, valorVendaCents: a.valorVendaCents ? BigInt(a.valorVendaCents) : null, compradorNome: a.compradorNome ?? null, transferenciaSituacao: a.transferenciaSituacao ?? null }
-        : { status: "baixado", dataBaixa: a.dataBaixa ? new Date(a.dataBaixa) : null, motivoBaixa: a.motivoBaixa ?? null };
-    await prisma.cadVeiculo.update({ where: { id: v.id }, data: depois });
-    await registrarAlteracao(prisma, { companyId: p.companyId, usuario: p.decididaPor, agente: "pendencia", tabela: "CadVeiculo", registroId: v.id, operacao: "desativar", antes: { status: v.status }, depois });
-    const vinculos = await prisma.frotaFinanciamentoVeiculo.findMany({ where: { veiculoId: v.id, alienado: true, financiamento: { ativo: true } }, select: { id: true, financiamentoId: true } });
-    for (const vin of vinculos) {
-      if (a.contratos === "quitar") {
-        await prisma.frotaFinanciamento.update({ where: { id: vin.financiamentoId }, data: { ativo: false, dataQuitacao: depois.status === "vendido" ? (depois as { dataVenda: Date | null }).dataVenda : new Date(), motivoEncerramento: "quitado na saída do veículo" } });
-      }
-      await prisma.frotaFinanciamentoVeiculo.update({ where: { id: vin.id }, data: { alienado: false } });
-    }
-    await prisma.cadCentroCusto.updateMany({ where: { companyId: p.companyId, veiculoId: v.id }, data: { ativo: false } });
-    const nome = v.placa ?? v.chassi ?? v.id;
-    await criarPendencia({
-      companyId: p.companyId,
-      agente: "saida-veiculo",
-      tipo: "checklist-saida",
-      titulo: `Checklist de saída do veículo ${nome}`,
-      descricao: "Confirme cada item antes de aprovar: excluir da apólice; cancelar a tag de pedágio; retirar o rastreador; comunicação de venda/ATPV no Detran; baixa da alienação (se quitado); tirar da escala e do rateio de custos.",
-      severidade: "media",
-      evidencias: { veiculoId: v.id, placa: v.placa, apoliceId: v.apoliceId, tagPedagio: v.tagPedagio, contratos: vinculos.length },
-      perfilAprovador: "operacao",
-      chaveExcecao: `checklist-saida:${v.id}`,
-    });
-    return `veículo ${nome} fora da frota; ${vinculos.length} contrato(s) ${a.contratos === "quitar" ? "quitado(s)" : "desalienado(s)"}; checklist de saída aberto`;
-  },
-};
-
-// CONTRATO QUITADO (aberto pelo agente da frota quando a última parcela
-// aparece paga na Omie): encerra, desaliena e pede a baixa do gravame.
-EXECUTORES["contrato-quitado"] = async (p) => {
-  const a = p.acaoProposta as { financiamentoId: string; dataQuitacao?: string };
-  const c = await prisma.frotaFinanciamento.findFirst({ where: { id: a.financiamentoId, companyId: p.companyId }, include: { veiculos: { include: { veiculo: { select: { id: true, placa: true, chassi: true } } } } } });
-  if (!c) throw new Error("contrato não encontrado");
-  if (!c.ativo) return "o contrato já estava encerrado";
-  const depois = { ativo: false, dataQuitacao: a.dataQuitacao ? new Date(a.dataQuitacao) : new Date(), motivoEncerramento: "quitado (última parcela paga na Omie)" };
-  await prisma.frotaFinanciamento.update({ where: { id: c.id }, data: depois });
-  await registrarAlteracao(prisma, { companyId: p.companyId, usuario: p.decididaPor, agente: "pendencia", tabela: "FrotaFinanciamento", registroId: c.id, operacao: "update", antes: { ativo: true }, depois });
-  const alienados = c.veiculos.filter((v) => v.alienado);
-  if (alienados.length) {
-    await prisma.frotaFinanciamentoVeiculo.updateMany({ where: { id: { in: alienados.map((v) => v.id) } }, data: { alienado: false } });
-    const placas = alienados.map((v) => v.veiculo.placa ?? v.veiculo.chassi ?? v.veiculoId);
-    await criarPendencia({
-      companyId: p.companyId,
-      agente: "contrato-quitado",
-      tipo: "baixa-gravame",
-      titulo: `Baixa do gravame: ${placas.join(", ")}`,
-      descricao: `Contrato ${c.instituicao} ${c.contratoNumero ?? `${c.grupo}/${c.cota}`} quitado. Pedir ao banco/administradora a baixa da alienação no Detran e conferir o CRLV sem o gravame. Aprovar = baixa feita.`,
-      severidade: "media",
-      evidencias: { financiamentoId: c.id, veiculos: alienados.map((v) => ({ id: v.veiculoId, placa: v.veiculo.placa })) },
-      perfilAprovador: "operacao",
-      chaveExcecao: `baixa-gravame:${c.id}`,
-    });
-  }
-  return `contrato encerrado como quitado; ${alienados.length} veículo(s) desalienado(s)${alienados.length ? "; baixa do gravame aberta" : ""}`;
-};
-
-// COMPRA DE VEÍCULO aprovada pela Diretoria: o pedido passa a "aprovada" e
-// fica esperando os veículos (recebimento em Frota › Compras).
-EXECUTORES["compra-veiculo"] = async (p) => {
-  const a = p.acaoProposta as { compraId: string };
-  const c = await prisma.frotaCompra.findFirst({ where: { id: a.compraId, companyId: p.companyId } });
-  if (!c) throw new Error("pedido de compra não encontrado");
-  if (c.status === "cancelada") return "o pedido tinha sido cancelado antes da aprovação — nada a fazer";
-  if (c.status !== "solicitada") return `o pedido já estava ${c.status}`;
-  await prisma.frotaCompra.update({ where: { id: c.id }, data: { status: "aprovada", decididoPor: p.decididaPor, decididoEm: new Date() } });
-  await registrarAlteracao(prisma, { companyId: p.companyId, usuario: p.decididaPor, agente: "pendencia", tabela: "FrotaCompra", registroId: c.id, operacao: "update", antes: { status: "solicitada" }, depois: { status: "aprovada" } });
-  return `pedido aprovado: ${c.quantidade} veículo(s) a receber`;
-};
-
-// DESCONTO DE MULTA EM FOLHA aprovado pelo RH: grava a competência e o valor.
-EXECUTORES["desconto-multa"] = async (p) => {
-  const a = p.acaoProposta as { multaId: string; competencia: string; valorCents: number };
-  const m = await prisma.frotaMulta.findFirst({ where: { id: a.multaId, companyId: p.companyId } });
-  if (!m) throw new Error("multa não encontrada");
-  if (m.descontoCompetencia) return "a multa já tinha desconto lançado";
-  const depois = { descontoCompetencia: new Date(a.competencia), descontoValorCents: a.valorCents };
-  await prisma.frotaMulta.update({ where: { id: m.id }, data: depois });
-  await registrarAlteracao(prisma, { companyId: p.companyId, usuario: p.decididaPor, agente: "pendencia", tabela: "FrotaMulta", registroId: m.id, operacao: "update", antes: { descontoCompetencia: null }, depois });
-  return `desconto de ${(a.valorCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} na folha de ${a.competencia.slice(5, 7)}/${a.competencia.slice(0, 4)}`;
-};
+const EXECUTORES: Record<string, (p: Pendencia) => Promise<string>> = {};
 
 export async function executarPendencia(id: string): Promise<void> {
   const p = await prisma.audPendencia.findUnique({ where: { id } });

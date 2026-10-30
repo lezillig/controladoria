@@ -1,11 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { lerNumeroParcela } from "./financiamentos";
+import { lerContratos } from "./contratosDaGestao";
 
 // AS PARCELAS DOS CONTRATOS NA OMIE — cada título das contas a pagar do banco
 // ou da administradora ligado ao contrato ou à cota a que pertence. Com a
 // ligação, as parcelas pagas (e a data da baixa), as em aberto e o saldo de
 // cada contrato — e de cada veículo — passam a vir da Omie, sem ninguém
-// atualizar planilha.
+// atualizar planilha. Os contratos são os da gestão (contratosDaGestao.ts);
+// a ligação fica aqui, pelo id do contrato lá.
 //
 // QUEM É O BANCO NA OMIE: o parceiro (fornecedor) cujo nome tem a palavra da
 // instituição (MONEO, RCI, SANTANDER, ITAU, STELLANTIS, BRADESCO, BRASIL,
@@ -52,7 +54,7 @@ type Contrato = {
   contratoNumero: string | null;
   grupo: string | null;
   cota: string | null;
-  valorParcelaCents: bigint | null;
+  valorParcelaCents: bigint | number | null;
   vencimentoDia: number | null;
   parcelas: number | null;
   dataInicio: Date | null;
@@ -127,14 +129,15 @@ export type ResultadoConciliacao = {
   grupos: { instituicao: string; produto: string; parceiros: string[]; contratos: number; titulos: number; ligados: number; sobras: number }[];
   semParceiro: string[];
   ligacoes: number;
+  // A gestão não respondeu: nada foi refeito (as ligações de ontem ficam).
+  gestaoIndisponivel?: boolean;
 };
 
 export async function conciliarParcelasOmie(companyId: string): Promise<ResultadoConciliacao> {
-  const contratos = await prisma.frotaFinanciamento.findMany({
-    where: { companyId },
-    select: { id: true, instituicao: true, produto: true, contratoNumero: true, grupo: true, cota: true, valorParcelaCents: true, vencimentoDia: true, parcelas: true, dataInicio: true, dataFinal: true },
-  });
   const resultado: ResultadoConciliacao = { grupos: [], semParceiro: [], ligacoes: 0 };
+  const lidos = await lerContratos(companyId);
+  if (!lidos) return { ...resultado, gestaoIndisponivel: true };
+  const contratos: Contrato[] = lidos;
   if (contratos.length === 0) return resultado;
 
   // 1. Quem é cada instituição na Omie: sugere o que falta.

@@ -1,21 +1,22 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { contratosComSituacao } from "@/lib/frota/frotaNoBanco";
+import { contratosComSituacao, type ContratoComSituacao } from "@/lib/frota/contratosDaGestao";
 import { controleGeral, ROTULO_PRODUTO, ROTULO_SITUACAO_CONSORCIO, saldoPorVeiculo } from "@/lib/frota/financiamentos";
+import { linkDaGestao } from "@/lib/gestao/endereco";
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
 import { Kpi, Secao, Tabela } from "../../_componentes";
-import { NomeVeiculo } from "../_frota";
 import FormAcao from "../FormAcao";
 import ConferirParcelas from "./ConferirParcelas";
 import { decidirParceiro } from "./actions";
 
-// FINANCIAMENTOS E CONSÓRCIOS — o que a planilha "Consórcios e
-// Financiamentos" montava à mão, sempre atual: o Controle Geral por banco, as
-// cotas (não contempladas; contempladas sem o bem = crédito parado), o saldo
-// devedor por placa, e o que pede ação (parcela em atraso na Omie, parcela que
-// deveria estar lançada e não está, contrato sem ligação com a Omie).
+// FINANCIAMENTOS E CONSÓRCIOS CONFERIDOS NA OMIE — os contratos são os da
+// gestão (Cadastros › Veículos › Financiamentos, onde se cadastram e se
+// importam); aqui, o lado financeiro: o Controle Geral por banco, as cotas
+// (contempladas sem o bem = crédito parado), o saldo devedor por placa
+// andando com os pagamentos, e o que pede ação (parcela em atraso na Omie,
+// parcela que deveria estar lançada e não está, contrato sem ligação).
 
 export const maxDuration = 60;
 
@@ -31,10 +32,11 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
   const session = await exigirPermissao("financiamentos");
   const podeEditar = await podeAcao(session, "gerir-financiamentos");
   const hoje = new Date();
-  const contratos = await contratosComSituacao(session.companyId, hoje);
+  const { contratos, gestaoDisponivel } = await contratosComSituacao(session.companyId, hoje);
+  const cadastro = linkDaGestao("/cadastros/veiculos/financiamentos");
   const ver = VISOES.find((v) => v.chave === params.ver)?.chave ?? "geral";
   const ativos = contratos.filter((c) => !c.situacao.quitado);
-  const cg = controleGeral(contratos);
+  const cg = controleGeral(contratos.map((c) => ({ ...c, valorCreditadoCents: null, lanceCents: null })));
   const atrasados = ativos.filter((c) => c.situacao.atrasadas.quantidade > 0);
   const naoLancados = ativos.filter((c) => c.situacao.naoLancadas > 0);
   const semOmie = ativos.filter((c) => c.pagamentosOmie.length === 0);
@@ -52,24 +54,32 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
         <div>
           <h1 className="text-xl font-semibold text-slate-900">Financiamentos e consórcios</h1>
           <p className="mt-1 max-w-4xl text-sm text-slate-500">
-            CDC, Finame, leasing, capital de giro e cotas de consórcio, com as parcelas conferidas nas contas a pagar da Omie: pagas, em atraso, a vencer e as que deveriam estar lançadas. O
-            saldo de cada contrato — e de cada veículo — se atualiza com cada pagamento.
+            Os contratos e cotas da gestão com as parcelas conferidas nas contas a pagar da Omie: pagas, em atraso, a vencer e as que deveriam estar lançadas. O saldo de cada contrato — e de
+            cada veículo — anda com cada pagamento, e volta para a gestão pela integração.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {podeEditar && (
-            <Link href="/frota/financiamentos/novo" className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-              Novo contrato ou cota
-            </Link>
+          {cadastro && (
+            <a href={cadastro} className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              Cadastro dos contratos (gestão)
+            </a>
           )}
-          {podeEditar && <ConferirParcelas />}
+          {podeEditar && gestaoDisponivel && <ConferirParcelas />}
         </div>
       </div>
 
-      {contratos.length === 0 ? (
+      {!gestaoDisponivel ? (
+        <Secao titulo="A gestão não respondeu">
+          <p className="text-sm text-slate-600">
+            Os contratos são lidos do sistema de gestão, que não respondeu agora (ou o papel de leitura ainda não tem acesso às tabelas Financiamento e FinanciamentoVeiculo — ver
+            docs/papel-leitura-gestao.sql). As ligações com a Omie continuam gravadas; tente de novo em instantes.
+          </p>
+        </Secao>
+      ) : contratos.length === 0 ? (
         <Secao titulo="Nenhum contrato ainda">
           <p className="text-sm text-slate-600">
-            Os contratos entram pela <Link href="/frota/migracao" className="font-semibold text-blue-800 underline">migração das planilhas</Link> ou um a um em “Novo contrato ou cota”.
+            Os contratos são cadastrados na gestão, em Cadastros › Veículos › Financiamentos (ali também se importa a planilha “Consórcios e Financiamentos”). Assim que estiverem lá, aparecem aqui
+            conferidos com a Omie.
           </p>
         </Secao>
       ) : (
@@ -128,7 +138,7 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
                   <Kpi rotulo="Não contempladas" valor={fmtNumero(cg.consorcio.naoContempladas.cotas)} apoio={`crédito ${fmtBRL(cg.consorcio.naoContempladas.creditoCents)}`} />
                   <Kpi rotulo="Contempladas sem o bem" valor={fmtNumero(cg.consorcio.semBem.cotas)} apoio={`crédito ${fmtBRL(cg.consorcio.semBem.creditoCents)}`} />
                   <Kpi rotulo="Líquido disponível" valor={fmtBRL(cg.consorcio.semBem.liquidoCents)} apoio="crédito − lance, para comprar veículo" />
-                  <Kpi rotulo="Com lance planejado" valor={fmtNumero(ativos.filter((c) => c.lancePlanejadoPct !== null).length)} apoio="cotas com lance pretendido" />
+                  <Kpi rotulo="Contempladas com o bem" valor={fmtNumero(ativos.filter((c) => c.situacaoConsorcio === "contemplada_com_bem").length)} apoio="cotas pagando o veículo já comprado" />
                 </div>
               </Secao>
             </>
@@ -155,7 +165,7 @@ function LinkContrato({ c }: { c: { id: string; contratoNumero: string | null; g
   );
 }
 
-type Contratos = Awaited<ReturnType<typeof contratosComSituacao>>;
+type Contratos = ContratoComSituacao[];
 
 function ListaDeContratos({ contratos, params, instituicoes, href }: { contratos: Contratos; params: { produto?: string; inst?: string; q?: string; encerrados?: string }; instituicoes: string[]; href: (e: Record<string, string | undefined>) => string }) {
   const q = (params.q ?? "").trim().toUpperCase();
@@ -210,13 +220,13 @@ function SaldoPorPlaca({ contratos }: { contratos: Contratos }) {
   const veiculos = new Map(contratos.flatMap((c) => c.veiculos.map((v) => [v.veiculoId, v.veiculo] as const)));
   const linhas = [...saldos.entries()].sort((a, b) => b[1].saldoCents - a[1].saldoCents);
   return (
-    <Secao titulo="Saldo devedor por placa" descricao="A parte de cada veículo em cada contrato ativo (pela parcela de cada placa), somada. Atualiza com os pagamentos na Omie.">
+    <Secao titulo="Saldo devedor por placa" descricao="A parte de cada veículo em cada contrato ativo (pela parcela de cada placa, como está na gestão), somada. Atualiza com os pagamentos na Omie.">
       <Tabela
         colunas={["Placa", "Modelo", "Contratos", "Bancos / administradoras", "Parcelas / mês", "Saldo devedor"]}
         alinharDireita={[2, 4, 5]}
         linhas={linhas.map(([id, s]) => {
           const v = veiculos.get(id)!;
-          return [<NomeVeiculo key="p" v={v} />, v.modelo ?? "—", fmtNumero(s.contratos), s.instituicoes.join(", "), fmtBRL(s.parcelaMensalCents), fmtBRL(s.saldoCents)];
+          return [<span key="p" className="font-mono text-xs">{v.placa}</span>, v.modelo ?? "—", fmtNumero(s.contratos), s.instituicoes.join(", "), fmtBRL(s.parcelaMensalCents), fmtBRL(s.saldoCents)];
         })}
         vazio="Nenhum veículo com contrato ativo."
       />

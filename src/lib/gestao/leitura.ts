@@ -556,3 +556,84 @@ export async function lerPatrimonioDaFrota(
   ]);
   return { veiculos, financiamentos };
 }
+
+// AS ADAPTAÇÕES DE CADA VEÍCULO (elevador, ar, letreiro…), somadas: entram no
+// investimento junto com a compra. Opcional: depende do GRANT da tabela.
+export async function lerAdaptacoes(companyId: string): Promise<Map<string, number>> {
+  const linhas = await lerOpcional(
+    () => prismaGestao.$queryRaw<{ vehicleId: string; totalCents: number | bigint | null }[]>`
+      SELECT "vehicleId", SUM("valorCents") AS "totalCents"
+      FROM public."AdaptacaoVeiculo"
+      WHERE "companyId" = ${companyId} AND ativo
+      GROUP BY "vehicleId"
+    `,
+    "as adaptações dos veículos (AdaptacaoVeiculo)"
+  );
+  return new Map(linhas.map((l) => [l.vehicleId, Number(l.totalCents ?? 0)]));
+}
+
+// OS CONTRATOS DA GESTÃO, inteiros, para a conferência das parcelas na Omie
+// (src/lib/frota/contratosDaGestao.ts). O cadastro é da gestão (Cadastros ›
+// Veículos › Financiamentos); aqui só se lê. Devolve null quando a leitura
+// falha — e não lista vazia —, porque "sem contratos" faria a conferência
+// apagar as ligações com a Omie.
+export type ContratoLidoDaGestao = {
+  id: string;
+  banco: string;
+  modalidade: string;
+  numeroContrato: string | null;
+  grupo: string | null;
+  cota: string | null;
+  valorCents: number | null;
+  taxaPct: number | null;
+  diaVencimento: number | null;
+  totalParcelas: number | null;
+  parcelasPagas: number | null;
+  valorParcelaCents: number | null;
+  saldoQuitacaoCents: number | null;
+  dataFinal: Date | null;
+  situacao: string | null;
+  contemplacao: string | null;
+  dataContemplacao: Date | null;
+  quitado: boolean;
+  posicaoEm: Date;
+};
+export type VeiculoDoContratoGestao = {
+  id: string;
+  financiamentoId: string;
+  placa: string;
+  vehicleId: string | null;
+  parcelaCents: number | null;
+  saldoCents: number | null;
+  modelo: string | null;
+  status: string | null;
+  chassi: string | null;
+};
+
+export async function lerContratosDaGestao(companyId: string): Promise<{ contratos: ContratoLidoDaGestao[]; veiculos: VeiculoDoContratoGestao[] } | null> {
+  const rotulo = "os contratos de financiamento e consórcio (Financiamento)";
+  try {
+    const [contratos, veiculos] = await Promise.all([
+      prismaGestao.$queryRaw<ContratoLidoDaGestao[]>`
+        SELECT id, banco, modalidade::text AS modalidade, "numeroContrato", grupo, cota, "valorCents",
+               "taxaPct"::float8 AS "taxaPct", "diaVencimento", "totalParcelas", "parcelasPagas",
+               "valorParcelaCents", "saldoQuitacaoCents", "dataFinal", situacao,
+               contemplacao::text AS contemplacao, "dataContemplacao", quitado, "posicaoEm"
+        FROM public."Financiamento"
+        WHERE "companyId" = ${companyId}
+      `,
+      prismaGestao.$queryRaw<VeiculoDoContratoGestao[]>`
+        SELECT fv.id, fv."financiamentoId", fv.placa, fv."vehicleId", fv."parcelaCents", fv."saldoCents",
+               v.model AS modelo, v.status::text AS status, v.chassi
+        FROM public."FinanciamentoVeiculo" fv
+        LEFT JOIN public."Vehicle" v ON v.id = fv."vehicleId"
+        WHERE fv."companyId" = ${companyId} AND fv.ativo
+      `,
+    ]);
+    leiturasOpcionaisIndisponiveis = leiturasOpcionaisIndisponiveis.filter((r) => r !== rotulo);
+    return { contratos, veiculos };
+  } catch {
+    if (!leiturasOpcionaisIndisponiveis.includes(rotulo)) leiturasOpcionaisIndisponiveis.push(rotulo);
+    return null;
+  }
+}

@@ -97,6 +97,10 @@ GRANT SELECT ON public."Contrato"             TO controladoria_leitura;
 GRANT SELECT ON public."Financiamento"        TO controladoria_leitura;
 GRANT SELECT ON public."FinanciamentoVeiculo" TO controladoria_leitura;
 
+-- Adaptações do veículo (elevador, ar, letreiro): somadas à compra no custo de
+-- propriedade. Opcional como as de cima.
+GRANT SELECT ON public."AdaptacaoVeiculo"     TO controladoria_leitura;
+
 -- ---------------------------------------------------------------------------
 -- 4. Garantir que continue somente leitura no futuro
 -- ---------------------------------------------------------------------------

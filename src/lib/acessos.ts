@@ -45,10 +45,7 @@ export const PERMISSOES = [
   { chave: "cadastro", rotulo: "Cadastro mestre (veículos, clientes, fornecedores, centros de custo)", grupo: "Telas" },
   { chave: "cadastro-pessoas", rotulo: "Cadastro de pessoas", grupo: "Telas" },
   { chave: "pendencias", rotulo: "Pendências para decidir", grupo: "Telas" },
-  { chave: "frota", rotulo: "Frota (veículos, documentos, vencimentos, apólices)", grupo: "Telas" },
-  { chave: "financiamentos", rotulo: "Financiamentos e consórcios", grupo: "Telas" },
-  { chave: "motoristas", rotulo: "Motoristas (apto ou não para a escala, e o motivo)", grupo: "Telas" },
-  { chave: "multas", rotulo: "Multas (condutor, prazos de indicação, pagamento e desconto)", grupo: "Telas" },
+  { chave: "financiamentos", rotulo: "Financiamentos e consórcios (parcelas conferidas na Omie)", grupo: "Telas" },
 
   { chave: "tratar-achado", rotulo: "Tratar achado de auditoria", grupo: "Ações" },
   { chave: "investigar", rotulo: "Investigar com a IA (cada pergunta tem custo)", grupo: "Ações" },
@@ -67,14 +64,7 @@ export const PERMISSOES = [
   { chave: "gerir-modelo", rotulo: "Alterar o modelo de gestão", grupo: "Ações" },
   { chave: "gerir-cadastro", rotulo: "Atualizar o cadastro mestre a partir das fontes", grupo: "Ações" },
   { chave: "decidir-pendencia", rotulo: "Aprovar ou rejeitar pendências (do perfil aprovador)", grupo: "Ações" },
-  { chave: "gerir-frota", rotulo: "Editar a ficha do veículo, documentos, apólices e consultas", grupo: "Ações" },
-  { chave: "frota-valores", rotulo: "Ver e editar valores do veículo (compra, venda, FIPE, adaptações)", grupo: "Ações" },
-  { chave: "vender-veiculo", rotulo: "Registrar venda ou baixa de veículo", grupo: "Ações" },
-  { chave: "gerir-financiamentos", rotulo: "Editar financiamentos, cotas e parcelas", grupo: "Ações" },
-  { chave: "migrar-planilhas", rotulo: "Migrar as planilhas de frota e financiamentos", grupo: "Ações" },
-  { chave: "motoristas-documentos", rotulo: "Ver documentos, validades e férias dos motoristas", grupo: "Ações" },
-  { chave: "gerir-motoristas", rotulo: "Lançar documentos e férias dos motoristas", grupo: "Ações" },
-  { chave: "gerir-multas", rotulo: "Lançar e tratar multas (condutor, termo, indicação, pagamento)", grupo: "Ações" },
+  { chave: "gerir-financiamentos", rotulo: "Conferir as parcelas dos financiamentos com a Omie (e dizer quem é cada banco lá)", grupo: "Ações" },
   { chave: "gerir-usuarios", rotulo: "Criar usuários e definir perfis", grupo: "Ações" },
 ] as const;
 
@@ -135,11 +125,17 @@ const ROTA_POR_ACAO: Partial<Record<Permissao, string>> = {
   "gerir-modelo": "/configuracao",
   "gerir-usuarios": "/usuarios",
 };
+// As telas cuja rota não é a chave.
+const ROTA_POR_TELA: Partial<Record<Permissao, string>> = {
+  painel: "/",
+  financiamentos: "/frota/financiamentos",
+  "cadastro-pessoas": "/cadastro/pessoas",
+};
 
 export function rotaInicial(permissoes: Set<string>): { href: string; rotulo: string } | null {
   for (const p of PERMISSOES) {
     if (!permissoes.has(p.chave)) continue;
-    if (p.grupo === "Telas") return { href: p.chave === "painel" ? "/" : `/${p.chave}`, rotulo: p.rotulo };
+    if (p.grupo === "Telas") return { href: ROTA_POR_TELA[p.chave] ?? `/${p.chave}`, rotulo: p.rotulo };
   }
   for (const p of PERMISSOES) {
     const rota = ROTA_POR_ACAO[p.chave];
@@ -179,8 +175,8 @@ export const PERFIS_SUGERIDOS: { nome: string; descricao: string; permissoes: Pe
   },
   {
     nome: "Diretoria",
-    descricao: "Vê tudo, com os valores da frota e os documentos dos motoristas, e decide as pendências que pedem a Diretoria (venda de veículo, quitação). Não opera o dia a dia.",
-    permissoes: [...PERMISSOES.filter((p) => p.grupo === "Telas").map((p) => p.chave), "decidir-pendencia", "frota-valores", "motoristas-documentos"],
+    descricao: "Vê tudo e decide as pendências que pedem a Diretoria. Não opera o dia a dia.",
+    permissoes: [...PERMISSOES.filter((p) => p.grupo === "Telas").map((p) => p.chave), "decidir-pendencia"],
   },
   {
     nome: "Financeiro",
@@ -196,32 +192,14 @@ export const PERFIS_SUGERIDOS: { nome: string; descricao: string; permissoes: Pe
       "cte",
       "conferir-cte",
       "resultados",
-      "frota",
-      "frota-valores",
       "financiamentos",
       "gerir-financiamentos",
-      "multas",
     ],
   },
   {
-    nome: "Frota e documentação",
-    descricao: "A ficha dos veículos, documentos e licenças, apólices, consultas de placa; registra venda e baixa (a Diretoria aprova). Vê se o veículo está alienado, não os valores.",
-    permissoes: ["pendencias", "decidir-pendencia", "frota", "gerir-frota", "vender-veiculo", "cadastro"],
-  },
-  {
-    nome: "Operação",
-    descricao: "Consulta a frota e o que vence, vê se cada motorista está apto para a escala (sem os documentos), e decide as pendências da operação (documento vencido, checklist de saída, escala).",
-    permissoes: ["pendencias", "decidir-pendencia", "frota", "motoristas"],
-  },
-  {
     nome: "RH",
-    descricao: "Pessoas, documentos e férias dos motoristas, fechamento da folha, e as pendências do RH.",
-    permissoes: ["pendencias", "decidir-pendencia", "cadastro-pessoas", "folha", "marcar-folha", "motoristas", "motoristas-documentos", "gerir-motoristas", "multas"],
-  },
-  {
-    nome: "Multas",
-    descricao: "O processo das multas: identificar quem dirigia (escala, uso do veículo, diário de bordo), colher o termo, indicar o condutor no prazo e acompanhar o pagamento. O desconto em folha é o RH que aprova.",
-    permissoes: ["pendencias", "decidir-pendencia", "multas", "gerir-multas", "frota", "motoristas"],
+    descricao: "Pessoas e fechamento da folha, e as pendências do RH. Documentos, férias e multas dos motoristas são da gestão.",
+    permissoes: ["pendencias", "decidir-pendencia", "cadastro-pessoas", "folha", "marcar-folha"],
   },
   {
     nome: "Contador",

@@ -85,12 +85,10 @@ conferir("e não há nome de perfil", c.perfilNome, null);
 console.log("\n5. Perfis sugeridos");
 const diretoria = PERFIS_SUGERIDOS.find((p) => p.nome === "Diretoria")!;
 conferir("Diretoria vê tudo", [...diretoria.permissoes].filter((p) => (TELAS as string[]).includes(p)).sort(), [...TELAS].sort());
-// A Diretoria não opera: as únicas ações são decidir as pendências que pedem
-// a Diretoria (venda de veículo, quitação), ver os valores da frota e os
-// documentos dos motoristas.
-conferir("Diretoria só decide pendências e vê valores e documentos", diretoria.permissoes.filter((p) => (ACOES as string[]).includes(p)).sort(), ["decidir-pendencia", "frota-valores", "motoristas-documentos"]);
-const operacao = PERFIS_SUGERIDOS.find((p) => p.nome === "Operação")!;
-conferir("Operação vê a aptidão, não os documentos dos motoristas", [operacao.permissoes.includes("motoristas"), operacao.permissoes.includes("motoristas-documentos")], [true, false]);
+// A Diretoria não opera: a única ação é decidir as pendências que pedem a
+// Diretoria.
+conferir("Diretoria só decide pendências", diretoria.permissoes.filter((p) => (ACOES as string[]).includes(p)).sort(), ["decidir-pendencia"]);
+conferir("Financiamentos abre na rota da tela", rotaInicial(new Set(["financiamentos"]))?.href, "/frota/financiamentos");
 
 const financeiro = PERFIS_SUGERIDOS.find((p) => p.nome === "Financeiro")!;
 conferir("Financeiro não trata achado", financeiro.permissoes.includes("tratar-achado"), false);

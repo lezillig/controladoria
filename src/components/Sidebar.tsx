@@ -24,21 +24,14 @@ import {
   SlidersHorizontal,
   Target,
   TrendingUp,
-  BadgeDollarSign,
-  UserCheck,
-  ShoppingCart,
-  FileWarning,
   UsersRound,
   Database,
   Radar,
   Wallet,
   ClipboardCheck,
-  Truck,
   Contact,
   Inbox,
-  CalendarClock,
   HandCoins,
-  FileUp,
 } from "lucide-react";
 import type { Permissao } from "@/lib/acessos";
 
@@ -62,9 +55,12 @@ type NavItem = {
 // dentro dela, na ordem em que as telas costumam ser abertas:
 //
 //   Início               como estamos hoje, e o que espera uma decisão minha
-//   Frota                os veículos, o que vence, o que está financiado
 //   Pessoas              quem trabalha e o fechamento da folha
-//   Financeiro           o dia a dia do dinheiro: títulos, extrato, caixa
+//   Financeiro           o dia a dia do dinheiro: títulos, extrato, caixa,
+//                        e as dívidas da frota conferidas na Omie
+//
+// Veículos, motoristas e multas são da gestão (a operação); aqui fica o lado
+// financeiro deles.
 //   Resultado            quanto ganhamos e onde: DRE, série do ano, margem
 //   Comercial            preço de contrato novo e licitações
 //   Controle e auditoria o que precisa de atenção e as conferências
@@ -79,15 +75,7 @@ const NAV: NavItem[] = [
   // A fila de decisões: o que agentes e cargas propõem e uma pessoa aprova.
   { href: "/pendencias", label: "Pendências", icon: Inbox, permissao: "pendencias" },
 
-  { secao: "Frota", href: "/frota", label: "Veículos", icon: Truck, permissao: "frota" },
-  { href: "/frota/vencimentos", label: "Vencimentos e apólices", icon: CalendarClock, permissao: "frota" },
-  { href: "/frota/financiamentos", label: "Financiamentos e consórcios", icon: HandCoins, permissao: "financiamentos" },
-  { href: "/frota/fipe", label: "Valor de mercado", icon: BadgeDollarSign, permissao: "frota-valores" },
-  { href: "/frota/multas", label: "Multas", icon: FileWarning, permissao: "multas" },
-  { href: "/frota/compras", label: "Compras de veículos", icon: ShoppingCart, permissao: "frota" },
-
-  { secao: "Pessoas", href: "/motoristas", label: "Motoristas", icon: UserCheck, permissao: "motoristas" },
-  { href: "/cadastro/pessoas", label: "Pessoas", icon: Contact, permissao: "cadastro-pessoas" },
+  { secao: "Pessoas", href: "/cadastro/pessoas", label: "Pessoas", icon: Contact, permissao: "cadastro-pessoas" },
   // O checklist mensal do fluxograma da folha validado pelo RH e pela Contabilidade.
   { href: "/folha", label: "Fechamento da folha", icon: ClipboardCheck, permissao: "folha" },
 
@@ -96,6 +84,8 @@ const NAV: NavItem[] = [
   { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote, permissao: "fluxo-caixa" },
   // O caixa que já passou, mês a mês, e a auditoria de uma conta (a Omie.CASH).
   { href: "/caixa-mensal", label: "Caixa mês a mês", icon: Wallet, permissao: "fluxo-caixa" },
+  // As dívidas da frota: os contratos são da gestão; aqui, conferidos na Omie.
+  { href: "/frota/financiamentos", label: "Financiamentos e consórcios", icon: HandCoins, permissao: "financiamentos" },
 
   { secao: "Resultado", href: "/custos", label: "Custos e DRE", icon: TrendingUp, permissao: "custos" },
   // O mesmo DRE aberto pelos centros de custo da folha — logo abaixo do DRE.
@@ -132,7 +122,6 @@ const NAV: NavItem[] = [
   { href: "/sincronizacao", label: "Sincronização", icon: RefreshCw, permissao: "sincronizacao" },
   { href: "/relatorios", label: "Relatórios diários", icon: Mail, permissao: "relatorios" },
   { href: "/configuracao", label: "Modelo de gestão", icon: SlidersHorizontal, permissao: "gerir-modelo" },
-  { href: "/frota/migracao", label: "Migração das planilhas", icon: FileUp, permissao: "migrar-planilhas" },
 ];
 
 // A seção de cada item: a do próprio item ou a do último que abriu uma.

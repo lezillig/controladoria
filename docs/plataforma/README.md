@@ -51,38 +51,38 @@ Os documentos do azul-gestao estão copiados aqui, como vieram:
 - [x] Carga a partir das fontes já ligadas: parceiros da Omie (as duas empresas) → cliente/fornecedor; motoristas da gestão → pessoa; veículos da gestão → veículo (`src/lib/cadastro/carga.ts`). Cria e completa; divergência vira relatório.
 - [x] Centro de custo `V-<placa>` para cada veículo; pendência única para o financeiro criar na Omie.
 - [x] Telas: Cadastro mestre, Pessoas (CPF mascarado), Pendências (aprovar/rejeitar com trilha).
-- [x] Migração única das planilhas "CONTROLE INFORMAÇÕES GERAIS" e "Consórcios e Financiamentos" (Configurações › Migração das planilhas, com prévia) — **falta enviar as planilhas em produção**.
+- [x] ~~Migração única das planilhas aqui~~ — passou para a gestão (Cadastros › Veículos, importação da frota e de "Consórcios e Financiamentos").
 - [ ] Ituran: relação oficial de placas e divergências — **aguardando acesso à API**.
 - [ ] Sistema de ponto (TiqueTaque, hoje na gestão) como segunda fonte de pessoas e matrícula.
 - [ ] Contratos e linhas ativos → `CadContrato`/`CadLinha` (+ centro `C-<número>`).
-- [x] Edição manual dos registros na tela (com trilha): ficha do veículo, contratos, motoristas.
+- [x] Edição manual dos registros: ficha do veículo, contratos e motoristas são editados na gestão.
 - [ ] Veículos do sistema de multas como fonte (quando o banco do multas for ligado).
 
-## Frota, financiamentos e motoristas — situação
+## Divisão com a gestão (Opção A, 30/10/2026)
 
-Substituem as planilhas de frota e de financiamentos; tudo com trilha e
-pendência para quem decide.
+A operação é da gestão de motoristas (`lezillig/gestao-motoristas`):
+veículos e a ficha deles, documentos e vencimentos, apólices, FIPE, compra e
+venda, motoristas (documentos, férias, aptidão para a escala), multas (LW,
+indicação, termo, desconto em folha) e o cadastro dos contratos de
+financiamento e consórcio. A controladoria é dona do lado financeiro e da
+Omie:
 
-- [x] Frota: ficha do veículo (documentos, contratos, valor, adaptações,
-  consultas, histórico), vencimentos com aviso por e-mail, controle de
-  apólice ativa para todo veículo em operação, documentos exigidos pela
-  categoria, pendência ao alocar veículo com impedimento.
-- [x] Financiamentos e consórcios ligados às contas a pagar da Omie: parcelas
+- [x] Financiamentos e consórcios **da gestão** conferidos nas contas a pagar
+  da Omie (`src/lib/frota/contratosDaGestao.ts`, `parcelasOmie.ts`): parcelas
   pagas, em atraso, a vencer e não lançadas; saldo para quitação por placa;
-  quitação detectada pela Omie → encerrar → baixa do gravame.
-- [x] Valor de mercado: Tabela FIPE (escolha por grupo de veículos iguais,
-  releitura mensal) e preço ajustado.
-- [x] Fluxos de compra (pedido → Diretoria → recebimento com a NF da Omie →
-  inclusão) e de venda/baixa (Diretoria → checklist de saída).
-- [x] Motoristas: documentos com validade (sem guardar o número), aptidão
-  para a escala, férias pelo art. 137 com as férias do ponto, escala da
-  gestão × aptidão.
-- [x] Multas: condutor pela escala e uso do veículo (ou diário de bordo),
-  termo, indicação no prazo (risco de NIC), pagamento achado na Omie pelo
-  AIT, desconto em folha aprovado pelo RH, pontos por motorista; migração
-  da planilha CONTROLE MULTAS.
-- [x] Custo de propriedade por veículo na Rentabilidade: depreciação sobre
-  compra + adaptações, juros pela taxa do contrato e multas assumidas.
+  pendências de atraso e de parcela não lançada para o Financeiro.
+- [x] Integração para a gestão (`src/lib/integracao/gestao.ts`), com o
+  `INTEGRACAO_TOKEN` no cabeçalho: `GET /api/integracao/financiamentos`
+  (situação de cada contrato, `quitadoNaOmie` para a gestão encerrar e pedir a
+  baixa do gravame) e `POST /api/integracao/multas` (pagamento de cada AIT na
+  Omie e títulos de multa sem AIT conhecido).
+- [x] Custo de propriedade por veículo na Rentabilidade: compra + adaptações
+  da ficha da gestão, saldo pela Omie e juros pela taxa do contrato.
+- [ ] Multas assumidas pela empresa no custo do veículo — quando a gestão
+  guardar quem paga cada multa.
 - [ ] Custo por km — depende do acesso à API da Ituran.
 - [ ] Contratos e linhas — em espera, a pedido (lembrete agendado).
 
+As telas de frota, motoristas e multas que chegaram a existir aqui foram
+retiradas (estão no histórico do git, commit `eb00aff`); as tabelas ficaram,
+sem uso, para não haver migração destrutiva.

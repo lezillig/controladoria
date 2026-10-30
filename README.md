@@ -43,6 +43,15 @@ explícitas — nunca por modelo do Prisma. Modelar aqui uma tabela de que este
 sistema não é dono seria convite para o dia em que uma migração daqui tentasse
 alterá-la.
 
+**Quem é dono de quê.** A operação é da gestão — veículos, documentos,
+motoristas, multas e o cadastro dos contratos de financiamento. A
+controladoria confere os contratos nas contas a pagar da Omie e devolve o
+resultado pela integração (`src/lib/integracao/gestao.ts`):
+`GET /api/integracao/financiamentos?empresa=…` e
+`POST /api/integracao/multas`, com `Authorization: Bearer $INTEGRACAO_TOKEN`
+(o mesmo valor configurado nos dois projetos da Vercel). `GESTAO_URL`
+(opcional) faz as telas daqui levarem ao cadastro de lá.
+
 O login também vem de lá: mesmo usuário e senha da gestão. Ganha-se credencial
 única e, principalmente, **desligamento único** — quem é desativado lá perde o
 acesso ao financeiro no mesmo ato.

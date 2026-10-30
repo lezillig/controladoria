@@ -31,13 +31,12 @@ export default async function CadastroPage({ searchParams }: { searchParams: Pro
   const q = (params.q ?? "").trim();
   const busca = q ? { contains: q, mode: "insensitive" as const } : undefined;
 
-  const [veiculos, totalCli, totalForn, totalCentros, semOmie, financiamentos, pessoasAtivas] = await Promise.all([
+  const [veiculos, totalCli, totalForn, totalCentros, semOmie, pessoasAtivas] = await Promise.all([
     prisma.cadVeiculo.findMany({ where: { companyId }, select: { status: true, tipo: true, anoFab: true } }),
     prisma.cadCliente.count({ where: { companyId, ativo: true } }),
     prisma.cadFornecedor.count({ where: { companyId, ativo: true } }),
     prisma.cadCentroCusto.count({ where: { companyId, ativo: true } }),
     prisma.cadCentroCusto.count({ where: { companyId, ativo: true, idsOmie: { equals: {} } } }),
-    prisma.frotaFinanciamento.count({ where: { companyId, ativo: true } }),
     prisma.cadPessoa.count({ where: { companyId, ativo: true } }),
   ]);
   const naFrota = veiculos.filter((v) => v.status !== "vendido" && v.status !== "baixado");
@@ -60,10 +59,9 @@ export default async function CadastroPage({ searchParams }: { searchParams: Pro
         where: { companyId, ...(busca ? { OR: [{ placa: busca }, { modelo: busca }, { marca: busca }] } : {}) },
         orderBy: [{ status: "asc" }, { placa: "asc" }],
         take: LIMITE,
-        include: { _count: { select: { financiamentos: true } } },
       });
       return {
-        colunas: ["Placa", "Tipo", "Marca / modelo", "Ano", "Capacidade", "Uso", "Empresa", "Situação", "Financiamentos", "Fontes"],
+        colunas: ["Placa", "Tipo", "Marca / modelo", "Ano", "Capacidade", "Uso", "Empresa", "Situação", "Fontes"],
         linhas: linhas.map((v) => [
           <span key="p" className="font-mono">{v.placa}</span>,
           ROTULO_TIPO[v.tipo] ?? v.tipo,
@@ -73,7 +71,6 @@ export default async function CadastroPage({ searchParams }: { searchParams: Pro
           v.categoriaUso ?? "—",
           v.empresa ?? "—",
           v.status,
-          v._count.financiamentos || "—",
           Object.keys((v.origens as Record<string, string>) ?? {}).join(", ") || "—",
         ]),
       };
@@ -134,13 +131,13 @@ export default async function CadastroPage({ searchParams }: { searchParams: Pro
       </div>
 
       {podeAtualizar && (
-        <Secao titulo="Atualizar a partir das fontes" descricao="Fontes já ligadas: parceiros da Omie (as duas empresas), motoristas e veículos da gestão. As planilhas CONTROLE INFORMAÇÕES GERAIS e Consórcios e Financiamentos e a Ituran entram por importadores próprios, na sequência da Fase 0.">
+        <Secao titulo="Atualizar a partir das fontes" descricao="Fontes já ligadas: parceiros da Omie (as duas empresas), motoristas e veículos da gestão. A ficha completa do veículo, os contratos de financiamento e a Ituran são da gestão.">
           <AtualizarCadastro />
         </Secao>
       )}
 
       {veiculos.length > 0 && (
-        <Secao titulo="Frota por tipo e situação" descricao={`Idade média pelos veículos na frota com ano de fabricação. ${fmtNumero(financiamentos)} financiamento(s) ativo(s) cadastrado(s).`}>
+        <Secao titulo="Frota por tipo e situação" descricao="Idade média pelos veículos na frota com ano de fabricação.">
           <Tabela colunas={["Tipo", "Ativo", "Manutenção", "Reserva", "Vendido", "Baixado", "Idade média"]} alinharDireita={[1, 2, 3, 4, 5, 6]} linhas={porTipo} />
         </Secao>
       )}

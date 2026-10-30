@@ -8,8 +8,7 @@ import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/
 import { autorizado } from "@/lib/controladoria/autorizacaoDoCiclo";
 import { acionarCondutorGithub, condutorGithubConfigurado } from "@/lib/controladoria/condutorGithub";
 import { recalcularPendentes } from "@/lib/controladoria/historico";
-import { rodarAgenteFrota } from "@/lib/frota/agenteFrota";
-import { rodarAgenteMotoristas } from "@/lib/pessoas/agenteMotoristas";
+import { rodarAgenteFinanciamentos } from "@/lib/frota/agenteFinanciamentos";
 import { parseLocalDate } from "@/lib/date";
 import { limparTentativasAntigas } from "@/lib/seguranca/freioDeLogin";
 import { limparFalhasAntigas } from "@/lib/controladoria/falhas";
@@ -169,30 +168,16 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // O AGENTE DA FROTA, uma vez por dia, com o ciclo concluído (as parcelas
-  // dos contratos são conferidas com os títulos que a sincronização acabou de
-  // trazer). Erro aqui não derruba o ciclo.
+  // O AGENTE DOS FINANCIAMENTOS, uma vez por dia, com o ciclo concluído (as
+  // parcelas dos contratos da gestão são conferidas com os títulos que a
+  // sincronização acabou de trazer). Erro aqui não derruba o ciclo.
   if (!continua && Date.now() - iniciado < ORCAMENTO_MS - 8_000) {
     for (const empresa of empresas) {
       try {
-        const r = await rodarAgenteFrota(empresa.id);
-        if (!r.jaRodouHoje) resultados.push({ empresa: empresa.name, frota: r });
+        const r = await rodarAgenteFinanciamentos(empresa.id);
+        if (!r.jaRodouHoje) resultados.push({ empresa: empresa.name, financiamentos: r });
       } catch (e) {
-        resultados.push({ empresa: empresa.name, frota: { erro: redigir(e instanceof Error ? e.message : "erro desconhecido").slice(0, 300) } });
-      }
-      if (Date.now() - iniciado > ORCAMENTO_MS) break;
-    }
-  }
-
-  // O AGENTE DOS MOTORISTAS: férias da gestão, documentos vencidos, férias a
-  // vencer e escala × aptidão. Também uma vez por dia, também sem derrubar.
-  if (!continua && Date.now() - iniciado < ORCAMENTO_MS - 8_000) {
-    for (const empresa of empresas) {
-      try {
-        const r = await rodarAgenteMotoristas(empresa.id);
-        if (!r.jaRodouHoje) resultados.push({ empresa: empresa.name, motoristas: r });
-      } catch (e) {
-        resultados.push({ empresa: empresa.name, motoristas: { erro: redigir(e instanceof Error ? e.message : "erro desconhecido").slice(0, 300) } });
+        resultados.push({ empresa: empresa.name, financiamentos: { erro: redigir(e instanceof Error ? e.message : "erro desconhecido").slice(0, 300) } });
       }
       if (Date.now() - iniciado > ORCAMENTO_MS) break;
     }
