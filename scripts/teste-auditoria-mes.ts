@@ -1,6 +1,7 @@
 // AUDITORIA DO DRE DO MÊS — `npm run teste:auditoria-mes` (precisa de TESTE_DATABASE_URL).
 import { PrismaClient, type Prisma } from "@prisma/client";
 import { compararComOmie } from "../src/lib/controladoria/conferenciaOmie";
+import { mudancasDoTitulo, projetoDaOmie } from "../src/lib/controladoria/conferenciaOsOmie";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -10,7 +11,21 @@ function conferir(nome: string, real: unknown, esperado: unknown) {
 }
 const d = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
+function osNaOmie() {
+  console.log("\nOS conferida na Omie, título a título");
+  const nome = (c: string | null) => (c ? `P${c}` : "sem projeto");
+  const base = { projetoCodigo: "10", valorDocumentoCents: 2_550_00, dataVencimento: d("2026-10-08"), cancelado: false };
+  conferir("projeto 0 da Omie é sem projeto", [projetoDaOmie("0"), projetoDaOmie(""), projetoDaOmie(null), projetoDaOmie(" 12 ")], [null, null, null, "12"]);
+  conferir("igual não muda nada", mudancasDoTitulo(base, { ...base }, nome), []);
+  conferir(
+    "projeto, valor, vencimento e cancelamento",
+    mudancasDoTitulo(base, { projetoCodigo: "0", valorDocumentoCents: 250_00, dataVencimento: d("2026-11-08"), cancelado: true }, nome).map((m) => [m.campo, m.sistema, m.omie]),
+    [["projeto", "P10", "sem projeto"], ["valor", "R$\u00a02.550,00", "R$\u00a0250,00"], ["vencimento", "08/10/2026", "08/11/2026"], ["cancelado", "vivo", "cancelado"]]
+  );
+}
+
 function pura() {
+  osNaOmie();
   console.log("\nComparação com a Omie");
   const t = (codigo: string, x: Partial<import("../src/lib/controladoria/conferenciaOmie").TituloComparavel> = {}) => ({
     codigo, parceiro: "P", documento: null, parcela: null, categoria: null, emissao: d("2026-10-01"), vencimento: d("2026-10-15"), valorCents: 100_00, cancelado: false, baixadoNoMesCents: 0, ultimaBaixaNoMes: null, ...x,

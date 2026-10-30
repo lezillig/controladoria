@@ -21,7 +21,7 @@ function conferir(nome: string, real: unknown, esperado: unknown) {
 const rotulo = (m: { inicio: Date }) => `${m.inicio.getFullYear()}-${String(m.inicio.getMonth() + 1).padStart(2, "0")}`;
 
 async function puros() {
-  const { mesesDaVerificacao, existenciaDaConsulta } = await import("../src/lib/omie/sync");
+  const { mesesDaVerificacao, existenciaDaConsulta, esperaDoCursor, cursorDeExclusoesSalvo } = await import("../src/lib/omie/sync");
   const { OmieVazioError } = await import("../src/lib/omie/client");
 
   console.log("\n1. Quais meses");
@@ -45,6 +45,20 @@ async function puros() {
   );
   const set = mesesDaVerificacao({ ...dia, backfill: false, varridaEm: new Date(), inicioDaBase: null })[1];
   conferir("o mês vai do dia 1 ao último dia, 23:59:59", [set.inicio.getDate(), set.fim.getDate(), set.fim.getHours()], [1, 30, 23]);
+
+  console.log("\n1b. Recusa de consumo: esperar e retomar");
+  const { segundosDeBloqueio } = await import("../src/lib/omie/client");
+  conferir("prazo do bloqueio dito pela Omie", [segundosDeBloqueio("ERROR: API bloqueada por consumo indevido. Tente novamente em 1765 segundos."), segundosDeBloqueio("Consumo redundante detectado")], [1765, null]);
+  conferir("cursor sem espera: 0", esperaDoCursor(JSON.stringify({ pagina: 2 })), 0);
+  conferir("espera que falta", esperaDoCursor(JSON.stringify({ aguardarAte: new Date(1_000_000 + 30_000).toISOString() }), 1_000_000), 30_000);
+  conferir("espera vencida e cursor ilegível: 0", [esperaDoCursor(JSON.stringify({ aguardarAte: new Date(0).toISOString() })), esperaDoCursor("{")], [0, 0]);
+  const meses = mesesDaVerificacao({ ...dia, backfill: false, varridaEm: null, inicioDaBase: new Date(2023, 0, 1) });
+  conferir(
+    "ponto guardado: o mês volta pelo índice de hoje",
+    cursorDeExclusoesSalvo(JSON.stringify({ mesInicio: meses[20].inicio.toISOString(), natureza: 1, pagina: 3, listado: true, desde: "x", pulados: ["a"] }), meses),
+    { mes: 20, natureza: 1, pagina: 3, desde: "x", listado: true, pulados: ["a"] }
+  );
+  conferir("mês fora da lista ou texto ilegível: recomeça", [cursorDeExclusoesSalvo(JSON.stringify({ mesInicio: new Date(2020, 0, 1).toISOString() }), meses), cursorDeExclusoesSalvo("x", meses)], [null, null]);
 
   console.log("\n2. A resposta da consulta do lançamento");
   conferir("veio o lançamento com o mesmo código: existe", existenciaDaConsulta({ codigo_lancamento_omie: 5964601061 }, null, "5964601061"), "existe");
@@ -133,6 +147,8 @@ async function noBanco() {
   const existem = new Set(["100", "300"]);
   const naoCadastrados = new Set(["200"]);
   const vazios = new Set(["500"]);
+  // Lançamentos que a Omie recusa por consumo (item 7).
+  const limitados = new Set<string>();
   const vazio = () => new Response(JSON.stringify({ faultstring: "ERROR: Não existem registros para a página [1]!" }), { status: 500 });
   const chamadas: string[] = [];
   const fetchOriginal = globalThis.fetch;
@@ -153,6 +169,7 @@ async function noBanco() {
       );
     }
     const codigo = String(p.codigo_lancamento_omie);
+    if (limitados.has(codigo)) return new Response(JSON.stringify({ faultstring: "Consumo redundante detectado. Aguarde 60 segundos." }), { status: 500 });
     if (existem.has(codigo)) return new Response(JSON.stringify({ codigo_lancamento_omie: Number(codigo), valor_documento: 9190 }), { status: 200 });
     if (naoCadastrados.has(codigo)) return new Response(JSON.stringify({ faultstring: `ERROR: Lançamento não cadastrado para o Código [${codigo}] !`, faultcode: "SOAP-ENV:Client-5113" }), { status: 500 });
     if (vazios.has(codigo)) return vazio();
@@ -223,6 +240,27 @@ async function noBanco() {
     conferir("baixa em dobro: fica só a que a Omie devolve", await baixasDe("700"), ["RECEBER:700:1"]);
     conferir("estornada na Omie: sai", await baixasDe("800"), []);
     conferir("resposta parcial: nada sai", (await baixasDe("900")).length, 2);
+
+    console.log("\n7. A Omie limita o consumo no meio da varredura histórica");
+    await prisma.omieConexao.update({ where: { id: cx.id }, data: { exclusoesVarridasEm: null, exclusoesCursor: null } });
+    const novos = ["1001", "1002", "1003", "1004", "1005"];
+    await prisma.omieTitulo.createMany({ data: novos.map((c) => titulo(c, set)) });
+    for (const c of novos) vazios.add(c);
+    for (const c of ["1001", "1002", "1003"]) limitados.add(c);
+    const instante = () => ({ fimDoOrcamento: Date.now() + 60_000, deadline: Date.now() + 120_000 });
+    const r7 = await executarFase("exclusoes", { ...ctx, ...instante(), cursor: null }, false);
+    const cx7 = await prisma.omieConexao.findUnique({ where: { id: cx.id }, select: { exclusoesVarridasEm: true, exclusoesCursor: true } });
+    conferir("três recusas seguidas: a fase encerra por hoje (a próxima empresa não espera)", [r7.faseConcluida, r7.erros.some((e) => e.includes("interrompida por hoje"))], [true, true]);
+    conferir("o ponto fica guardado e a varredura não conta como feita", [!!cx7?.exclusoesCursor, cx7?.exclusoesVarridasEm ?? null], [true, null]);
+    conferir("o lançamento seguinte não foi consultado", (await t("1004"))?.cancelado, false);
+    limitados.clear();
+    chamadas.length = 0;
+    const r7b = await executarFase("exclusoes", { ...ctx, ...instante(), cursor: null }, false);
+    const cx7b = await prisma.omieConexao.findUnique({ where: { id: cx.id }, select: { exclusoesVarridasEm: true, exclusoesCursor: true } });
+    // Parou em setembro, a receber: falta só listar setembro a pagar.
+    conferir("no ciclo seguinte continua de onde parou: sem relistar agosto", chamadas.filter((c) => c === "PesquisarLancamentos").length, 1);
+    conferir("os recusados voltam a ser consultados e saem", [r7b.faseConcluida, r7b.excluidos, (await t("1001"))?.cancelado], [true, 5, true]);
+    conferir("varredura concluída: o ponto guardado some", [!!cx7b?.exclusoesVarridasEm, cx7b?.exclusoesCursor ?? null], [true, null]);
   } finally {
     globalThis.fetch = fetchOriginal;
     await limpar();

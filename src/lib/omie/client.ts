@@ -711,11 +711,24 @@ export async function omieCall(
 
   const limitado = res.status === 429 || (fault !== null && RATE_LIMIT_PATTERNS.some((p) => p.test(fault)));
   if (limitado) {
-    if (tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
+    // CONSUMO REDUNDANTE: a Omie recusa o MESMO pedido repetido em menos de
+    // um minuto. Retentar em 1,5 s, 3 s e 6 s só renova a recusa — e cada
+    // rodada seguinte do condutor (11 s depois) também. Sai na hora; quem
+    // chamou decide pular o pedido ou esperar.
+    const redundante = fault !== null && /redundante/i.test(fault);
+    // CONSUMO INDEVIDO: a Omie bloqueia a conta por um tempo e diz quanto
+    // ("Tente novamente em 1765 segundos"). Insistir no bloqueio não adianta.
+    const bloqueio = segundosDeBloqueio(fault);
+    if (!redundante && bloqueio === null && tentativa < MAX_RETRIES && podeEsperar(opts.deadline, backoffMs(tentativa))) {
       await sleep(backoffMs(tentativa));
       return omieCall(endpoint, param, opts, tentativa + 1, grafia, variante);
     }
-    throw new OmieTransitorioError(`Omie recusou por limite de consumo em ${call} e não há orçamento de tempo para retentativa.`);
+    const motivo = fault ? ` (${sanitizeErro(fault, opts.credencialRef).slice(0, 160)})` : res.status === 429 ? " (HTTP 429)" : "";
+    throw new OmieTransitorioError(
+      redundante
+        ? `Omie recusou ${call} por consumo redundante${motivo}: o mesmo pedido só passa depois de um minuto.`
+        : `Omie recusou por limite de consumo em ${call}${motivo} e não há orçamento de tempo para retentativa.`
+    );
   }
 
   if (fault) {
@@ -746,6 +759,12 @@ function dicaDeCredencial(fault: string, credencialRef: string): string {
     return ` — ${chave} e ${segredo} existem e têm o formato esperado, então o par foi recusado pela própria Omie: confira se as duas vieram do mesmo app (⚙️ → Resumo do App da empresa certa) e se a chave não foi regenerada depois de cadastrada aqui.`;
   }
   return ` — ${problemas.map((p) => `${p.variavel} ${p.problema}`).join(" ")}`;
+}
+
+// "Tente novamente em 1765 segundos" → 1765. Nulo quando a Omie não diz.
+export function segundosDeBloqueio(fault: string | null | undefined): number | null {
+  const m = /em\s+(\d+)\s+segundos?/i.exec(fault ?? "");
+  return m ? Number(m[1]) : null;
 }
 
 function backoffMs(tentativa: number): number {
