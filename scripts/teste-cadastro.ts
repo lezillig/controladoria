@@ -31,7 +31,7 @@ async function puros() {
   conferir("CNPJ do Banco do Brasil (00.000.000/0001-91) como número", n.normalizarCnpj(191), null);
   conferir("CNPJ com dígito errado", n.normalizarCnpj("11.222.333/0001-82"), null);
   conferir("CPF na tela: só o miolo", n.mascararCpf("52998224725"), "***.982.247-**");
-  conferir("tipo do veículo pelo texto", ["MICRO ONIBUS", "Sprinter 416", "ÔNIBUS RODOVIÁRIO", "Gol"].map(n.tipoDeVeiculo), ["micro", "van", "onibus", "outro"]);
+  conferir("tipo do veículo pelo texto", ["MICRO ONIBUS", "Sprinter 416", "ÔNIBUS RODOVIÁRIO", "MINI VAN ELÉTRICA", "CARRO", "Gol", "Agrale X"].map(n.tipoDeVeiculo), ["micro", "van", "onibus", "minivan", "carro", "carro", "outro"]);
 
   console.log("\n2. A mescla da carga");
   const atual = { modelo: "Sprinter", anoFab: null, status: "ativo" };

@@ -290,7 +290,9 @@ export async function carregarVeiculos(companyId: string, usuario: string): Prom
 // Spec 01, regra 4: todo veículo tem o seu centro de custo (V-<placa>) — os
 // que faltarem, de uma vez.
 export async function garantirCentrosDosVeiculos(companyId: string, usuario: string) {
-  const semCentro = await prisma.cadVeiculo.findMany({ where: { companyId, centrosCusto: { none: {} } }, select: { id: true, placa: true } });
+  // Veículo ainda sem placa (novo, identificado pelo chassi) ganha o centro
+  // quando for emplacado.
+  const semCentro = await prisma.cadVeiculo.findMany({ where: { companyId, placa: { not: null }, centrosCusto: { none: {} } }, select: { id: true, placa: true } });
   const novos = semCentro.map((v) => ({ companyId, codigo: `V-${v.placa}`, tipo: "veiculo", veiculoId: v.id }));
   await inserirLote({ companyId, usuario, tabela: "CadCentroCusto", modelo: prisma.cadCentroCusto as unknown as Modelo, chaveCampo: "codigo", novos });
 }

@@ -2478,44 +2478,94 @@ model CadCliente {
 }
 
 model CadVeiculo {
-  id               String         @id @default(cuid())
-  companyId        String
-  // Normalizada: maiúscula, sem hífen (ABC1234 ou ABC1D23).
-  placa            String
-  renavam          String?
-  chassi           String?
-  // van | micro | onibus | outro
-  tipo             String         @default("outro")
-  marca            String?
-  modelo           String?
-  anoFab           Int?
-  anoMod           Int?
-  capacidade       Int?
-  // fretamento | escolar | cargas | misto
-  categoriaUso     String?
+  id                    String         @id @default(cuid())
+  companyId             String
+  // Normalizada: maiúscula, sem hífen (ABC1234 ou ABC1D23). Nula só no
+  // veículo novo ainda não emplacado — aí quem identifica é o chassi.
+  placa                 String?
+  renavam               String?
+  chassi                String?
+  // Número de frota (o "PREFIXO" da planilha).
+  prefixo               String?
+  // van | minivan | micro | onibus | carro | caminhao | outro
+  tipo                  String         @default("outro")
+  eletrico              Boolean        @default(false)
+  marca                 String?
+  modelo                String?
+  cor                   String?
+  anoFab                Int?
+  anoMod                Int?
+  capacidade            Int?
+  // Adaptação da carroceria (LETRA G, LETRA R, UNIDADE MÓVEL…).
+  adaptacao             String?
+  // fretamento | escolar | fretamento_adaptado | unidade_movel | cargas | misto
+  categoriaUso          String?
+  // Categoria do registro no DETRAN: aluguel | particular.
+  categoriaRegistro     String?
   // ativo | manutencao | reserva | vendido | baixado
-  status           String         @default("ativo")
+  status                String         @default("ativo")
   // Empresa proprietária no grupo (apelido da conexão Omie: AZUL, MCZ…).
-  empresa          String?
-  dataCompra       DateTime?
-  valorCompraCents BigInt?
-  fornecedorId     String?
-  fornecedor       CadFornecedor? @relation(fields: [fornecedorId], references: [id])
-  dataVenda        DateTime?
-  valorVendaCents  BigInt?
-  vidaUtilMeses    Int            @default(120)
-  idIturan         String?
-  observacoes      String?
+  empresa               String?
+  // Onde o veículo está rodando (o "CONTRATO" da planilha) — texto até o
+  // cadastro de contratos e linhas ficar pronto.
+  alocacao              String?
+  // Aquisição.
+  dataCompra            DateTime?
+  valorCompraCents      BigInt?
+  notaFiscalCompra      String?
+  vendedorNome          String?
+  fornecedorId          String?
+  fornecedor            CadFornecedor? @relation(fields: [fornecedorId], references: [id])
+  vidaUtilMeses         Int            @default(60)
+  // VALOR DE MERCADO: a Tabela FIPE (o modelo escolhido uma vez; o valor
+  // atualiza todo mês) e o preço ajustado, quando a FIPE não tem o modelo
+  // certo (micro adaptado, unidade móvel) — o ajustado prevalece.
+  fipeCodigo            String?
+  fipeModelo            String?
+  fipeAnoModelo         String?
+  fipeValorCents        BigInt?
+  fipeReferencia        String?
+  fipeConsultadoEm      DateTime?
+  valorAjustadoCents    BigInt?
+  valorAjustadoMotivo   String?
+  valorAjustadoEm       DateTime?
+  // Documento do veículo.
+  crlvExercicio         Int?
+  // ATPV | RECIBO ELETRÔNICO | DIGITAL | OK…
+  crvSituacao           String?
+  // nao_isento | em_analise | isento_sem_restituicao | isento_falta_restituir
+  // | isento_liberado_restituir | isento_restituido
+  ipvaSituacao          String?
+  ipvaIsencaoInicio     DateTime?
+  tagPedagio            Boolean?
+  apoliceId             String?
+  apolice               FrotaApolice?  @relation(fields: [apoliceId], references: [id])
+  apoliceVencimento     DateTime?
+  // Venda (o veículo nunca é apagado).
+  dataVenda             DateTime?
+  valorVendaCents       BigInt?
+  compradorNome         String?
+  // SIM | NÃO | SIM - FALTA CRM… (transferência concluída?)
+  transferenciaSituacao String?
+  // Baixa sem venda: perda total, sucata, roubo.
+  dataBaixa             DateTime?
+  motivoBaixa           String?
+  idIturan              String?
+  observacoes           String?
   // De onde veio cada dado: { "gestao": "<id>", "planilha": "FROTA ATIVA" }.
-  origens          Json           @default("{}")
-  criadoEm         DateTime       @default(now())
-  atualizadoEm     DateTime       @updatedAt
+  origens               Json           @default("{}")
+  criadoEm              DateTime       @default(now())
+  atualizadoEm          DateTime       @updatedAt
 
-  financiamentos FrotaFinanciamento[]
+  financiamentos FrotaFinanciamentoVeiculo[]
+  adaptacoes     FrotaAdaptacao[]
+  documentos     FrotaDocumento[]
+  consultas      FrotaConsulta[]
   centrosCusto   CadCentroCusto[]
   linhasPadrao   CadLinha[]
 
   @@unique([companyId, placa])
+  @@unique([companyId, chassi])
   @@index([companyId, status])
 }
 
@@ -2635,26 +2685,204 @@ model CadCentroCusto {
   @@unique([companyId, codigo])
 }
 
-// Planilha "Consórcios e Financiamentos": uma linha por veículo × contrato.
+// FINANCIAMENTOS, CAPITAL DE GIRO E CONSÓRCIOS — substitui a planilha
+// "Consórcios e Financiamentos" (src/lib/frota/financiamentos.ts). Um
+// registro por contrato (CDC, Finame, leasing, giro) ou cota de consórcio.
+// Os veículos vêm pela ligação: um CDC cobre vários veículos, e um veículo
+// pode garantir mais de um contrato ou ter várias cotas.
 model FrotaFinanciamento {
-  id                String     @id @default(cuid())
-  companyId         String
-  veiculoId         String
-  veiculo           CadVeiculo @relation(fields: [veiculoId], references: [id])
-  instituicao       String
-  // CDC | consorcio | leasing
-  tipo              String?
-  parcelas          Int?
-  parcelasPagas     Int?
-  valorParcelaCents BigInt?
-  saldoDevedorCents BigInt?
-  vencimentoDia     Int?
-  contratoNumero    String?
-  ativo             Boolean    @default(true)
-  criadoEm          DateTime   @default(now())
-  atualizadoEm      DateTime   @updatedAt
+  id                   String    @id @default(cuid())
+  companyId            String
+  // financiamento_bens | capital_giro | consorcio
+  produto              String
+  // CDC | Finame | Leasing | Financiamento… (o "Tipo Contrato" do banco)
+  modalidade           String?
+  instituicao          String
+  instituicaoCnpj      String?
+  // Empresa do grupo que paga (apelido da conexão Omie: AZUL, MCZ…).
+  empresa              String?
+  contratoNumero       String?
+  celulaCredito        String?
+  garantia             String?
+  grupo                String?
+  cota                 String?
+  dataInicio           DateTime?
+  dataFinal            DateTime?
+  valorBensCents       BigInt?
+  entradaCents         BigInt?
+  // Financiado / solicitado; no consórcio, o crédito (faixa de crédito).
+  valorFinanciadoCents BigInt?
+  // Creditado (giro); no consórcio, o líquido (crédito − lance).
+  valorCreditadoCents  BigInt?
+  lanceCents           BigInt?
+  // Lance pretendido para a cota não contemplada, em % do crédito.
+  lancePlanejadoPct    Float?
+  // Em %: juros ao mês no financiamento e no giro; taxa de administração no
+  // consórcio.
+  taxaPct              Float?
+  vencimentoDia        Int?
+  parcelas             Int?
+  valorParcelaCents    BigInt?
+  dataPrimeiraParcela  DateTime?
+  // INFORMADOS (extrato do banco, boleto), com a data da informação.
+  parcelasPagas        Int?
+  valorPagoCents       BigInt?
+  saldoQuitacaoCents   BigInt?
+  saldoInformadoEm     DateTime?
+  // nao_contemplada | contemplada_sem_bem | contemplada_com_bem
+  situacaoConsorcio    String?
+  dataContemplacao     DateTime?
+  // Encerrado: quitado, transferido na venda, cancelado.
+  ativo                Boolean   @default(true)
+  dataQuitacao         DateTime?
+  motivoEncerramento   String?
+  observacoes          String?
+  origem               String?
+  criadoEm             DateTime  @default(now())
+  atualizadoEm         DateTime  @updatedAt
+
+  veiculos FrotaFinanciamentoVeiculo[]
+
+  @@index([companyId, ativo])
+  @@index([companyId, produto])
+}
+
+// AS PARCELAS NA OMIE: cada título das contas a pagar ligado ao contrato ou
+// à cota a que pertence (src/lib/frota/parcelasOmie.ts). A ligação
+// automática é refeita a cada conferência; a manual (`criterio` = manual) fica.
+model FrotaParcelaOmie {
+  id              String   @id @default(cuid())
+  companyId       String
+  financiamentoId String
+  tituloId        String   @unique
+  // A parcela no contrato (o "007" de "007/048"), quando a Omie diz.
+  numeroParcela   Int?
+  // contrato | cota | parcela | valor | manual
+  criterio        String
+  criadoEm        DateTime @default(now())
+
+  @@index([companyId, financiamentoId])
+}
+
+// QUEM É O BANCO NA OMIE: a instituição do contrato ligada ao(s) parceiro(s)
+// das contas a pagar. Sugerida pelo nome (e pelo tipo: administradora de
+// consórcio × banco); confirmada pelo financeiro.
+model FrotaInstituicaoParceiro {
+  id             String   @id @default(cuid())
+  companyId      String
+  instituicao    String
+  // financiamento_bens | capital_giro | consorcio
+  produto        String
+  conexaoId      String
+  parceiroCodigo String
+  parceiroNome   String?
+  confirmado     Boolean  @default(false)
+  criadoEm       DateTime @default(now())
+
+  @@unique([companyId, instituicao, produto, conexaoId, parceiroCodigo])
+}
+
+// O veículo no contrato, com a parte dele na parcela e no saldo (o "Parcela
+// Placa" e o "Saldo Placa" da planilha) e se está alienado ao banco.
+model FrotaFinanciamentoVeiculo {
+  id              String             @id @default(cuid())
+  companyId       String
+  financiamentoId String
+  financiamento   FrotaFinanciamento @relation(fields: [financiamentoId], references: [id], onDelete: Cascade)
+  veiculoId       String
+  veiculo         CadVeiculo         @relation(fields: [veiculoId], references: [id])
+  parcelaCents    BigInt?
+  saldoCents      BigInt?
+  alienado        Boolean            @default(true)
+  criadoEm        DateTime           @default(now())
+
+  @@unique([financiamentoId, veiculoId])
+  @@index([companyId, veiculoId])
+}
+
+// ADAPTAÇÕES DO VEÍCULO (acessibilidade, unidade móvel, carroceria,
+// acessórios): o que se gastou depois da compra. Compra + adaptações é o
+// investimento no veículo — base da depreciação e do custo por veículo.
+model FrotaAdaptacao {
+  id             String     @id @default(cuid())
+  companyId      String
+  veiculoId      String
+  veiculo        CadVeiculo @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  // acessibilidade | unidade_movel | carroceria | escolar | acessorio | outro
+  tipo           String
+  descricao      String
+  data           DateTime?
+  valorCents     BigInt
+  fornecedorNome String?
+  notaFiscal     String?
+  // O título pago na Omie, quando ligado.
+  tituloOmieId   String?
+  observacao     String?
+  registradoPor  String?
+  criadoEm       DateTime   @default(now())
+  atualizadoEm   DateTime   @updatedAt
 
   @@index([companyId, veiculoId])
+}
+
+// APÓLICE (APP/RCF): uma vez, ligada aos veículos — renovar é atualizar aqui.
+model FrotaApolice {
+  id           String       @id @default(cuid())
+  companyId    String
+  // Como a empresa chama: "FRETAMENTO - 1002806001249".
+  descricao    String
+  // fretamento | escolar | cargas | antt | veiculo_leve | outro
+  segmento     String?
+  numero       String?
+  seguradora   String?
+  vigenciaFim  DateTime?
+  ativo        Boolean      @default(true)
+  criadoEm     DateTime     @default(now())
+  atualizadoEm DateTime     @updatedAt
+  veiculos     CadVeiculo[]
+
+  @@unique([companyId, descricao])
+}
+
+// DOCUMENTOS E LICENÇAS DO VEÍCULO com validade (spec 02): tacógrafo,
+// ARTESP, EMTU, CVS, CRM, vistoria semestral, ATE escolar, EMDEC, ANTT. Um
+// por tipo e veículo — a renovação atualiza a validade, e a trilha guarda a
+// anterior. Catálogo em src/lib/frota/documentos.ts.
+model FrotaDocumento {
+  id            String     @id @default(cuid())
+  companyId     String
+  veiculoId     String
+  veiculo       CadVeiculo @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  tipo          String
+  numero        String?
+  validade      DateTime?
+  // vigente | nao_se_aplica | preliminar | em_inclusao | pendente
+  situacao      String     @default("vigente")
+  observacao    String?
+  atualizadoPor String?
+  criadoEm      DateTime   @default(now())
+  atualizadoEm  DateTime   @updatedAt
+
+  @@unique([veiculoId, tipo])
+  @@index([companyId, tipo, validade])
+}
+
+// CONSULTAS DE PLACA (débitos e multas no LW, na Fazenda…): quando e o que
+// se achou.
+model FrotaConsulta {
+  id            String     @id @default(cuid())
+  companyId     String
+  veiculoId     String
+  veiculo       CadVeiculo @relation(fields: [veiculoId], references: [id], onDelete: Cascade)
+  // LW | Fazenda | outra
+  fonte         String
+  consultadoEm  DateTime
+  resultado     String?
+  registradoPor String?
+  criadoEm      DateTime   @default(now())
+
+  @@unique([veiculoId, fonte, consultadoEm])
+  @@index([companyId, consultadoEm])
 }
 
 // A TRILHA: tudo que muda dado de domínio — quem (usuário ou agente),

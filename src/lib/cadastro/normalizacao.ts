@@ -59,11 +59,34 @@ export function formatarCnpj(cnpj: string | null | undefined): string {
   return c.length === 14 ? `${c.slice(0, 2)}.${c.slice(2, 5)}.${c.slice(5, 8)}/${c.slice(8, 12)}-${c.slice(12)}` : (cnpj ?? "—");
 }
 
-// O tipo do veículo a partir do texto livre de cada fonte.
-export function tipoDeVeiculo(texto: string | null | undefined): "van" | "micro" | "onibus" | "outro" {
-  const t = String(texto ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// O tipo do veículo a partir do texto livre de cada fonte ("MINI VAN",
+// "VAN ELÉTRICA", "MICRO ONIBUS", "Sprinter 416"…).
+export type TipoVeiculo = "van" | "minivan" | "micro" | "onibus" | "carro" | "caminhao" | "outro";
+export function tipoDeVeiculo(texto: string | null | undefined): TipoVeiculo {
+  const t = String(texto ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  if (/mini ?van|minivan|doblo|spin\b|scudo|expert|jumpy/.test(t)) return "minivan";
   if (/micro/.test(t)) return "micro";
+  if (/caminhao|truck/.test(t)) return "caminhao";
   if (/onibus|bus\b|rodoviario|urbano/.test(t)) return "onibus";
   if (/\bvan\b|sprinter|master|ducato|daily|boxer|jumper|transit|kombi/.test(t)) return "van";
+  if (/\bcarro\b|automovel|sedan|hatch|onix|corolla|gol\b|hb20|ranger|hilux|compass|toro/.test(t)) return "carro";
   return "outro";
+}
+export const ehEletrico = (texto: string | null | undefined) => /el[eé]tric/i.test(String(texto ?? ""));
+
+// RENAVAM: 11 dígitos (zeros à esquerda completados), o último é o verificador.
+export function normalizarRenavam(valor: string | number | null | undefined): string | null {
+  const d = somenteDigitos(valor);
+  if (!d || d.length > 11) return null;
+  const r = d.padStart(11, "0");
+  const pesos = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const soma = pesos.reduce((s, p, i) => s + p * Number(r[i]), 0);
+  const dv = (soma * 10) % 11;
+  return (dv === 10 ? 0 : dv) === Number(r[10]) ? r : null;
+}
+
+// Chassi (VIN): 17 caracteres, sem I, O e Q.
+export function normalizarChassi(valor: string | null | undefined): string | null {
+  const c = String(valor ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return /^[A-HJ-NPR-Z0-9]{17}$/.test(c) ? c : null;
 }
