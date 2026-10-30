@@ -1,9 +1,10 @@
-import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDocumento, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { montarComparativo } from "@/lib/controladoria/analytics";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
 import { custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
 import { faturadoVersusContratado, margemPorClienteOmie, margemPorOs } from "@/lib/controladoria/margemOmie";
 import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
+import { casarClientes } from "@/lib/controladoria/casamentoClientes";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 import VinculoForm, { type OpcaoDestino, type OpcaoOrigem } from "./VinculoForm";
@@ -39,6 +40,8 @@ export default async function RentabilidadePage({
 
   const nomesCliente = new Map(ctx.clientes.map((c) => [c.id, c.nome]));
   const contratos = rentabilidadePorContrato(ctx, periodo, nomesCliente);
+  const casamento = casarClientes(ctx, periodo);
+  const semCnpj = casamento.clientes.filter((c) => !c.cnpj).length;
   const veiculos = custoPorVeiculo(ctx, periodo);
   const funcionarios = custoPorFuncionario(ctx, periodo);
 
@@ -179,6 +182,47 @@ export default async function RentabilidadePage({
             ])}
           />
         )}
+      </Secao>
+
+      <Secao
+        titulo="Clientes da gestão × Omie"
+        descricao={`O CNPJ do cadastro de clientes da gestão casa com quem paga na Omie. Receita sem de-para de quem casa entra no contrato automaticamente (origem “cnpj-do-cliente”). ${semCnpj} cliente(s) ativo(s) ainda sem CNPJ na gestão.`}
+      >
+        <div className="space-y-4">
+          <Tabela
+            colunas={["Cliente na gestão", "CNPJ", "Como aparece na Omie", "Recebido no mês"]}
+            alinharDireita={[3]}
+            linhas={casamento.clientes.map((c) => [
+              <span key="n" className="font-medium text-slate-800">
+                {c.nome}
+              </span>,
+              c.cnpj ? fmtDocumento(c.cnpj) : <span key="s" className="text-xs font-medium text-amber-700">sem CNPJ — cadastre na gestão</span>,
+              c.cnpj ? (
+                c.nomesNaOmie.length ? (
+                  <span key="o" className="text-xs text-slate-600">{c.nomesNaOmie.join(" · ")}</span>
+                ) : (
+                  <span key="o" className="text-xs text-amber-700">CNPJ não encontrado na Omie</span>
+                )
+              ) : (
+                "—"
+              ),
+              fmtBRL(c.receitaCents),
+            ])}
+            vazio="Nenhum cliente ativo na gestão."
+          />
+          {casamento.semCliente.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-600">
+                Pagaram no mês e não existem como cliente na gestão (ou estão sem CNPJ lá):
+              </p>
+              <Tabela
+                colunas={["Na Omie", "CNPJ", "Empresa", "Recebido no mês"]}
+                alinharDireita={[3]}
+                linhas={casamento.semCliente.slice(0, 20).map((p) => [p.nome, fmtDocumento(p.documento), p.empresas.join(", "), fmtBRL(p.receitaCents)])}
+              />
+            </div>
+          )}
+        </div>
       </Secao>
 
       <Secao

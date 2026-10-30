@@ -8,6 +8,7 @@
 //
 // Sem banco: o contexto é montado à mão, como nos outros conjuntos.
 import type { OmieCategoria, OmieTitulo, OmieVinculoCentroCusto } from "@prisma/client";
+import { casarClientes } from "../src/lib/controladoria/casamentoClientes";
 import { custoPorFuncionario, custoPorVeiculo, custoTotalPeriodo, custosDoPeriodo, rentabilidadePorContrato } from "../src/lib/controladoria/unitEconomics";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 import type { AbastecimentoGestao } from "../src/lib/gestao/leitura";
@@ -115,7 +116,7 @@ function contexto(p: {
     vinculos: p.vinculos ?? [],
     contasCorrentes: [],
     config: {},
-    clientes: [{ id: "cli1", nome: "PREFEITURA", active: true }],
+    clientes: [{ id: "cli1", nome: "PREFEITURA", active: true, cnpj: "46395000000139" }, { id: "cli2", nome: "SEM CNPJ LTDA", active: true, cnpj: null }],
     motoristas: [{ id: "m1", name: "JOSE DA SILVA", cpf: "00000000000", active: true, valorHoraCents: null, clienteId: "cli1", departamento: null }],
     veiculos: [{ id: "v1", plate: "ABC1D23", status: "ATIVO", currentMileage: 0, model: "SPRINTER", type: "VAN" }],
     abastecimentos: p.abastecimentos ?? [],
@@ -206,6 +207,29 @@ console.log("\nSÓ CUSTO DE OPERAÇÃO — investimento, financiamento, sócios 
   conferir("só a manutenção fica no custo", c.titulos.length, 1);
   conferir("o que saiu é dito", c.foraDoCustoCents, 79_000_00);
   conferir("visão de uma empresa: o repasse ao grupo é custo dela", custosDoPeriodo({ ...ctx, conexaoId: "x" }, AGOSTO).foraDoCustoCents, 70_000_00);
+}
+
+console.log("\nRECEITA PELO CNPJ DO CLIENTE DA GESTÃO — sem de-para");
+{
+  const daPrefeitura = titulo({ natureza: "RECEBER", parceiroNome: "PREF MUN X", parceiroDocumento: "46.395.000/0001-39", parceiroCodigo: "C9", valorDocumentoCents: 10_000_00 });
+  const deOutro = titulo({ natureza: "RECEBER", parceiroNome: "EMPRESA Y", parceiroDocumento: "61068276000104", parceiroCodigo: "C8", valorDocumentoCents: 3_000_00 });
+  // A prefeitura também vendeu para a Azul: custo não vai para o contrato dela pelo CNPJ.
+  const compraDaPrefeitura = titulo({ parceiroDocumento: "46395000000139", valorDocumentoCents: 500_00 });
+  const ctx = contexto({ titulos: [daPrefeitura, deOutro, compraDaPrefeitura] });
+  const r = rentabilidadePorContrato(ctx, AGOSTO, nomes);
+  conferir("receita do CNPJ do cliente entra no contrato", r.linhas.map((l) => [l.id, l.receitaCents, l.custoCents]), [["cli1", 10_000_00, 0]]);
+  conferir("custo de quem é cliente não vai pelo CNPJ", r.naoAlocadoCents, 500_00);
+  const c = casarClientes(ctx, AGOSTO);
+  conferir(
+    "conferência: casado, sem CNPJ e quem pagou sem cliente",
+    [c.clientes.map((x) => [x.nome, x.cnpj, x.nomesNaOmie, x.receitaCents]), c.semCliente.map((x) => [x.nome, x.receitaCents])],
+    [
+      [["PREFEITURA", "46395000000139", ["PREF MUN X"], 10_000_00], ["SEM CNPJ LTDA", null, [], 0]],
+      [["EMPRESA Y", 3_000_00]],
+    ]
+  );
+  const comDePara = rentabilidadePorContrato(contexto({ titulos: [titulo({ ...daPrefeitura, id: "dp", departamentoCodigo: "D1" })], vinculos: [vinculo({ clienteId: "cli1" })] }), AGOSTO, nomes);
+  conferir("de-para confirmado continua valendo antes do CNPJ", comDePara.linhas[0]?.receitaCents, 10_000_00);
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

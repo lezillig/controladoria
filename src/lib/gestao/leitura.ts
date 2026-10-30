@@ -71,6 +71,10 @@ export type ClienteGestao = {
   id: string;
   nome: string;
   active: boolean;
+  // CNPJ do cadastro da gestão (maiúsculas e dígitos). É a chave que casa o
+  // cliente com o parceiro da Omie — nome não serve, a mesma empresa aparece
+  // com três grafias. Nulo enquanto o cadastro não foi completado.
+  cnpj: string | null;
 };
 
 export type AbastecimentoGestao = {
@@ -311,7 +315,7 @@ export async function lerAfastamentos(companyId: string, desde: Date): Promise<A
 export async function lerClientes(companyId: string): Promise<ClienteGestao[]> {
   return ler(
     () => prismaGestao.$queryRaw<ClienteGestao[]>`
-      SELECT id, nome, active
+      SELECT id, nome, active, cnpj
       FROM public."Cliente"
       WHERE "companyId" = ${companyId}
     `,

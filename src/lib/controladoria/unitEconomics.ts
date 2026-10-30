@@ -142,7 +142,37 @@ export function resolverDestinos(ctx: ContextoAuditoria, titulo: OmieTitulo): De
     if (veiculo) return [{ vehicleId: veiculo.id, percentual: 100, origem: "placa-no-documento" }];
   }
 
+  // Receita sem de-para: o CNPJ de quem paga é o CNPJ de um cliente
+  // cadastrado na gestão. É igualdade de documento, verificável como a placa
+  // escrita no título — não é sugestão por semelhança, por isso entra sem
+  // confirmação. Só para RECEBER: cliente que também vende para a Azul não
+  // leva custo para o próprio contrato.
+  if (titulo.natureza === "RECEBER") {
+    const clienteId = clientePorCnpj(ctx).get(documentoComparavel(titulo.parceiroDocumento));
+    if (clienteId) return [{ clienteId, percentual: 100, origem: "cnpj-do-cliente" }];
+  }
+
   return [];
+}
+
+// Omie guarda só dígitos; a gestão, maiúsculas e dígitos (CNPJ alfanumérico
+// de jul/2026). Os dois lados no mesmo formato.
+export function documentoComparavel(documento: string | null | undefined): string {
+  return (documento ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+const cacheClientePorCnpj = new WeakMap<ContextoAuditoria, Map<string, string>>();
+export function clientePorCnpj(ctx: ContextoAuditoria): Map<string, string> {
+  let m = cacheClientePorCnpj.get(ctx);
+  if (!m) {
+    m = new Map();
+    for (const c of ctx.clientes) {
+      const d = documentoComparavel(c.cnpj);
+      if (d.length === 14) m.set(d, c.id);
+    }
+    cacheClientePorCnpj.set(ctx, m);
+  }
+  return m;
 }
 
 // Custo e receita por contrato, veículo e funcionário são leitura de
