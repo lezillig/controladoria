@@ -169,6 +169,28 @@ async function somaPorCategoriaCaixa(escopo: EscopoDre, periodo: Periodo): Promi
   return mapaDeSomas(linhas);
 }
 
+// A PARTE DA EMPRESA CORPORATIVA (a MCZ) em cada categoria do período, na
+// competência e com o mesmo recorte da soma do DRE. Para a apuração do Lucro
+// Real da Azul, que leva da MCZ só o custo de pessoas: o resto da parte dela
+// sai de cada categoria na proporção.
+export async function parcelaCorporativaPorCategoria(escopo: EscopoDre, periodo: Periodo): Promise<Map<string, { totalCents: number; corpCents: number }>> {
+  const linhas = await prisma.$queryRaw<LinhaSoma[]>`
+    SELECT ${categoriaSql()} AS categoria,
+           COALESCE(SUM(t."valorDocumentoCents"), 0)::bigint AS cents,
+           COALESCE(SUM(t."valorDocumentoCents") FILTER (WHERE ${ehCorporativoSql(escopo.companyId)}), 0)::bigint AS corp
+      FROM ${tabela("OmieTitulo")} t
+     WHERE t."companyId" = ${escopo.companyId}
+       AND t.cancelado = false
+       AND ${semProvisaoFuturaSql("t")}
+       AND ${competenciaSql("t")} >= ${periodo.inicio}
+       AND ${competenciaSql("t")} <= ${periodo.fim}
+       ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
+       ${naJanela(escopo.janela)}
+     GROUP BY 1
+  `;
+  return new Map(linhas.map((l) => [l.categoria, { totalCents: Number(l.cents), corpCents: Number(l.corp) }]));
+}
+
 // DE QUE EMPRESAS VEM CADA CATEGORIA no período — para a visão do grupo
 // destacar o que é de uma empresa só (o DAS da MCZ, que é do Simples, no
 // meio das deduções do grupo). O mesmo recorte das somas acima.

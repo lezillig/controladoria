@@ -59,6 +59,7 @@
     "teste:dre-centro-custo": "tsx scripts/teste-dre-centro-custo.ts",
     "teste:conferencia-os": "tsx scripts/teste-conferencia-os.ts",
     "teste:caixa-mensal": "tsx scripts/teste-caixa-mensal.ts",
+    "teste:lucro-real": "tsx scripts/teste-lucro-real.ts",
     "teste:folha": "tsx scripts/teste-folha.ts",
     "teste:conciliado-ate": "tsx scripts/teste-conciliado-ate.ts",
     "teste:auditoria-mes": "tsx scripts/teste-auditoria-mes.ts",

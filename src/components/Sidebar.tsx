@@ -19,6 +19,7 @@ import {
   PiggyBank,
   Receipt,
   RefreshCw,
+  Scale,
   ScrollText,
   ShieldCheck,
   SlidersHorizontal,
@@ -108,6 +109,9 @@ const NAV: NavItem[] = [
   // Quem mudou o quê e quando (cadastro, pendências, ligação com a Omie).
   { href: "/auditoria/trilha", label: "Trilha de alterações", icon: History, permissao: "auditoria" },
   { href: "/conformidade", label: "Conformidade", icon: ScrollText, permissao: "conformidade" },
+  // O Lucro Real da Azul em 2027: o que é dedutível, o que falta de documento,
+  // e as formas lícitas de pagar menos.
+  { href: "/lucro-real", label: "Auditoria de lucro real", icon: Scale, permissao: "conformidade", sub: true },
   // O projeto (OS) do custo contra o da cobrança: serviço pago e não faturado.
   { href: "/conferencia-os", label: "Conferência de OS", icon: ListChecks, permissao: "titulos" },
   // Cada cobrança tem o documento fiscal que a justifica? A Omie não expõe CT-e

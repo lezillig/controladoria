@@ -626,6 +626,45 @@ export async function lerKmPorVeiculo(companyId: string, inicio: Date, fim: Date
   return r;
 }
 
+// AS HORAS DIÁRIAS DE OPERAÇÃO DA FROTA, pelas viagens da Ituran: por veículo
+// e dia, a soma das viagens (o tempo andando) e a janela entre a primeira saída
+// e a última chegada. É a prova que a depreciação acelerada por turnos pede
+// (RIR/2018, art. 323). Medianas sobre os veículo-dias com viagem. Nulo quando a
+// leitura falha.
+export type HorasDeOperacao = { veiculos: number; veiculoDias: number; medianaEmViagem: number; medianaJanela: number; diasAcimaDe8h: number; diasAcimaDe16h: number };
+export async function lerHorasDeOperacao(companyId: string, desde: Date): Promise<HorasDeOperacao | null> {
+  const linhas = await lerOpcional(
+    () => prismaGestao.$queryRaw<{ veiculos: bigint; veiculodias: bigint; viagem: number | null; janela: number | null; acima8: bigint; acima16: bigint }[]>`
+      WITH dia AS (
+        SELECT "vehicleId", date_trunc('day', "startAt") AS d,
+               SUM(EXTRACT(EPOCH FROM ("endAt" - "startAt"))) / 3600.0 AS viagem,
+               EXTRACT(EPOCH FROM (MAX("endAt") - MIN("startAt"))) / 3600.0 AS janela
+          FROM public."VehicleTrip"
+         WHERE "companyId" = ${companyId} AND "startAt" >= ${desde} AND "endAt" > "startAt"
+         GROUP BY 1, 2
+      )
+      SELECT COUNT(DISTINCT "vehicleId")::bigint AS veiculos,
+             COUNT(*)::bigint AS veiculodias,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY viagem)::float8 AS viagem,
+             percentile_cont(0.5) WITHIN GROUP (ORDER BY LEAST(janela, 24))::float8 AS janela,
+             COUNT(*) FILTER (WHERE janela > 8)::bigint AS acima8,
+             COUNT(*) FILTER (WHERE janela > 16)::bigint AS acima16
+        FROM dia
+    `,
+    "as viagens da Ituran (VehicleTrip)"
+  );
+  const l = linhas[0];
+  if (!l || Number(l.veiculodias) === 0) return null;
+  return {
+    veiculos: Number(l.veiculos),
+    veiculoDias: Number(l.veiculodias),
+    medianaEmViagem: l.viagem ?? 0,
+    medianaJanela: l.janela ?? 0,
+    diasAcimaDe8h: Number(l.acima8),
+    diasAcimaDe16h: Number(l.acima16),
+  };
+}
+
 // OS CONTRATOS DA GESTÃO, inteiros, para a conferência das parcelas na Omie
 // (src/lib/frota/contratosDaGestao.ts). O cadastro é da gestão (Cadastros ›
 // Veículos › Financiamentos); aqui só se lê. Devolve null quando a leitura

@@ -179,7 +179,8 @@ async function noBanco() {
       criadas.push(t);
     }
   }
-  for (const col of [`chassi text`, `"dataCompra" timestamp`, `"valorCompraCents" int`, `"dataVenda" timestamp`]) await sql(`ALTER TABLE public."Vehicle" ADD COLUMN IF NOT EXISTS ${col}`);
+  for (const col of [`chassi text`, `"dataCompra" timestamp`, `"valorCompraCents" int`, `"dataVenda" timestamp`, `"vidaUtilMeses" int`, `"valorResidualCents" int`])
+    await sql(`ALTER TABLE public."Vehicle" ADD COLUMN IF NOT EXISTS ${col}`);
 
   const limpar = async () => {
     for (const t of ["FinanciamentoVeiculo", "Financiamento", "Vehicle", "Multa", "VehicleTrip", "VehicleUsageLog"]) if (await existe(t)) await sql(`DELETE FROM public."${t}" WHERE "companyId" = '${EMP}'`);
