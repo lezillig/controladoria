@@ -61,3 +61,21 @@ export function lerCelulaDocumento(valor: unknown): { situacao: string; validade
   if (data) return { situacao: "vigente", validade: new Date(Date.UTC(Number(data[3]), Number(data[2]) - 1, Number(data[1]))), numero: null, observacao: data[4].replace(/^[\s-]+/, "") || null };
   return { situacao: "pendente", validade: null, numero: t.slice(0, 60), observacao: "valor sem data na planilha" };
 }
+
+// O QUE O VEÍCULO PRECISA TER, pela categoria: tacógrafo acima de 10 lugares
+// (CTB, art. 105, II); no escolar, CVS, ATE e a vistoria semestral.
+// ARTESP, EMTU, ANTT e EMDEC dependem do contrato — ficam de fora até o
+// cadastro de contratos existir.
+export function documentosExigidosDoVeiculo(v: { categoriaUso: string | null; capacidade: number | null }): string[] {
+  return [...((v.capacidade ?? 0) > 10 ? ["tacografo"] : []), ...((v.categoriaUso ?? "").startsWith("escolar") ? ["cvs", "ate_escolar", "vistoria_semestral"] : [])];
+}
+
+// Exigido e não lançado (ou lançado como pendente, sem data). "Não se aplica"
+// é decisão de quem lançou e é respeitada; preliminar e em inclusão estão em
+// andamento.
+export function documentosFaltando(v: { categoriaUso: string | null; capacidade: number | null }, docs: { tipo: string; situacao: string }[]): string[] {
+  return documentosExigidosDoVeiculo(v).filter((tipo) => {
+    const d = docs.find((x) => x.tipo === tipo);
+    return !d || d.situacao === "pendente";
+  });
+}

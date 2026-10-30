@@ -1,4 +1,4 @@
-import { alertaDoDocumento, type Alerta } from "./documentos";
+import { alertaDoDocumento, documentosFaltando, TIPO_DOCUMENTO, type Alerta } from "./documentos";
 
 // OS CONTROLES DA FROTA — regras puras sobre o cadastro, usadas pelo painel
 // de vencimentos e pelo agente diário (src/lib/frota/agenteFrota.ts).
@@ -61,4 +61,21 @@ export function piorAlerta(alertas: Alerta[]): Alerta | null {
 
 export function alertasDoVeiculo(docs: { tipo: string; situacao: string; validade: Date | null }[], hoje: Date) {
   return docs.map((d) => ({ ...d, alerta: alertaDoDocumento(d, hoje) }));
+}
+
+// O QUE IMPEDE O VEÍCULO DE RODAR num contrato: documento vencido, documento
+// exigido pela categoria sem lançamento, apólice ausente, vencida ou de outro
+// segmento. Usado ao alocar o veículo (pendência crítica para a Operação).
+export function impedimentosParaRodar(
+  v: { status: string; categoriaUso: string | null; tipo: string; capacidade: number | null; apoliceVencimento: Date | null },
+  docs: { tipo: string; situacao: string; validade: Date | null }[],
+  apolice: { ativo: boolean; segmento: string | null; vigenciaFim: Date | null } | null,
+  hoje: Date
+): string[] {
+  const rotulo = (t: string) => TIPO_DOCUMENTO.get(t)?.rotulo ?? t;
+  const r = docs.filter((d) => alertaDoDocumento(d, hoje) === "vencido").map((d) => `${rotulo(d.tipo)} vencido`);
+  r.push(...documentosFaltando(v, docs).map((t) => `${rotulo(t)} não lançado`));
+  const c = coberturaDeApolice(v, apolice, hoje);
+  if (c === "sem_apolice" || c === "vencida" || c === "segmento_incompativel") r.push(ROTULO_COBERTURA[c]);
+  return r;
 }

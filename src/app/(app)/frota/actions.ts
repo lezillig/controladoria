@@ -9,6 +9,7 @@ import { lerReaisEmCents } from "@/lib/controladoria/format";
 import { diferencas, registrarAlteracao } from "@/lib/auditoria/trilha";
 import { criarPendencia } from "@/lib/auditoria/pendencias";
 import { SITUACOES_DOCUMENTO, TIPO_DOCUMENTO } from "@/lib/frota/documentos";
+import { EM_OPERACAO, impedimentosParaRodar } from "@/lib/frota/controles";
 import { exigirPermissao, podeAcao } from "../_dados";
 
 // AS AÇÕES DA FICHA DO VEÍCULO. Toda gravação passa pela trilha (antes e
@@ -47,6 +48,9 @@ export async function salvarVeiculo(fd: FormData): Promise<Resposta> {
       await prisma.cadVeiculo.update({ where: { id }, data: mud.depois as Prisma.CadVeiculoUncheckedUpdateInput });
       await registrarAlteracao(prisma, { companyId, usuario: session.name, tabela: "CadVeiculo", registroId: id, operacao: "update", antes: mud.antes, depois: mud.depois });
       if (dados.placa && !atual.placa) await prisma.cadCentroCusto.createMany({ data: [{ companyId, codigo: `V-${dados.placa}`, tipo: "veiculo", veiculoId: id }], skipDuplicates: true });
+      // Alocado num contrato com documento ou apólice faltando: pendência
+      // crítica para a Operação (o veículo não deveria rodar assim).
+      if ("alocacao" in mud.depois && dados.alocacao) await avisarAlocacaoComImpedimento(companyId, session.name, id);
     }
     revalidatePath(`/frota/${id}`);
     revalidatePath("/frota");
@@ -54,6 +58,24 @@ export async function salvarVeiculo(fd: FormData): Promise<Resposta> {
   } catch (e) {
     return falha(e);
   }
+}
+
+async function avisarAlocacaoComImpedimento(companyId: string, usuario: string, veiculoId: string) {
+  const v = await prisma.cadVeiculo.findFirst({ where: { id: veiculoId, companyId }, include: { documentos: true, apolice: true } });
+  if (!v || !EM_OPERACAO.includes(v.status)) return;
+  const impedimentos = impedimentosParaRodar(v, v.documentos, v.apolice, new Date());
+  if (!impedimentos.length) return;
+  await criarPendencia({
+    companyId,
+    agente: `usuario:${usuario}`,
+    tipo: "alocacao-com-impedimento",
+    titulo: `${v.placa ?? v.chassi ?? v.id} alocado em ${v.alocacao} com impedimento`,
+    descricao: `${impedimentos.join("; ")}. Regularizar antes de rodar, ou trocar o veículo. Aprovar = regularizado ou veículo trocado.`,
+    severidade: "critica",
+    evidencias: { veiculoId, placa: v.placa, alocacao: v.alocacao, impedimentos },
+    perfilAprovador: "operacao",
+    chaveExcecao: `alocacao-com-impedimento:${veiculoId}`,
+  });
 }
 
 // RENOVAR / ATUALIZAR UM DOCUMENTO (um por tipo e veículo).

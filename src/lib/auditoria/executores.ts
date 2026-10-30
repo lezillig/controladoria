@@ -44,6 +44,35 @@ const EXECUTORES: Record<string, (p: Pendencia) => Promise<string>> = {
   },
 };
 
+// CONTRATO QUITADO (aberto pelo agente da frota quando a última parcela
+// aparece paga na Omie): encerra, desaliena e pede a baixa do gravame.
+EXECUTORES["contrato-quitado"] = async (p) => {
+  const a = p.acaoProposta as { financiamentoId: string; dataQuitacao?: string };
+  const c = await prisma.frotaFinanciamento.findFirst({ where: { id: a.financiamentoId, companyId: p.companyId }, include: { veiculos: { include: { veiculo: { select: { id: true, placa: true, chassi: true } } } } } });
+  if (!c) throw new Error("contrato não encontrado");
+  if (!c.ativo) return "o contrato já estava encerrado";
+  const depois = { ativo: false, dataQuitacao: a.dataQuitacao ? new Date(a.dataQuitacao) : new Date(), motivoEncerramento: "quitado (última parcela paga na Omie)" };
+  await prisma.frotaFinanciamento.update({ where: { id: c.id }, data: depois });
+  await registrarAlteracao(prisma, { companyId: p.companyId, usuario: p.decididaPor, agente: "pendencia", tabela: "FrotaFinanciamento", registroId: c.id, operacao: "update", antes: { ativo: true }, depois });
+  const alienados = c.veiculos.filter((v) => v.alienado);
+  if (alienados.length) {
+    await prisma.frotaFinanciamentoVeiculo.updateMany({ where: { id: { in: alienados.map((v) => v.id) } }, data: { alienado: false } });
+    const placas = alienados.map((v) => v.veiculo.placa ?? v.veiculo.chassi ?? v.veiculoId);
+    await criarPendencia({
+      companyId: p.companyId,
+      agente: "contrato-quitado",
+      tipo: "baixa-gravame",
+      titulo: `Baixa do gravame: ${placas.join(", ")}`,
+      descricao: `Contrato ${c.instituicao} ${c.contratoNumero ?? `${c.grupo}/${c.cota}`} quitado. Pedir ao banco/administradora a baixa da alienação no Detran e conferir o CRLV sem o gravame. Aprovar = baixa feita.`,
+      severidade: "media",
+      evidencias: { financiamentoId: c.id, veiculos: alienados.map((v) => ({ id: v.veiculoId, placa: v.veiculo.placa })) },
+      perfilAprovador: "operacao",
+      chaveExcecao: `baixa-gravame:${c.id}`,
+    });
+  }
+  return `contrato encerrado como quitado; ${alienados.length} veículo(s) desalienado(s)${alienados.length ? "; baixa do gravame aberta" : ""}`;
+};
+
 export async function executarPendencia(id: string): Promise<void> {
   const p = await prisma.audPendencia.findUnique({ where: { id } });
   if (!p || p.status !== "aprovada") return;

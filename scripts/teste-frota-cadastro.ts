@@ -235,6 +235,23 @@ async function puros() {
     [chaveDoGrupoFipe({ tipo: "van", marca: "Renault", modelo: "Master", anoMod: 2024 }) === chaveDoGrupoFipe({ tipo: "van", marca: "RENAULT", modelo: "master ", anoMod: 2024 }), chaveDoGrupoFipe({ tipo: "van", marca: "Renault", modelo: "Master", anoMod: 2024 }) === chaveDoGrupoFipe({ tipo: "van", marca: "Renault", modelo: "Master", anoMod: 2025 })],
     [true, false]
   );
+
+  console.log("\nDocumentos exigidos e impedimentos para rodar");
+  conferir(
+    "exigidos: tacógrafo acima de 10 lugares; escolar com CVS, ATE e vistoria",
+    [docs.documentosExigidosDoVeiculo({ categoriaUso: "escolar", capacidade: 16 }), docs.documentosExigidosDoVeiculo({ categoriaUso: "fretamento", capacidade: 7 })],
+    [["tacografo", "cvs", "ate_escolar", "vistoria_semestral"], []]
+  );
+  conferir(
+    "faltando: não lançado ou pendente; não se aplica e preliminar não faltam",
+    docs.documentosFaltando({ categoriaUso: "escolar", capacidade: 16 }, [{ tipo: "tacografo", situacao: "vigente" }, { tipo: "cvs", situacao: "pendente" }, { tipo: "ate_escolar", situacao: "nao_se_aplica" }]),
+    ["cvs", "vistoria_semestral"]
+  );
+  conferir(
+    "impedimentos para rodar: vencido, não lançado e apólice",
+    ctl.impedimentosParaRodar({ status: "ativo", categoriaUso: "fretamento", tipo: "van", capacidade: 16, apoliceVencimento: null }, [{ tipo: "tacografo", situacao: "vigente", validade: d("2026-01-01") }], null, d("2026-10-30")),
+    ["Tacógrafo (aferição) vencido", "sem apólice"]
+  );
 }
 
 async function noBanco() {
@@ -249,7 +266,7 @@ async function noBanco() {
   const { gravarFrota, gravarContratos } = await import("../src/lib/frota/migracaoNoBanco");
   const EMP = "empresa-teste-frota";
   const limpar = async () => {
-    for (const t of ["audLog", "frotaFinanciamentoVeiculo", "frotaFinanciamento", "frotaDocumento", "frotaConsulta", "cadCentroCusto", "cadVeiculo", "frotaApolice"] as const) {
+    for (const t of ["audPendencia", "audLog", "frotaFinanciamentoVeiculo", "frotaFinanciamento", "frotaDocumento", "frotaConsulta", "cadCentroCusto", "cadVeiculo", "frotaApolice"] as const) {
       await (prisma[t] as unknown as { deleteMany: (a: object) => Promise<unknown> }).deleteMany({ where: { companyId: EMP } });
     }
   };
@@ -270,6 +287,21 @@ async function noBanco() {
     conferir("apólice com segmento e número", [apolice?.segmento, apolice?.numero], ["escolar", "1002806001248"]);
     const trilha = await prisma.audLog.count({ where: { companyId: EMP, agente: "migracao-planilhas", tabela: "CadVeiculo", operacao: "insert" } });
     conferir("cada veículo criado está na trilha", trilha, 4);
+
+    console.log("\n6. Contrato quitado: aprovar encerra, desaliena e pede a baixa do gravame");
+    const { criarPendencia } = await import("../src/lib/auditoria/pendencias");
+    const { executarPendencia } = await import("../src/lib/auditoria/executores");
+    const contrato = await prisma.frotaFinanciamento.findFirst({ where: { companyId: EMP, ativo: true, veiculos: { some: { alienado: true } } }, include: { veiculos: true } });
+    const p = await criarPendencia({ companyId: EMP, agente: "agente-frota", tipo: "contrato-quitado", titulo: "t", descricao: "d", severidade: "media", evidencias: {}, acaoProposta: { financiamentoId: contrato!.id, dataQuitacao: "2026-10-15T00:00:00.000Z" }, perfilAprovador: "financeiro", chaveExcecao: `frota-contrato-quitado:${contrato!.id}` });
+    await prisma.audPendencia.update({ where: { id: p.id }, data: { status: "aprovada", decididaPor: "teste" } });
+    await executarPendencia(p.id);
+    const depois = await prisma.frotaFinanciamento.findUnique({ where: { id: contrato!.id }, include: { veiculos: true } });
+    const gravame = await prisma.audPendencia.findFirst({ where: { companyId: EMP, tipo: "baixa-gravame" } });
+    conferir(
+      "encerrado, sem alienação, baixa do gravame para a Frota, pendência executada",
+      [depois?.ativo, depois?.dataQuitacao?.toISOString().slice(0, 10), depois?.veiculos.some((v) => v.alienado), gravame?.perfilAprovador, (await prisma.audPendencia.findUnique({ where: { id: p.id } }))?.status],
+      [false, "2026-10-15", false, "operacao", "executada"]
+    );
   } finally {
     await limpar();
     await prisma.$disconnect();

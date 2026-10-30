@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { contratosComSituacao } from "@/lib/frota/frotaNoBanco";
 import { coberturaDeApolice } from "@/lib/frota/controles";
-import { alertaDoDocumento, ROTULO_SITUACAO_DOCUMENTO, SITUACOES_DOCUMENTO, TIPOS_DOCUMENTO } from "@/lib/frota/documentos";
+import { alertaDoDocumento, documentosExigidosDoVeiculo, ROTULO_SITUACAO_DOCUMENTO, SITUACOES_DOCUMENTO, TIPOS_DOCUMENTO } from "@/lib/frota/documentos";
 import { rateioDoContrato, ROTULO_PRODUTO, ROTULO_SITUACAO_CONSORCIO } from "@/lib/frota/financiamentos";
 import { investimentoDoVeiculo, ROTULO_IPVA, ROTULO_STATUS_VEICULO, ROTULO_TIPO_VEICULO, ROTULO_USO } from "@/lib/cadastro/fichaVeiculo";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
@@ -58,6 +58,7 @@ export default async function FichaVeiculoPage({ params, searchParams }: { param
   const cobertura = coberturaDeApolice(v, v.apolice, hoje);
   const docs = v.documentos.map((d) => ({ ...d, alerta: alertaDoDocumento(d, hoje) }));
   const vencidos = docs.filter((d) => d.alerta === "vencido");
+  const exigidos = documentosExigidosDoVeiculo(v);
   const ativos = contratos.filter((c) => !c.situacao.quitado);
   const minhaParte = (c: (typeof contratos)[number]) => rateioDoContrato(c.veiculos).get(v.id) ?? 0;
   const saldo = ativos.reduce((s, c) => s + Math.round((c.situacao.saldoCents ?? 0) * minhaParte(c)), 0);
@@ -169,15 +170,18 @@ export default async function FichaVeiculoPage({ params, searchParams }: { param
       )}
 
       {aba === "documentos" && (
-        <Secao titulo="Documentos e licenças" descricao="Um por tipo. Para renovar, troque a validade e grave — a anterior fica no histórico.">
+        <Secao titulo="Documentos e licenças" descricao="Um por tipo. Para renovar, troque a validade e grave — a anterior fica no histórico. Exigidos pela categoria: tacógrafo acima de 10 lugares; no escolar, CVS, ATE e vistoria semestral.">
           <div className="space-y-2">
             {TIPOS_DOCUMENTO.map((t) => {
               const d = docs.find((x) => x.tipo === t.chave);
+              const exigido = exigidos.includes(t.chave);
               return (
                 <div key={t.chave} className="rounded-md border border-slate-200 p-2">
                   <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="w-48 font-medium text-slate-800">{t.rotulo}</span>
-                    {d ? <SeloAlerta alerta={d.alerta} /> : <span className="text-xs text-slate-400">não informado</span>}
+                    <span className="w-56 font-medium text-slate-800">
+                      {t.rotulo} {exigido && <span className="text-[11px] font-normal text-slate-500">· exigido</span>}
+                    </span>
+                    {d ? <SeloAlerta alerta={d.alerta} /> : <span className={`text-xs ${exigido ? "font-semibold text-amber-700" : "text-slate-400"}`}>não informado</span>}
                     {d?.validade && <span className="text-xs text-slate-600">validade {fmtData(d.validade)}</span>}
                     {d?.numero && <span className="text-xs text-slate-600">nº {d.numero}</span>}
                     {d?.observacao && <span className="text-xs text-slate-500">· {d.observacao}</span>}

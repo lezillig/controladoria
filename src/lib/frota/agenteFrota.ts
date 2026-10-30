@@ -16,7 +16,8 @@ import { atualizarFipeDoMes, type ResultadoFipeMensal } from "./fipeMensal";
 //   3. veículo em operação sem apólice ativa → pendência crítica; apólice de
 //      outro segmento → pendência para conferir;
 //   4. parcela vencida e não paga na Omie → pendência para o Financeiro;
-//      parcela que vence em 60 dias e não foi lançada → pendência;
+//      parcela que vence em 60 dias e não foi lançada → pendência; última
+//      parcela paga com o contrato ativo → pendência para encerrar;
 //   5. e-mail aos destinatários da frota quando algum documento ou apólice
 //      chega hoje a 60, 30 ou 7 dias, ou venceu ontem — não todo dia;
 //   6. quando sai a tabela FIPE do mês, relê o valor dos modelos escolhidos.
@@ -87,6 +88,24 @@ export async function rodarAgenteFrota(companyId: string, hoje = new Date(), for
   }
 
   const contratos = await contratosComSituacao(companyId, hoje);
+  // Última parcela paga na Omie com o contrato ainda ativo: encerrar (e, ao
+  // aprovar, pedir a baixa do gravame — ver executores.ts).
+  for (const c of contratos.filter((x) => x.ativo && x.situacao.quitado && x.situacao.origemPagas === "omie")) {
+    const nome = `${c.instituicao} ${c.contratoNumero ?? `${c.grupo}/${c.cota}`}`;
+    const alienados = c.veiculos.filter((v) => v.alienado).map((v) => v.veiculo.placa ?? v.veiculo.chassi ?? v.veiculoId);
+    pendencias += await pendencia({
+      companyId,
+      agente: AGENTE,
+      tipo: "contrato-quitado",
+      titulo: `${nome}: última parcela paga — encerrar o contrato`,
+      descricao: `As ${c.parcelas} parcelas constam pagas na Omie${c.situacao.ultimoPagamento ? ` (última em ${c.situacao.ultimoPagamento.toISOString().slice(0, 10).split("-").reverse().join("/")})` : ""}. Ao aprovar: o contrato é encerrado como quitado${alienados.length ? `, ${alienados.length} veículo(s) deixam de estar alienados e abre-se a pendência de baixa do gravame (${alienados.join(", ")})` : ""}.`,
+      severidade: "media",
+      evidencias: { financiamentoId: c.id, parcelas: c.parcelas, ultimoPagamento: c.situacao.ultimoPagamento, alienados },
+      acaoProposta: { financiamentoId: c.id, dataQuitacao: (c.situacao.ultimoPagamento ?? hoje).toISOString() },
+      perfilAprovador: "financeiro",
+      chaveExcecao: `frota-contrato-quitado:${c.id}`,
+    });
+  }
   for (const c of contratos.filter((x) => !x.situacao.quitado)) {
     const nome = `${c.instituicao} ${c.contratoNumero ?? `${c.grupo}/${c.cota}`}`;
     if (c.situacao.atrasadas.quantidade > 0) {

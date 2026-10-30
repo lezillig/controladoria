@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { alertaDoDocumento, TIPO_DOCUMENTO, TIPOS_DOCUMENTO, type Alerta } from "@/lib/frota/documentos";
+import { alertaDoDocumento, documentosFaltando, TIPO_DOCUMENTO, TIPOS_DOCUMENTO, type Alerta } from "@/lib/frota/documentos";
 import { coberturaDeApolice, EM_OPERACAO, ROTULO_COBERTURA, type CoberturaApolice } from "@/lib/frota/controles";
 import { ROTULO_IPVA } from "@/lib/cadastro/fichaVeiculo";
 import { fmtData, fmtNumero } from "@/lib/controladoria/format";
@@ -42,6 +42,7 @@ export default async function VencimentosPage({ searchParams }: { searchParams: 
     .filter((x) => janela.alertas.includes(x.alerta) && (!tipo || x.d.tipo === tipo))
     .sort((a, b) => (a.d.validade?.getTime() ?? 0) - (b.d.validade?.getTime() ?? 0));
   const conta = (alertas: Alerta[]) => docs.filter((x) => alertas.includes(x.alerta)).length;
+  const faltando = veiculos.map((v) => ({ v, faltando: documentosFaltando(v, v.documentos) })).filter((x) => x.faltando.length > 0);
 
   const coberturas = veiculos.map((v) => ({ v, c: coberturaDeApolice(v, v.apolice, hoje) }));
   const semCobertura = coberturas.filter((x) => !["coberto"].includes(x.c));
@@ -107,6 +108,21 @@ export default async function VencimentosPage({ searchParams }: { searchParams: 
             <SeloAlerta key="s" alerta={alerta} texto={d.situacao === "preliminar" ? "preliminar" : d.situacao === "em_inclusao" ? "em inclusão" : undefined} />,
           ])}
           vazio="Nada nesta janela."
+        />
+      </Secao>
+
+      <Secao titulo={`Exigidos e não lançados (${faltando.length})`} descricao="Pela categoria do veículo: tacógrafo acima de 10 lugares; no escolar, CVS, ATE e vistoria semestral. Sem o lançamento, o sistema não consegue avisar o vencimento — e alocar o veículo assim abre pendência crítica.">
+        <Tabela
+          colunas={["Placa", "Veículo", "Uso", "Lugares", "Contrato / alocação", "Falta lançar"]}
+          linhas={faltando.map(({ v, faltando: f }) => [
+            <NomeVeiculo key="p" v={v} />,
+            [v.marca, v.modelo].filter(Boolean).join(" ") || "—",
+            v.categoriaUso ?? "—",
+            v.capacidade ?? "—",
+            v.alocacao ?? "—",
+            <Link key="f" href={`/frota/${v.id}?aba=documentos`} className="text-blue-800 hover:underline">{f.map((t) => TIPO_DOCUMENTO.get(t)?.rotulo ?? t).join(", ")}</Link>,
+          ])}
+          vazio="Todos os documentos exigidos estão lançados."
         />
       </Secao>
 
