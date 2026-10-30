@@ -28,8 +28,12 @@ export default function TabelaDre({
   anoAnterior,
   rotuloMesAnterior = "Mês anterior",
   podeClassificar,
+  destaque = null,
 }: {
   linhas: LinhaDreCalculada[];
+  // Visão do grupo: as categorias cujo valor no mês vem só desta empresa,
+  // destacadas em verde (a linha e o subtotal do subgrupo).
+  destaque?: { empresa: string; categorias: string[] } | null;
   subgruposConhecidos: string[];
   marcasPorCategoria: Record<string, string>;
   // Só o ano, para o cabeçalho da coluna. "Mesmo mês 2025" diz o que "ano
@@ -50,6 +54,11 @@ export default function TabelaDre({
     });
 
   const gruposComItens = linhas.filter((l) => l.tipo === "GRUPO" && l.itens.length > 0);
+  const daEmpresa = new Set(destaque?.categorias ?? []);
+  const subgrupoDaEmpresa = (linha: LinhaDreCalculada, nome: string) => {
+    const itens = linha.itens.filter((i) => i.subgrupo === nome);
+    return itens.length > 0 && itens.every((i) => daEmpresa.has(i.categoriaCodigo));
+  };
 
   // O DRILL-DOWN DOS CARTÕES: o cartão leva a "#dre=RECEITA_BRUTA,DEDUCOES"
   // (ou "#dre=todas"); a tabela abre essas linhas e rola até a primeira.
@@ -185,7 +194,11 @@ export default function TabelaDre({
 
                   {aberta &&
                     linha.subgrupos.map((s) => (
-                      <tr key={`${linha.chave}:${s.nome}`} className="border-b border-slate-50 text-xs text-slate-600">
+                      <tr
+                        key={`${linha.chave}:${s.nome}`}
+                        className={`border-b border-slate-50 text-xs ${subgrupoDaEmpresa(linha, s.nome) ? "bg-emerald-50 text-emerald-900" : "text-slate-600"}`}
+                        title={subgrupoDaEmpresa(linha, s.nome) ? `Só da ${destaque!.empresa}` : undefined}
+                      >
                         <td className="py-1.5 pl-8 pr-3 font-medium">
                           {s.nome}
                           <SiglaNatureza linha={linha.chave} subgrupo={s.nome} />
@@ -209,6 +222,7 @@ export default function TabelaDre({
                         subgruposConhecidos={subgruposConhecidos}
                         marcasOmie={marcasPorCategoria[i.categoriaCodigo] ?? null}
                         podeClassificar={podeClassificar}
+                        destacadaPara={daEmpresa.has(i.categoriaCodigo) ? destaque!.empresa : null}
                       />
                     ))}
                 </Fragment>
@@ -217,6 +231,11 @@ export default function TabelaDre({
           </tbody>
         </table>
       </div>
+      {destaque && destaque.categorias.length > 0 && (
+        <p className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+          <span className="inline-block h-3 w-3 rounded-sm border border-emerald-200 bg-emerald-50" /> Em verde: só da {destaque.empresa} (abra a linha para ver).
+        </p>
+      )}
     </>
   );
 }

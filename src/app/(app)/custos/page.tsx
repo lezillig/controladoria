@@ -2,7 +2,7 @@ import { categoriasEmColisao, categoriasPorChave, descreverColisoes } from "@/li
 import Link from "next/link";
 import { comparativoDoEscopo } from "@/lib/controladoria/analytics";
 import { rankingNoBanco } from "@/lib/controladoria/resumoNoBanco";
-import { intercompanyEliminado, montarDreNoBanco, montarDreAnualNoBanco, pessoasCorporativoPorCentroDeCusto, receitaBrutaPorDocumento, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
+import { empresasPorCategoria, intercompanyEliminado, montarDreNoBanco, montarDreAnualNoBanco, pessoasCorporativoPorCentroDeCusto, receitaBrutaPorDocumento, recorteMensalDoDre } from "@/lib/controladoria/dreNoBanco";
 import { prisma } from "@/lib/prisma";
 import TabelaDre from "./TabelaDre";
 import TabelaDreAnual from "./TabelaDreAnual";
@@ -253,6 +253,16 @@ export default async function CustosPage({
   if (regime === "caixa") filtros.set("regime", "caixa");
   const urlDaConferencia = `/api/exportar/dre${filtros.toString() ? `?${filtros}` : ""}`;
 
+  // NA VISÃO DO GRUPO, o que vem só da MCZ fica em verde: o DAS dela (Simples)
+  // entre as deduções do grupo parecia imposto da Azul.
+  const mcz = conexoes.find((c) => /mcz/i.test(`${c.apelido} ${c.nome}`));
+  const destaque =
+    !escopo.conexaoId && !anual && mcz
+      ? {
+          empresa: mcz.apelido,
+          categorias: [...(await empresasPorCategoria(escopoSql, recorteMensal.periodo, regime))].filter(([, e]) => e.length === 1 && e[0] === mcz.apelido).map(([c]) => c),
+        }
+      : null;
   return (
     /* LARGURA LIVRE NESTA TELA, e não os 1024px das demais.
        O DRE anual tem doze colunas de mês mais total e percentual; o mensal
@@ -521,6 +531,7 @@ export default async function CustosPage({
         ) : (
           <TabelaDre
             linhas={linhasVisiveis}
+            destaque={destaque}
             subgruposConhecidos={subgruposConhecidos}
             marcasPorCategoria={marcasPorCategoria}
             anoAnterior={comparativo.janelas.mesAtual.inicio.getFullYear() - 1}

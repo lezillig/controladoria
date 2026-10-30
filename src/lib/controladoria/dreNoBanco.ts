@@ -169,6 +169,37 @@ async function somaPorCategoriaCaixa(escopo: EscopoDre, periodo: Periodo): Promi
   return mapaDeSomas(linhas);
 }
 
+// DE QUE EMPRESAS VEM CADA CATEGORIA no período — para a visão do grupo
+// destacar o que é de uma empresa só (o DAS da MCZ, que é do Simples, no
+// meio das deduções do grupo). O mesmo recorte das somas acima.
+export async function empresasPorCategoria(escopo: EscopoDre, periodo: Periodo, regime: "competencia" | "caixa"): Promise<Map<string, string[]>> {
+  const linhas =
+    regime === "caixa"
+      ? await prisma.$queryRaw<{ categoria: string; empresas: string[] }[]>`
+          SELECT ${categoriaSql()} AS categoria, array_agg(DISTINCT t."conexaoApelido") AS empresas
+            FROM ${tabela("OmieBaixa")} b
+            JOIN ${tabela("OmieTitulo")} t ON t.id = b."tituloId"
+           WHERE b."companyId" = ${escopo.companyId}
+             AND b."dataBaixa" >= ${periodo.inicio}
+             AND b."dataBaixa" <= ${periodo.fim}
+             AND t.cancelado = false
+             ${filtroConexaoBaixa(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1`
+      : await prisma.$queryRaw<{ categoria: string; empresas: string[] }[]>`
+          SELECT ${categoriaSql()} AS categoria, array_agg(DISTINCT t."conexaoApelido") AS empresas
+            FROM ${tabela("OmieTitulo")} t
+           WHERE t."companyId" = ${escopo.companyId}
+             AND t.cancelado = false
+             AND ${semProvisaoFuturaSql("t")}
+             AND ${competenciaSql("t")} >= ${periodo.inicio}
+             AND ${competenciaSql("t")} <= ${periodo.fim}
+             ${filtroConexaoTitulo(escopo.conexaoId, escopo.companyId)}
+             ${naJanela(escopo.janela)}
+           GROUP BY 1`;
+  return new Map(linhas.map((l) => [l.categoria, l.empresas]));
+}
+
 // O QUE A VISÃO DO GRUPO ELIMINOU, para a tela dizer. As duas consultas acima
 // com o filtro invertido — o mesmo recorte (empresa, janela, cancelado, data do
 // regime) e o mesmo critério de operação entre as empresas (escopoSql.ts) —,

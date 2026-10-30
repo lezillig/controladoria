@@ -454,6 +454,15 @@ async function principal() {
           despesaCents: 200_000,
           titulos: 1,
         });
+        // O VERDE DA TELA: a comissão (D1@MC) é só da MCZ; o D1 da Azul e a
+        // receita (sem a da MCZ contra a Azul, eliminada), só da Azul.
+        const { empresasPorCategoria } = await import("../src/lib/controladoria/dreNoBanco");
+        const empresas = await empresasPorCategoria(escopo, mes, "competencia");
+        conferir(
+          "grupo: de que empresas vem cada categoria",
+          ["D1@MC", "D1@AZ", "R1"].map((c) => [...(empresas.get(c) ?? [])].sort()),
+          [["MC"], ["AZ"], ["AZ"]]
+        );
       } else {
         conferir("uma empresa: o pagamento à MCZ é custo da Azul", item(dre, "D1@AZ"), 310_300 - 15_800 + 91_100 + 200_000);
         conferir("uma empresa: nada eliminado", await intercompanyEliminado(escopo, mes, "competencia"), {

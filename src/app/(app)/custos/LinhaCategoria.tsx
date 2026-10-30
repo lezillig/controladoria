@@ -22,8 +22,12 @@ export default function LinhaCategoria({
   subgruposConhecidos,
   marcasOmie,
   podeClassificar,
+  destacadaPara = null,
 }: {
   item: ItemDre;
+  // Na visão do grupo: a empresa de que vem TODO o valor da categoria no mês
+  // (a linha fica em verde).
+  destacadaPara?: string | null;
   linhaChave: string;
   subgruposConhecidos: string[];
   marcasOmie: string | null;
@@ -51,7 +55,7 @@ export default function LinhaCategoria({
 
   return (
     <Fragment>
-      <tr className="border-b border-slate-50 text-xs hover:bg-slate-50">
+      <tr className={`border-b border-slate-50 text-xs ${destacadaPara ? "bg-emerald-50 hover:bg-emerald-100" : "hover:bg-slate-50"}`} title={destacadaPara ? `Só da ${destacadaPara}` : undefined}>
         <td className="py-1.5 pl-12 pr-3 text-slate-600">
           <button
             type="button"
