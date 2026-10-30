@@ -13,6 +13,9 @@ import { contratosComSituacao, type ContratoComSituacao } from "@/lib/frota/cont
 //   POST /api/integracao/multas  { empresa, multas: [{ ait, dataInfracao }], desde? }
 //        o título da Omie de cada AIT (pago? quando? quanto?) e, com `desde`,
 //        os títulos de multa sem AIT conhecido (pago sem multa cadastrada).
+//   POST /api/integracao/notas-de-compra  { empresa, notas: [{ ref, numero, data }] }
+//        a nota fiscal de cada veículo comprado nas contas a pagar: lançado,
+//        pago e o fornecedor.
 //
 // Quem chama apresenta o INTEGRACAO_TOKEN (o mesmo valor nos dois projetos da
 // Vercel) no cabeçalho Authorization. Só leitura: nada aqui grava.
@@ -166,4 +169,55 @@ export async function multasParaGestao(companyId: string, multas: MultaPedida[],
       .map((t) => ({ tituloId: t.id, empresa: t.conexaoApelido, numeroDocumento: t.numeroDocumento, vencimento: dia(t.dataVencimento)!, valorDocumentoCents: t.valorDocumentoCents, valorPagoCents: t.valorPagoCents, pago: pago(t), dataPagamento: pago(t) ? dia(t.dataUltimaBaixa) : null }));
   }
   return { geradoEm: new Date().toISOString(), pagamentos, semMulta };
+}
+
+// ---- Notas fiscais de compra de veículo ----
+//
+// A gestão manda o número da nota de cada veículo comprado; aqui se procura o
+// título das contas a pagar com esse número no documento (a nota pode vir em
+// parcelas: um título por parcela, mesmo número). Devolve o lançado e o pago.
+
+export type NotaPedida = { ref: string; numero: string; data: Date };
+export type NotaNaOmie = { ref: string; titulos: number; valorCents: number; pagoCents: number; quitada: boolean; fornecedor: string | null; empresa: string; emissao: string | null };
+
+// O número da nota como aparece no documento do título: "NF 001519502",
+// "1519502/1", "NFE-1519502". Compara pelos dígitos, sem zeros à esquerda.
+const digitosDaNota = (s: string) => s.replace(/\D/g, "").replace(/^0+/, "");
+export function tituloEDaNota(numeroDocumento: string | null, numero: string): boolean {
+  const alvo = digitosDaNota(numero);
+  if (alvo.length < 4) return false;
+  return (numeroDocumento ?? "").split(/[^0-9]+/).some((parte) => parte.replace(/^0+/, "") === alvo);
+}
+
+type TituloDaNota = { numeroDocumento: string | null; conexaoApelido: string; parceiroNome: string | null; dataEmissao: Date | null; valorDocumentoCents: number; valorPagoCents: number; liquidado: boolean };
+export function agruparNota(ref: string, numero: string, titulos: TituloDaNota[]): NotaNaOmie | null {
+  const da = titulos.filter((t) => tituloEDaNota(t.numeroDocumento, numero));
+  if (!da.length) return null;
+  return {
+    ref,
+    titulos: da.length,
+    valorCents: da.reduce((s, t) => s + t.valorDocumentoCents, 0),
+    pagoCents: da.reduce((s, t) => s + (t.liquidado ? t.valorPagoCents || t.valorDocumentoCents : t.valorPagoCents), 0),
+    quitada: da.every((t) => t.liquidado || (t.valorPagoCents > 0 && t.valorPagoCents >= t.valorDocumentoCents - 100)),
+    fornecedor: da[0].parceiroNome,
+    empresa: da[0].conexaoApelido,
+    emissao: dia(da.reduce<Date | null>((m, t) => (t.dataEmissao && (!m || t.dataEmissao < m) ? t.dataEmissao : m), null)),
+  };
+}
+
+export async function notasParaGestao(companyId: string, notas: NotaPedida[]) {
+  const r: NotaNaOmie[] = [];
+  for (const n of notas) {
+    const digitos = digitosDaNota(n.numero);
+    if (digitos.length < 4) continue;
+    const desde = new Date(n.data.getTime() - 90 * 86_400_000);
+    const titulos = await prisma.omieTitulo.findMany({
+      where: { companyId, natureza: "PAGAR", cancelado: false, numeroDocumento: { contains: digitos }, OR: [{ dataEmissao: { gte: desde } }, { dataEmissao: null, dataVencimento: { gte: desde } }] },
+      select: { numeroDocumento: true, conexaoApelido: true, parceiroNome: true, dataEmissao: true, valorDocumentoCents: true, valorPagoCents: true, liquidado: true },
+      take: 60,
+    });
+    const nota = agruparNota(n.ref, n.numero, titulos);
+    if (nota) r.push(nota);
+  }
+  return { geradoEm: new Date().toISOString(), notas: r };
 }

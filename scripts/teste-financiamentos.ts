@@ -120,6 +120,15 @@ async function puros() {
   if (antes === undefined) delete process.env.INTEGRACAO_TOKEN;
   else process.env.INTEGRACAO_TOKEN = antes;
 
+  conferir(
+    "nota fiscal no documento do título: pelos dígitos, sem zeros à esquerda",
+    [ig.tituloEDaNota("NF 001519502", "1519502"), ig.tituloEDaNota("1519502/2", "001519502"), ig.tituloEDaNota("NF 11519502", "1519502"), ig.tituloEDaNota("NF 152", "152")],
+    [true, true, false, false]
+  );
+  const tn = (doc: string, valor: number, pago: boolean) => ({ numeroDocumento: doc, conexaoApelido: "AZUL", parceiroNome: "Concessionária", dataEmissao: d("2026-10-20"), valorDocumentoCents: valor, valorPagoCents: pago ? valor : 0, liquidado: pago });
+  const nota = ig.agruparNota("v1", "1519502", [tn("1519502/1", 100_000_00, true), tn("1519502/2", 100_000_00, false), tn("999", 5_00, true)]);
+  conferir("nota em duas parcelas: lançado, pago e não quitada", [nota?.titulos, nota?.valorCents, nota?.pagoCents, nota?.quitada], [2, 200_000_00, 100_000_00, false]);
+
   console.log("\n4b. Custo por km");
   const { custoPorKm } = await import("../src/lib/frota/custoPorKm");
   const ck = custoPorKm(

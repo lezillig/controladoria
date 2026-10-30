@@ -74,13 +74,17 @@ Omie:
 - [x] Integração para a gestão (`src/lib/integracao/gestao.ts`), com o
   `INTEGRACAO_TOKEN` no cabeçalho: `GET /api/integracao/financiamentos`
   (situação de cada contrato, `quitadoNaOmie` para a gestão encerrar e pedir a
-  baixa do gravame) e `POST /api/integracao/multas` (pagamento de cada AIT na
-  Omie e títulos de multa sem AIT conhecido).
+  baixa do gravame), `POST /api/integracao/multas` (pagamento de cada AIT na
+  Omie e títulos de multa sem AIT conhecido) e
+  `POST /api/integracao/notas-de-compra` (a nota de cada veículo comprado).
 - [x] Custo de propriedade por veículo na Rentabilidade: compra + adaptações
   da ficha da gestão, saldo pela Omie e juros pela taxa do contrato.
 - [x] Multas assumidas pela empresa no custo do veículo (a decisão "quem
   paga" do fechamento da multa na gestão).
-- [ ] Custo por km — depende do acesso à API da Ituran.
+- [x] Custo por km de cada veículo e da frota na Rentabilidade, pelos km das
+  viagens da Ituran que a gestão importa (ou dos check-ins).
+- [x] Nota fiscal de cada veículo comprado conferida nas contas a pagar
+  (`POST /api/integracao/notas-de-compra`).
 - [ ] Contratos e linhas — em espera, a pedido (lembrete agendado).
 
 As telas de frota, motoristas e multas que chegaram a existir aqui foram
