@@ -141,12 +141,19 @@ async function limiteDeConsumoRetomaDaPagina() {
     };
     const titulos = await executarFase("titulos", { ...base, cursor: JSON.stringify({ passo: 1, pagina: 7 }) }, true);
     conferir("títulos: a fase não conclui", titulos.faseConcluida, false);
-    conferir("títulos: o cursor volta para a mesma página do mesmo passo", titulos.proximoCursor, JSON.stringify({ passo: 1, pagina: 7 }));
+    // O cursor volta para a mesma página e leva a espera do consumo redundante
+    // (~65 s): a próxima invocação não repete o pedido antes da hora.
+    const semEspera = (c: string | null) => {
+      const { aguardarAte, ...resto } = JSON.parse(c ?? "{}") as { aguardarAte?: string };
+      const ms = aguardarAte ? Date.parse(aguardarAte) - agora : 0;
+      return [JSON.stringify(resto), ms >= 60_000 && ms <= 70_000];
+    };
+    conferir("títulos: o cursor volta para a mesma página do mesmo passo, com a espera", semEspera(titulos.proximoCursor), [JSON.stringify({ passo: 1, pagina: 7 }), true]);
     conferir("títulos: o erro fica registrado, um só", titulos.erros.length, 1);
     const cadastros = await executarFase("cadastros", { ...base, cursor: JSON.stringify({ entidade: "clientes", pagina: 3 }) }, false);
-    conferir("cadastros: retoma de clientes, página 3", [cadastros.faseConcluida, cadastros.proximoCursor], [false, JSON.stringify({ entidade: "clientes", pagina: 3 })]);
+    conferir("cadastros: retoma de clientes, página 3", [cadastros.faseConcluida, ...semEspera(cadastros.proximoCursor)], [false, JSON.stringify({ entidade: "clientes", pagina: 3 }), true]);
     const notas = await executarFase("notas", { ...base, cursor: null }, false);
-    conferir("notas: retoma da NF-e, página 1", [notas.faseConcluida, notas.proximoCursor], [false, JSON.stringify({ tipo: "NFE", pagina: 1 })]);
+    conferir("notas: retoma da NF-e, página 1", [notas.faseConcluida, ...semEspera(notas.proximoCursor)], [false, JSON.stringify({ tipo: "NFE", pagina: 1 }), true]);
 
     // Recusa de NEGÓCIO continua como era: erro registrado e passo pulado.
     globalThis.fetch = (async () =>
