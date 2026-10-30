@@ -133,7 +133,14 @@ export function resolverDestinos(ctx: ContextoAuditoria, titulo: OmieTitulo): De
     }
   }
 
-  // Sem vinculo: ultima tentativa objetiva — a placa de um veiculo da frota
+  // Sem vinculo: o NOME do centro de custo da Omie. A regra do plano e
+  // "centro de custo por placa e por contrato": departamento ou projeto
+  // batizado com a placa do veiculo ou o numero do contrato ja diz o
+  // destino, sem de-para manual. Igualdade verificavel, nao semelhanca.
+  const peloCentro = destinoPeloNomeDoCentro(ctx, titulo);
+  if (peloCentro) return [peloCentro];
+
+  // Ultima tentativa objetiva — a placa de um veiculo da frota
   // citada no documento/observacao do titulo. Isso e verificavel (a placa
   // esta escrita la), diferente de adivinhar por semelhanca de nome.
   const texto = `${titulo.observacao ?? ""} ${titulo.numeroDocumento ?? ""}`.replace(/[^A-Z0-9]/gi, "").toUpperCase();
@@ -142,7 +149,83 @@ export function resolverDestinos(ctx: ContextoAuditoria, titulo: OmieTitulo): De
     if (veiculo) return [{ vehicleId: veiculo.id, percentual: 100, origem: "placa-no-documento" }];
   }
 
+  // Receita sem de-para: o CNPJ de quem paga é o CNPJ de um cliente
+  // cadastrado na gestão. É igualdade de documento, verificável como a placa
+  // escrita no título — não é sugestão por semelhança, por isso entra sem
+  // confirmação. Só para RECEBER: cliente que também vende para a Azul não
+  // leva custo para o próprio contrato.
+  if (titulo.natureza === "RECEBER") {
+    const clienteId = clientePorCnpj(ctx).get(documentoComparavel(titulo.parceiroDocumento));
+    if (clienteId) return [{ clienteId, percentual: 100, origem: "cnpj-do-cliente" }];
+  }
+
   return [];
+}
+
+const soAlfanumerico = (t: string | null | undefined) => (t ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+type IndiceDeCentros = {
+  departamentos: Map<string, string>;
+  projetos: Map<string, string>;
+  placas: { compacta: string; vehicleId: string }[];
+  contratos: { compacto: string; clienteId: string }[];
+};
+const cacheCentros = new WeakMap<ContextoAuditoria, IndiceDeCentros>();
+function indiceDeCentros(ctx: ContextoAuditoria): IndiceDeCentros {
+  let i = cacheCentros.get(ctx);
+  if (!i) {
+    i = {
+      departamentos: new Map(ctx.departamentos.map((d) => [`${d.conexaoId}|${d.codigo}`, d.descricao])),
+      projetos: new Map(ctx.projetos.map((p) => [`${p.conexaoId}|${p.codigo}`, p.nome])),
+      placas: ctx.veiculos.map((v) => ({ compacta: soAlfanumerico(v.plate), vehicleId: v.id })).filter((p) => p.compacta.length === 7),
+      // Número curto ("1", "12") casaria com qualquer texto: só a partir de 4.
+      contratos: ctx.clientes.flatMap((c) => (c.numerosDeContrato ?? []).map((n) => ({ compacto: soAlfanumerico(n), clienteId: c.id }))).filter((c) => c.compacto.length >= 4),
+    };
+    cacheCentros.set(ctx, i);
+  }
+  return i;
+}
+
+export function centroDoTitulo(ctx: ContextoAuditoria, titulo: Pick<OmieTitulo, "conexaoId" | "departamentoCodigo" | "projetoCodigo">): string[] {
+  const i = indiceDeCentros(ctx);
+  return [
+    titulo.projetoCodigo ? i.projetos.get(`${titulo.conexaoId}|${titulo.projetoCodigo}`) : undefined,
+    titulo.departamentoCodigo ? i.departamentos.get(`${titulo.conexaoId}|${titulo.departamentoCodigo}`) : undefined,
+  ].filter((n): n is string => !!n);
+}
+
+// Uma placa, ou um contrato, e nada mais: nome que cita duas placas (ou duas
+// coisas) e rateio, e rateio quem decide e a pessoa, no de-para.
+export function destinoPeloNomeDoCentro(ctx: ContextoAuditoria, titulo: OmieTitulo): Destino | null {
+  const i = indiceDeCentros(ctx);
+  for (const nome of centroDoTitulo(ctx, titulo)) {
+    const n = soAlfanumerico(nome);
+    const placas = [...new Set(i.placas.filter((p) => n.includes(p.compacta)).map((p) => p.vehicleId))];
+    const clientes = [...new Set(i.contratos.filter((c) => n.includes(c.compacto)).map((c) => c.clienteId))];
+    if (placas.length === 1 && clientes.length === 0) return { vehicleId: placas[0], percentual: 100, origem: "placa-no-centro-de-custo" };
+    if (clientes.length === 1 && placas.length === 0) return { clienteId: clientes[0], percentual: 100, origem: "contrato-no-centro-de-custo" };
+  }
+  return null;
+}
+
+// Omie guarda só dígitos; a gestão, maiúsculas e dígitos (CNPJ alfanumérico
+// de jul/2026). Os dois lados no mesmo formato.
+export function documentoComparavel(documento: string | null | undefined): string {
+  return (documento ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+const cacheClientePorCnpj = new WeakMap<ContextoAuditoria, Map<string, string>>();
+export function clientePorCnpj(ctx: ContextoAuditoria): Map<string, string> {
+  let m = cacheClientePorCnpj.get(ctx);
+  if (!m) {
+    m = new Map();
+    for (const c of ctx.clientes) {
+      const d = documentoComparavel(c.cnpj);
+      if (d.length === 14) m.set(d, c.id);
+    }
+    cacheClientePorCnpj.set(ctx, m);
+  }
+  return m;
 }
 
 // Custo e receita por contrato, veículo e funcionário são leitura de
@@ -468,4 +551,44 @@ export function sugerirVinculos(
 export function custoTotalPeriodo(ctx: ContextoAuditoria, periodo: Periodo): number {
   const custos = custosDoPeriodo(ctx, periodo);
   return somar(custos.titulos, (t) => t.valorDocumentoCents) + somar(custos.abastecimentos, (a) => a.valorCents);
+}
+
+// CENTROS DE CUSTO DO MÊS e para onde cada um levou o dinheiro: de-para
+// manual, placa ou contrato no nome, ou lugar nenhum. É a tela que diz ao
+// financeiro como batizar o departamento na Omie para o rateio sair sozinho.
+export type CentroDoMes = {
+  empresa: string;
+  tipo: "Projeto" | "Departamento";
+  codigo: string;
+  nome: string;
+  valorCents: number;
+  destino: "de-para" | "placa" | "contrato" | "nenhum";
+  alvo: string | null;
+};
+
+export function centrosDeCustoDoMes(ctx: ContextoAuditoria, periodo: Periodo): CentroDoMes[] {
+  const i = indiceDeCentros(ctx);
+  const placaDe = new Map(ctx.veiculos.map((v) => [v.id, v.plate]));
+  const clienteDe = new Map(ctx.clientes.map((c) => [c.id, c.nome]));
+  const naoEhIntragrupo = entraNoResultado(ctx);
+  const titulos = [...custosDoPeriodo(ctx, periodo).titulos, ...titulosDoPeriodo(ctx, periodo, "RECEBER").filter(naoEhIntragrupo)];
+  const grupos = new Map<string, CentroDoMes>();
+  for (const t of titulos) {
+    const tipo = t.projetoCodigo ? "Projeto" : t.departamentoCodigo ? "Departamento" : null;
+    if (!tipo) continue;
+    const codigo = (tipo === "Projeto" ? t.projetoCodigo : t.departamentoCodigo)!;
+    const chave = `${t.conexaoId}|${tipo}|${codigo}`;
+    let g = grupos.get(chave);
+    if (!g) {
+      const nome = (tipo === "Projeto" ? i.projetos : i.departamentos).get(`${t.conexaoId}|${codigo}`) ?? codigo;
+      const d = resolverDestinos(ctx, t)[0];
+      const destino =
+        d?.origem === "vinculo" ? "de-para" : d?.origem === "placa-no-centro-de-custo" ? "placa" : d?.origem === "contrato-no-centro-de-custo" ? "contrato" : "nenhum";
+      const alvo = destino === "nenhum" ? null : d?.vehicleId ? placaDe.get(d.vehicleId) ?? null : d?.clienteId ? clienteDe.get(d.clienteId) ?? null : null;
+      g = { empresa: t.conexaoApelido, tipo, codigo, nome, valorCents: 0, destino, alvo };
+      grupos.set(chave, g);
+    }
+    g.valorCents += t.valorDocumentoCents;
+  }
+  return [...grupos.values()].sort((a, b) => b.valorCents - a.valorCents);
 }

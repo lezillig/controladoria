@@ -1,9 +1,13 @@
-import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
+import { fmtBRL, fmtData, fmtDocumento, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { montarComparativo } from "@/lib/controladoria/analytics";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
-import { custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
+import { centrosDeCustoDoMes, custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
 import { faturadoVersusContratado, margemPorClienteOmie, margemPorOs } from "@/lib/controladoria/margemOmie";
 import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
+import { casarClientes } from "@/lib/controladoria/casamentoClientes";
+import { custoDeCapitalPorVeiculo, premissasDaBase } from "@/lib/controladoria/custoDeCapital";
+import { lerPatrimonioDaFrota } from "@/lib/gestao/leitura";
+import { baseVigente } from "@/lib/simulador/baseDeCustos";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 import VinculoForm, { type OpcaoDestino, type OpcaoOrigem } from "./VinculoForm";
@@ -39,8 +43,18 @@ export default async function RentabilidadePage({
 
   const nomesCliente = new Map(ctx.clientes.map((c) => [c.id, c.nome]));
   const contratos = rentabilidadePorContrato(ctx, periodo, nomesCliente);
+  const casamento = casarClientes(ctx, periodo);
+  const [patrimonio, base] = await Promise.all([lerPatrimonioDaFrota(session.companyId), baseVigente(session.companyId, periodo.fim)]);
+  const premissasDep = premissasDaBase(base.parametros);
+  const capital = custoDeCapitalPorVeiculo(patrimonio.veiculos, patrimonio.financiamentos, premissasDep, periodo);
+  const capitalSemCompra = capital.filter((c) => c.motivo === "sem valor ou data de compra na ficha").length;
+  const centros = centrosDeCustoDoMes(ctx, periodo);
+  const centrosSemDestino = centros.filter((c) => c.destino === "nenhum");
+  const ROTULO_DESTINO = { "de-para": "de-para", placa: "placa no nome", contrato: "contrato no nome", nenhum: "sem destino" } as const;
+  const semCnpj = casamento.clientes.filter((c) => !c.cnpj).length;
   const veiculos = custoPorVeiculo(ctx, periodo);
   const funcionarios = custoPorFuncionario(ctx, periodo);
+  const custoOperacaoPorVeiculo = new Map(veiculos.linhas.map((l) => [l.id, l.custoCents]));
 
   // O QUE A OMIE JÁ SABE SOZINHA, sem de-para: a margem de cada OS (projeto),
   // as OS somadas pelo cliente cobrado e o faturado contra o contratado. A
@@ -182,6 +196,73 @@ export default async function RentabilidadePage({
       </Secao>
 
       <Secao
+        titulo="Clientes da gestão × Omie"
+        descricao={`O CNPJ do cadastro de clientes da gestão casa com quem paga na Omie. Receita sem de-para de quem casa entra no contrato automaticamente (origem “cnpj-do-cliente”). ${semCnpj} cliente(s) ativo(s) ainda sem CNPJ na gestão.`}
+      >
+        <div className="space-y-4">
+          <Tabela
+            colunas={["Cliente na gestão", "CNPJ", "Como aparece na Omie", "Recebido no mês"]}
+            alinharDireita={[3]}
+            linhas={casamento.clientes.map((c) => [
+              <span key="n" className="font-medium text-slate-800">
+                {c.nome}
+              </span>,
+              c.cnpj ? fmtDocumento(c.cnpj) : <span key="s" className="text-xs font-medium text-amber-700">sem CNPJ — cadastre na gestão</span>,
+              c.cnpj ? (
+                c.nomesNaOmie.length ? (
+                  <span key="o" className="text-xs text-slate-600">{c.nomesNaOmie.join(" · ")}</span>
+                ) : (
+                  <span key="o" className="text-xs text-amber-700">CNPJ não encontrado na Omie</span>
+                )
+              ) : (
+                "—"
+              ),
+              fmtBRL(c.receitaCents),
+            ])}
+            vazio="Nenhum cliente ativo na gestão."
+          />
+          {casamento.semCliente.length > 0 && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-600">
+                Pagaram no mês e não existem como cliente na gestão (ou estão sem CNPJ lá):
+              </p>
+              <Tabela
+                colunas={["Na Omie", "CNPJ", "Empresa", "Recebido no mês"]}
+                alinharDireita={[3]}
+                linhas={casamento.semCliente.slice(0, 20).map((p) => [p.nome, fmtDocumento(p.documento), p.empresas.join(", "), fmtBRL(p.receitaCents)])}
+              />
+            </div>
+          )}
+        </div>
+      </Secao>
+
+      <Secao
+        titulo="Centros de custo da Omie no mês"
+        descricao={`Departamento ou projeto com a placa do veículo ou o número do contrato (cadastrado na gestão) no nome vai sozinho para ele; o resto precisa do de-para abaixo. ${centrosSemDestino.length} de ${centros.length} sem destino, somando ${fmtBRL(centrosSemDestino.reduce((s, c) => s + c.valorCents, 0))}.`}
+      >
+        <Tabela
+          colunas={["Empresa", "Centro", "Valor no mês", "Vai para"]}
+          alinharDireita={[2]}
+          linhas={centros.slice(0, 40).map((c) => [
+            c.empresa,
+            <span key="c">
+              <span className="text-xs text-slate-500">{c.tipo} {c.codigo} · </span>
+              {c.nome}
+            </span>,
+            fmtBRL(c.valorCents),
+            c.destino === "nenhum" ? (
+              <span key="d" className="text-xs font-medium text-amber-700">sem destino</span>
+            ) : (
+              <span key="d" className="text-xs text-slate-600">
+                {c.alvo ?? "—"} <span className="text-slate-400">({ROTULO_DESTINO[c.destino]})</span>
+              </span>
+            ),
+          ])}
+          vazio="Nenhum título com departamento ou projeto no mês."
+        />
+      </Secao>
+
+      <Secao
         titulo="Por OS (projeto)"
         descricao={`Receita e custo lançados no mesmo projeto da Omie desde ${fmtData(ctx.janelaDesde)}, sem de-para — a viagem custa num mês e fatura no seguinte, por isso a janela inteira. Do movimento mais recente ao mais antigo.`}
       >
@@ -310,6 +391,31 @@ export default async function RentabilidadePage({
           />
         </Secao>
       </div>
+
+      <Secao
+        titulo="Custo de propriedade por veículo"
+        descricao={`Depreciação linear: (valor de compra − ${fmtPercent(premissasDep.valorResidualPct * 100)} residual) ÷ ${premissasDep.vidaUtilAnos} anos (fonte: ${premissasDep.fonte}). A parcela do financiamento ou consórcio é caixa e aparece ao lado, sem somar: o veículo seria contado duas vezes. ${capitalSemCompra} veículo(s) sem valor ou data de compra na ficha da gestão.`}
+      >
+        <Tabela
+          colunas={["Veículo", "Operação (Omie + cartão)", "Depreciação", "Operação + depreciação", "Parcela no mês", "Saldo a pagar"]}
+          alinharDireita={[1, 2, 3, 4, 5]}
+          vazio="Sem dados de compra ou financiamento lidos da gestão."
+          linhas={capital.slice(0, 40).map((c) => {
+            const operacao = custoOperacaoPorVeiculo.get(c.vehicleId) ?? 0;
+            return [
+              <span key="p" className="font-medium text-slate-800">
+                {c.placa}
+                {c.financiamentos.length > 0 && <span className="block text-xs font-normal text-slate-500">{c.financiamentos.join(" · ")}</span>}
+              </span>,
+              fmtBRL(operacao),
+              c.depreciacaoCents != null ? fmtBRL(c.depreciacaoCents) : <span key="d" className="text-xs text-amber-700">{c.motivo}</span>,
+              c.depreciacaoCents != null ? fmtBRL(operacao + c.depreciacaoCents) : "—",
+              c.parcelaCents ? fmtBRL(c.parcelaCents) : "—",
+              c.saldoCents ? fmtBRL(c.saldoCents) : "—",
+            ];
+          })}
+        />
+      </Secao>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Secao titulo="Custo por veículo" descricao={`Cobertura: ${fmtPercent(veiculos.coberturaPercent)}`}>

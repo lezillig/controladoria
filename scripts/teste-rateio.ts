@@ -8,7 +8,9 @@
 //
 // Sem banco: o contexto é montado à mão, como nos outros conjuntos.
 import type { OmieCategoria, OmieTitulo, OmieVinculoCentroCusto } from "@prisma/client";
-import { custoPorFuncionario, custoPorVeiculo, custoTotalPeriodo, custosDoPeriodo, rentabilidadePorContrato } from "../src/lib/controladoria/unitEconomics";
+import { casarClientes } from "../src/lib/controladoria/casamentoClientes";
+import { custoDeCapitalPorVeiculo, premissasDaBase } from "../src/lib/controladoria/custoDeCapital";
+import { centrosDeCustoDoMes, custoPorFuncionario, custoPorVeiculo, custoTotalPeriodo, custosDoPeriodo, rentabilidadePorContrato } from "../src/lib/controladoria/unitEconomics";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 import type { AbastecimentoGestao } from "../src/lib/gestao/leitura";
 import type { Periodo } from "../src/lib/controladoria/periodos";
@@ -115,7 +117,7 @@ function contexto(p: {
     vinculos: p.vinculos ?? [],
     contasCorrentes: [],
     config: {},
-    clientes: [{ id: "cli1", nome: "PREFEITURA", active: true }],
+    clientes: [{ id: "cli1", nome: "PREFEITURA", active: true, cnpj: "46395000000139" }, { id: "cli2", nome: "SEM CNPJ LTDA", active: true, cnpj: null }],
     motoristas: [{ id: "m1", name: "JOSE DA SILVA", cpf: "00000000000", active: true, valorHoraCents: null, clienteId: "cli1", departamento: null }],
     veiculos: [{ id: "v1", plate: "ABC1D23", status: "ATIVO", currentMileage: 0, model: "SPRINTER", type: "VAN" }],
     abastecimentos: p.abastecimentos ?? [],
@@ -206,6 +208,85 @@ console.log("\nSÓ CUSTO DE OPERAÇÃO — investimento, financiamento, sócios 
   conferir("só a manutenção fica no custo", c.titulos.length, 1);
   conferir("o que saiu é dito", c.foraDoCustoCents, 79_000_00);
   conferir("visão de uma empresa: o repasse ao grupo é custo dela", custosDoPeriodo({ ...ctx, conexaoId: "x" }, AGOSTO).foraDoCustoCents, 70_000_00);
+}
+
+console.log("\nRECEITA PELO CNPJ DO CLIENTE DA GESTÃO — sem de-para");
+{
+  const daPrefeitura = titulo({ natureza: "RECEBER", parceiroNome: "PREF MUN X", parceiroDocumento: "46.395.000/0001-39", parceiroCodigo: "C9", valorDocumentoCents: 10_000_00 });
+  const deOutro = titulo({ natureza: "RECEBER", parceiroNome: "EMPRESA Y", parceiroDocumento: "61068276000104", parceiroCodigo: "C8", valorDocumentoCents: 3_000_00 });
+  // A prefeitura também vendeu para a Azul: custo não vai para o contrato dela pelo CNPJ.
+  const compraDaPrefeitura = titulo({ parceiroDocumento: "46395000000139", valorDocumentoCents: 500_00 });
+  const ctx = contexto({ titulos: [daPrefeitura, deOutro, compraDaPrefeitura] });
+  const r = rentabilidadePorContrato(ctx, AGOSTO, nomes);
+  conferir("receita do CNPJ do cliente entra no contrato", r.linhas.map((l) => [l.id, l.receitaCents, l.custoCents]), [["cli1", 10_000_00, 0]]);
+  conferir("custo de quem é cliente não vai pelo CNPJ", r.naoAlocadoCents, 500_00);
+  const c = casarClientes(ctx, AGOSTO);
+  conferir(
+    "conferência: casado, sem CNPJ e quem pagou sem cliente",
+    [c.clientes.map((x) => [x.nome, x.cnpj, x.nomesNaOmie, x.receitaCents]), c.semCliente.map((x) => [x.nome, x.receitaCents])],
+    [
+      [["PREFEITURA", "46395000000139", ["PREF MUN X"], 10_000_00], ["SEM CNPJ LTDA", null, [], 0]],
+      [["EMPRESA Y", 3_000_00]],
+    ]
+  );
+  const comDePara = rentabilidadePorContrato(contexto({ titulos: [titulo({ ...daPrefeitura, id: "dp", departamentoCodigo: "D1" })], vinculos: [vinculo({ clienteId: "cli1" })] }), AGOSTO, nomes);
+  conferir("de-para confirmado continua valendo antes do CNPJ", comDePara.linhas[0]?.receitaCents, 10_000_00);
+}
+
+console.log("\nCENTRO DE CUSTO BATIZADO COM A PLACA OU O CONTRATO — sem de-para");
+{
+  const base = contexto({});
+  const ctx = {
+    ...base,
+    clientes: [{ id: "cli1", nome: "PREFEITURA", active: true, cnpj: null, numerosDeContrato: ["CT 12/2026"] }, { id: "cli2", nome: "UNILEVER", active: true, cnpj: null, numerosDeContrato: ["7"] }],
+    departamentos: [
+      { conexaoId: "x", codigo: "D10", descricao: "VAN ABC-1D23" },
+      { conexaoId: "x", codigo: "D11", descricao: "Contrato CT 12/2026 - Prefeitura" },
+      { conexaoId: "x", codigo: "D12", descricao: "ABC1D23 e CT 12/2026 (rateio)" },
+      { conexaoId: "x", codigo: "D13", descricao: "Oficina 7" },
+    ],
+    projetos: [],
+  } as unknown as ContextoAuditoria;
+  const t10 = titulo({ departamentoCodigo: "D10", valorDocumentoCents: 700_00 });
+  const t11 = titulo({ departamentoCodigo: "D11", valorDocumentoCents: 900_00 });
+  const t12 = titulo({ departamentoCodigo: "D12", valorDocumentoCents: 100_00 });
+  const t13 = titulo({ departamentoCodigo: "D13", valorDocumentoCents: 50_00 });
+  const c = { ...ctx, titulos: [t10, t11, t12, t13] } as ContextoAuditoria;
+  conferir("placa no nome do departamento leva ao veículo", custoPorVeiculo(c, AGOSTO).linhas.map((l) => [l.id, l.custoCents]), [["v1", 700_00]]);
+  conferir("número do contrato no nome leva ao cliente dele", rentabilidadePorContrato(c, AGOSTO, nomes).linhas.map((l) => [l.id, l.custoCents]), [["cli1", 900_00]]);
+  conferir(
+    "duas coisas no nome é rateio (de-para); número curto não casa",
+    centrosDeCustoDoMes(c, AGOSTO).map((x) => [x.codigo, x.destino, x.alvo]),
+    [["D11", "contrato", "PREFEITURA"], ["D10", "placa", "ABC1D23"], ["D12", "nenhum", null], ["D13", "nenhum", null]]
+  );
+}
+
+console.log("\nCUSTO DE PROPRIEDADE — depreciação linear e parcela ao lado");
+{
+  const premissas = premissasDaBase(new Map([["vida_util_anos", { valor: 5 }], ["valor_residual_pct", { valor: 0.2 }]]));
+  conferir("premissas da base", [premissas.vidaUtilAnos, premissas.valorResidualPct, premissas.fonte], [5, 0.2, "base de custos do simulador"]);
+  conferir("sem premissa na base, o padrão do simulador e a tela diz", premissasDaBase(new Map()).vidaUtilAnos, 8);
+  const v = (id: string, p: Partial<{ dataCompra: Date | null; valorCompraCents: number | null; dataVenda: Date | null }>) => ({
+    id, plate: id.toUpperCase(), status: "ATIVO", dataCompra: d("2024-03-10T00:00:00"), valorCompraCents: 300_000_00, dataVenda: null, ...p,
+  });
+  const r = custoDeCapitalPorVeiculo(
+    [v("van1", {}), v("velha", { dataCompra: d("2015-01-01T00:00:00") }), v("semcompra", { valorCompraCents: null }), v("vendida", { dataVenda: d("2026-07-01T00:00:00") })],
+    [
+      { vehicleId: "van1", banco: "Itaú", modalidade: "CDC", parcelaCents: 7_500_00, saldoCents: 120_000_00, quitado: false, dataFinal: d("2028-01-01T00:00:00"), posicaoEm: d("2026-08-01") },
+      { vehicleId: "van1", banco: "Bradesco", modalidade: "CONSORCIO", parcelaCents: 2_000_00, saldoCents: 0, quitado: true, dataFinal: null, posicaoEm: d("2026-08-01") },
+    ],
+    premissas,
+    AGOSTO
+  );
+  conferir(
+    "R$ 300 mil, 20% residual, 5 anos = R$ 4.000/mês; quitado não pesa; vida útil encerrada e sem compra dizem por quê; vendida antes do mês sai",
+    r.map((x) => [x.placa, x.depreciacaoCents, x.motivo, x.parcelaCents, x.saldoCents, x.financiamentos]),
+    [
+      ["VAN1", 4_000_00, null, 7_500_00, 120_000_00, ["financiamento Itaú"]],
+      ["VELHA", null, "vida útil encerrada", 0, 0, []],
+      ["SEMCOMPRA", null, "sem valor ou data de compra na ficha", 0, 0, []],
+    ]
+  );
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

@@ -3,9 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { fmtData } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
 import { ufsDoRadar, MODALIDADES } from "@/lib/radar/pncp";
-import { exigirPermissao } from "../../_dados";
+import { exigirPermissao, podeAcao } from "../../_dados";
 import { AvisoVazio } from "../../_componentes";
-import { AcoesDaLicitacao, VarrerAgora } from "./Acoes";
+import { AcoesDaLicitacao, EmailsDoRadar, VarrerAgora } from "./Acoes";
+import { DIAS_DE_PRAZO } from "@/lib/radar/aviso";
 
 // RADAR DE LICITAÇÕES — o que o PNCP publicou e parece serviço da Azul.
 // A varredura diária (api/cron/radar-pncp) traz; aqui o comercial decide.
@@ -37,13 +38,15 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
         : filtro === "descartadas"
           ? { status: "DESCARTADA" }
           : {};
-  const [lista, varredura] = await Promise.all([
+  const podeGerir = await podeAcao(session, "gerir-simulador");
+  const [lista, varredura, config] = await Promise.all([
     prisma.radarLicitacao.findMany({
       where: { companyId: session.companyId, ...where },
       orderBy: [{ aderencia: "asc" }, { encerramentoPropostaEm: "asc" }],
       take: 300,
     }),
     prisma.radarVarredura.findUnique({ where: { companyId: session.companyId } }),
+    prisma.controladoriaConfig.findUnique({ where: { companyId: session.companyId }, select: { emailsRadar: true } }),
   ]);
 
   return (
@@ -54,12 +57,20 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
         </Link>
         <div className="mt-2 flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-xl font-semibold text-slate-900">Radar de licitações</h1>
-          <VarrerAgora />
+          {podeGerir && <VarrerAgora />}
         </div>
         <p className="mt-1 text-sm text-slate-500">
           Publicações do PNCP em {ufsDoRadar().join(", ")} ({Object.values(MODALIDADES).join(", ")}) cujo objeto é transporte de pessoas.
           Compra de veículo, peças, combustível e seguro ficam de fora. Varrido até{" "}
           {varredura ? fmtData(varredura.ultimoDia) : "— (ainda não varreu)"}; a varredura automática roda às 07:50.
+        </p>
+      </div>
+
+      <div className="space-y-1">
+        <EmailsDoRadar atual={config?.emailsRadar ?? ""} podeEditar={podeGerir} />
+        <p className="text-xs text-slate-500">
+          Sai depois da varredura das 07:50, só quando há licitação nova (cada uma uma vez) ou proposta em análise ou participando que
+          fecha em até {DIAS_DE_PRAZO} dias.
         </p>
       </div>
 
@@ -133,7 +144,15 @@ export default async function RadarPage({ searchParams }: { searchParams: Promis
                       {l.motivoDescarte && <span className="block text-xs text-slate-500">{l.motivoDescarte}</span>}
                     </td>
                     <td className="px-3 py-2">
-                      <AcoesDaLicitacao id={l.id} status={l.status} estudoId={l.estudoId} />
+                      {podeGerir ? (
+                        <AcoesDaLicitacao id={l.id} status={l.status} estudoId={l.estudoId} />
+                      ) : (
+                        l.estudoId && (
+                          <Link href={`/simulador/${l.estudoId}`} className="text-xs text-blue-700 hover:underline">
+                            Ver estudo
+                          </Link>
+                        )
+                      )}
                     </td>
                   </tr>
                 );

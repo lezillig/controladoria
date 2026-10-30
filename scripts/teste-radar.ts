@@ -5,6 +5,7 @@
 // antes de a regra mudar. Sem rede e sem banco.
 import { classificar, tipoServicoProvavel } from "../src/lib/radar/aderencia";
 import { dataDeBrasilia, paraRadar } from "../src/lib/radar/pncp";
+import { destinatariosDoRadar, montarAviso, type ItemDoAviso } from "../src/lib/radar/aviso";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -76,6 +77,18 @@ conferir(
   ["46395000000139", "https://pncp.gov.br/app/editais/46395000000139/2026/123", "2500000050", "2026-11-16T14:50:00.000Z", "Pregão eletrônico"]
 );
 conferir("objeto fora do radar não é gravado", paraRadar({ numeroControlePNCP: "x", orgaoEntidade: { cnpj: "1" }, objetoCompra: "Pneus", dataPublicacaoPncp: "2026-10-27T08:00:00" }, "x"), null);
+
+console.log("E-mail do radar");
+conferir("destinatários: separa, valida e tira repetido", destinatariosDoRadar("A@azulmob.com.br; b@azulmob.com.br,a@azulmob.com.br  lixo"), ["a@azulmob.com.br", "b@azulmob.com.br"]);
+const item = (aderencia: string, objeto: string): ItemDoAviso => ({
+  id: objeto, aderencia, status: "NOVA", municipio: "Guaíra", uf: "SP", orgaoNome: "MUNICIPIO <X>", objeto, modalidade: "Pregão eletrônico",
+  encerramentoPropostaEm: new Date("2026-11-16T14:50:00Z"), valorEstimadoCents: BigInt(250_000_000), urlPncp: "https://pncp.gov.br/app/editais/1/2026/1",
+});
+const aviso = montarAviso([item("ALTA", "Transporte escolar rural"), item("MEDIA", "Locação de vans")], [item("ALTA", "Transporte de pacientes")], "https://ctrl.exemplo");
+conferir("assunto conta novas, para conferir e prazos", aviso.assunto, "[Radar de licitações] 1 licitação(ões) nova(s) de transporte · 1 para conferir · 1 proposta(s) fechando em até 3 dias");
+conferir("prazo em horário de Brasília", aviso.texto.includes("proposta até 16/11 11:50"), true);
+conferir("HTML escapa o nome do órgão", aviso.html.includes("MUNICIPIO &lt;X&gt;") && !aviso.html.includes("<X>"), true);
+conferir("link para a tela do radar", aviso.texto.endsWith("Radar: https://ctrl.exemplo/simulador/radar"), true);
 
 if (falhas > 0) {
   console.log(`\n${falhas} falha(s).`);

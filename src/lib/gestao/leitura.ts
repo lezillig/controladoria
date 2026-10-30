@@ -71,6 +71,14 @@ export type ClienteGestao = {
   id: string;
   nome: string;
   active: boolean;
+  // CNPJ do cadastro da gestão (maiúsculas e dígitos). É a chave que casa o
+  // cliente com o parceiro da Omie — nome não serve, a mesma empresa aparece
+  // com três grafias. Nulo enquanto o cadastro não foi completado.
+  cnpj: string | null;
+  // Números dos contratos operacionais do cliente (tabela Contrato da
+  // gestão, ADR-009). Departamento ou projeto da Omie com esse número no
+  // nome é centro de custo do contrato. Vazio sem o GRANT da tabela.
+  numerosDeContrato: string[];
 };
 
 export type AbastecimentoGestao = {
@@ -309,14 +317,27 @@ export async function lerAfastamentos(companyId: string, desde: Date): Promise<A
 }
 
 export async function lerClientes(companyId: string): Promise<ClienteGestao[]> {
-  return ler(
-    () => prismaGestao.$queryRaw<ClienteGestao[]>`
-      SELECT id, nome, active
-      FROM public."Cliente"
-      WHERE "companyId" = ${companyId}
-    `,
-    "os contratos"
-  );
+  const [clientes, contratos] = await Promise.all([
+    ler(
+      () => prismaGestao.$queryRaw<Omit<ClienteGestao, "numerosDeContrato">[]>`
+        SELECT id, nome, active, cnpj
+        FROM public."Cliente"
+        WHERE "companyId" = ${companyId}
+      `,
+      "os contratos"
+    ),
+    lerOpcional(
+      () => prismaGestao.$queryRaw<{ clienteId: string; numero: string }[]>`
+        SELECT "clienteId", numero
+        FROM public."Contrato"
+        WHERE "companyId" = ${companyId}
+      `,
+      "os contratos operacionais (Contrato)"
+    ),
+  ]);
+  const porCliente = new Map<string, string[]>();
+  for (const c of contratos) porCliente.set(c.clienteId, [...(porCliente.get(c.clienteId) ?? []), c.numero]);
+  return clientes.map((c) => ({ ...c, numerosDeContrato: porCliente.get(c.id) ?? [] }));
 }
 
 // Abastecimentos do cartão de frota. Recortado por data porque é a maior
@@ -483,4 +504,55 @@ export async function listarEmpresasAtivas(): Promise<{ id: string; name: string
     `,
     "as empresas"
   );
+}
+
+// PATRIMÔNIO DA FROTA: compra e venda do veículo (ficha da gestão, ADR-010) e
+// os financiamentos/consórcios com o rateio por placa (planilha "Consórcios e
+// Financiamentos", importada na gestão). Opcional: depende do GRANT das
+// tabelas de financiamento (docs/papel-leitura-gestao.sql).
+export type PatrimonioVeiculoGestao = {
+  id: string;
+  plate: string | null;
+  status: string;
+  dataCompra: Date | null;
+  valorCompraCents: number | null;
+  dataVenda: Date | null;
+};
+export type FinanciamentoVeiculoGestao = {
+  vehicleId: string;
+  banco: string;
+  modalidade: string;
+  parcelaCents: number | null;
+  saldoCents: number | null;
+  quitado: boolean;
+  dataFinal: Date | null;
+  posicaoEm: Date;
+};
+
+export async function lerPatrimonioDaFrota(
+  companyId: string
+): Promise<{ veiculos: PatrimonioVeiculoGestao[]; financiamentos: FinanciamentoVeiculoGestao[] }> {
+  const [veiculos, financiamentos] = await Promise.all([
+    lerOpcional(
+      () => prismaGestao.$queryRaw<PatrimonioVeiculoGestao[]>`
+        SELECT id, plate, status::text AS status, "dataCompra", "valorCompraCents", "dataVenda"
+        FROM public."Vehicle"
+        WHERE "companyId" = ${companyId}
+      `,
+      "compra e venda dos veículos (Vehicle)"
+    ),
+    lerOpcional(
+      () => prismaGestao.$queryRaw<FinanciamentoVeiculoGestao[]>`
+        SELECT fv."vehicleId", f.banco, f.modalidade::text AS modalidade,
+               COALESCE(fv."parcelaCents", f."valorParcelaCents") AS "parcelaCents",
+               COALESCE(fv."saldoCents", f."saldoQuitacaoCents") AS "saldoCents",
+               f.quitado, f."dataFinal", f."posicaoEm"
+        FROM public."FinanciamentoVeiculo" fv
+        JOIN public."Financiamento" f ON f.id = fv."financiamentoId"
+        WHERE fv."companyId" = ${companyId} AND fv.ativo AND fv."vehicleId" IS NOT NULL
+      `,
+      "os financiamentos por veículo (Financiamento)"
+    ),
+  ]);
+  return { veiculos, financiamentos };
 }

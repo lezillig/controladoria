@@ -90,6 +90,13 @@ GRANT SELECT ON public."AnpPrecoReferencia" TO controladoria_leitura;  -- preço
 GRANT SELECT ON public."TimeClockEntry" TO controladoria_leitura;  -- pagamento a quem não bateu ponto; ponto em dia de atestado
 GRANT SELECT ON public."DriverLeave"    TO controladoria_leitura;  -- afastamento que explica (ou não) a ausência de rastro
 
+-- Contrato operacional e financiamento por veículo (rentabilidade: centro de
+-- custo com o número do contrato no nome; custo de propriedade do veículo).
+-- Opcionais como as de cima: sem elas, essas duas leituras ficam vazias.
+GRANT SELECT ON public."Contrato"             TO controladoria_leitura;
+GRANT SELECT ON public."Financiamento"        TO controladoria_leitura;
+GRANT SELECT ON public."FinanciamentoVeiculo" TO controladoria_leitura;
+
 -- ---------------------------------------------------------------------------
 -- 4. Garantir que continue somente leitura no futuro
 -- ---------------------------------------------------------------------------
