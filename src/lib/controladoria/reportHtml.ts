@@ -1,5 +1,6 @@
 import type { AuditFinding } from "@prisma/client";
 import { ROTULO_FAIXA, rotuloDoMes, type MesEmFormacao } from "./mesEmFormacao";
+import type { ResumoDaSemana } from "./semana";
 import { fmtBRL, fmtBRLCompacto, fmtData, fmtNumero, fmtPercent, fmtVariacao } from "./format";
 import type { PanoramaFinanceiro } from "./analytics";
 import type { IndicadorMedido } from "./bsc";
@@ -80,6 +81,8 @@ export type DadosRelatorio = {
   // O mês se formando (ver mesEmFormacao.ts). Opcional: a leitura falhar não
   // derruba o relatório.
   mesEmFormacao?: MesEmFormacao | null;
+  // Só às segundas: a semana em revista (ver semana.ts).
+  semana?: ResumoDaSemana | null;
 };
 
 // Escapa texto vindo do banco (nome de fornecedor, descricao de achado) antes
@@ -267,6 +270,31 @@ export function montarAssunto(dados: DadosRelatorio): string {
 
 // O MÊS SE FORMANDO no e-mail: previsão, prontidão do fechamento, o alerta
 // de margem e quem cobrar hoje (até dez clientes; o resto está no painel).
+const ROTULO_PERFIL: Record<string, string> = { admin: "Diretoria", gestor: "Gestor", operacao: "Operação", financeiro: "Financeiro", rh: "RH" };
+
+function secaoSemana(s: ResumoDaSemana): string {
+  const cartoes = [
+    cartaoKpi(
+      "Pendências esperando decisão",
+      String(s.pendencias.abertas),
+      `${s.pendencias.paradas} paradas há mais de 7 dias · ${s.pendencias.decididas} decididas na semana${s.pendencias.porPerfil.length ? ` · ${s.pendencias.porPerfil.map((p) => `${ROTULO_PERFIL[p.perfil] ?? p.perfil} ${p.abertas}`).join(", ")}` : ""}`,
+      s.pendencias.paradas > 0 ? "#b45309" : CINZA_TEXTO
+    ),
+    cartaoKpi("Achados de auditoria", `${s.achados.novos} novos`, `${s.achados.resolvidos} resolvidos na semana · ${s.achados.abertos} em aberto`, s.achados.novos > s.achados.resolvidos ? "#b45309" : "#15803d"),
+  ];
+  if (s.financiamentos) {
+    cartoes.push(
+      cartaoKpi(
+        "Financiamentos em atraso na Omie",
+        fmtBRL(s.financiamentos.atrasadoCents),
+        `${s.financiamentos.contratosEmAtraso} contrato(s) · ${s.financiamentos.naoLancadas} parcela(s) a vencer não lançada(s)`,
+        s.financiamentos.atrasadoCents > 0 ? "#b91c1c" : "#15803d"
+      )
+    );
+  }
+  return secao("A semana", gradeDeCartoes(cartoes), `De ${fmtData(s.inicio)} a ${fmtData(s.fim)}: o que a fila decidiu, o que ficou parado e o que a auditoria achou.`);
+}
+
 function secaoMesEmFormacao(m: MesEmFormacao): string {
   const pct = (v: number | null, casas = 0) => (v === null ? "—" : fmtPercent(v * 100, casas));
   const cartoes: string[] = [];
@@ -423,6 +451,9 @@ export function montarHtml(dados: DadosRelatorio): string {
 
   // ---- O mês se formando ----
   if (dados.mesEmFormacao) partes.push(secaoMesEmFormacao(dados.mesEmFormacao));
+
+  // ---- A semana (segundas) ----
+  if (dados.semana) partes.push(secaoSemana(dados.semana));
 
   // ---- Achados prioritários ----
   if (criticos.length > 0) {
@@ -729,6 +760,14 @@ export function montarTexto(dados: DadosRelatorio): string {
   linhas.push(`Títulos a receber do mês: ${fmtBRL(c.mesAtual.receitaCents)} (${fmtVariacao(c.variacoes.receitaMesVsAnterior)} ${c.rotuloDaVariacaoMensal})`);
   linhas.push(`Títulos a pagar do mês: ${fmtBRL(c.mesAtual.despesaCents)} (${fmtVariacao(c.variacoes.despesaMesVsAnterior)})`);
   linhas.push("");
+  if (dados.semana) {
+    const s = dados.semana;
+    linhas.push(`A SEMANA (${fmtData(s.inicio)} a ${fmtData(s.fim)})`);
+    linhas.push(`Pendências esperando decisão: ${s.pendencias.abertas} (${s.pendencias.paradas} paradas há mais de 7 dias); decididas na semana: ${s.pendencias.decididas}`);
+    linhas.push(`Achados: ${s.achados.novos} novos, ${s.achados.resolvidos} resolvidos, ${s.achados.abertos} em aberto`);
+    if (s.financiamentos) linhas.push(`Financiamentos em atraso na Omie: ${fmtBRL(s.financiamentos.atrasadoCents)} em ${s.financiamentos.contratosEmAtraso} contrato(s); ${s.financiamentos.naoLancadas} parcela(s) a vencer não lançada(s)`);
+    linhas.push("");
+  }
   if (dados.mesEmFormacao) {
     const m = dados.mesEmFormacao;
     linhas.push("O MÊS SE FORMANDO");

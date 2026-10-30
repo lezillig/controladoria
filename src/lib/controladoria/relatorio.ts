@@ -1,5 +1,6 @@
 import type { OmieConexao, Prisma } from "@prisma/client";
 import { montarMesEmFormacao } from "./mesEmFormacao";
+import { ehSegunda, montarSemana } from "./semana";
 import { prisma } from "@/lib/prisma";
 import { urlDoSistema } from "@/lib/appUrl";
 import { buscarEmpresa } from "@/lib/gestao/leitura";
@@ -110,6 +111,8 @@ export async function gerarEEnviarRelatorio(
       console.warn("[relatorio] mês em formação indisponível", e instanceof Error ? e.message.slice(0, 200) : e);
       return null;
     }),
+    // A semana em revista, só no relatório de segunda (consolidado do grupo).
+    semana: !conexao && ehSegunda(ctx.dataReferencia) ? await montarSemana(ctx.companyId, ctx.dataReferencia).catch(() => null) : null,
   };
 
   const assunto = montarAssunto(dados);

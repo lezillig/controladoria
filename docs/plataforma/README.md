@@ -85,6 +85,9 @@ Omie:
   viagens da Ituran que a gestão importa (ou dos check-ins).
 - [x] Nota fiscal de cada veículo comprado conferida nas contas a pagar
   (`POST /api/integracao/notas-de-compra`).
+- [x] A semana em revista no relatório de segunda para a diretoria:
+  pendências esperando decisão (e as paradas há mais de 7 dias), achados que
+  entraram e saíram, financiamentos em atraso na Omie.
 - [ ] Contratos e linhas — em espera, a pedido (lembrete agendado).
 
 As telas de frota, motoristas e multas que chegaram a existir aqui foram

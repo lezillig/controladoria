@@ -257,6 +257,16 @@ async function noBanco() {
     const ag2 = await rodarAgenteFinanciamentos(EMP, hoje, true);
     conferir("rodar de novo não duplica", [ag2.pendencias, await prisma.audPendencia.count({ where: { companyId: EMP } })], [0, 3]);
 
+    console.log("\n7b. A semana em revista (relatório de segunda)");
+    const { ehSegunda, montarSemana } = await import("../src/lib/controladoria/semana");
+    conferir("segunda-feira no horário de São Paulo", [ehSegunda(new Date("2026-11-02T10:00:00Z")), ehSegunda(new Date("2026-11-02T02:00:00Z"))], [true, false]);
+    const semana = await montarSemana(EMP, new Date());
+    conferir(
+      "pendências abertas por perfil, decididas e financiamentos em atraso",
+      [semana.pendencias.abertas, semana.pendencias.porPerfil, semana.pendencias.decididas, semana.financiamentos?.contratosEmAtraso],
+      [2, [{ perfil: "financeiro", abertas: 2 }], 1, 1]
+    );
+
     console.log("\n8. O patrimônio para a rentabilidade");
     await sql(`INSERT INTO public."Multa" (id, "companyId", "vehicleId", "dataInfracao", "valorCents", "omieValorPagoCents", "quemPaga") VALUES
       ('mu-1', '${EMP}', 'vf-a', '2026-10-05', 19523, 15618, 'empresa'), ('mu-2', '${EMP}', 'vf-a', '2026-10-06', 13000, NULL, 'motorista'), ('mu-3', '${EMP}', 'vf-a', '2026-09-06', 9000, NULL, 'empresa')`);
