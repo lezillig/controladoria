@@ -32,6 +32,7 @@ import {
   Contact,
   Inbox,
   HandCoins,
+  History,
 } from "lucide-react";
 import type { Permissao } from "@/lib/acessos";
 
@@ -104,6 +105,8 @@ const NAV: NavItem[] = [
   // O risco lido nos dados (auditoria), na empresa (conformidade) e as
   // conferências de documento contra pagamento.
   { secao: "Controle e auditoria", href: "/auditoria", label: "Auditoria e achados", icon: ShieldCheck, permissao: "auditoria" },
+  // Quem mudou o quê e quando (cadastro, pendências, ligação com a Omie).
+  { href: "/auditoria/trilha", label: "Trilha de alterações", icon: History, permissao: "auditoria" },
   { href: "/conformidade", label: "Conformidade", icon: ScrollText, permissao: "conformidade" },
   // O projeto (OS) do custo contra o da cobrança: serviço pago e não faturado.
   { href: "/conferencia-os", label: "Conferência de OS", icon: ListChecks, permissao: "titulos" },

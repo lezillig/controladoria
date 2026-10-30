@@ -129,6 +129,13 @@ async function puros() {
   const nota = ig.agruparNota("v1", "1519502", [tn("1519502/1", 100_000_00, true), tn("1519502/2", 100_000_00, false), tn("999", 5_00, true)]);
   conferir("nota em duas parcelas: lançado, pago e não quitada", [nota?.titulos, nota?.valorCents, nota?.pagoCents, nota?.quitada], [2, 200_000_00, 100_000_00, false]);
 
+  const { resumoDaMudanca } = await import("../src/lib/auditoria/resumoTrilha");
+  conferir(
+    "trilha: o que mudou, campo a campo",
+    resumoDaMudanca({ status: "ativo", placa: "ABC1D23", obs: null }, { status: "vendido", placa: "ABC1D23", valor: 100 }),
+    ["status: ativo → vendido", "obs: vazio (removido)", "valor: 100"]
+  );
+
   console.log("\n4b. Custo por km");
   const { custoPorKm } = await import("../src/lib/frota/custoPorKm");
   const ck = custoPorKm(

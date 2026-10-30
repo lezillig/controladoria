@@ -88,6 +88,8 @@ Omie:
 - [x] A semana em revista no relatório de segunda para a diretoria:
   pendências esperando decisão (e as paradas há mais de 7 dias), achados que
   entraram e saíram, financiamentos em atraso na Omie.
+- [x] Trilha de alterações consultável (Controle e auditoria › Trilha de
+  alterações): quem mudou o quê e quando, por período, tabela e autor.
 - [ ] Contratos e linhas — em espera, a pedido (lembrete agendado).
 
 As telas de frota, motoristas e multas que chegaram a existir aqui foram
