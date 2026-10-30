@@ -145,15 +145,17 @@ export default async function CaixaMensalPage({
       </form>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-        <Kpi rotulo="Saldo inicial" valor={reais(m[0]?.saldoInicialCents ?? caixa.saldoInicialCents)} apoio={`em ${fmtData(desde)}`} />
-        <Kpi rotulo="Entradas" valor={reais(entradas)} apoio={`${meses} meses`} />
-        <Kpi rotulo="Saídas" valor={reais(saidas)} apoio={`${meses} meses`} />
-        <Kpi rotulo="Geração de caixa" valor={reais(geracao)} apoio={`${mesesNegativos} mês(es) fechado(s) negativo(s)`} tom={geracao >= 0 ? "bom" : "ruim"} />
-        <Kpi rotulo="Saldo final" valor={reais(ultimo?.saldoFinalCents ?? 0)} apoio="hoje, pelo extrato" tom={(ultimo?.saldoFinalCents ?? 0) >= 0 ? "neutro" : "ruim"} />
-        <Kpi rotulo="Margem de caixa" valor={pct(margemMedia)} apoio="média dos meses fechados" tom={(margemMedia ?? 0) >= 0 ? "neutro" : "atencao"} />
+        {/* Os seis cartões são linhas da movimentação mês a mês, logo abaixo. */}
+        <Kpi href="#movimentacao" rotulo="Saldo inicial" valor={reais(m[0]?.saldoInicialCents ?? caixa.saldoInicialCents)} apoio={`em ${fmtData(desde)}`} />
+        <Kpi href="#movimentacao" rotulo="Entradas" valor={reais(entradas)} apoio={`${meses} meses`} />
+        <Kpi href="#movimentacao" rotulo="Saídas" valor={reais(saidas)} apoio={`${meses} meses`} />
+        <Kpi href="#movimentacao" rotulo="Geração de caixa" valor={reais(geracao)} apoio={`${mesesNegativos} mês(es) fechado(s) negativo(s)`} tom={geracao >= 0 ? "bom" : "ruim"} />
+        <Kpi href="#movimentacao" rotulo="Saldo final" valor={reais(ultimo?.saldoFinalCents ?? 0)} apoio="hoje, pelo extrato" tom={(ultimo?.saldoFinalCents ?? 0) >= 0 ? "neutro" : "ruim"} />
+        <Kpi href="#movimentacao" rotulo="Margem de caixa" valor={pct(margemMedia)} apoio="média dos meses fechados" tom={(margemMedia ?? 0) >= 0 ? "neutro" : "atencao"} />
       </div>
 
       <Secao
+        id="movimentacao"
         titulo="Movimentação mês a mês"
         descricao="Realizado pelo extrato. Transferência entre contas não é entrada nem saída: fica fora delas, numa linha própria abaixo da geração de caixa, e só move o saldo — somando todas as contas, uma ponta anula a outra. O mês corrente está em formação."
       >
@@ -322,13 +324,19 @@ function AuditoriaDaConta({ a }: { a: Awaited<ReturnType<typeof auditoriaDeConta
         </p>
       </div>
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi rotulo="Saídas da conta" valor={reais(a.saidasCents)} apoio={`entradas ${reais(a.entradasCents)}`} />
-        <Kpi rotulo="Para funcionários" valor={reais(soma(funcionarios))} apoio={`${funcionarios.length} pessoa(s)`} />
-        <Kpi rotulo="Para quem não é funcionário" valor={reais(soma(naoFunc))} apoio={`${naoFunc.length} beneficiário(s)`} tom={naoFunc.length ? "atencao" : "bom"} />
-        <Kpi rotulo="Achados de gravidade alta" valor={fmtNumero(altas.length)} apoio={`${a.achados.length} achado(s) no total`} tom={altas.length ? "ruim" : "bom"} />
+        {/* As saídas por usuário somam o total da conta. */}
+        <Kpi href="#quem-lancou" rotulo="Saídas da conta" valor={reais(a.saidasCents)} apoio={`entradas ${reais(a.entradasCents)}`} />
+        <Kpi
+          semDetalhe="pagamento a funcionário não é listado por pessoa nesta tela (é salário); a folha tem tela própria"
+          rotulo="Para funcionários"
+          valor={reais(soma(funcionarios))}
+          apoio={`${funcionarios.length} pessoa(s)`}
+        />
+        <Kpi href="#nao-funcionarios" rotulo="Para quem não é funcionário" valor={reais(soma(naoFunc))} apoio={`${naoFunc.length} beneficiário(s)`} tom={naoFunc.length ? "atencao" : "bom"} />
+        <Kpi href="#achados" rotulo="Achados de gravidade alta" valor={fmtNumero(altas.length)} apoio={`${a.achados.length} achado(s) no total`} tom={altas.length ? "ruim" : "bom"} />
       </div>
 
-      <Secao titulo="Saídas para quem não é funcionário da Azul ou da MCZ" descricao="Por beneficiário, do maior para o menor. Clique para ver cada pagamento. Empresas do grupo ficam em lista à parte, logo abaixo.">
+      <Secao id="nao-funcionarios" titulo="Saídas para quem não é funcionário da Azul ou da MCZ" descricao="Por beneficiário, do maior para o menor. Clique para ver cada pagamento. Empresas do grupo ficam em lista à parte, logo abaixo.">
         <ListaDeBeneficiarios lista={naoFunc} />
         {doGrupo.length > 0 && (
           <details className="mt-4">
@@ -342,7 +350,7 @@ function AuditoriaDaConta({ a }: { a: Awaited<ReturnType<typeof auditoriaDeConta
         )}
       </Secao>
 
-      <Secao titulo="Achados de auditoria" descricao="As checagens rodam sobre todas as saídas do período. Gravidade alta primeiro.">
+      <Secao id="achados" titulo="Achados de auditoria" descricao="As checagens rodam sobre todas as saídas do período. Gravidade alta primeiro.">
         {a.achados.length === 0 ? (
           <p className="py-4 text-center text-sm text-slate-500">Nenhum achado.</p>
         ) : (
@@ -379,7 +387,7 @@ function AuditoriaDaConta({ a }: { a: Awaited<ReturnType<typeof auditoriaDeConta
         )}
       </Secao>
 
-      <Secao titulo="Quem lançou as saídas" descricao="Usuário da Omie que incluiu ou alterou por último o título pago. Saída sem título não tem usuário registrado.">
+      <Secao id="quem-lancou" titulo="Quem lançou as saídas" descricao="Usuário da Omie que incluiu ou alterou por último o título pago. Saída sem título não tem usuário registrado.">
         <Tabela colunas={["Usuário", "Saídas", "Valor"]} alinharDireita={[1, 2]} linhas={a.usuarios.map((u) => [u.usuario, fmtNumero(u.saidas), fmtBRL(u.saidasCents)])} />
       </Secao>
     </>
@@ -419,12 +427,18 @@ function PagamentosAoNome({ p }: { p: Awaited<ReturnType<typeof pagamentosAoNome
   return (
     <div className="mt-4 space-y-4">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi rotulo="Pago (títulos)" valor={reais(pago)} apoio={`${p.titulos.length} título(s)`} />
-        <Kpi rotulo="Em aberto" valor={reais(aberto)} />
-        <Kpi rotulo="Saídas no extrato" valor={reais(extrato)} apoio={`${p.extrato.length} linha(s)`} />
-        <Kpi rotulo="Nomes encontrados" valor={fmtNumero(p.nomes.length)} apoio="confira se é a mesma pessoa" tom={p.nomes.length > 1 ? "atencao" : "neutro"} />
+        <Kpi href="#titulos-ao-nome" rotulo="Pago (títulos)" valor={reais(pago)} apoio={`${p.titulos.length} título(s)`} />
+        <Kpi href="#titulos-ao-nome" rotulo="Em aberto" valor={reais(aberto)} />
+        <Kpi href="#extrato-ao-nome" rotulo="Saídas no extrato" valor={reais(extrato)} apoio={`${p.extrato.length} linha(s)`} />
+        <Kpi href="#nomes-ao-nome" rotulo="Nomes encontrados" valor={fmtNumero(p.nomes.length)} apoio="confira se é a mesma pessoa" tom={p.nomes.length > 1 ? "atencao" : "neutro"} />
       </div>
+      {p.nomes.length > 0 && (
+        <p id="nomes-ao-nome" className="scroll-mt-4 text-xs text-slate-600">
+          Nomes encontrados: {p.nomes.join(" · ")}
+        </p>
+      )}
       {p.titulos.length > 0 && (
+        <div id="titulos-ao-nome" className="scroll-mt-4">
         <Tabela
           colunas={["Empresa", "Beneficiário", "Documento", "Categoria", "Vencimento", "Valor", "Pago", "Conta(s)", "Lançado por"]}
           alinharDireita={[5, 6]}
@@ -440,9 +454,10 @@ function PagamentosAoNome({ p }: { p: Awaited<ReturnType<typeof pagamentosAoNome
             t.usuarioInclusao ?? "—",
           ])}
         />
+        </div>
       )}
       {p.extrato.length > 0 && (
-        <details>
+        <details id="extrato-ao-nome" className="scroll-mt-4" open>
           <summary className="cursor-pointer text-sm font-medium text-slate-700">Linhas de extrato que citam o nome ({p.extrato.length})</summary>
           <div className="mt-2">
             <Tabela

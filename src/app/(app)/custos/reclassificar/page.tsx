@@ -98,20 +98,15 @@ export default async function ReclassificarPage({ searchParams }: { searchParams
 
       {/* Os cartões levam à lista que contam. */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <a href="#de-para" className="block rounded-2xl hover:ring-2 hover:ring-blue-200">
-          <Kpi
-            rotulo="Mudam de linha"
-            valor={String(deLinha.length)}
-            apoio={`${fmtBRL(deLinha.reduce((a, s) => a + s.valorCents, 0))} em 12 meses`}
-            tom={deLinha.length ? "atencao" : "bom"}
-          />
-        </a>
-        <a href="#de-para" className="block rounded-2xl hover:ring-2 hover:ring-blue-200">
-          <Kpi rotulo="Ganham subgrupo do catálogo" valor={String(deSubgrupo.length)} apoio="mesma linha, subgrupo com natureza de custo" />
-        </a>
-        <a href="#omie" className="block rounded-2xl hover:ring-2 hover:ring-blue-200">
-          <Kpi rotulo="Pedem ação no Omie" valor={String(noOmie.length)} apoio="categoria que mistura naturezas · ver abaixo" tom={noOmie.length ? "atencao" : "bom"} />
-        </a>
+        <Kpi
+          href="#de-para"
+          rotulo="Mudam de linha"
+          valor={String(deLinha.length)}
+          apoio={`${fmtBRL(deLinha.reduce((a, s) => a + s.valorCents, 0))} em 12 meses`}
+          tom={deLinha.length ? "atencao" : "bom"}
+        />
+        <Kpi href="#de-para" rotulo="Ganham subgrupo do catálogo" valor={String(deSubgrupo.length)} apoio="mesma linha, subgrupo com natureza de custo" />
+        <Kpi href="#omie" rotulo="Pedem ação no Omie" valor={String(noOmie.length)} apoio="categoria que mistura naturezas · ver abaixo" tom={noOmie.length ? "atencao" : "bom"} />
       </div>
 
       <div id="de-para" className="scroll-mt-4">

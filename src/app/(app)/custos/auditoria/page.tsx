@@ -80,10 +80,12 @@ export default async function AuditoriaDoMesPage({ searchParams }: { searchParam
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi rotulo="Despesas por competência" valor={reais(comp)} apoio="o que está no DRE" />
-        <Kpi rotulo="Despesas que vencem no mês" valor={reais(venc)} apoio="títulos a pagar com vencimento no mês" />
-        <Kpi rotulo="Pago no mês" valor={reais(pago)} apoio="baixas de títulos a pagar no mês" />
-        <Kpi rotulo="Pago no mês, contado em outro mês" valor={reais(fora)} apoio={pago > 0 ? `${fmtPercent((fora / pago) * 100, 0)} do pago — fica fora do DRE deste mês` : undefined} tom={pago > 0 && fora / pago > 0.3 ? "atencao" : "neutro"} />
+        {/* As três primeiras abrem a tabela linha a linha (cada linha abre nas
+            categorias); a quarta, a lista dos títulos pagos fora do mês. */}
+        <Kpi href="#linha-a-linha" rotulo="Despesas por competência" valor={reais(comp)} apoio="o que está no DRE" />
+        <Kpi href="#linha-a-linha" rotulo="Despesas que vencem no mês" valor={reais(venc)} apoio="títulos a pagar com vencimento no mês" />
+        <Kpi href="#linha-a-linha" rotulo="Pago no mês" valor={reais(pago)} apoio="baixas de títulos a pagar no mês" />
+        <Kpi href="#pagos-fora-do-mes" rotulo="Pago no mês, contado em outro mês" valor={reais(fora)} apoio={pago > 0 ? `${fmtPercent((fora / pago) * 100, 0)} do pago — fica fora do DRE deste mês` : undefined} tom={pago > 0 && fora / pago > 0.3 ? "atencao" : "neutro"} />
       </div>
 
       <Secao
@@ -108,7 +110,7 @@ export default async function AuditoriaDoMesPage({ searchParams }: { searchParam
         )}
       </Secao>
 
-      <Secao titulo="Linha a linha do DRE" descricao="Competência é o que o DRE mostra (despesa = vence no mês, menos as a vencer ainda em aberto). Pago muito diferente do que vence aponta pagamento atrasado ou adiantado. Clique para ver as categorias.">
+      <Secao id="linha-a-linha" titulo="Linha a linha do DRE" descricao="Competência é o que o DRE mostra (despesa = vence no mês, menos as a vencer ainda em aberto). Pago muito diferente do que vence aponta pagamento atrasado ou adiantado. Clique para ver as categorias.">
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead>
@@ -159,6 +161,7 @@ export default async function AuditoriaDoMesPage({ searchParams }: { searchParam
       </Secao>
 
       <Secao
+        id="pagos-fora-do-mes"
         titulo={`Pago em ${rotulo(chave)}, contado em outro mês (${fmtNumero(a.pagosForaDoMes.length)}${a.pagosForaDoMes.length === 300 ? "+" : ""})`}
         descricao="Títulos a pagar baixados no mês que vencem em outro mês — pagamento atrasado de um mês anterior ou adiantado do seguinte. Os maiores primeiro."
       >

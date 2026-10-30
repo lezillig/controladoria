@@ -15,7 +15,17 @@ import { larguraPainel, primaryButtonClass, secondaryButtonClass } from "@/lib/u
 // de cada um, a última versão — preço, margem e em que pé está —, porque é
 // isso que se procura ao abrir a tela: "onde paramos naquele edital?".
 
-export default async function SimuladorPage() {
+// O recorte da lista que os cartões abrem (?situacao=): cada cartão mostra os
+// estudos que conta.
+const RECORTES: Record<string, { rotulo: string; status: string[] }> = {
+  EM_ESTUDO: { rotulo: "em estudo", status: ["EM_ESTUDO"] },
+  PROPOSTA_ENVIADA: { rotulo: "com proposta enviada", status: ["PROPOSTA_ENVIADA"] },
+  DECIDIDOS: { rotulo: "decididos (ganhos e perdidos)", status: ["GANHO", "PERDIDO"] },
+};
+
+export default async function SimuladorPage({ searchParams }: { searchParams: Promise<{ situacao?: string }> }) {
+  const pedido = (await searchParams).situacao ?? "";
+  const recorte = Object.hasOwn(RECORTES, pedido) ? RECORTES[pedido] : null;
   const session = await exigirPermissao("simulador");
   const podeEditar = await podeAcao(session, "gerir-simulador");
 
@@ -32,6 +42,7 @@ export default async function SimuladorPage() {
   const enviados = estudos.filter((e) => e.status === "PROPOSTA_ENVIADA").length;
   const decididos = estudos.filter((e) => e.status === "GANHO" || e.status === "PERDIDO");
   const ganhos = decididos.filter((e) => e.status === "GANHO").length;
+  const listados = recorte ? estudos.filter((e) => recorte.status.includes(e.status)) : estudos;
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -59,10 +70,11 @@ export default async function SimuladorPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi rotulo="Em estudo" valor={String(emEstudo)} />
-        <Kpi rotulo="Propostas enviadas" valor={String(enviados)} />
-        <Kpi rotulo="Taxa de sucesso" valor={decididos.length > 0 ? fmtPercent((ganhos / decididos.length) * 100, 0) : "—"} apoio={decididos.length === 0 ? "nenhum estudo decidido ainda" : `${ganhos} de ${decididos.length} ${decididos.length === 1 ? "decidido" : "decididos"}`} />
+        <Kpi href="/simulador?situacao=EM_ESTUDO#estudos" rotulo="Em estudo" valor={String(emEstudo)} />
+        <Kpi href="/simulador?situacao=PROPOSTA_ENVIADA#estudos" rotulo="Propostas enviadas" valor={String(enviados)} />
+        <Kpi href="/simulador?situacao=DECIDIDOS#estudos" rotulo="Taxa de sucesso" valor={decididos.length > 0 ? fmtPercent((ganhos / decididos.length) * 100, 0) : "—"} apoio={decididos.length === 0 ? "nenhum estudo decidido ainda" : `${ganhos} de ${decididos.length} ${decididos.length === 1 ? "decidido" : "decididos"}`} />
         <Kpi
+          href="/simulador/base"
           rotulo="Base de custos"
           valor={totalBase > 0 ? `${totalBase} parâmetros` : "vazia"}
           apoio={totalBase > 0 ? "vigentes, do Gabarito" : "as simulações usam estimativas"}
@@ -83,7 +95,18 @@ export default async function SimuladorPage() {
         </div>
       )}
 
-      <Secao titulo="Estudos" descricao="Do mais recente ao mais antigo. A última versão de cada estudo mostra o preço e a margem.">
+      <Secao
+        id="estudos"
+        titulo={recorte ? `Estudos ${recorte.rotulo} (${listados.length})` : "Estudos"}
+        descricao="Do mais recente ao mais antigo. A última versão de cada estudo mostra o preço e a margem."
+        acao={
+          recorte ? (
+            <Link href="/simulador#estudos" className="text-xs font-medium text-blue-700 hover:underline">
+              Ver todos
+            </Link>
+          ) : undefined
+        }
+      >
         {estudos.length === 0 ? (
           <div className="space-y-4">
             <AvisoVazio
@@ -97,7 +120,7 @@ export default async function SimuladorPage() {
             <Tabela
               colunas={["Estudo", "Tipo", "Situação", "Versões", "Preço (última versão)", "Margem", "Lucro/apuração", "Atualizado", "Exportar", ...(podeEditar ? [""] : [])]}
               alinharDireita={[3, 4, 5, 6]}
-              linhas={estudos.map((e) => {
+              linhas={listados.map((e) => {
                 const v = e.simulacoes[0];
                 const unidade = ((v?.entrada as { unidadePreco?: UnidadePreco } | null)?.unidadePreco ?? e.unidadePreco) as UnidadePreco;
                 return [

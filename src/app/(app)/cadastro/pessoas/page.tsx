@@ -36,12 +36,14 @@ export default async function PessoasPage({ searchParams }: { searchParams: Prom
         <p className="mt-1 max-w-4xl text-sm text-slate-500">Quem trabalha na operação, pela chave do CPF (mascarado aqui). Hoje vem da gestão de motoristas; o sistema de ponto entra como segunda fonte.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi rotulo="Ativas" valor={fmtNumero(total)} />
+        {/* Cada contagem abre a lista com o mesmo recorte (ativas, e o cargo). */}
+        <Kpi rotulo="Ativas" valor={fmtNumero(total)} href="/cadastro/pessoas#pessoas" />
         {CARGOS.map((c) => (
-          <Kpi key={c} rotulo={c} valor={fmtNumero(porCargo.find((x) => x.cargo === c)?._count ?? 0)} />
+          <Kpi key={c} rotulo={c} valor={fmtNumero(porCargo.find((x) => x.cargo === c)?._count ?? 0)} href={`/cadastro/pessoas?cargo=${encodeURIComponent(c)}#pessoas`} />
         ))}
       </div>
       <Secao
+        id="pessoas"
         titulo={`${fmtNumero(pessoas.length)} pessoa(s)${pessoas.length === LIMITE ? ` (as ${LIMITE} primeiras)` : ""}`}
         acao={
           <form className="flex flex-wrap gap-2 text-xs" action="/cadastro/pessoas">

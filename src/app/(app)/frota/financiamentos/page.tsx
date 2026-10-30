@@ -47,6 +47,10 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
     for (const [k, v] of Object.entries({ ver, produto: params.produto, inst: params.inst, q: params.q, encerrados: params.encerrados, ...extra })) if (v) p.set(k, v);
     return `/frota/financiamentos?${p}`;
   };
+  // O drill-down dos cartões: a visão que lista o número, sem os filtros da
+  // lista (o cartão é do total, não do recorte).
+  const geral = (ancora: string) => `${href({ ver: "geral", produto: "", inst: "", q: "", encerrados: "" })}#${ancora}`;
+  const todosOsAtivos = `${href({ ver: "contratos", produto: "", inst: "", q: "", encerrados: "" })}#contratos`;
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -85,12 +89,12 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-            <Kpi rotulo="Contratos e cotas ativos" valor={fmtNumero(ativos.length)} apoio={`${fmtNumero(contratos.length - ativos.length)} encerrado(s)`} />
-            <Kpi rotulo="Parcelas por mês" valor={fmtBRL(cg.total.parcelaMensalCents)} />
-            <Kpi rotulo="Saldo devedor" valor={fmtBRL(cg.total.saldoCents)} apoio="quitação hoje" />
-            <Kpi rotulo="Em atraso na Omie" valor={fmtBRL(cg.total.atrasadoCents)} tom={atrasados.length ? "ruim" : "bom"} apoio={`${atrasados.length} contrato(s)`} />
-            <Kpi rotulo="Parcelas não lançadas" valor={fmtNumero(naoLancados.reduce((s, c) => s + c.situacao.naoLancadas, 0))} tom={naoLancados.length ? "atencao" : "bom"} apoio="vencem em 60 dias e não estão na Omie" />
-            <Kpi rotulo="Crédito parado em cotas" valor={fmtBRL(cg.consorcio.semBem.liquidoCents)} apoio={`${cg.consorcio.semBem.cotas} cota(s) contemplada(s) sem o bem`} tom={cg.consorcio.semBem.cotas ? "atencao" : "neutro"} />
+            <Kpi href={todosOsAtivos} rotulo="Contratos e cotas ativos" valor={fmtNumero(ativos.length)} apoio={`${fmtNumero(contratos.length - ativos.length)} encerrado(s)`} />
+            <Kpi href={geral("controle-geral")} rotulo="Parcelas por mês" valor={fmtBRL(cg.total.parcelaMensalCents)} />
+            <Kpi href={todosOsAtivos} rotulo="Saldo devedor" valor={fmtBRL(cg.total.saldoCents)} apoio="quitação hoje" />
+            <Kpi href={geral("pede-acao")} rotulo="Em atraso na Omie" valor={fmtBRL(cg.total.atrasadoCents)} tom={atrasados.length ? "ruim" : "bom"} apoio={`${atrasados.length} contrato(s)`} />
+            <Kpi href={geral("pede-acao")} rotulo="Parcelas não lançadas" valor={fmtNumero(naoLancados.reduce((s, c) => s + c.situacao.naoLancadas, 0))} tom={naoLancados.length ? "atencao" : "bom"} apoio="vencem em 60 dias e não estão na Omie" />
+            <Kpi href={geral("cotas-sem-bem")} rotulo="Crédito parado em cotas" valor={fmtBRL(cg.consorcio.semBem.liquidoCents)} apoio={`${cg.consorcio.semBem.cotas} cota(s) contemplada(s) sem o bem`} tom={cg.consorcio.semBem.cotas ? "atencao" : "neutro"} />
           </div>
 
           <div className="flex flex-wrap gap-1.5">
@@ -104,7 +108,7 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
           {ver === "geral" && (
             <>
               {(atrasados.length > 0 || naoLancados.length > 0 || prazoVencido.length > 0) && (
-                <Secao titulo="Pede ação" descricao="Parcela vencida e não paga na Omie; parcela que vence nos próximos 60 dias e não foi lançada nas contas a pagar; contrato com prazo final já passado e ainda aberto.">
+                <Secao id="pede-acao" titulo="Pede ação" descricao="Parcela vencida e não paga na Omie; parcela que vence nos próximos 60 dias e não foi lançada nas contas a pagar; contrato com prazo final já passado e ainda aberto.">
                   <Tabela
                     colunas={["Banco / administradora", "Contrato / cota", "O quê"]}
                     linhas={[
@@ -115,7 +119,7 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
                   />
                 </Secao>
               )}
-              <Secao titulo="Controle geral" descricao="Por banco e produto, só o que está ativo. Principal = valor financiado (no consórcio, o crédito).">
+              <Secao id="controle-geral" titulo="Controle geral" descricao="Por banco e produto, só o que está ativo. Principal = valor financiado (no consórcio, o crédito).">
                 <Tabela
                   colunas={["Banco / administradora", "Produto", "Contratos", "Principal", "Parcelas / mês", "Saldo devedor", "Em atraso"]}
                   alinharDireita={[2, 3, 4, 5, 6]}
@@ -135,11 +139,14 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
               </Secao>
               <Secao titulo="Cotas de consórcio" descricao="Não contempladas: crédito ainda por sortear ou lançar. Contempladas sem o bem: crédito liberado e ainda não usado para comprar veículo.">
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <Kpi rotulo="Não contempladas" valor={fmtNumero(cg.consorcio.naoContempladas.cotas)} apoio={`crédito ${fmtBRL(cg.consorcio.naoContempladas.creditoCents)}`} />
-                  <Kpi rotulo="Contempladas sem o bem" valor={fmtNumero(cg.consorcio.semBem.cotas)} apoio={`crédito ${fmtBRL(cg.consorcio.semBem.creditoCents)}`} />
-                  <Kpi rotulo="Líquido disponível" valor={fmtBRL(cg.consorcio.semBem.liquidoCents)} apoio="crédito − lance, para comprar veículo" />
-                  <Kpi rotulo="Contempladas com o bem" valor={fmtNumero(ativos.filter((c) => c.situacaoConsorcio === "contemplada_com_bem").length)} apoio="cotas pagando o veículo já comprado" />
+                  <Kpi href="#cotas-nao-contempladas" rotulo="Não contempladas" valor={fmtNumero(cg.consorcio.naoContempladas.cotas)} apoio={`crédito ${fmtBRL(cg.consorcio.naoContempladas.creditoCents)}`} />
+                  <Kpi href="#cotas-sem-bem" rotulo="Contempladas sem o bem" valor={fmtNumero(cg.consorcio.semBem.cotas)} apoio={`crédito ${fmtBRL(cg.consorcio.semBem.creditoCents)}`} />
+                  <Kpi href="#cotas-sem-bem" rotulo="Líquido disponível" valor={fmtBRL(cg.consorcio.semBem.liquidoCents)} apoio="crédito − lance, para comprar veículo" />
+                  <Kpi href="#cotas-com-bem" rotulo="Contempladas com o bem" valor={fmtNumero(ativos.filter((c) => c.situacaoConsorcio === "contemplada_com_bem").length)} apoio="cotas pagando o veículo já comprado" />
                 </div>
+                <ListaDeCotas id="cotas-nao-contempladas" titulo="Não contempladas" cotas={ativos.filter((c) => c.produto === "consorcio" && c.situacaoConsorcio === "nao_contemplada")} />
+                <ListaDeCotas id="cotas-sem-bem" titulo="Contempladas sem o bem" cotas={ativos.filter((c) => c.produto === "consorcio" && c.situacaoConsorcio === "contemplada_sem_bem")} />
+                <ListaDeCotas id="cotas-com-bem" titulo="Contempladas com o bem" cotas={ativos.filter((c) => c.produto === "consorcio" && c.situacaoConsorcio === "contemplada_com_bem")} />
               </Secao>
             </>
           )}
@@ -167,6 +174,33 @@ function LinkContrato({ c }: { c: { id: string; contratoNumero: string | null; g
 
 type Contratos = ContratoComSituacao[];
 
+// As cotas de uma situação, abertas uma a uma (o drill-down dos cartões de
+// consórcio). Crédito = o valor da carta cadastrado na gestão.
+function ListaDeCotas({ id, titulo, cotas }: { id: string; titulo: string; cotas: Contratos }) {
+  if (cotas.length === 0) return null;
+  return (
+    <details id={id} className="mt-4 scroll-mt-4">
+      <summary className="cursor-pointer text-sm font-medium text-slate-700">
+        {titulo} — {fmtNumero(cotas.length)} cota(s), crédito {fmtBRL(cotas.reduce((s, c) => s + Number(c.valorFinanciadoCents ?? 0), 0))}
+      </summary>
+      <div className="mt-2">
+        <Tabela
+          colunas={["Administradora", "Grupo / cota", "Veículos", "Crédito", "Parcela", "Saldo"]}
+          alinharDireita={[3, 4, 5]}
+          linhas={cotas.map((c) => [
+            c.instituicao,
+            <LinkContrato key="c" c={c} />,
+            c.veiculos.length ? c.veiculos.map((v) => v.veiculo.placa ?? "s/ placa").join(", ") : "—",
+            fmtBRL(Number(c.valorFinanciadoCents ?? 0)),
+            fmtBRL(Number(c.valorParcelaCents ?? 0)),
+            fmtBRL(c.situacao.saldoCents ?? 0),
+          ])}
+        />
+      </div>
+    </details>
+  );
+}
+
 function ListaDeContratos({ contratos, params, instituicoes, href }: { contratos: Contratos; params: { produto?: string; inst?: string; q?: string; encerrados?: string }; instituicoes: string[]; href: (e: Record<string, string | undefined>) => string }) {
   const q = (params.q ?? "").trim().toUpperCase();
   const lista = contratos
@@ -175,6 +209,7 @@ function ListaDeContratos({ contratos, params, instituicoes, href }: { contratos
     .filter((c) => !q || [c.contratoNumero, c.grupo, c.cota, ...c.veiculos.map((v) => v.veiculo.placa)].some((x) => (x ?? "").toUpperCase().includes(q)));
   return (
     <Secao
+      id="contratos"
       titulo={`${fmtNumero(lista.length)} contrato(s) e cota(s)`}
       acao={
         <form action="/frota/financiamentos" className="flex flex-wrap gap-2 text-xs">

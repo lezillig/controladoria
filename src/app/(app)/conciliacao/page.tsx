@@ -82,18 +82,20 @@ export default async function ConciliacaoPage({
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi rotulo="Saldo disponível" valor={fmtBRL(t.disponivel)} apoio="Contas correntes e caixa (sem aplicações e cartões)" tom={t.disponivel >= 0 ? "neutro" : "ruim"} />
-        <Kpi rotulo="Aplicações" valor={fmtBRL(t.aplicacao)} apoio={`Total com aplicações: ${fmtBRL(t.total)}`} />
+        <Kpi href="#saldo-por-conta" rotulo="Saldo disponível" valor={fmtBRL(t.disponivel)} apoio="Contas correntes e caixa (sem aplicações e cartões)" tom={t.disponivel >= 0 ? "neutro" : "ruim"} />
+        <Kpi href="#saldo-por-conta" rotulo="Aplicações" valor={fmtBRL(t.aplicacao)} apoio={`Total com aplicações: ${fmtBRL(t.total)}`} />
         <Kpi
+          href="#por-conta"
           rotulo="Conciliação do período"
           valor={movimentos.length > 0 ? fmtPercent((conciliados.length / movimentos.length) * 100) : "—"}
           apoio={`${fmtNumero(conciliados.length)} de ${fmtNumero(movimentos.length)} lançamentos`}
           tom={movimentos.length > 0 && conciliados.length / movimentos.length >= 0.95 ? "bom" : "atencao"}
         />
-        <Kpi rotulo="Entradas e saídas (2 meses)" valor={fmtBRL(entradas - saidas)} apoio={`entradas ${fmtBRL(entradas)} · saídas ${fmtBRL(saidas)}`} />
+        <Kpi href="#por-conta" rotulo="Entradas e saídas (2 meses)" valor={fmtBRL(entradas - saidas)} apoio={`entradas ${fmtBRL(entradas)} · saídas ${fmtBRL(saidas)}`} />
       </div>
 
       <Secao
+        id="saldo-por-conta"
         titulo="Saldo por conta"
         descricao="Saldo considerado: o informado do banco quando há (é a verdade do banco na data), senão o que a Omie calcula, senão o somado pelo extrato. Diferença entre Omie e extrato é lançamento que não chegou ao sistema."
       >
@@ -289,10 +291,10 @@ export default async function ConciliacaoPage({
         />
       </Secao>
 
-      <Secao titulo="Por conta corrente" descricao="Últimos dois meses.">
+      <Secao id="por-conta" titulo="Por conta corrente" descricao="Últimos dois meses — a composição dos cartões de conciliação e de entradas e saídas.">
         <Tabela
-          colunas={["Conta", "Banco", "Lançamentos", "Conciliados", "Situação"]}
-          alinharDireita={[2, 3]}
+          colunas={["Conta", "Banco", "Entradas", "Saídas", "Lançamentos", "Conciliados", "Situação"]}
+          alinharDireita={[2, 3, 4, 5]}
           linhas={ctx.contasCorrentes
             .filter((c) => !c.inativa)
             .map((c) => {
@@ -306,6 +308,8 @@ export default async function ConciliacaoPage({
                   <span className="block text-xs font-normal text-slate-400">{c.conexaoApelido}</span>
                 </span>,
                 c.banco ?? "—",
+                fmtBRL(somar(lista.filter((m) => m.valorCents > 0), (m) => m.valorCents)),
+                fmtBRL(somar(lista.filter((m) => m.valorCents < 0), (m) => Math.abs(m.valorCents))),
                 fmtNumero(lista.length),
                 fmtNumero(ok),
                 <div key="b" className="w-32">

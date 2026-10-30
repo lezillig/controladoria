@@ -62,18 +62,19 @@ export default async function ConexoesPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Kpi rotulo="Conexões cadastradas" valor={fmtNumero(conexoes.length)} />
-        <Kpi rotulo="Ativas" valor={fmtNumero(conexoes.filter((c) => c.ativa).length)} tom="bom" />
+        <Kpi rotulo="Conexões cadastradas" valor={fmtNumero(conexoes.length)} href="#empresas" />
+        <Kpi rotulo="Ativas" valor={fmtNumero(conexoes.filter((c) => c.ativa).length)} tom="bom" href="#empresas" />
         <Kpi
           rotulo="Sem credencial no ambiente"
           valor={fmtNumero(semCredencial.length)}
           tom={semCredencial.length > 0 ? "ruim" : "bom"}
           apoio={semCredencial.length > 0 ? "Ficam fora do ciclo diário" : undefined}
+          href={semCredencial.length > 0 ? "#sem-credencial" : "#empresas"}
         />
       </div>
 
       {semCredencial.length > 0 && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+        <div id="sem-credencial" className="scroll-mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3">
           <p className="text-sm font-semibold text-red-900">
             {semCredencial.length} conexão(ões) ativa(s) sem credencial no ambiente
           </p>
@@ -94,7 +95,7 @@ export default async function ConexoesPage() {
         </div>
       )}
 
-      <Secao titulo="Empresas conectadas">
+      <Secao id="empresas" titulo="Empresas conectadas">
         {conexoes.length === 0 ? (
           <AvisoVazio
             titulo="Nenhuma conexão cadastrada"

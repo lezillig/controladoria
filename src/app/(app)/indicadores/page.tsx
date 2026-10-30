@@ -127,7 +127,8 @@ export default async function IndicadoresPage({
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {destaque.map((i) => (
-          <Kpi key={i.chave} rotulo={i.rotulo} valor={formatar(i)} tom={TOM[i.farol] ?? "neutro"} apoio={i.valor === null ? i.formula : undefined} />
+          // Cada destaque abre a sua linha no grupo, com a conta ("como foi calculado").
+          <Kpi key={i.chave} href={`#indicador-${i.chave}`} rotulo={i.rotulo} valor={formatar(i)} tom={TOM[i.farol] ?? "neutro"} apoio={i.valor === null ? i.formula : undefined} />
         ))}
       </div>
 
@@ -156,7 +157,7 @@ export default async function IndicadoresPage({
           <Secao key={g.chave} titulo={g.titulo} descricao={g.descricao}>
             <ul className="divide-y divide-slate-100">
               {itens.map((i) => (
-                <li key={i.chave} className="py-3">
+                <li key={i.chave} id={`indicador-${i.chave}`} className="scroll-mt-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="flex items-center gap-2 text-sm font-medium text-slate-900">

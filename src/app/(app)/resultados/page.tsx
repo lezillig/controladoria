@@ -182,6 +182,9 @@ export default async function ResultadosPage({
     />
   );
 
+  // Os acumulados abrem na série mês a mês do regime da tela.
+  const serieDoRegime = noCaixa ? "#serie-caixa" : "#serie-competencia";
+
   return (
     <div className={`${larguraPainel} space-y-6`}>
       <PageHeader
@@ -214,6 +217,7 @@ export default async function ResultadosPage({
       {fechamentoDoAno && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Kpi
+            href="#composicao-receita"
             rotulo={`${noCaixa ? "Recebido" : "Receita"} — ${mes.rotulo}`}
             valor={fmtBRL(noCaixa ? fechamentoDoAno.recebidoCents : fechamentoDoAno.receitaCents)}
             apoio={
@@ -227,6 +231,7 @@ export default async function ResultadosPage({
             }
           />
           <Kpi
+            href="#composicao-despesa"
             rotulo={`${noCaixa ? "Pago" : "Despesa"} — ${mes.rotulo}`}
             valor={fmtBRL(noCaixa ? fechamentoDoAno.pagoCents : fechamentoDoAno.despesaCents)}
             apoio={
@@ -239,7 +244,10 @@ export default async function ResultadosPage({
                 : "sem mês anterior na base"
             }
           />
+          {/* Resultado e margem são receita menos despesa: abrem na composição
+              da receita, que vem logo antes da da despesa. */}
           <Kpi
+            href="#composicao-receita"
             rotulo={`${noCaixa ? "Fluxo líquido" : "Resultado"} — ${mes.rotulo}`}
             valor={fmtBRL(noCaixa ? fechamentoDoAno.fluxoLiquidoCents : fechamentoDoAno.resultadoCents)}
             apoio={
@@ -255,6 +263,7 @@ export default async function ResultadosPage({
               competência. No caixa a leitura equivalente é a conversão: quanto
               do que entrou sobrou depois do que saiu. */}
           <Kpi
+            href="#composicao-receita"
             rotulo={`${noCaixa ? "Conversão de caixa" : "Margem"} — ${mes.rotulo}`}
             valor={
               noCaixa
@@ -281,22 +290,26 @@ export default async function ResultadosPage({
               e um cartão que muda de valor sem mudar de rótulo é a forma mais
               rápida de alguém comparar dois períodos achando que é um só. */}
           <Kpi
+            href={serieDoRegime}
             rotulo={`${noCaixa ? "Recebido acumulado" : "Receita acumulada"} ${ultimoAno}`}
             apoio={`Até ${mes.rotulo}`}
             valor={fmtBRL(noCaixa ? acumuladoDeCaixa.recebido : fechamentoDoAno.receitaAcumuladaCents)}
           />
           <Kpi
+            href={serieDoRegime}
             rotulo={`${noCaixa ? "Pago acumulado" : "Despesa acumulada"} ${ultimoAno}`}
             apoio={`Até ${mes.rotulo}`}
             valor={fmtBRL(noCaixa ? acumuladoDeCaixa.pago : fechamentoDoAno.despesaAcumuladaCents)}
           />
           <Kpi
+            href={serieDoRegime}
             apoio={`Até ${mes.rotulo}`}
             rotulo={`${noCaixa ? "Fluxo acumulado" : "Resultado acumulado"} ${ultimoAno}`}
             valor={fmtBRL(noCaixa ? acumuladoDeCaixa.liquido : fechamentoDoAno.resultadoAcumuladoCents)}
             tom={(noCaixa ? acumuladoDeCaixa.liquido : fechamentoDoAno.resultadoAcumuladoCents) >= 0 ? "bom" : "ruim"}
           />
           <Kpi
+            href={serieDoRegime}
             rotulo={noCaixa ? "Conversão acumulada" : "Margem acumulada"}
             apoio={`Até ${mes.rotulo}`}
             valor={fmtPercent(
@@ -461,6 +474,7 @@ export default async function ResultadosPage({
       </Secao>
 
       <Secao
+        id="composicao-receita"
         titulo={`Composição ${noCaixa ? "do recebido" : "da receita"} — ${mes.rotulo}`}
         descricao={`${fmtBRL(receita.totalCents)} em ${fmtNumero(receita.quantidade)} ${noCaixa ? "baixa(s) registrada(s)" : "título(s) a receber emitido(s)"} no mês.`}
         acao={
@@ -487,6 +501,7 @@ export default async function ResultadosPage({
       </Secao>
 
       <Secao
+        id="composicao-despesa"
         titulo={`Composição ${noCaixa ? "do pago" : "da despesa"} — ${mes.rotulo}`}
         descricao={`${fmtBRL(despesa.totalCents)} em ${fmtNumero(despesa.quantidade)} ${noCaixa ? "baixa(s) registrada(s)" : "título(s) a pagar emitido(s)"} no mês.`}
         acao={
@@ -536,6 +551,7 @@ export default async function ResultadosPage({
       </Secao>
 
       <Secao
+        id="serie-competencia"
         titulo="Competência — o mês em que o resultado foi gerado"
         descricao="Receita pela emissão da nota e despesa pelo vencimento, independentemente de terem sido pagos. Responde 'a operação deu lucro no mês?'."
       >
@@ -567,6 +583,7 @@ export default async function ResultadosPage({
       </Secao>
 
       <Secao
+        id="serie-caixa"
         titulo="Caixa — o mês em que o dinheiro entrou e saiu"
         descricao="Pelas baixas efetivamente registradas. Responde 'sobrou dinheiro na conta?'. Os dois regimes ficam separados de propósito: misturá-los é o erro mais comum de relatório gerencial, e o sintoma é o mês fechar no azul no resultado e no vermelho no banco."
       >

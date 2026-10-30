@@ -166,18 +166,10 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Link href={abrir({ lista: "pagar-sem-projeto" })} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
-          <Kpi rotulo="A pagar com projeto" valor={fmtPercent(pct(pagar.comProjetoCents, pagar.cents), 0)} apoio={`${fmtNumero(pagar.comProjeto)} de ${fmtNumero(pagar.titulos)} títulos · ${fmtNumero(pagar.comOs)} com OS`} tom={pct(pagar.comProjetoCents, pagar.cents) === null ? "neutro" : (pct(pagar.comProjetoCents, pagar.cents) ?? 0) >= 60 ? "bom" : "atencao"} />
-        </Link>
-        <Link href={abrir({ lista: "receber-sem-projeto" })} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
-          <Kpi rotulo="A receber com projeto" valor={fmtPercent(pct(receber.comProjetoCents, receber.cents), 0)} apoio={`${fmtNumero(receber.comProjeto)} de ${fmtNumero(receber.titulos)} títulos · ${fmtNumero(receber.comOs)} com OS`} />
-        </Link>
-        <Link href={"#nao-faturada"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
-          <Kpi rotulo="Custo sem cobrança" valor={fmtBRL(r.custoSemReceita.reduce((s, p) => s + p.custoCents, 0))} apoio={`${r.custoSemReceita.length} projetos`} tom={r.custoSemReceita.length > 0 ? "ruim" : "bom"} />
-        </Link>
-        <Link href={"#prejuizo"} className="block rounded-2xl transition hover:ring-2 hover:ring-blue-200" title="Abrir">
-          <Kpi rotulo="OS com prejuízo" valor={fmtBRL(r.comPrejuizo.reduce((s, p) => s + p.resultadoCents, 0))} apoio={`${r.comPrejuizo.length} OS faturadas`} tom={r.comPrejuizo.length > 0 ? "ruim" : "bom"} />
-        </Link>
+        <Kpi rotulo="A pagar com projeto" valor={fmtPercent(pct(pagar.comProjetoCents, pagar.cents), 0)} apoio={`${fmtNumero(pagar.comProjeto)} de ${fmtNumero(pagar.titulos)} títulos · ${fmtNumero(pagar.comOs)} com OS`} tom={pct(pagar.comProjetoCents, pagar.cents) === null ? "neutro" : (pct(pagar.comProjetoCents, pagar.cents) ?? 0) >= 60 ? "bom" : "atencao"} href={abrir({ lista: "pagar-sem-projeto" })} />
+        <Kpi rotulo="A receber com projeto" valor={fmtPercent(pct(receber.comProjetoCents, receber.cents), 0)} apoio={`${fmtNumero(receber.comProjeto)} de ${fmtNumero(receber.titulos)} títulos · ${fmtNumero(receber.comOs)} com OS`} href={abrir({ lista: "receber-sem-projeto" })} />
+        <Kpi rotulo="Custo sem cobrança" valor={fmtBRL(r.custoSemReceita.reduce((s, p) => s + p.custoCents, 0))} apoio={`${r.custoSemReceita.length} projetos`} tom={r.custoSemReceita.length > 0 ? "ruim" : "bom"} href="#nao-faturada" />
+        <Kpi rotulo="OS com prejuízo" valor={fmtBRL(r.comPrejuizo.reduce((s, p) => s + p.resultadoCents, 0))} apoio={`${r.comPrejuizo.length} OS faturadas`} tom={r.comPrejuizo.length > 0 ? "ruim" : "bom"} href="#prejuizo" />
       </div>
 
       {detalhe && (

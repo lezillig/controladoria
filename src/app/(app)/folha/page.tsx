@@ -70,6 +70,7 @@ export default async function FolhaPage({ searchParams }: { searchParams: Promis
               valor={`${st.filter(resolvido).length} de ${st.length}`}
               apoio={`${atrasados} atrasado(s) · ${st.filter((s) => s === "vence-logo").length} vencendo`}
               tom={atrasados ? "ruim" : "neutro"}
+              href="#checklist"
             />
           );
         })}
@@ -90,6 +91,8 @@ export default async function FolhaPage({ searchParams }: { searchParams: Promis
         </div>
       )}
 
+      {/* O checklist das seis etapas: o que cada cartão de empresa conta. */}
+      <div id="checklist" className="scroll-mt-4 space-y-6">
       {([1, 2, 3, 4, 5, 6] as const).map((etapa) => (
         <Secao key={etapa} titulo={`${etapa} · ${ETAPAS[etapa].nome}`} descricao={ETAPAS[etapa].pratica}>
           <div className="divide-y divide-slate-100">
@@ -101,6 +104,7 @@ export default async function FolhaPage({ searchParams }: { searchParams: Promis
           </div>
         </Secao>
       ))}
+      </div>
     </div>
   );
 }

@@ -1,5 +1,5 @@
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
-import { saldoAtualCents } from "@/lib/controladoria/agents/conciliacao";
+import { saldoAtualCents, saldoPorContaCents } from "@/lib/controladoria/agents/conciliacao";
 import { HORIZONTES_DIAS, calcularCiclo, horizonteValido, projetarFluxoCaixa } from "@/lib/controladoria/agents/fluxoCaixa";
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { somarDias } from "@/lib/controladoria/periodos";
@@ -59,6 +59,12 @@ export default async function FluxoCaixaPage({
   }).filter((d) => d.entradas > 0 || d.saidas > 0);
 
   const ruptura = projecao.find((p) => p.saldoProjetadoCents < 0);
+  // O drill-down dos cartões de títulos: a lista de contas a pagar e receber,
+  // com a mesma empresa e competência desta tela.
+  const recorte = new URLSearchParams();
+  if (escopo.conexaoId) recorte.set("empresa", escopo.conexaoId);
+  if (periodo.competencia) recorte.set("competencia", periodo.competencia);
+  const titulosEmAberto = (natureza: "PAGAR" | "RECEBER") => `/titulos?natureza=${natureza}&filtro=ABERTOS${recorte.size ? `&${recorte}` : ""}#lista`;
   const vencidoPagar = somar(
     pagarAberto.filter((t) => diasDeAtraso(t, ctx.dataReferencia) > 0),
     saldoAberto
@@ -113,14 +119,16 @@ export default async function FluxoCaixaPage({
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi rotulo="Saldo atual" valor={fmtBRL(saldo)} apoio="Soma das contas correntes ativas" tom={saldo >= 0 ? "neutro" : "ruim"} />
-        <Kpi rotulo="A pagar em aberto" valor={fmtBRL(somar(pagarAberto, saldoAberto))} apoio={`Vencido: ${fmtBRL(vencidoPagar)}`} />
+        <Kpi href="#saldo-por-conta" rotulo="Saldo atual" valor={fmtBRL(saldo)} apoio="Soma das contas correntes ativas" tom={saldo >= 0 ? "neutro" : "ruim"} />
+        <Kpi href={titulosEmAberto("PAGAR")} rotulo="A pagar em aberto" valor={fmtBRL(somar(pagarAberto, saldoAberto))} apoio={`Vencido: ${fmtBRL(vencidoPagar)}`} />
         <Kpi
+          href={titulosEmAberto("RECEBER")}
           rotulo="A receber em aberto"
           valor={fmtBRL(somar(receberAberto, saldoAberto))}
           apoio={`${fmtNumero(receberAberto.length)} título(s) · realista 30d ${fmtBRL(previsto30)} (contratual ${fmtBRL(contratual30)})`}
         />
         <Kpi
+          semDetalhe="indicador de prazo médio (PMR − PMP, no apoio), não é soma de itens"
           rotulo="Ciclo financeiro"
           valor={`${fmtNumero(ciclo.cicloFinanceiroDias)} dias`}
           apoio={`PMR ${fmtNumero(ciclo.pmrDias)} · PMP ${fmtNumero(ciclo.pmpDias)}`}
@@ -226,6 +234,28 @@ export default async function FluxoCaixaPage({
               {fmtBRL(d.entradas - d.saidas)}
             </span>,
           ])}
+        />
+      </Secao>
+
+      {/* A composição do cartão "Saldo atual": a mesma conta, conta a conta. */}
+      <Secao id="saldo-por-conta" titulo="Saldo por conta" descricao="Saldo inicial de cada conta mais todo o extrato até a data de referência — a soma é o saldo atual do cartão.">
+        <Tabela
+          colunas={["Conta", "Empresa", "Saldo"]}
+          alinharDireita={[2]}
+          vazio="Nenhuma conta com saldo."
+          linhas={[
+            ...saldoPorContaCents(ctx).map((c) => [
+              <span key="c">
+                {c.conta}
+                {c.inativa && <span className="ml-1 text-xs text-slate-400">(inativa)</span>}
+              </span>,
+              c.empresa,
+              <span key="s" className={c.saldoCents < 0 ? "text-red-700" : ""}>
+                {fmtBRL(c.saldoCents)}
+              </span>,
+            ]),
+            [<strong key="t">Total</strong>, "", <strong key="v">{fmtBRL(saldo)}</strong>],
+          ]}
         />
       </Secao>
 

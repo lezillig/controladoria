@@ -22,7 +22,6 @@ import { Kpi, Secao, Tabela } from "../_componentes";
 
 export const maxDuration = 60;
 
-const cartao = "block rounded-2xl transition hover:ring-2 hover:ring-blue-200";
 const reais = (cents: number) => fmtBRL(Math.round(cents / 100) * 100).replace(/,00$/, "");
 const corTratamento: Record<Tratamento, string> = {
   DEDUTIVEL: "bg-emerald-100 text-emerald-800",
@@ -92,26 +91,22 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
 
       {/* Cada cartão leva ao que o compõe, e de lá se desce até o título. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <a href="#quadro" className={cartao} title="Ver o que compõe este número">
-          <Kpi rotulo="Lucro real estimado" valor={reais(r.lucroRealCents)} apoio="12 meses" tom={r.lucroRealCents >= 0 ? "neutro" : "atencao"} />
-        </a>
-        <a href="#impostos" className={cartao} title="Ver o que compõe este número">
-          <Kpi rotulo="IRPJ + CSLL no Real" valor={reais(r.real.totalCents)} apoio={`${fmtPercent(r.receitaBrutaCents > 0 ? (r.real.totalCents / r.receitaBrutaCents) * 100 : 0, 1)} da receita`} />
-        </a>
-        <a href="#presumido" className={cartao} title="Ver o que compõe este número">
-          <Kpi
-            rotulo="No Presumido"
-            valor={reais(r.presumido.totalCents)}
-            apoio={r.presumido.disponivel ? "mesma receita, com a LC 224/2025" : "referência — não é opção"}
-            tom={r.presumido.totalCents < r.real.totalCents ? "atencao" : "neutro"}
-          />
-        </a>
-        <a href="#oportunidades" className={cartao} title="Ver o que compõe este número">
-          <Kpi rotulo="Economia identificada" valor={reais(economia)} apoio="por ano, se os requisitos forem cumpridos" tom="bom" />
-        </a>
-        <a href="#pendencias" className={cartao} title="Ver o que compõe este número">
-          <Kpi rotulo="Despesa sem documento" valor={reais(pendente)} apoio="glosável numa fiscalização" tom={pendente > 0 ? "ruim" : "bom"} />
-        </a>
+        <Kpi href="#quadro" rotulo="Lucro real estimado" valor={reais(r.lucroRealCents)} apoio="12 meses" tom={r.lucroRealCents >= 0 ? "neutro" : "atencao"} />
+        <Kpi
+          href="#impostos"
+          rotulo="IRPJ + CSLL no Real"
+          valor={reais(r.real.totalCents)}
+          apoio={`${fmtPercent(r.receitaBrutaCents > 0 ? (r.real.totalCents / r.receitaBrutaCents) * 100 : 0, 1)} da receita`}
+        />
+        <Kpi
+          href="#presumido"
+          rotulo="No Presumido"
+          valor={reais(r.presumido.totalCents)}
+          apoio={r.presumido.disponivel ? "mesma receita, com a LC 224/2025" : "referência — não é opção"}
+          tom={r.presumido.totalCents < r.real.totalCents ? "atencao" : "neutro"}
+        />
+        <Kpi href="#oportunidades" rotulo="Economia identificada" valor={reais(economia)} apoio="por ano, se os requisitos forem cumpridos" tom="bom" />
+        <Kpi href="#pendencias" rotulo="Despesa sem documento" valor={reais(pendente)} apoio="glosável numa fiscalização" tom={pendente > 0 ? "ruim" : "bom"} />
       </div>
 
       <div id="quadro" className="scroll-mt-4">

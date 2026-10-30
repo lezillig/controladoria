@@ -71,13 +71,15 @@ export default async function UsuariosPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Kpi rotulo="Pessoas no cadastro" valor={fmtNumero(pessoas.length)} />
+        {/* A tabela de pessoas mostra, de cada uma, o acesso e de onde ele vem. */}
+        <Kpi rotulo="Pessoas no cadastro" valor={fmtNumero(pessoas.length)} href="#pessoas" />
         <Kpi
           rotulo="Com acesso à Controladoria"
           valor={fmtNumero(comAcesso.length)}
           apoio={`${fmtNumero(comAcesso.filter((l) => l.resolvido.origem === "perfil").length)} por perfil`}
+          href="#pessoas"
         />
-        <Kpi rotulo="Perfis definidos" valor={fmtNumero(perfis.length)} tom={perfis.length === 0 ? "atencao" : "neutro"} />
+        <Kpi rotulo="Perfis definidos" valor={fmtNumero(perfis.length)} tom={perfis.length === 0 ? "atencao" : "neutro"} href="#perfis" />
       </div>
 
       {resultado.situacao === "indisponivel" && (
@@ -101,6 +103,7 @@ export default async function UsuariosPage() {
       )}
 
       <Secao
+        id="pessoas"
         titulo="Pessoas"
         descricao="A coluna Acesso diz de onde vem a autorização de cada uma: do perfil atribuído ou das regras do papel."
       >
@@ -159,6 +162,7 @@ export default async function UsuariosPage() {
       </Secao>
 
       <Secao
+        id="perfis"
         titulo="Perfis de acesso"
         descricao="Cada perfil é um recorte de telas e ações. Ver e poder mudar são permissões separadas de propósito: num sistema de auditoria, dar leitura a alguém não pode dar junto o poder de desligar o alerta que incomoda."
       >

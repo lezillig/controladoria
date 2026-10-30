@@ -14,7 +14,12 @@ import { decidir } from "./actions";
 const COR: Record<string, string> = { critica: "bg-red-100 text-red-800", alta: "bg-orange-100 text-orange-800", media: "bg-amber-100 text-amber-800", baixa: "bg-slate-100 text-slate-700" };
 const STATUS: Record<string, string> = { aguardando_aprovacao: "aguardando", aprovada: "aprovada", rejeitada: "rejeitada", executada: "executada", erro: "erro" };
 
-export default async function PendenciasPage() {
+// O recorte que os cartões abrem na lista: uma severidade ou "as que você decide".
+const RECORTES: Record<string, string> = { critica: "severidade crítica", alta: "severidade alta", minhas: "que você pode decidir" };
+
+export default async function PendenciasPage({ searchParams }: { searchParams: Promise<{ ver?: string }> }) {
+  const { ver: verParam } = await searchParams;
+  const ver = verParam && Object.hasOwn(RECORTES, verParam) ? verParam : null;
   const session = await exigirPermissao("pendencias");
   const acesso = await acessoDaSessao(session);
   const temPermissao = acesso.permissoes.has("decidir-pendencia");
@@ -25,6 +30,8 @@ export default async function PendenciasPage() {
   ]);
   const ordem = ["critica", "alta", "media", "baixa"];
   abertas.sort((a, b) => ordem.indexOf(a.severidade) - ordem.indexOf(b.severidade));
+  const decidePor = (p: (typeof abertas)[number]) => podeDecidir({ papel: session.role, temPermissao, perfis, perfilAprovador: p.perfilAprovador });
+  const lista = ver === "minhas" ? abertas.filter(decidePor) : ver ? abertas.filter((p) => p.severidade === ver) : abertas;
 
   return (
     <div className={`${larguraPainel} space-y-6`}>
@@ -36,20 +43,36 @@ export default async function PendenciasPage() {
         </p>
       </div>
       <div className="grid gap-3 sm:grid-cols-4">
-        <Kpi rotulo="Aguardando decisão" valor={fmtNumero(abertas.length)} tom={abertas.length ? "atencao" : "bom"} />
+        <Kpi rotulo="Aguardando decisão" valor={fmtNumero(abertas.length)} tom={abertas.length ? "atencao" : "bom"} href="/pendencias#aguardando" />
         {["critica", "alta"].map((s) => (
-          <Kpi key={s} rotulo={`Severidade ${s}`} valor={fmtNumero(abertas.filter((p) => p.severidade === s).length)} tom={abertas.some((p) => p.severidade === s) ? "ruim" : "bom"} />
+          <Kpi
+            key={s}
+            rotulo={`Severidade ${s}`}
+            valor={fmtNumero(abertas.filter((p) => p.severidade === s).length)}
+            tom={abertas.some((p) => p.severidade === s) ? "ruim" : "bom"}
+            href={`/pendencias?ver=${s}#aguardando`}
+          />
         ))}
-        <Kpi rotulo="Que você pode decidir" valor={fmtNumero(abertas.filter((p) => podeDecidir({ papel: session.role, temPermissao, perfis, perfilAprovador: p.perfilAprovador })).length)} />
+        <Kpi rotulo="Que você pode decidir" valor={fmtNumero(abertas.filter(decidePor).length)} href="/pendencias?ver=minhas#aguardando" />
       </div>
 
-      <Secao titulo="Aguardando decisão">
-        {abertas.length === 0 ? (
-          <p className="text-sm text-slate-500">Nenhuma pendência aberta.</p>
+      <Secao
+        id="aguardando"
+        titulo={ver ? `Aguardando decisão — ${RECORTES[ver]}` : "Aguardando decisão"}
+        acao={
+          ver ? (
+            <a href="/pendencias#aguardando" className="text-xs text-blue-700 hover:underline">
+              Ver todas
+            </a>
+          ) : undefined
+        }
+      >
+        {lista.length === 0 ? (
+          <p className="text-sm text-slate-500">{ver ? "Nenhuma pendência aberta neste recorte." : "Nenhuma pendência aberta."}</p>
         ) : (
           <ul className="space-y-3">
-            {abertas.map((p) => {
-              const pode = podeDecidir({ papel: session.role, temPermissao, perfis, perfilAprovador: p.perfilAprovador });
+            {lista.map((p) => {
+              const pode = decidePor(p);
               const ev = p.evidencias as { codigos?: string[]; total?: number } | null;
               return (
                 <li key={p.id} className="rounded-md border border-slate-200 p-3">

@@ -7,6 +7,7 @@ import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
 import { larguraPainel } from "@/lib/ui";
 import { fmtCnae } from "@/lib/receita/cliente";
+import { janelaDeAuditoria } from "@/lib/controladoria/contexto";
 
 // CONTAS A PAGAR E A RECEBER numa tela só, alternada por querystring.
 //
@@ -38,14 +39,40 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
   if (periodo.competencia) recorte.set("competencia", periodo.competencia);
   const escopoNaUrl = recorte.size > 0 ? `&${recorte}` : "";
 
+  const pagos = todos.filter((t) => !emAberto(t));
   const lista =
     filtro === "VENCIDOS"
       ? vencidos
       : filtro === "TODOS"
         ? todos
-        : filtro === "COM_ENCARGOS"
-          ? todos.filter((t) => t.jurosCents + t.multaCents + t.tarifaCents > 0)
-          : abertos;
+        : filtro === "PAGOS"
+          ? pagos
+          : filtro === "COM_ENCARGOS"
+            ? todos.filter((t) => t.jurosCents + t.multaCents + t.tarifaCents > 0)
+            : abertos;
+
+  // STATUS VELHO NO ESPELHO: vencido há mais de 120 dias e a última leitura da
+  // Omie ainda dizia "a vencer". A Omie não mostra isso — é o espelho que não
+  // relia esses meses (o pagamento lançado depois com a data antiga, o título
+  // apagado). A sincronização diária passou a relê-los; até lá, a tela avisa.
+  const statusVelho = (t: (typeof todos)[number]) =>
+    emAberto(t) && diasDeAtraso(t, ctx.dataReferencia) > 120 && /a vencer|vence hoje/i.test(t.status);
+  const comStatusVelho = vencidos.filter(statusVelho);
+
+  // A COMPOSIÇÃO DO QUE ESTÁ NO ESPELHO, por empresa e situação: é o
+  // drill-down do cartão do total (e cada linha abre a lista filtrada).
+  const desde = janelaDeAuditoria(periodo.dataReferencia);
+  const listaDe = (f: string) => `/titulos?natureza=${natureza}&filtro=${f}${escopoNaUrl}#lista`;
+  const empresas = [...new Set(todos.map((t) => t.conexaoApelido))].sort();
+  const composicao = empresas.map((empresa) => {
+    const daEmpresa = (l: typeof todos) => l.filter((t) => t.conexaoApelido === empresa);
+    return {
+      empresa,
+      pagos: daEmpresa(pagos),
+      aVencer: daEmpresa(abertos).filter((t) => diasDeAtraso(t, ctx.dataReferencia) <= 0),
+      vencidos: daEmpresa(vencidos),
+    };
+  });
 
   const ordenada = [...lista]
     .sort((a, b) => a.dataVencimento.getTime() - b.dataVencimento.getTime())
@@ -86,20 +113,29 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi rotulo={`Em aberto`} valor={fmtBRL(somar(abertos, saldoAberto))} apoio={`${fmtNumero(abertos.length)} título(s)`} />
+        <Kpi rotulo={`Em aberto`} valor={fmtBRL(somar(abertos, saldoAberto))} apoio={`${fmtNumero(abertos.length)} título(s)`} href={listaDe("ABERTOS")} />
         <Kpi
           rotulo="Vencido"
           valor={fmtBRL(somar(vencidos, saldoAberto))}
           apoio={`${fmtNumero(vencidos.length)} título(s)`}
           tom={vencidos.length > 0 ? "ruim" : "bom"}
+          href={listaDe("VENCIDOS")}
         />
         <Kpi
           rotulo="Encargos no período"
           valor={fmtBRL(encargos)}
           apoio="Juros, multa e tarifa registrados nas baixas"
           tom={encargos > 0 ? "atencao" : "bom"}
+          href={listaDe("COM_ENCARGOS")}
         />
-        <Kpi rotulo="Total espelhado" valor={fmtBRL(somar(todos, (t) => t.valorDocumentoCents))} apoio={`${fmtNumero(todos.length)} título(s)`} />
+        {/* Era "Total espelhado": a soma de TODOS os títulos que a tela leu da
+            Omie — pagos e em aberto —, volume de lançamentos e não saldo. */}
+        <Kpi
+          rotulo={`Títulos ${rotulo} lidos desde ${fmtData(desde)}`}
+          valor={fmtBRL(somar(todos, (t) => t.valorDocumentoCents))}
+          apoio={`${fmtNumero(todos.length)} título(s), pagos e em aberto`}
+          href="#composicao"
+        />
       </div>
 
       <Secao titulo="Por faixa de atraso">
@@ -122,6 +158,33 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
       </Secao>
 
       <Secao
+        id="composicao"
+        titulo={`O que a tela leu da Omie: ${fmtNumero(todos.length)} título(s) ${rotulo}`}
+        descricao={`Os títulos com vencimento ou emissão desde ${fmtData(desde)}, mais os em aberto mais antigos (o que ainda deve não sai da tela). Na visão do grupo, inclui o que uma empresa paga à outra. É volume de lançamentos, não saldo: o saldo é o "Em aberto".`}
+      >
+        <Tabela
+          colunas={["Empresa", "Pagos", "Em aberto a vencer", "Vencidos", "Total"]}
+          alinharDireita={[1, 2, 3, 4]}
+          linhas={[
+            ...composicao.map((c) => [
+              c.empresa,
+              <Link key="p" href={listaDe("PAGOS")} className="hover:underline">
+                {fmtBRL(somar(c.pagos, (t) => t.valorDocumentoCents))} <span className="text-xs text-slate-400">({fmtNumero(c.pagos.length)})</span>
+              </Link>,
+              <Link key="a" href={listaDe("ABERTOS")} className="hover:underline">
+                {fmtBRL(somar(c.aVencer, (t) => t.valorDocumentoCents))} <span className="text-xs text-slate-400">({fmtNumero(c.aVencer.length)})</span>
+              </Link>,
+              <Link key="v" href={listaDe("VENCIDOS")} className="hover:underline">
+                {fmtBRL(somar(c.vencidos, (t) => t.valorDocumentoCents))} <span className="text-xs text-slate-400">({fmtNumero(c.vencidos.length)})</span>
+              </Link>,
+              fmtBRL(somar([...c.pagos, ...c.aVencer, ...c.vencidos], (t) => t.valorDocumentoCents)),
+            ]),
+          ]}
+        />
+      </Secao>
+
+      <Secao
+        id="lista"
         titulo={`${ordenada.length} título(s)`}
         descricao={ordenada.length === 300 ? "Mostrando os 300 primeiros por vencimento." : undefined}
         acao={
@@ -129,10 +192,18 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
             <Filtro natureza={natureza} recorte={escopoNaUrl} valor="ABERTOS" rotulo="Em aberto" ativo={filtro === "ABERTOS"} />
             <Filtro natureza={natureza} recorte={escopoNaUrl} valor="VENCIDOS" rotulo="Vencidos" ativo={filtro === "VENCIDOS"} />
             <Filtro natureza={natureza} recorte={escopoNaUrl} valor="COM_ENCARGOS" rotulo="Com encargos" ativo={filtro === "COM_ENCARGOS"} />
+            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="PAGOS" rotulo="Pagos" ativo={filtro === "PAGOS"} />
             <Filtro natureza={natureza} recorte={escopoNaUrl} valor="TODOS" rotulo="Todos" ativo={filtro === "TODOS"} />
           </div>
         }
       >
+        {comStatusVelho.length > 0 && (filtro === "VENCIDOS" || filtro === "ABERTOS") && (
+          <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {fmtNumero(comStatusVelho.length)} título(s) vencido(s) há mais de 120 dias ({fmtBRL(somar(comStatusVelho, saldoAberto))}) ainda constam como “A VENCER”
+            na última leitura da Omie. É o espelho desatualizado, não a Omie: esses meses não eram relidos depois da carga (pagamento lançado depois
+            com a data antiga, título apagado). A sincronização diária passou a relê-los, alguns meses por dia; até lá, confira na Omie antes de cobrar.
+          </p>
+        )}
         {ordenada.length === 0 ? (
           <AvisoVazio
             titulo="Nenhum título com esse filtro"
@@ -183,6 +254,7 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
                 encargo > 0 ? <span key="e" className="font-medium text-red-700">{fmtBRL(encargo)}</span> : "—",
                 <span key="s" className="text-xs">
                   {t.status}
+                  {statusVelho(t) && <span className="block text-amber-700">lido da Omie em {fmtData(t.sincronizadoEm)} — a reler</span>}
                   {t.categoriaCodigo ? null : <span className="block text-amber-600">sem categoria</span>}
                 </span>,
               ];

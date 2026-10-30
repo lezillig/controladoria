@@ -242,24 +242,28 @@ export default async function SincronizacaoPage() {
           valor={existeAlgumaCredencialOmie() ? "Configuradas" : "Ausentes"}
           apoio="OMIE_APP_KEY_* / OMIE_APP_SECRET_*"
           tom={existeAlgumaCredencialOmie() ? "bom" : "ruim"}
+          href="/conexoes#empresas"
         />
         <Kpi
           rotulo="Base em D-1"
           valor={atrasoDias === null ? "Nunca" : atrasoDias <= 2 ? "Em dia" : `${fmtNumero(atrasoDias)} dias atrás`}
           apoio={ultimoDiario ? `Última: ${fmtDiaDoInstante(ultimoDiario.finalizadoEm ?? ultimoDiario.iniciadoEm)}` : "Sem execução concluída"}
           tom={atrasoDias !== null && atrasoDias <= 2 ? "bom" : "ruim"}
+          href="#execucoes"
         />
         <Kpi
           rotulo="Envio de e-mail"
           valor={isEnvioDisponivel() ? "Configurado" : "Desativado"}
           apoio="RESEND_API_KEY"
           tom={isEnvioDisponivel() ? "bom" : "atencao"}
+          semDetalhe="é uma variável de ambiente do servidor: não há lista por trás do estado"
         />
         <Kpi
           rotulo="Leitura executiva (IA)"
           valor={isAnalistaDisponivel() ? "Ativa" : "Desativada"}
           apoio="ANTHROPIC_API_KEY — o relatório sai completo mesmo sem ela"
           tom={isAnalistaDisponivel() ? "bom" : "neutro"}
+          semDetalhe="é uma variável de ambiente do servidor: não há lista por trás do estado"
         />
       </div>
 
@@ -481,16 +485,19 @@ export default async function SincronizacaoPage() {
       {volume && (
       <Secao titulo="Volume espelhado" descricao={`Desde ${fmtData(dataInicioBase)}.`}>
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Kpi rotulo="Títulos a pagar" valor={fmtNumero(volume.titulosPagar)} apoio={volume.valorPagar} />
-          <Kpi rotulo="Títulos a receber" valor={fmtNumero(volume.titulosReceber)} apoio={volume.valorReceber} />
-          <Kpi rotulo="Baixas / movimentos" valor={`${fmtNumero(volume.baixas)} / ${fmtNumero(volume.movimentos)}`} />
-          <Kpi rotulo="Notas / parceiros" valor={`${fmtNumero(volume.notas)} / ${fmtNumero(volume.parceiros)}`} />
+          {/* O volume abre no preenchimento dos campos: os mesmos registros do
+              espelho, por entidade, com o que veio vazio de cada uma. */}
+          <Kpi rotulo="Títulos a pagar" valor={fmtNumero(volume.titulosPagar)} apoio={volume.valorPagar} href="#preenchimento" />
+          <Kpi rotulo="Títulos a receber" valor={fmtNumero(volume.titulosReceber)} apoio={volume.valorReceber} href="#preenchimento" />
+          <Kpi rotulo="Baixas / movimentos" valor={`${fmtNumero(volume.baixas)} / ${fmtNumero(volume.movimentos)}`} href="#preenchimento" />
+          <Kpi rotulo="Notas / parceiros" valor={`${fmtNumero(volume.notas)} / ${fmtNumero(volume.parceiros)}`} href="#preenchimento" />
         </div>
       </Secao>
       )}
 
       {cobertura && (
       <Secao
+        id="preenchimento"
         titulo="Preenchimento dos campos"
         descricao="Campo vazio em massa costuma significar duas coisas: ou o dado não é preenchido na Omie (falha de processo, que vira achado), ou o mapeamento da integração não encontrou aquele campo. Esta tabela distingue as duas."
       >
@@ -520,7 +527,7 @@ export default async function SincronizacaoPage() {
       </Secao>
       )}
 
-      <Secao titulo="Últimas execuções">
+      <Secao id="execucoes" titulo="Últimas execuções">
         <Tabela
           colunas={["Início", "Janela", "Tipo", "Fase", "Registros", "Situação"]}
           alinharDireita={[4]}

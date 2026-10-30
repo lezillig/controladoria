@@ -119,15 +119,19 @@ export default async function CenariosPage({
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi rotulo="Receita líquida (12 meses)" valor={fmtBRL(projecao.receitaLiquidaCents)} apoio={selecionado ? `cenário "${selecionado.nome}"` : "projeção base"} />
+        {/* Os três números do DRE abrem a projeção mês a mês, linha a linha; a
+            receita contratada, o quadro dela por mês, logo abaixo. */}
+        <Kpi href="#projecao" rotulo="Receita líquida (12 meses)" valor={fmtBRL(projecao.receitaLiquidaCents)} apoio={selecionado ? `cenário "${selecionado.nome}"` : "projeção base"} />
         <Kpi
+          href="#projecao"
           rotulo="EBIT (12 meses)"
           valor={fmtBRL(projecao.ebitCents)}
           apoio={selecionado ? `${projecao.ebitCents - ebitBase >= 0 ? "+" : ""}${fmtBRL(projecao.ebitCents - ebitBase)} contra a base` : `${fmtPercent(projecao.receitaLiquidaCents > 0 ? (projecao.ebitCents / projecao.receitaLiquidaCents) * 100 : null)} da receita líquida`}
           tom={projecao.ebitCents < 0 ? "ruim" : "bom"}
         />
-        <Kpi rotulo="Resultado líquido (12 meses)" valor={fmtBRL(projecao.resultadoLiquidoCents)} tom={projecao.resultadoLiquidoCents < 0 ? "ruim" : "neutro"} />
+        <Kpi href="#projecao" rotulo="Resultado líquido (12 meses)" valor={fmtBRL(projecao.resultadoLiquidoCents)} tom={projecao.resultadoLiquidoCents < 0 ? "ruim" : "neutro"} />
         <Kpi
+          href="#receita-contratada"
           rotulo="Receita contratada (12 meses)"
           valor={fmtBRL(contratadaNoHorizonte)}
           apoio={
@@ -139,6 +143,7 @@ export default async function CenariosPage({
       </div>
 
       <Secao
+        id="projecao"
         titulo={selecionado ? `Projeção — ${selecionado.nome}` : "Projeção base"}
         descricao={
           projecao.baseReceita === "CONTRATADA"
@@ -175,6 +180,30 @@ export default async function CenariosPage({
             )}
           </>
         )}
+      </Secao>
+
+      {/* O que compõe a receita contratada: os contratos ativos de cada mês do
+          horizonte, ao lado da receita que a série projetaria sem eles. */}
+      <Secao
+        id="receita-contratada"
+        titulo="Receita contratada, mês a mês"
+        descricao="Soma do valor mensal dos contratos de serviço da Omie cuja vigência cobre o mês inteiro, ao lado da receita bruta que a série histórica projetaria."
+      >
+        <Tabela
+          colunas={["Mês", "Contratos ativos", "Receita contratada", "Receita pela série"]}
+          alinharDireita={[1, 2, 3]}
+          vazio="Nenhum contrato de serviço sincronizado."
+          linhas={
+            contratos.length === 0
+              ? []
+              : meses.map((m, i) => [
+                  rotuloDaCompetencia(m),
+                  fmtNumero(projecao.receitaContratada[i]?.contratos ?? 0),
+                  fmtBRL(projecao.receitaContratada[i]?.cents ?? 0),
+                  fmtBRL(baseSemPremissa.baselineReceita[i]?.valorCents ?? 0),
+                ])
+          }
+        />
       </Secao>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

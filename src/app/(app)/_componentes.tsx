@@ -8,19 +8,31 @@ import { fmtBRL, fmtBRLCompacto, fmtData, fmtDocumento, fmtNumero, fmtPercent } 
 // JavaScript enviado ao navegador restrito às poucas telas que realmente
 // precisam de interação (tratativa de achado, formulários).
 
+// TODO CARTÃO ABRE O QUE O COMPÕE — padrão do sistema (ver CLAUDE.md).
+//
+// Um número solto num cartão gera a pergunta seguinte ("de onde vem isso?"),
+// e a resposta não pode ser abrir outra tela e refazer o filtro à mão. Por isso
+// o cartão EXIGE dizer para onde leva: `href` é a lista, a seção ou a tela
+// filtrada que compõe exatamente aquele número (com a empresa e a competência
+// da tela). Só o que não tem composição a mostrar usa `semDetalhe`, com o
+// motivo escrito — e o motivo fica no código para a revisão, não na tela.
+// Esquecer os dois é erro de compilação: cartão novo nasce com drill-down.
+type DrillDoKpi = { href: string; semDetalhe?: never } | { semDetalhe: string; href?: never };
+
 export function Kpi({
   rotulo,
   valor,
   apoio,
   tom = "neutro",
   icone,
+  href,
 }: {
   rotulo: string;
   valor: string;
   apoio?: string;
   tom?: "neutro" | "bom" | "atencao" | "ruim";
   icone?: ReactNode;
-}) {
+} & DrillDoKpi) {
   const cor = {
     neutro: "text-slate-900",
     bom: "text-emerald-700",
@@ -28,8 +40,8 @@ export function Kpi({
     ruim: "text-red-700",
   }[tom];
 
-  return (
-    <div className={`${cardClass} @container`}>
+  const cartao = (
+    <div className={`${cardClass} @container h-full`}>
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-medium text-slate-500">{rotulo}</p>
         {icone && <span className="text-slate-400">{icone}</span>}
@@ -40,7 +52,25 @@ export function Kpi({
           do número; tabular-nums deixa os dígitos com a mesma largura. */}
       <p className={`mt-2 whitespace-nowrap text-[clamp(1rem,8.5cqw,1.5rem)] font-semibold leading-tight tabular-nums ${cor}`}>{valor}</p>
       {apoio && <p className="mt-1 text-xs text-slate-500">{apoio}</p>}
+      {href && <p className="mt-2 text-[11px] font-medium text-blue-700 opacity-0 transition-opacity group-hover:opacity-100">Ver o que compõe →</p>}
     </div>
+  );
+  if (!href) return cartao;
+  const classe = "group block rounded-2xl transition hover:ring-2 hover:ring-blue-200";
+  // Âncora da mesma tela vai por <a>: o Link do Next troca o hash sem disparar
+  // `hashchange`, e é desse evento que a tabela do DRE depende para abrir as
+  // linhas ("#dre=RECEITA_BRUTA,DEDUCOES").
+  if (href.startsWith("#")) {
+    return (
+      <a href={href} title="Ver o que compõe este número" className={classe}>
+        {cartao}
+      </a>
+    );
+  }
+  return (
+    <Link href={href} prefetch={false} title="Ver o que compõe este número" className={classe}>
+      {cartao}
+    </Link>
   );
 }
 
@@ -49,14 +79,17 @@ export function Secao({
   descricao,
   acao,
   children,
+  id,
 }: {
   titulo: string;
   descricao?: string;
   acao?: ReactNode;
   children: ReactNode;
+  // Âncora para o drill-down de um cartão da mesma tela (href="#id").
+  id?: string;
 }) {
   return (
-    <section className={cardClass}>
+    <section id={id} className={`${cardClass} scroll-mt-4`}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-slate-900">{titulo}</h2>

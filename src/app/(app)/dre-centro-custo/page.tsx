@@ -190,11 +190,13 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
       )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Kpi rotulo="EBIT do mês (DRE)" valor={fmtBRL(r.ebitCents)} tom={r.ebitCents < 0 ? "ruim" : "neutro"} apoio={`receita ${fmtBRL(receitaTotal)}`} />
-        <Kpi rotulo="Nos centros de custo" valor={fmtBRL(r.alocadoCents)} apoio={`${r.centros.length} centros · ${operacionais.length} operacionais`} />
-        <Kpi rotulo="Não alocado" valor={fmtBRL(r.naoAlocado.totalCents)} tom={r.naoAlocado.origens.length > 0 ? "atencao" : "bom"} apoio={`${r.naoAlocado.origens.length} origens para ligar`} />
-        <Kpi rotulo="Cobertura" valor={fmtPercent(r.cobertura * 100, 0)} tom={r.cobertura >= 0.8 ? "bom" : r.cobertura >= 0.5 ? "atencao" : "ruim"} apoio="do volume operacional do mês" />
-        <Kpi rotulo="Quadro de pessoal" valor={fmtNumero(pessoasNoQuadro)} apoio={quadros.length ? `salários ${fmtBRL(r.centros.reduce((s, c) => s + c.salarioQuadroCents, 0))}` : "nenhuma lista importada"} />
+        {/* O quadro por centro soma operacionais, apoio e não alocado até o
+            EBIT: é onde os cinco números se abrem. */}
+        <Kpi href="#resultado-centros" rotulo="EBIT do mês (DRE)" valor={fmtBRL(r.ebitCents)} tom={r.ebitCents < 0 ? "ruim" : "neutro"} apoio={`receita ${fmtBRL(receitaTotal)}`} />
+        <Kpi href="#resultado-centros" rotulo="Nos centros de custo" valor={fmtBRL(r.alocadoCents)} apoio={`${r.centros.length} centros · ${operacionais.length} operacionais`} />
+        <Kpi href="#nao-alocado" rotulo="Não alocado" valor={fmtBRL(r.naoAlocado.totalCents)} tom={r.naoAlocado.origens.length > 0 ? "atencao" : "bom"} apoio={`${r.naoAlocado.origens.length} origens para ligar`} />
+        <Kpi href="#resultado-centros" rotulo="Cobertura" valor={fmtPercent(r.cobertura * 100, 0)} tom={r.cobertura >= 0.8 ? "bom" : r.cobertura >= 0.5 ? "atencao" : "ruim"} apoio="do volume operacional do mês" />
+        <Kpi href="#quadro-pessoal" rotulo="Quadro de pessoal" valor={fmtNumero(pessoasNoQuadro)} apoio={quadros.length ? `salários ${fmtBRL(r.centros.reduce((s, c) => s + c.salarioQuadroCents, 0))}` : "nenhuma lista importada"} />
       </div>
 
       {!escopo.conexaoId && conexoes.length > 1 && (
@@ -240,11 +242,12 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
       )}
 
       {r.centros.length === 0 ? (
-        <Secao titulo="Comece pelo quadro de pessoal" descricao="Os centros de custo nascem da lista de empregados ativos do sistema de folha.">
+        <Secao id="resultado-centros" titulo="Comece pelo quadro de pessoal" descricao="Os centros de custo nascem da lista de empregados ativos do sistema de folha.">
           {podeEditar ? <ImportarQuadro conexoes={conexoes.map((c) => ({ id: c.id, apelido: c.apelido }))} competencia={competenciaTexto} /> : <p className="text-sm text-slate-500">Peça a quem classifica o DRE para importar a lista de empregados.</p>}
         </Secao>
       ) : (
         <Secao
+          id="resultado-centros"
           titulo="Resultado por centro de custo"
           descricao={`Valores com o sinal do resultado: receita positiva, custo negativo. Margem direta = o que o centro recebe e gasta. ${rateio === "NENHUM" ? "Sem rateio do apoio." : `O resultado dos centros de apoio é rateado entre os operacionais pela ${rateio === "RECEITA" ? "receita" : "folha"}.`}`}
         >
@@ -319,7 +322,7 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
       )}
 
       {r.naoAlocado.origens.length > 0 && (
-        <section id="nao-alocado">
+        <section id="nao-alocado" className="scroll-mt-4">
           <Secao
             titulo={`Não alocado — ${fmtBRL(r.naoAlocado.totalCents)}`}
             descricao="Cada linha é uma origem da Omie sem centro de custo (a mais específica que o título tem: projeto, departamento ou cliente/fornecedor). Ligar vale para os meses seguintes também. A mesma origem ligada a vários centros com 100% em cada se divide pela folha deles; com percentuais, pelo percentual."
@@ -516,7 +519,7 @@ export default async function DreCentroCustoPage({ searchParams }: { searchParam
         </Secao>
       )}
 
-      <Secao titulo="Quadro de pessoal" descricao="A lista de empregados ativos do sistema de folha, uma por empresa e por mês. Guardamos nome, cargo, centro de custo, serviço, departamento, salário e admissão — CPF, RG e PIS não são gravados.">
+      <Secao id="quadro-pessoal" titulo="Quadro de pessoal" descricao="A lista de empregados ativos do sistema de folha, uma por empresa e por mês. Guardamos nome, cargo, centro de custo, serviço, departamento, salário e admissão — CPF, RG e PIS não são gravados.">
         <div className="space-y-3">
           {podeEditar && r.centros.length > 0 && <ImportarQuadro conexoes={conexoes.map((c) => ({ id: c.id, apelido: c.apelido }))} competencia={competenciaTexto} />}
           {historico.length === 0 ? (

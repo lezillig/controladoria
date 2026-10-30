@@ -77,9 +77,10 @@ export default async function RelatoriosPage() {
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Kpi rotulo="Relatórios guardados" valor={fmtNumero(relatorios.length)} apoio="Últimos 60" />
-        <Kpi rotulo="Enviados" valor={fmtNumero(enviados)} tom={enviados > 0 ? "bom" : "neutro"} />
-        <Kpi rotulo="Falhas de envio" valor={fmtNumero(comErro)} tom={comErro > 0 ? "ruim" : "bom"} />
+        {/* O histórico abaixo lista cada relatório com a situação do envio. */}
+        <Kpi rotulo="Relatórios guardados" valor={fmtNumero(relatorios.length)} apoio="Últimos 60" href="#historico" />
+        <Kpi rotulo="Enviados" valor={fmtNumero(enviados)} tom={enviados > 0 ? "bom" : "neutro"} href="#historico" />
+        <Kpi rotulo="Falhas de envio" valor={fmtNumero(comErro)} tom={comErro > 0 ? "ruim" : "bom"} href="#historico" />
       </div>
 
       <Secao
@@ -111,7 +112,7 @@ export default async function RelatoriosPage() {
         </Secao>
       )}
 
-      <Secao titulo="Histórico">
+      <Secao id="historico" titulo="Histórico">
         {relatorios.length === 0 ? (
           <AvisoVazio
             titulo="Nenhum relatório gerado ainda"

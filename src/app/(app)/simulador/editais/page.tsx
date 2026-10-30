@@ -90,6 +90,14 @@ export default async function HistoricoDeEditaisPage({ searchParams }: { searchP
   });
   const { linhas, resumo, porServico, concorrentes } = montarHistorico(editais);
   const filtrado = Boolean(q || f.servico || f.situacao || ano || esfera !== "PUBLICO");
+  // O filtro atual com uma troca — para o cartão abrir o recorte dele sem
+  // perder busca, serviço, ano e esfera.
+  const noFiltro = (troca: Record<string, string>) => {
+    const p = new URLSearchParams();
+    for (const [k, v] of Object.entries({ q, servico: f.servico, situacao: f.situacao, ano: ano ? String(ano) : undefined, esfera: esfera !== "PUBLICO" ? esfera : undefined, ...troca }))
+      if (v) p.set(k, v);
+    return p.toString();
+  };
   const campo = "rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm";
 
   return (
@@ -157,14 +165,16 @@ export default async function HistoricoDeEditaisPage({ searchParams }: { searchP
         )}
       </form>
 
+      {/* Os cartões abrem a lista que contam, no mesmo filtro: a de editais, os
+          perdidos (onde se mede nosso preço × vencedor) e a taxa por serviço. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Kpi rotulo="Editais analisados" valor={String(resumo.editais)} apoio={filtrado ? "no filtro" : undefined} />
-        <Kpi rotulo="Taxa de vitória" valor={pct(resumo.taxa)} apoio={resumo.decididos > 0 ? `${resumo.ganhos} de ${resumo.decididos} decididos` : "nenhum decidido ainda"} tom={resumo.taxa === null ? "neutro" : resumo.taxa >= 0.3 ? "bom" : "atencao"} />
-        <Kpi rotulo="Nosso preço × vencedor" valor={pct(resumo.nossoSobreVencedorMedio, true)} apoio="média nas disputas perdidas (+ = ficamos acima)" />
-        <Kpi rotulo="Desconto do vencedor sobre o teto" valor={pct(resumo.descontoVencedorMedio)} apoio="média dos editais com teto publicado" />
+        <Kpi href="#editais" rotulo="Editais analisados" valor={String(resumo.editais)} apoio={filtrado ? "no filtro" : undefined} />
+        <Kpi href="#por-servico" rotulo="Taxa de vitória" valor={pct(resumo.taxa)} apoio={resumo.decididos > 0 ? `${resumo.ganhos} de ${resumo.decididos} decididos` : "nenhum decidido ainda"} tom={resumo.taxa === null ? "neutro" : resumo.taxa >= 0.3 ? "bom" : "atencao"} />
+        <Kpi href={`/simulador/editais?${noFiltro({ situacao: "PERDIDO" })}#editais`} rotulo="Nosso preço × vencedor" valor={pct(resumo.nossoSobreVencedorMedio, true)} apoio="média nas disputas perdidas (+ = ficamos acima)" />
+        <Kpi href="#editais" rotulo="Desconto do vencedor sobre o teto" valor={pct(resumo.descontoVencedorMedio)} apoio="média dos editais com teto publicado" />
       </div>
 
-      <Secao titulo="Editais" descricao="Da sessão mais recente à mais antiga. Clique no edital para abrir o estudo (arquivos, versões, disputa).">
+      <Secao id="editais" titulo="Editais" descricao="Da sessão mais recente à mais antiga. Clique no edital para abrir o estudo (arquivos, versões, disputa).">
         {linhas.length === 0 ? (
           <AvisoVazio titulo={filtrado ? "Nada neste filtro" : "Nenhum edital analisado ainda"} descricao={filtrado ? "Mude ou limpe o filtro." : "Os estudos criados no simulador (pelo Importar edital ou à mão) aparecem aqui."} />
         ) : (
@@ -201,7 +211,7 @@ export default async function HistoricoDeEditaisPage({ searchParams }: { searchP
       </Secao>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Secao titulo="Por serviço" descricao="Decididos = ganhos + perdidos (e os que viraram contrato).">
+        <Secao id="por-servico" titulo="Por serviço" descricao="Decididos = ganhos + perdidos (e os que viraram contrato).">
           <Tabela
             colunas={["Serviço", "Editais", "Decididos", "Ganhos", "Taxa de vitória", "Nosso × vencedor"]}
             alinharDireita={[1, 2, 3, 4, 5]}

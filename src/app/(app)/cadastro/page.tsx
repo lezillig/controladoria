@@ -122,12 +122,13 @@ export default async function CadastroPage({ searchParams }: { searchParams: Pro
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Kpi rotulo="Veículos na frota" valor={fmtNumero(naFrota.length)} apoio={`${fmtNumero(veiculos.length - naFrota.length)} vendido(s) ou baixado(s)`} />
-        <Kpi rotulo="Idade média da frota" valor={idadeMedia === null ? "—" : `${fmtNumero(idadeMedia, 1)} anos`} apoio={`${fmtNumero(idades.length)} com ano de fabricação`} />
-        <Kpi rotulo="Pessoas ativas" valor={fmtNumero(pessoasAtivas)} />
-        <Kpi rotulo="Clientes" valor={fmtNumero(totalCli)} />
-        <Kpi rotulo="Fornecedores" valor={fmtNumero(totalForn)} />
-        <Kpi rotulo="Centros de custo" valor={fmtNumero(totalCentros)} apoio={semOmie ? `${fmtNumero(semOmie)} ainda sem código na Omie` : "todos com código na Omie"} tom={semOmie ? "atencao" : "bom"} />
+        {/* Cada contagem abre a aba que a lista (sem a busca, para listar todos). */}
+        <Kpi rotulo="Veículos na frota" valor={fmtNumero(naFrota.length)} apoio={`${fmtNumero(veiculos.length - naFrota.length)} vendido(s) ou baixado(s)`} href="/cadastro?aba=veiculos#lista" />
+        <Kpi rotulo="Idade média da frota" valor={idadeMedia === null ? "—" : `${fmtNumero(idadeMedia, 1)} anos`} apoio={`${fmtNumero(idades.length)} com ano de fabricação`} href="#frota-por-tipo" />
+        <Kpi rotulo="Pessoas ativas" valor={fmtNumero(pessoasAtivas)} href="/cadastro/pessoas" />
+        <Kpi rotulo="Clientes" valor={fmtNumero(totalCli)} href="/cadastro?aba=clientes#lista" />
+        <Kpi rotulo="Fornecedores" valor={fmtNumero(totalForn)} href="/cadastro?aba=fornecedores#lista" />
+        <Kpi rotulo="Centros de custo" valor={fmtNumero(totalCentros)} apoio={semOmie ? `${fmtNumero(semOmie)} ainda sem código na Omie` : "todos com código na Omie"} tom={semOmie ? "atencao" : "bom"} href="/cadastro?aba=centros#lista" />
       </div>
 
       {podeAtualizar && (
@@ -137,12 +138,13 @@ export default async function CadastroPage({ searchParams }: { searchParams: Pro
       )}
 
       {veiculos.length > 0 && (
-        <Secao titulo="Frota por tipo e situação" descricao="Idade média pelos veículos na frota com ano de fabricação.">
+        <Secao id="frota-por-tipo" titulo="Frota por tipo e situação" descricao="Idade média pelos veículos na frota com ano de fabricação.">
           <Tabela colunas={["Tipo", "Ativo", "Manutenção", "Reserva", "Vendido", "Baixado", "Idade média"]} alinharDireita={[1, 2, 3, 4, 5, 6]} linhas={porTipo} />
         </Secao>
       )}
 
       <Secao
+        id="lista"
         titulo={ABAS.find((a) => a.chave === aba)!.rotulo}
         descricao={`Até ${LIMITE} registros; use a busca para achar os demais.`}
         acao={

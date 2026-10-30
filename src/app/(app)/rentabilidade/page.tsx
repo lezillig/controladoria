@@ -144,13 +144,17 @@ export default async function RentabilidadePage({
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {/* Cobertura e custo abrem nos centros de custo da Omie do mês (o que
+            tem destino e o que falta); os contratos, na tabela por contrato. */}
         <Kpi
+          href="#centros-omie"
           rotulo="Cobertura do rateio"
           valor={fmtPercent(contratos.coberturaPercent)}
           apoio={`${fmtBRL(contratos.naoAlocadoCents)} não alocados`}
           tom={contratos.coberturaPercent >= 70 ? "bom" : contratos.coberturaPercent >= 40 ? "atencao" : "ruim"}
         />
         <Kpi
+          href="#centros-omie"
           rotulo="Custo total do mês"
           valor={fmtBRL(contratos.totalCents)}
           apoio={[
@@ -164,7 +168,7 @@ export default async function RentabilidadePage({
             .filter(Boolean)
             .join(". ")}
         />
-        <Kpi rotulo="Contratos com custo alocado" valor={fmtNumero(contratos.linhas.length)} apoio={`${fmtNumero(confirmados.length)} vínculo(s) confirmado(s)`} />
+        <Kpi href="#por-contrato" rotulo="Contratos com custo alocado" valor={fmtNumero(contratos.linhas.length)} apoio={`${fmtNumero(confirmados.length)} vínculo(s) confirmado(s)`} />
       </div>
 
       {contratos.coberturaPercent < 70 && contratos.totalCents > 0 && (
@@ -178,7 +182,7 @@ export default async function RentabilidadePage({
         </div>
       )}
 
-      <Secao titulo="Por contrato" descricao="Receita e custo alocados no mês, com a origem de cada alocação.">
+      <Secao id="por-contrato" titulo="Por contrato" descricao="Receita e custo alocados no mês, com a origem de cada alocação.">
         {contratos.linhas.length === 0 ? (
           <AvisoVazio
             titulo="Nenhum custo alocado a contrato ainda"
@@ -248,6 +252,7 @@ export default async function RentabilidadePage({
       </Secao>
 
       <Secao
+        id="centros-omie"
         titulo="Centros de custo da Omie no mês"
         descricao={`Departamento ou projeto com a placa do veículo ou o número do contrato (cadastrado na gestão) no nome vai sozinho para ele; o resto precisa do de-para abaixo. ${centrosSemDestino.length} de ${centros.length} sem destino, somando ${fmtBRL(centrosSemDestino.reduce((s, c) => s + c.valorCents, 0))}.`}
       >

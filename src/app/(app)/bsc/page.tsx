@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { inputClass, larguraPainel } from "@/lib/ui";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
@@ -13,7 +14,17 @@ import { salvarMeta } from "./actions";
 // o que vai aparecer nos financeiros. Um BSC apresentado como quatro listas
 // desconexas vira relatório de números; a leitura útil é a ligação entre eles.
 
-export default async function BscPage() {
+// O recorte que cada cartão abre (?farol=): os indicadores que ele conta.
+const RECORTES: Record<string, { rotulo: string; farois: string[] }> = {
+  VERDE: { rotulo: "dentro da meta", farois: ["VERDE"] },
+  AMARELO: { rotulo: "na tolerância", farois: ["AMARELO"] },
+  VERMELHO: { rotulo: "fora da meta", farois: ["VERMELHO"] },
+  SEM: { rotulo: "sem meta ou sem dado", farois: ["SEM_META", "SEM_DADO"] },
+};
+
+export default async function BscPage({ searchParams }: { searchParams: Promise<{ farol?: string }> }) {
+  const pedido = (await searchParams).farol ?? "";
+  const recorte = Object.hasOwn(RECORTES, pedido) ? RECORTES[pedido] : null;
   const { session, ctx } = await contextoDaPagina("bsc");
   const podeEditar = await podeAcao(session, "gerir-bsc");
 
@@ -44,14 +55,23 @@ export default async function BscPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Kpi rotulo="Dentro da meta" valor={fmtNumero(contagem("VERDE"))} tom="bom" />
-        <Kpi rotulo="Na tolerância" valor={fmtNumero(contagem("AMARELO"))} tom="atencao" />
-        <Kpi rotulo="Fora da meta" valor={fmtNumero(contagem("VERMELHO"))} tom={contagem("VERMELHO") > 0 ? "ruim" : "neutro"} />
-        <Kpi rotulo="Sem meta ou sem dado" valor={fmtNumero(contagem("SEM_META") + contagem("SEM_DADO"))} />
+        <Kpi href="/bsc?farol=VERDE" rotulo="Dentro da meta" valor={fmtNumero(contagem("VERDE"))} tom="bom" />
+        <Kpi href="/bsc?farol=AMARELO" rotulo="Na tolerância" valor={fmtNumero(contagem("AMARELO"))} tom="atencao" />
+        <Kpi href="/bsc?farol=VERMELHO" rotulo="Fora da meta" valor={fmtNumero(contagem("VERMELHO"))} tom={contagem("VERMELHO") > 0 ? "ruim" : "neutro"} />
+        <Kpi href="/bsc?farol=SEM" rotulo="Sem meta ou sem dado" valor={fmtNumero(contagem("SEM_META") + contagem("SEM_DADO"))} />
       </div>
 
+      {recorte && (
+        <p className="rounded-lg bg-slate-50 px-4 py-2 text-sm text-slate-700">
+          Mostrando só os indicadores {recorte.rotulo}.{" "}
+          <Link href="/bsc" className="font-medium text-blue-700 hover:underline">
+            Ver todos
+          </Link>
+        </p>
+      )}
+
       {PERSPECTIVAS.map((p) => {
-        const indicadores = medidos.filter((i) => i.indicador.perspectiva === p.chave);
+        const indicadores = medidos.filter((i) => i.indicador.perspectiva === p.chave && (!recorte || recorte.farois.includes(i.farol)));
         if (indicadores.length === 0) return null;
 
         return (

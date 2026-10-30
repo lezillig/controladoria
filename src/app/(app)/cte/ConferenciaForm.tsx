@@ -157,6 +157,7 @@ export default function ConferenciaForm({
                 valor={fmtBRL(r.canceladoComTituloCents)}
                 apoio={`${r.linhas.filter((l) => l.tipo === "cancelado_com_titulo").length} CT-e — receita sem documento fiscal válido`}
                 tom={r.canceladoComTituloCents > 0 ? "ruim" : "bom"}
+                semDetalhe="o botão em volta já filtra a lista de diferenças por este grupo e rola até ela"
               />
             </button>
             <button type="button" onClick={() => abrir("autorizado_sem_titulo")} className={`block rounded-2xl text-left transition hover:ring-2 hover:ring-blue-200 ${filtro === "autorizado_sem_titulo" ? "ring-2 ring-blue-500" : ""}`}>
@@ -165,6 +166,7 @@ export default function ConferenciaForm({
                 valor={fmtBRL(r.autorizadoSemTituloCents)}
                 apoio={`${r.linhas.filter((l) => l.tipo === "autorizado_sem_titulo").length} CT-e — imposto devido, cliente sem fatura`}
                 tom={r.autorizadoSemTituloCents > 0 ? "ruim" : "bom"}
+                semDetalhe="o botão em volta já filtra a lista de diferenças por este grupo e rola até ela"
               />
             </button>
             <button type="button" onClick={() => abrir("valor_divergente")} className={`block rounded-2xl text-left transition hover:ring-2 hover:ring-blue-200 ${filtro === "valor_divergente" ? "ring-2 ring-blue-500" : ""}`}>
@@ -173,6 +175,7 @@ export default function ConferenciaForm({
                 valor={fmtBRL(r.divergenciaDeValorCents)}
                 apoio={`${r.linhas.filter((l) => l.tipo === "valor_divergente").length} CT-e — cobrança fora do documento`}
                 tom={r.divergenciaDeValorCents > 0 ? "atencao" : "bom"}
+                semDetalhe="o botão em volta já filtra a lista de diferenças por este grupo e rola até ela"
               />
             </button>
             <button type="button" onClick={() => abrir("casado")} className={`block rounded-2xl text-left transition hover:ring-2 hover:ring-blue-200 ${filtro === "casado" ? "ring-2 ring-blue-500" : ""}`}>
@@ -181,6 +184,7 @@ export default function ConferenciaForm({
                 valor={fmtNumero(r.casados)}
                 apoio={`de ${fmtNumero(r.lidos)} lidos (${fmtNumero(r.autorizados)} autorizados, ${fmtNumero(r.cancelados)} cancelados)`}
                 tom={r.casados === r.lidos ? "bom" : "neutro"}
+                semDetalhe="o botão em volta já filtra a lista de diferenças por este grupo e rola até ela"
               />
             </button>
           </div>

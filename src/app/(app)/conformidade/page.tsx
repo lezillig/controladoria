@@ -102,7 +102,14 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
     if (statusFiltro === "VENCIDOS" && !estaVencido(a, hoje)) return false;
     if (statusFiltro === "REINCIDENTES" && a.ocorrencias < OCORRENCIAS_PARA_REINCIDENCIA) return false;
     if (statusFiltro === "PROPOSTAS" && !(a.propostoPorIa && !a.validado)) return false;
-    if (!["ABERTOS", "TODOS", "VENCIDOS", "REINCIDENTES", "PROPOSTAS"].includes(statusFiltro) && a.status !== statusFiltro) {
+    // Os graves do cartão: críticos e altos ainda sem tratativa concluída (o
+    // mesmo corte do panorama).
+    if (
+      statusFiltro === "GRAVES" &&
+      !((STATUS_EM_ABERTO as ConformidadeStatus[]).includes(a.status) && (a.severidade === "CRITICA" || a.severidade === "ALTA"))
+    )
+      return false;
+    if (!["ABERTOS", "TODOS", "VENCIDOS", "REINCIDENTES", "PROPOSTAS", "GRAVES"].includes(statusFiltro) && a.status !== statusFiltro) {
       return false;
     }
     if (areaFiltro && a.area !== areaFiltro) return false;
@@ -163,24 +170,28 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
               valor={fmtNumero(panorama.abertos)}
               apoio={panorama.valorEnvolvidoCents > 0 ? `${fmtBRL(panorama.valorEnvolvidoCents)} envolvidos` : undefined}
               tom={panorama.abertos > 0 ? "atencao" : "bom"}
+              href={`${comEmpresa(rota)}#apontamentos`}
             />
             <Kpi
               rotulo="Graves"
               valor={fmtNumero(panorama.criticos)}
               apoio="Críticos e altos sem tratativa concluída"
               tom={panorama.criticos > 0 ? "ruim" : "bom"}
+              href={`${comEmpresa(`${rota}?status=GRAVES`)}#apontamentos`}
             />
             <Kpi
               rotulo="Com prazo vencido"
               valor={fmtNumero(panorama.vencidos)}
               apoio="Prazo combinado que passou"
               tom={panorama.vencidos > 0 ? "ruim" : "bom"}
+              href={`${comEmpresa(`${rota}?status=VENCIDOS`)}#apontamentos`}
             />
             <Kpi
               rotulo="Reincidentes"
               valor={fmtNumero(panorama.reincidentes)}
               apoio={`Em ${OCORRENCIAS_PARA_REINCIDENCIA}+ competências`}
               tom={panorama.reincidentes > 0 ? "ruim" : "bom"}
+              href={`${comEmpresa(`${rota}?status=REINCIDENTES`)}#apontamentos`}
             />
           </div>
 
@@ -274,11 +285,13 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
           </Secao>
 
           <Secao
+            id="apontamentos"
             titulo={`${apontamentos.length} apontamento(s)`}
             descricao="Cada um traz o trecho do documento que o originou — a leitura pode ser conferida sem reabrir o arquivo."
             acao={
               <div className="flex flex-wrap gap-1 text-xs">
                 <FiltroLink rotulo="Em aberto" href={comEmpresa(rota)} ativo={statusFiltro === "ABERTOS" && !areaFiltro && !filtros.competencia} />
+                <FiltroLink rotulo="Graves" href={comEmpresa(`${rota}?status=GRAVES`)} ativo={statusFiltro === "GRAVES"} />
                 <FiltroLink rotulo="Vencidos" href={comEmpresa(`${rota}?status=VENCIDOS`)} ativo={statusFiltro === "VENCIDOS"} />
                 <FiltroLink rotulo="Reincidentes" href={comEmpresa(`${rota}?status=REINCIDENTES`)} ativo={statusFiltro === "REINCIDENTES"} />
                 <FiltroLink rotulo="A conferir" href={comEmpresa(`${rota}?status=PROPOSTAS`)} ativo={statusFiltro === "PROPOSTAS"} />

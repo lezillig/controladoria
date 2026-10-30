@@ -64,15 +64,16 @@ export default async function ContratoPage({ params }: { params: Promise<{ id: s
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
-        <Kpi rotulo="Parcelas pagas" valor={s.pagas !== null && c.parcelas ? `${s.pagas} de ${c.parcelas}` : "—"} apoio={ORIGEM[s.origemPagas]} />
-        <Kpi rotulo="Parcela" valor={fmtBRL(Number(c.valorParcelaCents ?? 0))} apoio={c.vencimentoDia ? `todo dia ${c.vencimentoDia}` : ""} />
-        <Kpi rotulo="Próximo vencimento" valor={s.proximoVencimento ? fmtData(s.proximoVencimento) : s.quitado ? "encerrado" : "—"} />
-        <Kpi rotulo="Saldo para quitação" valor={fmtBRL(s.saldoCents ?? 0)} apoio={s.saldoInformadoCents !== null ? `informado ${fmtBRL(s.saldoInformadoCents)}${c.saldoInformadoEm ? ` em ${fmtData(c.saldoInformadoEm)}` : ""}` : ""} />
-        <Kpi rotulo="Em atraso na Omie" valor={fmtBRL(s.atrasadas.valorCents)} tom={s.atrasadas.quantidade ? "ruim" : "bom"} apoio={`${s.atrasadas.quantidade} parcela(s)`} />
-        <Kpi rotulo="Lançadas a vencer" valor={fmtNumero(s.aVencerNaOmie.quantidade)} apoio={s.naoLancadas ? `${s.naoLancadas} prevista(s) não lançada(s)` : "na Omie"} tom={s.naoLancadas ? "atencao" : "neutro"} />
+        {/* Os cartões abrem nas parcelas da Omie e na parte de cada veículo, logo abaixo. */}
+        <Kpi href="#parcelas-omie" rotulo="Parcelas pagas" valor={s.pagas !== null && c.parcelas ? `${s.pagas} de ${c.parcelas}` : "—"} apoio={ORIGEM[s.origemPagas]} />
+        <Kpi href="#veiculos" rotulo="Parcela" valor={fmtBRL(Number(c.valorParcelaCents ?? 0))} apoio={c.vencimentoDia ? `todo dia ${c.vencimentoDia}` : ""} />
+        <Kpi href="#parcelas-omie" rotulo="Próximo vencimento" valor={s.proximoVencimento ? fmtData(s.proximoVencimento) : s.quitado ? "encerrado" : "—"} />
+        <Kpi href="#veiculos" rotulo="Saldo para quitação" valor={fmtBRL(s.saldoCents ?? 0)} apoio={s.saldoInformadoCents !== null ? `informado ${fmtBRL(s.saldoInformadoCents)}${c.saldoInformadoEm ? ` em ${fmtData(c.saldoInformadoEm)}` : ""}` : ""} />
+        <Kpi href="#parcelas-omie" rotulo="Em atraso na Omie" valor={fmtBRL(s.atrasadas.valorCents)} tom={s.atrasadas.quantidade ? "ruim" : "bom"} apoio={`${s.atrasadas.quantidade} parcela(s)`} />
+        <Kpi href="#parcelas-omie" rotulo="Lançadas a vencer" valor={fmtNumero(s.aVencerNaOmie.quantidade)} apoio={s.naoLancadas ? `${s.naoLancadas} prevista(s) não lançada(s)` : "na Omie"} tom={s.naoLancadas ? "atencao" : "neutro"} />
       </div>
 
-      <Secao titulo="Veículos" descricao="A parte de cada veículo na parcela e no saldo (pela parcela de cada placa na gestão; sem ela, em partes iguais).">
+      <Secao id="veiculos" titulo="Veículos" descricao="A parte de cada veículo na parcela e no saldo (pela parcela de cada placa na gestão; sem ela, em partes iguais).">
         <Tabela
           colunas={["Placa", "Modelo", "Parte", "Parcela do veículo", "Saldo do veículo"]}
           alinharDireita={[2, 3, 4]}
@@ -90,7 +91,7 @@ export default async function ContratoPage({ params }: { params: Promise<{ id: s
         />
       </Secao>
 
-      <Secao titulo="Parcelas na Omie" descricao="Os títulos das contas a pagar ligados a este contrato. A ligação é refeita a cada conferência (pelo número do contrato, pela cota ou pelo valor e dia).">
+      <Secao id="parcelas-omie" titulo="Parcelas na Omie" descricao="Os títulos das contas a pagar ligados a este contrato. A ligação é refeita a cada conferência (pelo número do contrato, pela cota ou pelo valor e dia).">
         <Tabela
           colunas={["Vencimento", "Empresa", "Documento", "Parcela", "Valor", "Pago", "Pagamento", "Situação", "Ligado por"]}
           alinharDireita={[4, 5]}
