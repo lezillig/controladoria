@@ -86,6 +86,18 @@ EXECUTORES["compra-veiculo"] = async (p) => {
   return `pedido aprovado: ${c.quantidade} veículo(s) a receber`;
 };
 
+// DESCONTO DE MULTA EM FOLHA aprovado pelo RH: grava a competência e o valor.
+EXECUTORES["desconto-multa"] = async (p) => {
+  const a = p.acaoProposta as { multaId: string; competencia: string; valorCents: number };
+  const m = await prisma.frotaMulta.findFirst({ where: { id: a.multaId, companyId: p.companyId } });
+  if (!m) throw new Error("multa não encontrada");
+  if (m.descontoCompetencia) return "a multa já tinha desconto lançado";
+  const depois = { descontoCompetencia: new Date(a.competencia), descontoValorCents: a.valorCents };
+  await prisma.frotaMulta.update({ where: { id: m.id }, data: depois });
+  await registrarAlteracao(prisma, { companyId: p.companyId, usuario: p.decididaPor, agente: "pendencia", tabela: "FrotaMulta", registroId: m.id, operacao: "update", antes: { descontoCompetencia: null }, depois });
+  return `desconto de ${(a.valorCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} na folha de ${a.competencia.slice(5, 7)}/${a.competencia.slice(0, 4)}`;
+};
+
 export async function executarPendencia(id: string): Promise<void> {
   const p = await prisma.audPendencia.findUnique({ where: { id } });
   if (!p || p.status !== "aprovada") return;

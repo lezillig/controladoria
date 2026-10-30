@@ -65,7 +65,8 @@
     "teste:recuperacao": "tsx scripts/teste-recuperacao.ts",
     "teste:cadastro": "tsx scripts/teste-cadastro.ts",
     "teste:frota-cadastro": "tsx scripts/teste-frota-cadastro.ts",
-    "teste:motoristas": "tsx scripts/teste-motoristas.ts"
+    "teste:motoristas": "tsx scripts/teste-motoristas.ts",
+    "teste:multas": "tsx scripts/teste-multas.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

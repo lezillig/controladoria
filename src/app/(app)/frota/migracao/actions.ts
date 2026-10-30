@@ -7,6 +7,8 @@ import { redigir } from "@/lib/controladoria/falhas";
 import { lerPlanilhas, type LeituraMigracao } from "@/lib/frota/migracaoPlanilhas";
 import { gravarContratos, gravarFrota, type ResultadoGravacao } from "@/lib/frota/migracaoNoBanco";
 import { ROTULO_PRODUTO } from "@/lib/frota/financiamentos";
+import { lerPlanilhaMultas, type LeituraMultas } from "@/lib/frota/multas";
+import { gravarMultas, type ResultadoMultas } from "@/lib/frota/multasNoBanco";
 import { exigirPermissao } from "../../_dados";
 
 // A MIGRAÇÃO ÚNICA DAS PLANILHAS: ler e mostrar a prévia; depois gravar, em
@@ -92,6 +94,62 @@ export async function gravarMigracao(formData: FormData, etapa: "frota" | "contr
         : await gravarContratos(session.companyId, session.name, r, r.dataReferencia ?? new Date());
     revalidatePath("/frota");
     revalidatePath("/frota/financiamentos");
+    return { resultado };
+  } catch (e) {
+    return { erro: redigir(e instanceof Error ? e.message : "erro").slice(0, 300) };
+  }
+}
+
+// A PLANILHA DE MULTAS (CONTROLE MULTAS): prévia e gravação.
+async function lerMultas(formData: FormData): Promise<LeituraMultas> {
+  const f = formData.get("multas");
+  if (!(f instanceof File) || f.size === 0) throw new Error("Escolha a planilha de multas.");
+  if (f.size > 8 * 1024 * 1024) throw new Error(`${f.name}: arquivo acima de 8 MB.`);
+  const livro = new ExcelJS.Workbook();
+  try {
+    await livro.xlsx.load((await f.arrayBuffer()) as ArrayBuffer);
+  } catch {
+    throw new Error(`${f.name}: não consegui abrir. Envie o .xlsx original.`);
+  }
+  const r = lerPlanilhaMultas(livro);
+  if (!r.multas.length) throw new Error("Não achei multas: a planilha precisa ter as colunas PLACA e AIT.");
+  return r;
+}
+
+export type PreviaMultas = { total: number; abertas: number; finalizadas: number; nic: number; valorCents: number; descontadoCents: number; empresaAssume: number; semVeiculo: number; jaLancadas: number; problemas: { aba: string; linha: number; problema: string }[]; abasLidas: string[] };
+
+export async function previaMultas(formData: FormData): Promise<{ previa?: PreviaMultas; erro?: string }> {
+  const session = await exigirPermissao("migrar-planilhas");
+  try {
+    const r = await lerMultas(formData);
+    const placas = new Set((await prisma.cadVeiculo.findMany({ where: { companyId: session.companyId, placa: { not: null } }, select: { placa: true } })).map((v) => v.placa));
+    const lancadas = new Set((await prisma.frotaMulta.findMany({ where: { companyId: session.companyId }, select: { ait: true } })).map((m) => m.ait));
+    return {
+      previa: {
+        total: r.multas.length,
+        abertas: r.multas.filter((m) => m.situacao === "aberta").length,
+        finalizadas: r.multas.filter((m) => m.situacao === "finalizada").length,
+        nic: r.multas.filter((m) => m.ehNic).length,
+        valorCents: r.multas.reduce((s, m) => s + m.valorCents, 0),
+        descontadoCents: r.multas.reduce((s, m) => s + (m.descontoValorCents ?? 0), 0),
+        empresaAssume: r.multas.filter((m) => m.responsavel === "empresa").length,
+        semVeiculo: r.multas.filter((m) => !placas.has(m.placa)).length,
+        jaLancadas: r.multas.filter((m) => lancadas.has(m.ait)).length,
+        problemas: r.problemas.slice(0, 200),
+        abasLidas: r.abasLidas,
+      },
+    };
+  } catch (e) {
+    return { erro: redigir(e instanceof Error ? e.message : "erro").slice(0, 300) };
+  }
+}
+
+export async function gravarMultasDaPlanilha(formData: FormData): Promise<{ resultado?: ResultadoMultas; erro?: string }> {
+  const session = await exigirPermissao("migrar-planilhas");
+  try {
+    const resultado = await gravarMultas(session.companyId, session.name, await lerMultas(formData));
+    await prisma.audLog.create({ data: { companyId: session.companyId, usuario: session.name, tabela: "Migracao", registroId: "multas", operacao: "insert", depois: resultado } });
+    revalidatePath("/frota/multas");
     return { resultado };
   } catch (e) {
     return { erro: redigir(e instanceof Error ? e.message : "erro").slice(0, 300) };

@@ -48,6 +48,7 @@ export const PERMISSOES = [
   { chave: "frota", rotulo: "Frota (veículos, documentos, vencimentos, apólices)", grupo: "Telas" },
   { chave: "financiamentos", rotulo: "Financiamentos e consórcios", grupo: "Telas" },
   { chave: "motoristas", rotulo: "Motoristas (apto ou não para a escala, e o motivo)", grupo: "Telas" },
+  { chave: "multas", rotulo: "Multas (condutor, prazos de indicação, pagamento e desconto)", grupo: "Telas" },
 
   { chave: "tratar-achado", rotulo: "Tratar achado de auditoria", grupo: "Ações" },
   { chave: "investigar", rotulo: "Investigar com a IA (cada pergunta tem custo)", grupo: "Ações" },
@@ -73,6 +74,7 @@ export const PERMISSOES = [
   { chave: "migrar-planilhas", rotulo: "Migrar as planilhas de frota e financiamentos", grupo: "Ações" },
   { chave: "motoristas-documentos", rotulo: "Ver documentos, validades e férias dos motoristas", grupo: "Ações" },
   { chave: "gerir-motoristas", rotulo: "Lançar documentos e férias dos motoristas", grupo: "Ações" },
+  { chave: "gerir-multas", rotulo: "Lançar e tratar multas (condutor, termo, indicação, pagamento)", grupo: "Ações" },
   { chave: "gerir-usuarios", rotulo: "Criar usuários e definir perfis", grupo: "Ações" },
 ] as const;
 
@@ -198,6 +200,7 @@ export const PERFIS_SUGERIDOS: { nome: string; descricao: string; permissoes: Pe
       "frota-valores",
       "financiamentos",
       "gerir-financiamentos",
+      "multas",
     ],
   },
   {
@@ -213,7 +216,12 @@ export const PERFIS_SUGERIDOS: { nome: string; descricao: string; permissoes: Pe
   {
     nome: "RH",
     descricao: "Pessoas, documentos e férias dos motoristas, fechamento da folha, e as pendências do RH.",
-    permissoes: ["pendencias", "decidir-pendencia", "cadastro-pessoas", "folha", "marcar-folha", "motoristas", "motoristas-documentos", "gerir-motoristas"],
+    permissoes: ["pendencias", "decidir-pendencia", "cadastro-pessoas", "folha", "marcar-folha", "motoristas", "motoristas-documentos", "gerir-motoristas", "multas"],
+  },
+  {
+    nome: "Multas",
+    descricao: "O processo das multas: identificar quem dirigia (escala, uso do veículo, diário de bordo), colher o termo, indicar o condutor no prazo e acompanhar o pagamento. O desconto em folha é o RH que aprova.",
+    permissoes: ["pendencias", "decidir-pendencia", "multas", "gerir-multas", "frota", "motoristas"],
   },
   {
     nome: "Contador",

@@ -2550,6 +2550,7 @@ model CadVeiculo {
   // O pedido de compra que trouxe o veículo (fluxo de compra).
   compraId              String?
   compra                FrotaCompra?   @relation(fields: [compraId], references: [id])
+  multas                FrotaMulta[]
   // Venda (o veículo nunca é apagado).
   dataVenda             DateTime?
   valorVendaCents       BigInt?
@@ -2604,6 +2605,7 @@ model CadPessoa {
   linhasPadrao CadLinha[]
   documentos   PesDocumento[]
   ferias       PesFerias[]
+  multas       FrotaMulta[]   @relation("MultaCondutor")
 
   @@unique([companyId, cpf])
   @@unique([companyId, matriculaPonto])
@@ -3042,4 +3044,74 @@ model FrotaCompra {
   veiculos            CadVeiculo[]
 
   @@index([companyId, status])
+}
+
+// ---------------------------------------------------------------------------
+// MULTAS — o processo que a planilha CONTROLE MULTAS fazia à mão: a multa
+// achada na consulta de placa → quem dirigia (escala e uso do veículo da
+// gestão; sem eles, o diário de bordo) → termo assinado pelo motorista (ou a
+// empresa assume) → indicação do condutor ao órgão dentro do prazo (perder o
+// prazo gera a NIC, multa por não indicação) → pagamento → desconto em
+// folha, aprovado pelo RH com o termo. A etapa é calculada
+// (src/lib/frota/multas.ts), não gravada.
+// ---------------------------------------------------------------------------
+
+model FrotaMulta {
+  id                    String       @id @default(cuid())
+  companyId             String
+  veiculoId             String?
+  veiculo               CadVeiculo?  @relation(fields: [veiculoId], references: [id])
+  placa                 String
+  orgao                 String
+  // Número do auto de infração.
+  ait                   String
+  dataInfracao          DateTime
+  especificacao         String
+  codigoInfracao        String?
+  pontos                Int?
+  valorCents            Int
+  // Quando a multa apareceu na consulta de placa (LW, Fazenda…).
+  incluidaEm            DateTime?
+  // planilha | manual | consulta
+  origem                String       @default("manual")
+  // Quem dirigia.
+  condutorPessoaId      String?
+  condutor              CadPessoa?   @relation("MultaCondutor", fields: [condutorPessoaId], references: [id])
+  // Nome como veio da planilha, quando não casa com o cadastro.
+  condutorNome          String?
+  // escala | uso | diario | manual | planilha
+  condutorFonte         String?
+  condutorNaoLocalizado Boolean      @default(false)
+  // A sugestão do agente (escala/uso do veículo na hora), para confirmar.
+  sugeridoPessoaId      String?
+  sugeridoFonte         String?
+  diarioSolicitadoEm    DateTime?
+  diarioRecebidoEm      DateTime?
+  // a_definir | motorista | empresa
+  responsavel           String       @default("a_definir")
+  termoAssinadoEm       DateTime?
+  termoRecusado         Boolean      @default(false)
+  // Prazo para indicar o condutor (o vencimento da notificação).
+  prazoIndicacao        DateTime?
+  indicadoEm            DateTime?
+  vencimentoBoleto      DateTime?
+  pagoEm                DateTime?
+  tituloOmieId          String?
+  // Competência (1º dia do mês) e valor do desconto em folha.
+  descontoCompetencia   DateTime?
+  descontoValorCents    Int?
+  // NIC: esta multa é a por não indicação de outra.
+  ehNic                 Boolean      @default(false)
+  nicDeId               String?
+  nicDe                 FrotaMulta?  @relation("MultaNic", fields: [nicDeId], references: [id])
+  nics                  FrotaMulta[] @relation("MultaNic")
+  // aberta | finalizada | cancelada (recurso deferido, multa anulada)
+  situacao              String       @default("aberta")
+  observacao            String?
+  criadoEm              DateTime     @default(now())
+  atualizadoEm          DateTime     @updatedAt
+
+  @@unique([companyId, ait])
+  @@index([companyId, situacao])
+  @@index([companyId, condutorPessoaId, dataInfracao])
 }

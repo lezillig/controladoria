@@ -24,7 +24,7 @@ const dataIso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
 export default async function FichaMotoristaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await exigirPermissao("motoristas-documentos");
-  const podeEditar = await podeAcao(session, "gerir-motoristas");
+  const [podeEditar, veMultas] = await Promise.all([podeAcao(session, "gerir-motoristas"), podeAcao(session, "multas")]);
   const hoje = new Date();
   const { linhas, controleDesde } = await listarMotoristas(session.companyId, hoje, { ids: [id], comInativos: true });
   const p = linhas[0];
@@ -168,6 +168,22 @@ export default async function FichaMotoristaPage({ params }: { params: Promise<{
             <input name="observacao" placeholder="Observação (ex.: programadas, 1ª parcela)" className={`${ent} min-w-64`} />
           </FormAcao>
         )}
+      </Secao>
+
+      <Secao titulo={`Multas nos últimos 12 meses (${p.pontos.pontos} pontos)`} descricao="As multas em que ele(a) foi o condutor. Pontos só das não assumidas pela empresa.">
+        <Tabela
+          colunas={["Infração", "AIT", "Placa", "O quê", "Pontos", "Situação"]}
+          alinharDireita={[4]}
+          linhas={p.multas.map((m) => [
+            fmtData(m.dataInfracao),
+            veMultas ? <Link key="a" href={`/frota/multas/${m.id}`} className="font-mono text-blue-800 hover:underline">{m.ait}</Link> : <span key="a" className="font-mono">{m.ait}</span>,
+            <span key="p" className="font-mono">{m.placa}</span>,
+            m.especificacao,
+            m.pontos !== null ? String(m.pontos) : "—",
+            m.situacao + (m.responsavel === "empresa" ? " · a empresa assumiu" : ""),
+          ])}
+          vazio="Nenhuma multa nos últimos 12 meses."
+        />
       </Secao>
 
       <Secao titulo="Histórico">

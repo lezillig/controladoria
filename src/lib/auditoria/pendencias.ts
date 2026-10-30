@@ -6,7 +6,7 @@ import { registrarAlteracao } from "./trilha";
 // carga propõe com evidências; uma pessoa do perfil aprovador aprova ou
 // rejeita, com comentário; a decisão vai para a trilha.
 
-export const PERFIS_APROVADORES = ["admin", "gestor", "operacao", "financeiro", "rh"] as const;
+export const PERFIS_APROVADORES = ["admin", "gestor", "operacao", "financeiro", "rh", "multas"] as const;
 export type PerfilAprovador = (typeof PERFIS_APROVADORES)[number];
 export const SEVERIDADES = ["baixa", "media", "alta", "critica"] as const;
 
@@ -19,6 +19,7 @@ const PAPEL_DO_PERFIL: Record<string, string[]> = {
   operacao: ["GESTOR"],
   financeiro: ["CONTROLADORIA"],
   rh: ["FOLHA"],
+  multas: ["GESTOR"],
   admin: [],
 };
 // Os nomes de perfil de acesso que valem por cada perfil aprovador.
@@ -28,6 +29,7 @@ const ALIAS_DO_PERFIL: Record<string, string[]> = {
   operacao: ["operac", "frota", "trafego", "documenta"],
   financeiro: ["financ"],
   rh: ["rh", "recursos humanos", "departamento pessoal", "dp"],
+  multas: ["multa", "juridic", "frota"],
 };
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
