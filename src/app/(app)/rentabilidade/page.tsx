@@ -7,6 +7,7 @@ import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
 import { casarClientes } from "@/lib/controladoria/casamentoClientes";
 import { custoDeCapitalPorVeiculo, premissasDaBase } from "@/lib/controladoria/custoDeCapital";
 import { lerPatrimonioDaFrota } from "@/lib/gestao/leitura";
+import { patrimonioDaPlataforma } from "@/lib/frota/frotaNoBanco";
 import { baseVigente } from "@/lib/simulador/baseDeCustos";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
@@ -44,7 +45,11 @@ export default async function RentabilidadePage({
   const nomesCliente = new Map(ctx.clientes.map((c) => [c.id, c.nome]));
   const contratos = rentabilidadePorContrato(ctx, periodo, nomesCliente);
   const casamento = casarClientes(ctx, periodo);
-  const [patrimonio, base] = await Promise.all([lerPatrimonioDaFrota(session.companyId), baseVigente(session.companyId, periodo.fim)]);
+  // A frota da plataforma (compra + adaptações, saldo pela Omie, juros pela
+  // taxa, multas assumidas) quando já migrada; antes disso, a da gestão.
+  const [daPlataforma, base] = await Promise.all([patrimonioDaPlataforma(session.companyId, periodo), baseVigente(session.companyId, periodo.fim)]);
+  const patrimonio = daPlataforma ?? (await lerPatrimonioDaFrota(session.companyId));
+  const fontePatrimonio = daPlataforma ? "a ficha do veículo na Frota (compra + adaptações) e os contratos com o saldo pela Omie" : "a ficha da gestão";
   const premissasDep = premissasDaBase(base.parametros);
   const capital = custoDeCapitalPorVeiculo(patrimonio.veiculos, patrimonio.financiamentos, premissasDep, periodo);
   const capitalSemCompra = capital.filter((c) => c.motivo === "sem valor ou data de compra na ficha").length;
@@ -394,14 +399,16 @@ export default async function RentabilidadePage({
 
       <Secao
         titulo="Custo de propriedade por veículo"
-        descricao={`Depreciação linear: (valor de compra − ${fmtPercent(premissasDep.valorResidualPct * 100)} residual) ÷ ${premissasDep.vidaUtilAnos} anos (fonte: ${premissasDep.fonte}). A parcela do financiamento ou consórcio é caixa e aparece ao lado, sem somar: o veículo seria contado duas vezes. ${capitalSemCompra} veículo(s) sem valor ou data de compra na ficha da gestão.`}
+        descricao={`Depreciação linear: (valor de compra − ${fmtPercent(premissasDep.valorResidualPct * 100)} residual) ÷ ${premissasDep.vidaUtilAnos} anos (fonte: ${premissasDep.fonte}). A parcela do financiamento ou consórcio é caixa e aparece ao lado, sem somar: o veículo seria contado duas vezes. Fonte: ${fontePatrimonio}. ${capitalSemCompra} veículo(s) sem valor ou data de compra.${daPlataforma ? " Juros do mês estimados pelo saldo × a taxa de cada contrato (consórcio não tem juros); multas: as que a empresa assumiu, pela data da infração." : ""}`}
       >
         <Tabela
-          colunas={["Veículo", "Operação (Omie + cartão)", "Depreciação", "Operação + depreciação", "Parcela no mês", "Saldo a pagar"]}
-          alinharDireita={[1, 2, 3, 4, 5]}
+          colunas={["Veículo", "Operação (Omie + cartão)", "Depreciação", "Juros do mês", "Multas assumidas", "Custo total", "Parcela no mês", "Saldo a pagar"]}
+          alinharDireita={[1, 2, 3, 4, 5, 6, 7]}
           vazio="Sem dados de compra ou financiamento lidos da gestão."
           linhas={capital.slice(0, 40).map((c) => {
             const operacao = custoOperacaoPorVeiculo.get(c.vehicleId) ?? 0;
+            const juros = daPlataforma?.juros.get(c.vehicleId) ?? null;
+            const multas = daPlataforma?.multas.get(c.vehicleId) ?? null;
             return [
               <span key="p" className="font-medium text-slate-800">
                 {c.placa}
@@ -409,7 +416,9 @@ export default async function RentabilidadePage({
               </span>,
               fmtBRL(operacao),
               c.depreciacaoCents != null ? fmtBRL(c.depreciacaoCents) : <span key="d" className="text-xs text-amber-700">{c.motivo}</span>,
-              c.depreciacaoCents != null ? fmtBRL(operacao + c.depreciacaoCents) : "—",
+              juros != null ? fmtBRL(juros) : "—",
+              multas != null ? fmtBRL(multas) : "—",
+              c.depreciacaoCents != null ? fmtBRL(operacao + c.depreciacaoCents + (juros ?? 0) + (multas ?? 0)) : "—",
               c.parcelaCents ? fmtBRL(c.parcelaCents) : "—",
               c.saldoCents ? fmtBRL(c.saldoCents) : "—",
             ];

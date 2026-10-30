@@ -302,6 +302,16 @@ async function noBanco() {
     const trilha = await prisma.audLog.count({ where: { companyId: EMP, agente: "migracao-planilhas", tabela: "CadVeiculo", operacao: "insert" } });
     conferir("cada veículo criado está na trilha", trilha, 4);
 
+    console.log("\n5b. O patrimônio para a rentabilidade (custo de propriedade)");
+    const { patrimonioDaPlataforma } = await import("../src/lib/frota/frotaNoBanco");
+    const pat = await patrimonioDaPlataforma(EMP, { inicio: d("2026-10-01"), fim: d("2026-10-31") });
+    const moneoV = pat?.financiamentos.filter((f) => f.banco === "BANCO MONEO") ?? [];
+    conferir(
+      "veículos e a parte de cada um nos contratos; juros pela taxa (consórcio sem juros)",
+      [pat?.veiculos.length, pat?.financiamentos.length, moneoV.length, moneoV.every((f) => (pat?.juros.get(f.vehicleId) ?? 0) > 0), pat?.financiamentos.filter((f) => f.modalidade === "CONSORCIO").every((f) => !pat?.juros.has(f.vehicleId) || moneoV.some((m) => m.vehicleId === f.vehicleId))],
+      [4, 4, 2, true, true]
+    );
+
     console.log("\n6. Contrato quitado: aprovar encerra, desaliena e pede a baixa do gravame");
     const { criarPendencia } = await import("../src/lib/auditoria/pendencias");
     const { executarPendencia } = await import("../src/lib/auditoria/executores");

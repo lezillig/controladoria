@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { alertaDoDocumento, type Alerta } from "./documentos";
 import { coberturaDeApolice, piorAlerta, type CoberturaApolice } from "./controles";
-import { saldoPorVeiculo, situacaoDoFinanciamento, lerNumeroParcela, type PagamentoOmie, type SituacaoFinanciamento, type SaldoDoVeiculo } from "./financiamentos";
+import { rateioDoContrato, saldoPorVeiculo, situacaoDoFinanciamento, lerNumeroParcela, type PagamentoOmie, type SituacaoFinanciamento, type SaldoDoVeiculo } from "./financiamentos";
 
 // A FROTA LIDA DO BANCO, com o que se calcula sobre ela: o alerta dos
 // documentos, a cobertura da apólice, a situação de cada contrato (com as
@@ -134,4 +134,48 @@ export async function veiculosIguais(companyId: string, v: { id: string; tipo: s
     select: { id: true, placa: true, tipo: true, marca: true, modelo: true, anoMod: true, fipeCodigo: true },
   });
   return candidatos.filter((c) => chaveDoGrupoFipe(c) === chave);
+}
+
+// O PATRIMÔNIO DA FROTA PARA A RENTABILIDADE (custo de propriedade), lido da
+// plataforma no formato que a rentabilidade já usa: o investimento é a compra
+// mais as adaptações; a parcela e o saldo de cada contrato vão para os
+// veículos pela parte de cada um, com o saldo atualizado pela Omie. O id é o
+// do veículo na gestão quando existe (é por ele que o custo de operação vem).
+// Junto, os JUROS DO MÊS estimados (saldo × taxa do contrato; consórcio não
+// tem juros) e as MULTAS que a empresa assumiu no período. Sem nenhum
+// veículo com compra na plataforma, devolve null e a tela segue com a gestão.
+export async function patrimonioDaPlataforma(companyId: string, periodo: { inicio: Date; fim: Date }) {
+  const veiculos = await prisma.cadVeiculo.findMany({
+    where: { companyId },
+    select: { id: true, placa: true, status: true, dataCompra: true, valorCompraCents: true, dataVenda: true, origens: true, adaptacoes: { select: { valorCents: true } } },
+  });
+  if (!veiculos.some((v) => v.valorCompraCents !== null)) return null;
+  const idDe = new Map(veiculos.map((v) => [v.id, (v.origens as Record<string, string> | null)?.gestao ?? v.id]));
+  const contratos = await contratosComSituacao(companyId, periodo.fim);
+  const financiamentos: { vehicleId: string; banco: string; modalidade: string; parcelaCents: number | null; saldoCents: number | null; quitado: boolean; dataFinal: Date | null; posicaoEm: Date }[] = [];
+  const juros = new Map<string, number>();
+  for (const c of contratos) {
+    const fatias = rateioDoContrato(c.veiculos);
+    for (const v of c.veiculos) {
+      const f = fatias.get(v.veiculoId) ?? 0;
+      const vehicleId = idDe.get(v.veiculoId) ?? v.veiculoId;
+      const saldo = c.situacao.saldoCents !== null ? Math.round(c.situacao.saldoCents * f) : null;
+      financiamentos.push({ vehicleId, banco: c.instituicao, modalidade: c.produto === "consorcio" ? "CONSORCIO" : "FINANCIAMENTO", parcelaCents: c.valorParcelaCents !== null ? Math.round(Number(c.valorParcelaCents) * f) : null, saldoCents: saldo, quitado: c.situacao.quitado, dataFinal: c.dataFinal, posicaoEm: periodo.fim });
+      if (!c.situacao.quitado && c.produto !== "consorcio" && c.taxaPct !== null && saldo) juros.set(vehicleId, (juros.get(vehicleId) ?? 0) + Math.round((saldo * Number(c.taxaPct)) / 100));
+    }
+  }
+  const multas = await prisma.frotaMulta.groupBy({ by: ["veiculoId"], where: { companyId, responsavel: "empresa", situacao: { not: "cancelada" }, dataInfracao: { gte: periodo.inicio, lte: periodo.fim }, veiculoId: { not: null } }, _sum: { valorCents: true } });
+  return {
+    veiculos: veiculos.map((v) => ({
+      id: idDe.get(v.id)!,
+      plate: v.placa,
+      status: v.status,
+      dataCompra: v.dataCompra,
+      valorCompraCents: v.valorCompraCents !== null ? Number(v.valorCompraCents) + v.adaptacoes.reduce((s, a) => s + Number(a.valorCents), 0) : null,
+      dataVenda: v.dataVenda,
+    })),
+    financiamentos,
+    juros,
+    multas: new Map(multas.map((m) => [idDe.get(m.veiculoId!) ?? m.veiculoId!, m._sum.valorCents ?? 0])),
+  };
 }
