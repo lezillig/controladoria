@@ -9,6 +9,7 @@
 // Sem banco: o contexto é montado à mão, como nos outros conjuntos.
 import type { OmieCategoria, OmieTitulo, OmieVinculoCentroCusto } from "@prisma/client";
 import { casarClientes } from "../src/lib/controladoria/casamentoClientes";
+import { custoDeCapitalPorVeiculo, premissasDaBase } from "../src/lib/controladoria/custoDeCapital";
 import { centrosDeCustoDoMes, custoPorFuncionario, custoPorVeiculo, custoTotalPeriodo, custosDoPeriodo, rentabilidadePorContrato } from "../src/lib/controladoria/unitEconomics";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 import type { AbastecimentoGestao } from "../src/lib/gestao/leitura";
@@ -257,6 +258,34 @@ console.log("\nCENTRO DE CUSTO BATIZADO COM A PLACA OU O CONTRATO — sem de-par
     "duas coisas no nome é rateio (de-para); número curto não casa",
     centrosDeCustoDoMes(c, AGOSTO).map((x) => [x.codigo, x.destino, x.alvo]),
     [["D11", "contrato", "PREFEITURA"], ["D10", "placa", "ABC1D23"], ["D12", "nenhum", null], ["D13", "nenhum", null]]
+  );
+}
+
+console.log("\nCUSTO DE PROPRIEDADE — depreciação linear e parcela ao lado");
+{
+  const premissas = premissasDaBase(new Map([["vida_util_anos", { valor: 5 }], ["valor_residual_pct", { valor: 0.2 }]]));
+  conferir("premissas da base", [premissas.vidaUtilAnos, premissas.valorResidualPct, premissas.fonte], [5, 0.2, "base de custos do simulador"]);
+  conferir("sem premissa na base, o padrão do simulador e a tela diz", premissasDaBase(new Map()).vidaUtilAnos, 8);
+  const v = (id: string, p: Partial<{ dataCompra: Date | null; valorCompraCents: number | null; dataVenda: Date | null }>) => ({
+    id, plate: id.toUpperCase(), status: "ATIVO", dataCompra: d("2024-03-10T00:00:00"), valorCompraCents: 300_000_00, dataVenda: null, ...p,
+  });
+  const r = custoDeCapitalPorVeiculo(
+    [v("van1", {}), v("velha", { dataCompra: d("2015-01-01T00:00:00") }), v("semcompra", { valorCompraCents: null }), v("vendida", { dataVenda: d("2026-07-01T00:00:00") })],
+    [
+      { vehicleId: "van1", banco: "Itaú", modalidade: "CDC", parcelaCents: 7_500_00, saldoCents: 120_000_00, quitado: false, dataFinal: d("2028-01-01T00:00:00"), posicaoEm: d("2026-08-01") },
+      { vehicleId: "van1", banco: "Bradesco", modalidade: "CONSORCIO", parcelaCents: 2_000_00, saldoCents: 0, quitado: true, dataFinal: null, posicaoEm: d("2026-08-01") },
+    ],
+    premissas,
+    AGOSTO
+  );
+  conferir(
+    "R$ 300 mil, 20% residual, 5 anos = R$ 4.000/mês; quitado não pesa; vida útil encerrada e sem compra dizem por quê; vendida antes do mês sai",
+    r.map((x) => [x.placa, x.depreciacaoCents, x.motivo, x.parcelaCents, x.saldoCents, x.financiamentos]),
+    [
+      ["VAN1", 4_000_00, null, 7_500_00, 120_000_00, ["financiamento Itaú"]],
+      ["VELHA", null, "vida útil encerrada", 0, 0, []],
+      ["SEMCOMPRA", null, "sem valor ou data de compra na ficha", 0, 0, []],
+    ]
   );
 }
 

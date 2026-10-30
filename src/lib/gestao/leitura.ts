@@ -505,3 +505,54 @@ export async function listarEmpresasAtivas(): Promise<{ id: string; name: string
     "as empresas"
   );
 }
+
+// PATRIMÔNIO DA FROTA: compra e venda do veículo (ficha da gestão, ADR-010) e
+// os financiamentos/consórcios com o rateio por placa (planilha "Consórcios e
+// Financiamentos", importada na gestão). Opcional: depende do GRANT das
+// tabelas de financiamento (docs/papel-leitura-gestao.sql).
+export type PatrimonioVeiculoGestao = {
+  id: string;
+  plate: string | null;
+  status: string;
+  dataCompra: Date | null;
+  valorCompraCents: number | null;
+  dataVenda: Date | null;
+};
+export type FinanciamentoVeiculoGestao = {
+  vehicleId: string;
+  banco: string;
+  modalidade: string;
+  parcelaCents: number | null;
+  saldoCents: number | null;
+  quitado: boolean;
+  dataFinal: Date | null;
+  posicaoEm: Date;
+};
+
+export async function lerPatrimonioDaFrota(
+  companyId: string
+): Promise<{ veiculos: PatrimonioVeiculoGestao[]; financiamentos: FinanciamentoVeiculoGestao[] }> {
+  const [veiculos, financiamentos] = await Promise.all([
+    lerOpcional(
+      () => prismaGestao.$queryRaw<PatrimonioVeiculoGestao[]>`
+        SELECT id, plate, status::text AS status, "dataCompra", "valorCompraCents", "dataVenda"
+        FROM public."Vehicle"
+        WHERE "companyId" = ${companyId}
+      `,
+      "compra e venda dos veículos (Vehicle)"
+    ),
+    lerOpcional(
+      () => prismaGestao.$queryRaw<FinanciamentoVeiculoGestao[]>`
+        SELECT fv."vehicleId", f.banco, f.modalidade::text AS modalidade,
+               COALESCE(fv."parcelaCents", f."valorParcelaCents") AS "parcelaCents",
+               COALESCE(fv."saldoCents", f."saldoQuitacaoCents") AS "saldoCents",
+               f.quitado, f."dataFinal", f."posicaoEm"
+        FROM public."FinanciamentoVeiculo" fv
+        JOIN public."Financiamento" f ON f.id = fv."financiamentoId"
+        WHERE fv."companyId" = ${companyId} AND fv.ativo AND fv."vehicleId" IS NOT NULL
+      `,
+      "os financiamentos por veículo (Financiamento)"
+    ),
+  ]);
+  return { veiculos, financiamentos };
+}
