@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { criarPendencia } from "@/lib/auditoria/pendencias";
 import { enviarEmail } from "@/lib/email/send";
-import { leiturasOpcionaisPendentes, lerAfastamentos, lerEscalas } from "@/lib/gestao/leitura";
+import { disponibilidadeGestaoDesde, leiturasOpcionaisPendentes, lerAfastamentos, lerEscalas, lerMotoristas, marcadorDeFalhasDaGestao } from "@/lib/gestao/leitura";
+import { carregarPessoas } from "@/lib/cadastro/carga";
 import { aptidaoNaData, TIPO_DOCUMENTO_PESSOA } from "./documentos";
 import { diasEntre, feriasNoDia, juntarFerias } from "./ferias";
 import { listarMotoristas } from "./pessoasNoBanco";
@@ -9,6 +10,7 @@ import { listarMotoristas } from "./pessoasNoBanco";
 // O AGENTE DIÁRIO DOS MOTORISTAS (docs/plataforma/docs/04-padrao-de-agentes.md),
 // depois da sincronização, uma vez por dia:
 //
+//   0. traz da gestão os motoristas novos e acompanha quem foi desligado lá;
 //   1. traz as férias registradas na gestão (afastamentos "ferias", que vêm
 //      do ponto) — os pedaços contíguos viram um bloco só;
 //   2. completa a admissão vazia pela última lista de ativos da folha (o
@@ -28,12 +30,35 @@ const ROTULO_ESCALAS = "as escalas (Escala)";
 const br = (d: Date) => d.toISOString().slice(0, 10).split("-").reverse().join("/");
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z]+/g, " ").trim();
 
-export type ResultadoAgenteMotoristas = { feriasImportadas: number; admissoesCompletadas: number; pendencias: number; aviso: string | null; avisosLeitura: string[]; jaRodouHoje?: boolean };
+export type ResultadoAgenteMotoristas = { pessoasNovas: number; ativosAtualizados: number; feriasImportadas: number; admissoesCompletadas: number; pendencias: number; aviso: string | null; avisosLeitura: string[]; jaRodouHoje?: boolean };
 
 async function pendencia(p: Parameters<typeof criarPendencia>[0]) {
   const r = await criarPendencia(p);
   if (!r.nova) await prisma.audPendencia.update({ where: { id: r.id }, data: { titulo: p.titulo, descricao: p.descricao, evidencias: p.evidencias, severidade: p.severidade } });
   return r.nova ? 1 : 0;
+}
+
+// 0. As pessoas da gestão: a carga do cadastro mestre (cria o que falta,
+// completa o vazio, nunca sobrescreve) e o ativo/desligado, que é estado da
+// operação e segue a gestão. Gestão fora do ar não desativa ninguém.
+export async function sincronizarPessoasDaGestao(companyId: string): Promise<{ novas: number; ativos: number; erro: string | null }> {
+  const marcador = marcadorDeFalhasDaGestao();
+  const motoristas = await lerMotoristas(companyId);
+  const leitura = disponibilidadeGestaoDesde(marcador);
+  if (!leitura.disponivel || motoristas.length === 0) return { novas: 0, ativos: 0, erro: leitura.erro ?? "a gestão não devolveu motoristas — cadastro de pessoas não atualizado hoje" };
+  const carga = await carregarPessoas(companyId, AGENTE);
+  const ativoNaGestao = new Map(motoristas.map((m) => [m.id, m.active]));
+  const pessoas = await prisma.cadPessoa.findMany({ where: { companyId }, select: { id: true, ativo: true, origens: true } });
+  let ativos = 0;
+  for (const p of pessoas) {
+    const id = (p.origens as Record<string, string> | null)?.gestao;
+    const ativo = id ? ativoNaGestao.get(id) : undefined;
+    if (ativo === undefined || ativo === p.ativo) continue;
+    await prisma.cadPessoa.update({ where: { id: p.id }, data: { ativo } });
+    await prisma.audLog.create({ data: { companyId, agente: AGENTE, tabela: "CadPessoa", registroId: p.id, operacao: ativo ? "update" : "desativar", antes: { ativo: p.ativo }, depois: { ativo, origem: "gestão de motoristas" } } });
+    ativos++;
+  }
+  return { novas: carga.novos, ativos, erro: null };
 }
 
 // 1. As férias da gestão. Só mexe nos registros de origem "gestao" a partir
@@ -109,9 +134,11 @@ export async function completarAdmissoes(companyId: string): Promise<number> {
 export async function rodarAgenteMotoristas(companyId: string, hoje = new Date(), forcar = false): Promise<ResultadoAgenteMotoristas> {
   const marca = `motoristas:${hoje.toISOString().slice(0, 10)}`;
   if (!forcar && (await prisma.audLog.findFirst({ where: { companyId, tabela: "Agente", registroId: marca }, select: { id: true } }))) {
-    return { feriasImportadas: 0, admissoesCompletadas: 0, pendencias: 0, aviso: null, avisosLeitura: [], jaRodouHoje: true };
+    return { pessoasNovas: 0, ativosAtualizados: 0, feriasImportadas: 0, admissoesCompletadas: 0, pendencias: 0, aviso: null, avisosLeitura: [], jaRodouHoje: true };
   }
   const avisosLeitura: string[] = [];
+  const pessoasDaGestao = await sincronizarPessoasDaGestao(companyId);
+  if (pessoasDaGestao.erro) avisosLeitura.push(pessoasDaGestao.erro);
   const ferias = await importarFeriasDaGestao(companyId, hoje);
   if (ferias.erro) avisosLeitura.push(ferias.erro);
   const admissoesCompletadas = await completarAdmissoes(companyId);
@@ -216,6 +243,6 @@ export async function rodarAgenteMotoristas(companyId: string, hoje = new Date()
       aviso = e.enviado ? `e-mail com ${avisos.length} aviso(s) para ${para.length} destinatário(s)` : `e-mail não enviado: ${e.erro}`;
     } else aviso = `${avisos.length} aviso(s) sem destinatário configurado`;
   }
-  await prisma.audLog.create({ data: { companyId, agente: AGENTE, tabela: "Agente", registroId: marca, operacao: "insert", depois: { feriasImportadas: ferias.importadas, admissoesCompletadas, pendencias, avisos: avisos.length, aviso, avisosLeitura } } });
-  return { feriasImportadas: ferias.importadas, admissoesCompletadas, pendencias, aviso, avisosLeitura };
+  await prisma.audLog.create({ data: { companyId, agente: AGENTE, tabela: "Agente", registroId: marca, operacao: "insert", depois: { pessoasNovas: pessoasDaGestao.novas, ativosAtualizados: pessoasDaGestao.ativos, feriasImportadas: ferias.importadas, admissoesCompletadas, pendencias, avisos: avisos.length, aviso, avisosLeitura } } });
+  return { pessoasNovas: pessoasDaGestao.novas, ativosAtualizados: pessoasDaGestao.ativos, feriasImportadas: ferias.importadas, admissoesCompletadas, pendencias, aviso, avisosLeitura };
 }
