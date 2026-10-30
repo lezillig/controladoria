@@ -23,12 +23,15 @@ export type CustoDeCapital = {
   depreciacaoCents: number | null;
   // Por que não há depreciação: dado que falta ou veículo fora do período.
   motivo: string | null;
+  // "cadastro" quando a vida útil (e o residual, se houver) vieram da ficha
+  // do veículo; "premissa" quando valeu a regra geral.
+  base: "cadastro" | "premissa";
   parcelaCents: number;
   saldoCents: number;
   financiamentos: string[];
 };
 
-const fimDaVida = (compra: Date, anos: number) => new Date(compra.getFullYear() + anos, compra.getMonth(), compra.getDate());
+const fimDaVida = (compra: Date, meses: number) => new Date(compra.getFullYear(), compra.getMonth() + meses, compra.getDate());
 
 export function custoDeCapitalPorVeiculo(
   veiculos: PatrimonioVeiculoGestao[],
@@ -44,10 +47,20 @@ export function custoDeCapitalPorVeiculo(
     .map((v) => {
       let depreciacaoCents: number | null = null;
       let motivo: string | null = null;
+      // A ficha do veículo vence a premissa geral: ônibus e van não têm a
+      // mesma vida útil, e quem cadastra o veículo sabe a dele.
+      const meses = v.vidaUtilMeses && v.vidaUtilMeses > 0 ? v.vidaUtilMeses : premissas.vidaUtilAnos * 12;
+      const base: CustoDeCapital["base"] = v.vidaUtilMeses && v.vidaUtilMeses > 0 ? "cadastro" : "premissa";
       if (!v.valorCompraCents || !v.dataCompra) motivo = "sem valor ou data de compra na ficha";
       else if (v.dataCompra > periodo.fim) motivo = "comprado depois do mês";
-      else if (fimDaVida(v.dataCompra, premissas.vidaUtilAnos) < periodo.inicio) motivo = "vida útil encerrada";
-      else depreciacaoCents = Math.round((v.valorCompraCents * (1 - premissas.valorResidualPct)) / (premissas.vidaUtilAnos * 12));
+      else if (fimDaVida(v.dataCompra, meses) < periodo.inicio) motivo = "vida útil encerrada";
+      else {
+        const residual =
+          v.valorResidualCents != null && v.valorResidualCents >= 0 && v.valorResidualCents < v.valorCompraCents
+            ? v.valorResidualCents
+            : v.valorCompraCents * premissas.valorResidualPct;
+        depreciacaoCents = Math.round((v.valorCompraCents - residual) / meses);
+      }
 
       // Parcela só de quem ainda deve no mês: quitado ou com a última parcela
       // antes do mês não pesa no caixa dele.
@@ -57,6 +70,7 @@ export function custoDeCapitalPorVeiculo(
         placa: v.plate ?? "(sem placa)",
         depreciacaoCents,
         motivo,
+        base,
         parcelaCents: ativos.reduce((s, f) => s + (f.parcelaCents ?? 0), 0),
         saldoCents: ativos.reduce((s, f) => s + (f.saldoCents ?? 0), 0),
         // Três cotas do mesmo banco são "3× consórcio Moneo", não três linhas iguais.

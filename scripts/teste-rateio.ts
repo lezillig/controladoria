@@ -266,11 +266,11 @@ console.log("\nCUSTO DE PROPRIEDADE — depreciação linear e parcela ao lado")
   const premissas = premissasDaBase(new Map([["vida_util_anos", { valor: 5 }], ["valor_residual_pct", { valor: 0.2 }]]));
   conferir("premissas da base", [premissas.vidaUtilAnos, premissas.valorResidualPct, premissas.fonte], [5, 0.2, "base de custos do simulador"]);
   conferir("sem premissa na base, o padrão do simulador e a tela diz", premissasDaBase(new Map()).vidaUtilAnos, 8);
-  const v = (id: string, p: Partial<{ dataCompra: Date | null; valorCompraCents: number | null; dataVenda: Date | null }>) => ({
-    id, plate: id.toUpperCase(), status: "ATIVO", dataCompra: d("2024-03-10T00:00:00"), valorCompraCents: 300_000_00, dataVenda: null, ...p,
+  const v = (id: string, p: Partial<{ dataCompra: Date | null; valorCompraCents: number | null; dataVenda: Date | null; vidaUtilMeses: number | null; valorResidualCents: number | null }>) => ({
+    id, plate: id.toUpperCase(), status: "ATIVO", dataCompra: d("2024-03-10T00:00:00"), valorCompraCents: 300_000_00, dataVenda: null, vidaUtilMeses: null, valorResidualCents: null, ...p,
   });
   const r = custoDeCapitalPorVeiculo(
-    [v("van1", {}), v("velha", { dataCompra: d("2015-01-01T00:00:00") }), v("semcompra", { valorCompraCents: null }), v("vendida", { dataVenda: d("2026-07-01T00:00:00") })],
+    [v("van1", {}), v("onibus", { vidaUtilMeses: 120, valorResidualCents: 60_000_00 }), v("velha", { dataCompra: d("2015-01-01T00:00:00") }), v("semcompra", { valorCompraCents: null }), v("vendida", { dataVenda: d("2026-07-01T00:00:00") })],
     [
       { vehicleId: "van1", banco: "Itaú", modalidade: "CDC", parcelaCents: 7_500_00, saldoCents: 120_000_00, quitado: false, dataFinal: d("2028-01-01T00:00:00"), posicaoEm: d("2026-08-01") },
       { vehicleId: "van1", banco: "Bradesco", modalidade: "CONSORCIO", parcelaCents: 2_000_00, saldoCents: 0, quitado: true, dataFinal: null, posicaoEm: d("2026-08-01") },
@@ -279,10 +279,11 @@ console.log("\nCUSTO DE PROPRIEDADE — depreciação linear e parcela ao lado")
     AGOSTO
   );
   conferir(
-    "R$ 300 mil, 20% residual, 5 anos = R$ 4.000/mês; quitado não pesa; vida útil encerrada e sem compra dizem por quê; vendida antes do mês sai",
+    "R$ 300 mil, 20% residual, 5 anos = R$ 4.000/mês; ficha com 10 anos e R$ 60 mil de residual = R$ 2.000/mês; quitado não pesa; vida útil encerrada e sem compra dizem por quê; vendida antes do mês sai",
     r.map((x) => [x.placa, x.depreciacaoCents, x.motivo, x.parcelaCents, x.saldoCents, x.financiamentos]),
     [
       ["VAN1", 4_000_00, null, 7_500_00, 120_000_00, ["financiamento Itaú"]],
+      ["ONIBUS", 2_000_00, null, 0, 0, []],
       ["VELHA", null, "vida útil encerrada", 0, 0, []],
       ["SEMCOMPRA", null, "sem valor ou data de compra na ficha", 0, 0, []],
     ]

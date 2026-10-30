@@ -517,6 +517,10 @@ export type PatrimonioVeiculoGestao = {
   dataCompra: Date | null;
   valorCompraCents: number | null;
   dataVenda: Date | null;
+  // Ciclo de vida do cadastro da gestão (módulo de veículos): quando
+  // preenchidos, valem mais que a premissa geral do simulador.
+  vidaUtilMeses: number | null;
+  valorResidualCents: number | null;
 };
 export type FinanciamentoVeiculoGestao = {
   vehicleId: string;
@@ -535,7 +539,7 @@ export async function lerPatrimonioDaFrota(
   const [veiculos, financiamentos] = await Promise.all([
     lerOpcional(
       () => prismaGestao.$queryRaw<PatrimonioVeiculoGestao[]>`
-        SELECT id, plate, status::text AS status, "dataCompra", "valorCompraCents", "dataVenda"
+        SELECT id, plate, status::text AS status, "dataCompra", "valorCompraCents", "dataVenda", "vidaUtilMeses", "valorResidualCents"
         FROM public."Vehicle"
         WHERE "companyId" = ${companyId}
       `,
