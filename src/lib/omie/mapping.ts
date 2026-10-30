@@ -321,6 +321,8 @@ export function normalizarCategoria(bruto: Bruto): CategoriaNormalizada | null {
     tipoCategoria: str(bruto, "tipo_categoria"),
     contaReceita: (bool(bruto, "conta_receita") ?? false) || str(bruto, "conta_receita") === "S",
     contaDespesa: (bool(bruto, "conta_despesa") ?? false) || str(bruto, "conta_despesa") === "S",
+    // "Quando S, indica que é categoria de transferência" (ListarCategorias).
+    transferencia: (bool(bruto, "transferencia") ?? false) || str(bruto, "transferencia") === "S",
   };
 }
 

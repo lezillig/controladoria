@@ -104,6 +104,7 @@ const categoriaIss: Categoria = {
   tipoCategoria: null,
   contaReceita: false,
   contaDespesa: true,
+  transferencia: false,
   sincronizadoEm: HOJE,
 };
 

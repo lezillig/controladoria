@@ -346,6 +346,11 @@ model OmieCategoria {
   tipoCategoria     String?
   contaReceita      Boolean     @default(false)
   contaDespesa      Boolean     @default(false)
+  // "Categoria de transferência" da Omie (`transferencia` = "S"): a usada na
+  // transferência entre contas correntes da própria empresa. Linha do extrato
+  // com ela não é entrada nem saída de caixa — sem a marca, cada transferência
+  // contava como recebimento numa conta e como despesa na outra.
+  transferencia     Boolean     @default(false)
   sincronizadoEm    DateTime    @default(now())
 
   @@unique([conexaoId, codigo])

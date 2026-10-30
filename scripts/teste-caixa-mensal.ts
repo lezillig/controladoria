@@ -5,7 +5,8 @@
 // 2. A auditoria pura: funcionário por CPF e por nome, empresa do grupo,
 //    salário para quem não é funcionário, duplicidade, saída sem título.
 // 3. Com Postgres (TESTE_DATABASE_URL): a colheita no banco — transferência
-//    entre contas pelo par, categoria herdada do título baixado, saldo inicial.
+//    entre contas pela marca da categoria e pelo par (fora das entradas e
+//    saídas), categoria herdada do título baixado, saldo inicial.
 import { PrismaClient } from "@prisma/client";
 import { caixaMesAMes, grupoDoFluxo } from "../src/lib/controladoria/caixaMensal";
 import { auditarConta, type MovimentoDaConta } from "../src/lib/controladoria/auditoriaDeConta";
@@ -37,8 +38,10 @@ function pura() {
   });
   conferir("meses do período, inclusive o vazio", meses.map((m) => m.mes), ["2026-11", "2026-12", "2027-01"]);
   conferir("saldo encadeado", meses.map((m) => [m.saldoInicialCents, m.saldoFinalCents]), [[1000_00, 1100_00], [1100_00, 1100_00], [1100_00, 850_00]]);
-  conferir("geração e margem", [meses[0].geracaoCents, meses[0].margemCaixa], [100_00, 0.2]);
-  conferir("saídas por grupo (positivas)", meses[0].saidasPorGrupo, { Pessoal: 300_00, "Transferências entre contas": 100_00 });
+  // A transferência não é saída: fica fora da geração e só move o saldo.
+  conferir("geração e margem sem a transferência", [meses[0].geracaoCents, meses[0].margemCaixa], [200_00, 0.4]);
+  conferir("saídas por grupo (positivas), sem a transferência", meses[0].saidasPorGrupo, { Pessoal: 300_00 });
+  conferir("transferência à parte", [meses[0].transferenciasEntradaCents, meses[0].transferenciasSaidaCents, meses[0].saidasCents], [0, 100_00, 300_00]);
   conferir("previsto × realizado sem transferências", [meses[0].realizadoReceber, meses[0].realizadoPagar], [0.5, 0.75]);
   conferir("horizontal contra mês vazio é nula", [meses[1].variacaoEntradas, meses[2].variacaoEntradas], [-1, null]);
 
@@ -113,10 +116,15 @@ async function banco() {
         { companyId: E, conexaoId: mc.id, conexaoApelido: "MC", codigo: "9", descricao: "Omie.CASH", saldoInicialCents: 0 },
       ],
     });
+    await prisma.omieContaCorrente.create({ data: { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "2", descricao: "Bradesco", saldoInicialCents: 0 } });
     await prisma.omieCategoria.createMany({
       data: [
         { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "1.01", descricao: "Clientes - Serviços Prestados", contaReceita: true },
         { companyId: E, conexaoId: mc.id, conexaoApelido: "MC", codigo: "2.01", descricao: "Salários", contaDespesa: true },
+        // A categoria de transferência da Omie, com a marca — e uma sem a
+        // marca (cadastro ainda não ressincronizado), que só o par reconhece.
+        { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "0.01", descricao: "Transferência entre contas", transferencia: true },
+        { companyId: E, conexaoId: az.id, conexaoApelido: "AZ", codigo: "0.02", descricao: "Movimentação interna", contaReceita: true },
       ],
     });
     await prisma.dreClassificacao.deleteMany({ where: { companyId: E } });
@@ -148,6 +156,13 @@ async function banco() {
         m({ conexaoId: mc.id, conexaoApelido: "MC", contaCorrenteCodigo: "9", data: new Date(Date.UTC(2026, 8, 8)), valorCents: 400_00 }),
         // Saída sem categoria e sem par: "sem categoria".
         m({ conexaoId: mc.id, conexaoApelido: "MC", contaCorrenteCodigo: "9", data: new Date(Date.UTC(2026, 8, 20)), valorCents: -50_00, parceiroNome: "Posto X", observacao: "abastecimento" }),
+        // Transferências DENTRO da Azul (Itaú ↔ Bradesco) com categoria nas
+        // duas pontas: pela marca da categoria (0.01) e pelo par (0.02, que o
+        // nome e a marca não denunciam e o DRE poria em receita).
+        m({ conexaoId: az.id, conexaoApelido: "AZ", contaCorrenteCodigo: "1", data: new Date(Date.UTC(2026, 8, 12)), valorCents: -5000_00, categoriaCodigo: "0.01" }),
+        m({ conexaoId: az.id, conexaoApelido: "AZ", contaCorrenteCodigo: "2", data: new Date(Date.UTC(2026, 8, 12)), valorCents: 5000_00, categoriaCodigo: "0.01" }),
+        m({ conexaoId: az.id, conexaoApelido: "AZ", contaCorrenteCodigo: "2", data: new Date(Date.UTC(2026, 8, 14)), valorCents: -7000_00, categoriaCodigo: "0.02" }),
+        m({ conexaoId: az.id, conexaoApelido: "AZ", contaCorrenteCodigo: "1", data: new Date(Date.UTC(2026, 8, 15)), valorCents: 7000_00, categoriaCodigo: "0.02" }),
       ],
     });
     const desde = new Date(Date.UTC(2026, 8, 1));
@@ -155,9 +170,20 @@ async function banco() {
     const g = await caixaMensalNoBanco({ companyId: E, conexaoId: null, contaCodigo: null, desde, ate });
     const set = g.meses[0];
     conferir("saldo inicial do grupo", g.saldoInicialCents, 1200_00);
-    conferir("entradas do grupo por grupo", set.entradasPorGrupo, { "Recebimentos de clientes": 800_00, "Transferências entre contas": 400_00 });
-    conferir("saídas do grupo por grupo (categoria herdada do título)", set.saidasPorGrupo, { "Transferências entre contas": 400_00, Pessoal: 300_00, "Sem categoria": 50_00 });
+    conferir("entradas do grupo por grupo, sem transferência", set.entradasPorGrupo, { "Recebimentos de clientes": 800_00 });
+    // A ordem das chaves é a das linhas da consulta, que o banco não garante.
+    const ordenado = (o: Record<string, number>) => Object.fromEntries(Object.entries(o).sort(([a], [b]) => a.localeCompare(b)));
+    conferir("saídas do grupo por grupo (categoria herdada do título)", ordenado(set.saidasPorGrupo), { Pessoal: 300_00, "Sem categoria": 50_00 });
+    conferir("transferências à parte, uma ponta anula a outra", [set.transferenciasEntradaCents, set.transferenciasSaidaCents], [12400_00, 12400_00]);
     conferir("saldo final encadeado", [set.saldoFinalCents, g.meses[1].saldoInicialCents], [1650_00, 1650_00]);
+
+    // Só a Azul: a ida para a MCZ é saída de verdade; as transferências entre
+    // o Itaú e o Bradesco, não.
+    const azul = await caixaMensalNoBanco({ companyId: E, conexaoId: az.id, contaCodigo: null, desde, ate });
+    conferir("só a Azul: entradas e saídas", [azul.meses[0].entradasPorGrupo, azul.meses[0].saidasPorGrupo], [{ "Recebimentos de clientes": 800_00 }, { "Sem categoria": 400_00 }]);
+    conferir("só a Azul: transferências internas", [azul.meses[0].transferenciasEntradaCents, azul.meses[0].transferenciasSaidaCents], [12000_00, 12000_00]);
+    const itau = await caixaMensalNoBanco({ companyId: E, conexaoId: az.id, contaCodigo: "1", desde, ate });
+    conferir("só o Itaú: o que veio e foi para o Bradesco", [itau.meses[0].transferenciasEntradaCents, itau.meses[0].transferenciasSaidaCents, itau.meses[0].saldoFinalCents], [7000_00, 5000_00, 1000_00 + 200_00 + 800_00 - 400_00 + 2000_00]);
     conferir("previsto", [set.previstoReceberCents, set.previstoPagarCents], [1000_00, 300_00]);
 
     const c = await caixaMensalNoBanco({ companyId: E, conexaoId: mc.id, contaCodigo: "9", desde, ate });

@@ -72,6 +72,7 @@ export default async function CaixaMensalPage({
   const ultimo = m[m.length - 1];
   const margemMedia = fechados.length ? fechados.reduce((a, x) => a + (x.margemCaixa ?? 0), 0) / fechados.length : null;
   const mesesNegativos = fechados.filter((x) => x.geracaoCents < 0).length;
+  const temTransferencia = m.some((x) => x.transferenciasEntradaCents !== 0 || x.transferenciasSaidaCents !== 0);
 
   const linkCom = (mudar: Record<string, string | null>) => {
     const q = new URLSearchParams();
@@ -154,7 +155,7 @@ export default async function CaixaMensalPage({
 
       <Secao
         titulo="Movimentação mês a mês"
-        descricao="Realizado pelo extrato. Transferência entre contas fica em linha própria: soma o dinheiro que trocou de conta, e no grupo uma ponta anula a outra. O mês corrente está em formação."
+        descricao="Realizado pelo extrato. Transferência entre contas não é entrada nem saída: fica fora delas, numa linha própria abaixo da geração de caixa, e só move o saldo — somando todas as contas, uma ponta anula a outra. O mês corrente está em formação."
       >
         <div className="overflow-x-auto">
           <table className="min-w-full text-xs">
@@ -181,6 +182,18 @@ export default async function CaixaMensalPage({
                 <Linha key={`s-${g}`} rotulo={g} valores={m.map((x) => x.saidasPorGrupo[g] ?? 0)} recuo />
               ))}
               <Linha rotulo="(=) Geração de caixa" valores={m.map((x) => x.geracaoCents)} total={geracao} forte sinal />
+              {temTransferencia && (
+                <>
+                  <Linha
+                    rotulo="(±) Transferências entre contas"
+                    valores={m.map((x) => x.transferenciasEntradaCents - x.transferenciasSaidaCents)}
+                    total={total((x) => x.transferenciasEntradaCents - x.transferenciasSaidaCents)}
+                    sinal
+                  />
+                  <Linha rotulo="vindo de outra conta" valores={m.map((x) => x.transferenciasEntradaCents)} total={total((x) => x.transferenciasEntradaCents)} recuo />
+                  <Linha rotulo="enviado para outra conta" valores={m.map((x) => x.transferenciasSaidaCents)} total={total((x) => x.transferenciasSaidaCents)} recuo />
+                </>
+              )}
               <Linha rotulo="Saldo final" valores={m.map((x) => x.saldoFinalCents)} forte sinal />
               <tr>
                 <td colSpan={m.length + 2} className="pt-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
@@ -199,7 +212,7 @@ export default async function CaixaMensalPage({
               <Linha rotulo="Recebido de clientes" valores={m.map((x) => x.entradasPorGrupo["Recebimentos de clientes"] ?? 0)} total={total((x) => x.entradasPorGrupo["Recebimentos de clientes"] ?? 0)} />
               <LinhaTexto rotulo="Realizado ÷ previsto (receber)" valores={m.map((x) => pct(x.realizadoReceber))} />
               <Linha rotulo="A pagar previsto (vencendo no mês)" valores={m.map((x) => x.previstoPagarCents)} total={total((x) => x.previstoPagarCents)} />
-              <Linha rotulo="Pago (sem transferências)" valores={m.map((x) => x.saidasCents - (x.saidasPorGrupo["Transferências entre contas"] ?? 0))} total={total((x) => x.saidasCents - (x.saidasPorGrupo["Transferências entre contas"] ?? 0))} />
+              <Linha rotulo="Pago" valores={m.map((x) => x.saidasCents)} total={saidas} />
               <LinhaTexto rotulo="Realizado ÷ previsto (pagar)" valores={m.map((x) => pct(x.realizadoPagar))} />
             </tbody>
           </table>
@@ -207,6 +220,8 @@ export default async function CaixaMensalPage({
         <p className="mt-3 text-xs text-slate-500">
           * mês em formação. Saldo inicial = saldo de abertura das contas + todo o extrato antes do período. Grupos pela classificação das
           categorias no DRE (a mesma da tela de Custos e DRE); linha do extrato sem categoria herda a do título que ela baixou.
+          Transferência: a linha com categoria de transferência da Omie, ou a que tem par em outra conta (mesmo valor com sinal oposto, até
+          um dia de diferença, mesma categoria, sem baixar título){conexaoId ? " da mesma empresa" : ""}.
         </p>
       </Secao>
 

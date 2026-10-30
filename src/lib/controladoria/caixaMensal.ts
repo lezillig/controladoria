@@ -10,12 +10,13 @@
 // E os indicadores da comparação mensal: variação contra o mês anterior
 // (horizontal), margem de caixa (geração ÷ entradas) e previsto × realizado.
 //
-// TRANSFERÊNCIA ENTRE CONTAS fica em linha própria: numa conta só é dinheiro
-// que entrou ou saiu de verdade; somando todas as contas da empresa, uma
-// transferência sai de uma e entra na outra e se anula — mas infla entradas e
-// saídas se misturada aos recebimentos e pagamentos.
+// TRANSFERÊNCIA ENTRE CONTAS não é entrada nem saída: é o mesmo dinheiro
+// trocando de conta. Fica fora das entradas, das saídas e da geração de caixa,
+// numa linha própria que só move o saldo — somando todas as contas da empresa,
+// ela se anula; numa conta só, é o que veio de (ou foi para) outra conta.
 
-export const GRUPOS_DE_ENTRADA = ["Recebimentos de clientes", "Receitas financeiras", "Empréstimos e aportes", "Transferências entre contas", "Outras entradas"] as const;
+export const GRUPO_TRANSFERENCIA = "Transferências entre contas";
+export const GRUPOS_DE_ENTRADA = ["Recebimentos de clientes", "Receitas financeiras", "Empréstimos e aportes", "Outras entradas"] as const;
 export const GRUPOS_DE_SAIDA = [
   "Custos variáveis (operação)",
   "Pessoal",
@@ -24,15 +25,14 @@ export const GRUPOS_DE_SAIDA = [
   "Financeiras e tarifas",
   "Financiamentos e investimentos",
   "Sócios (pró-labore e lucros)",
-  "Transferências entre contas",
   "Sem categoria",
 ] as const;
 export type GrupoEntrada = (typeof GRUPOS_DE_ENTRADA)[number];
 export type GrupoSaida = (typeof GRUPOS_DE_SAIDA)[number];
 
 // A linha do DRE da categoria decide o grupo do fluxo.
-export function grupoDoFluxo(linha: string | null, entrada: boolean, transferencia: boolean): GrupoEntrada | GrupoSaida {
-  if (transferencia) return "Transferências entre contas";
+export function grupoDoFluxo(linha: string | null, entrada: boolean, transferencia: boolean): GrupoEntrada | GrupoSaida | typeof GRUPO_TRANSFERENCIA {
+  if (transferencia) return GRUPO_TRANSFERENCIA;
   if (entrada) {
     if (linha === "RECEITA_BRUTA" || linha === "OUTRAS_RECEITAS") return "Recebimentos de clientes";
     if (linha === "RECEITA_FINANCEIRA") return "Receitas financeiras";
@@ -79,6 +79,10 @@ export type MesDeCaixa = {
   saidasCents: number;
   saidasPorGrupo: Record<string, number>;
   geracaoCents: number;
+  // Transferências entre contas, fora das entradas e saídas (positivas); o
+  // líquido (entrou − saiu) move o saldo.
+  transferenciasEntradaCents: number;
+  transferenciasSaidaCents: number;
   saldoFinalCents: number;
   previstoReceberCents: number;
   previstoPagarCents: number;
@@ -86,7 +90,7 @@ export type MesDeCaixa = {
   margemCaixa: number | null;
   variacaoEntradas: number | null;
   variacaoSaidas: number | null;
-  // Recebido de clientes ÷ previsto a receber; pago (sem transferências) ÷ previsto a pagar.
+  // Recebido de clientes ÷ previsto a receber; pago ÷ previsto a pagar.
   realizadoReceber: number | null;
   realizadoPagar: number | null;
 };
@@ -115,8 +119,13 @@ export function caixaMesAMes(params: { somas: SomaDoMes[]; previsto: PrevistoDoM
     const doMes = params.somas.filter((s) => s.mes === mes);
     const entradasPorGrupo: Record<string, number> = {};
     const saidasPorGrupo: Record<string, number> = {};
+    let transferenciasEntradaCents = 0;
+    let transferenciasSaidaCents = 0;
     for (const s of doMes) {
-      if (s.entrada) entradasPorGrupo[s.grupo] = (entradasPorGrupo[s.grupo] ?? 0) + s.cents;
+      if (s.grupo === GRUPO_TRANSFERENCIA) {
+        if (s.entrada) transferenciasEntradaCents += s.cents;
+        else transferenciasSaidaCents -= s.cents;
+      } else if (s.entrada) entradasPorGrupo[s.grupo] = (entradasPorGrupo[s.grupo] ?? 0) + s.cents;
       else saidasPorGrupo[s.grupo] = (saidasPorGrupo[s.grupo] ?? 0) - s.cents;
     }
     const entradasCents = Object.values(entradasPorGrupo).reduce((a, v) => a + v, 0);
@@ -125,7 +134,6 @@ export function caixaMesAMes(params: { somas: SomaDoMes[]; previsto: PrevistoDoM
     const previstoReceberCents = params.previsto.filter((p) => p.mes === mes && p.natureza === "RECEBER").reduce((a, p) => a + p.cents, 0);
     const previstoPagarCents = params.previsto.filter((p) => p.mes === mes && p.natureza === "PAGAR").reduce((a, p) => a + p.cents, 0);
     const recebidoClientes = entradasPorGrupo["Recebimentos de clientes"] ?? 0;
-    const pagoSemTransferencia = saidasCents - (saidasPorGrupo["Transferências entre contas"] ?? 0);
     const m: MesDeCaixa = {
       mes,
       saldoInicialCents: saldo,
@@ -134,14 +142,16 @@ export function caixaMesAMes(params: { somas: SomaDoMes[]; previsto: PrevistoDoM
       saidasCents,
       saidasPorGrupo,
       geracaoCents,
-      saldoFinalCents: saldo + geracaoCents,
+      transferenciasEntradaCents,
+      transferenciasSaidaCents,
+      saldoFinalCents: saldo + geracaoCents + transferenciasEntradaCents - transferenciasSaidaCents,
       previstoReceberCents,
       previstoPagarCents,
       margemCaixa: entradasCents > 0 ? geracaoCents / entradasCents : null,
       variacaoEntradas: variacao(entradasCents, anterior?.entradasCents),
       variacaoSaidas: variacao(saidasCents, anterior?.saidasCents),
       realizadoReceber: previstoReceberCents > 0 ? recebidoClientes / previstoReceberCents : null,
-      realizadoPagar: previstoPagarCents > 0 ? pagoSemTransferencia / previstoPagarCents : null,
+      realizadoPagar: previstoPagarCents > 0 ? saidasCents / previstoPagarCents : null,
     };
     resultado.push(m);
     saldo = m.saldoFinalCents;

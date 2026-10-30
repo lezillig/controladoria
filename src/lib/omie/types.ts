@@ -40,6 +40,7 @@ export type CategoriaNormalizada = {
   tipoCategoria: string | null;
   contaReceita: boolean;
   contaDespesa: boolean;
+  transferencia: boolean;
 };
 
 export type DepartamentoNormalizado = {
