@@ -31,12 +31,14 @@ export type Alerta = "vencido" | "7" | "30" | "60" | "ok" | "nao_se_aplica" | "s
 
 // A situação do documento numa data: vencido, vence em até 7/30/60 dias
 // (limitado à antecedência do tipo), em dia, não se aplica ou sem data.
-export function alertaDoDocumento(doc: { tipo: string; situacao: string; validade: Date | null }, hoje: Date): Alerta {
+// A antecedência é a do tipo de documento do veículo; os documentos das
+// pessoas (src/lib/pessoas/documentos.ts) passam a deles.
+export function alertaDoDocumento(doc: { tipo: string; situacao: string; validade: Date | null }, hoje: Date, antecedenciaDias?: number): Alerta {
   if (doc.situacao === "nao_se_aplica") return "nao_se_aplica";
   if (!doc.validade) return "sem_data";
   const dias = Math.floor((Date.UTC(doc.validade.getUTCFullYear(), doc.validade.getUTCMonth(), doc.validade.getUTCDate()) - Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate())) / 86_400_000);
   if (dias < 0) return "vencido";
-  const antecedencia = TIPO_DOCUMENTO.get(doc.tipo)?.antecedenciaDias ?? 60;
+  const antecedencia = antecedenciaDias ?? TIPO_DOCUMENTO.get(doc.tipo)?.antecedenciaDias ?? 60;
   if (dias <= 7) return "7";
   if (dias <= Math.min(30, antecedencia)) return "30";
   if (dias <= antecedencia) return "60";

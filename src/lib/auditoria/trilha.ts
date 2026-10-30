@@ -10,7 +10,9 @@ import { prisma } from "@/lib/prisma";
 // vira um segundo lugar de onde ele pode vazar.
 
 type Cliente = Prisma.TransactionClient | typeof prisma;
-export type Operacao = "insert" | "update" | "desativar";
+// "excluir" só para lançamento que não é cadastro (férias lançadas por
+// engano); cadastro não se apaga, desativa.
+export type Operacao = "insert" | "update" | "desativar" | "excluir";
 type Registro = Record<string, unknown>;
 
 const CAMPOS_PESSOAIS = new Set(["cpf"]);

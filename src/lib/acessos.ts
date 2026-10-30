@@ -47,6 +47,7 @@ export const PERMISSOES = [
   { chave: "pendencias", rotulo: "Pendências para decidir", grupo: "Telas" },
   { chave: "frota", rotulo: "Frota (veículos, documentos, vencimentos, apólices)", grupo: "Telas" },
   { chave: "financiamentos", rotulo: "Financiamentos e consórcios", grupo: "Telas" },
+  { chave: "motoristas", rotulo: "Motoristas (apto ou não para a escala, e o motivo)", grupo: "Telas" },
 
   { chave: "tratar-achado", rotulo: "Tratar achado de auditoria", grupo: "Ações" },
   { chave: "investigar", rotulo: "Investigar com a IA (cada pergunta tem custo)", grupo: "Ações" },
@@ -70,6 +71,8 @@ export const PERMISSOES = [
   { chave: "vender-veiculo", rotulo: "Registrar venda ou baixa de veículo", grupo: "Ações" },
   { chave: "gerir-financiamentos", rotulo: "Editar financiamentos, cotas e parcelas", grupo: "Ações" },
   { chave: "migrar-planilhas", rotulo: "Migrar as planilhas de frota e financiamentos", grupo: "Ações" },
+  { chave: "motoristas-documentos", rotulo: "Ver documentos, validades e férias dos motoristas", grupo: "Ações" },
+  { chave: "gerir-motoristas", rotulo: "Lançar documentos e férias dos motoristas", grupo: "Ações" },
   { chave: "gerir-usuarios", rotulo: "Criar usuários e definir perfis", grupo: "Ações" },
 ] as const;
 
@@ -174,8 +177,8 @@ export const PERFIS_SUGERIDOS: { nome: string; descricao: string; permissoes: Pe
   },
   {
     nome: "Diretoria",
-    descricao: "Vê tudo, com os valores da frota, e decide as pendências que pedem a Diretoria (venda de veículo, quitação). Não opera o dia a dia.",
-    permissoes: [...PERMISSOES.filter((p) => p.grupo === "Telas").map((p) => p.chave), "decidir-pendencia", "frota-valores"],
+    descricao: "Vê tudo, com os valores da frota e os documentos dos motoristas, e decide as pendências que pedem a Diretoria (venda de veículo, quitação). Não opera o dia a dia.",
+    permissoes: [...PERMISSOES.filter((p) => p.grupo === "Telas").map((p) => p.chave), "decidir-pendencia", "frota-valores", "motoristas-documentos"],
   },
   {
     nome: "Financeiro",
@@ -204,13 +207,13 @@ export const PERFIS_SUGERIDOS: { nome: string; descricao: string; permissoes: Pe
   },
   {
     nome: "Operação",
-    descricao: "Consulta a frota e o que vence, e decide as pendências da operação (documento vencido, checklist de saída).",
-    permissoes: ["pendencias", "decidir-pendencia", "frota"],
+    descricao: "Consulta a frota e o que vence, vê se cada motorista está apto para a escala (sem os documentos), e decide as pendências da operação (documento vencido, checklist de saída, escala).",
+    permissoes: ["pendencias", "decidir-pendencia", "frota", "motoristas"],
   },
   {
     nome: "RH",
-    descricao: "Pessoas e fechamento da folha, e as pendências do RH.",
-    permissoes: ["pendencias", "decidir-pendencia", "cadastro-pessoas", "folha", "marcar-folha"],
+    descricao: "Pessoas, documentos e férias dos motoristas, fechamento da folha, e as pendências do RH.",
+    permissoes: ["pendencias", "decidir-pendencia", "cadastro-pessoas", "folha", "marcar-folha", "motoristas", "motoristas-documentos", "gerir-motoristas"],
   },
   {
     nome: "Contador",

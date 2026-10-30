@@ -9,6 +9,7 @@ import { autorizado } from "@/lib/controladoria/autorizacaoDoCiclo";
 import { acionarCondutorGithub, condutorGithubConfigurado } from "@/lib/controladoria/condutorGithub";
 import { recalcularPendentes } from "@/lib/controladoria/historico";
 import { rodarAgenteFrota } from "@/lib/frota/agenteFrota";
+import { rodarAgenteMotoristas } from "@/lib/pessoas/agenteMotoristas";
 import { parseLocalDate } from "@/lib/date";
 import { limparTentativasAntigas } from "@/lib/seguranca/freioDeLogin";
 import { limparFalhasAntigas } from "@/lib/controladoria/falhas";
@@ -178,6 +179,20 @@ export async function GET(req: NextRequest) {
         if (!r.jaRodouHoje) resultados.push({ empresa: empresa.name, frota: r });
       } catch (e) {
         resultados.push({ empresa: empresa.name, frota: { erro: redigir(e instanceof Error ? e.message : "erro desconhecido").slice(0, 300) } });
+      }
+      if (Date.now() - iniciado > ORCAMENTO_MS) break;
+    }
+  }
+
+  // O AGENTE DOS MOTORISTAS: férias da gestão, documentos vencidos, férias a
+  // vencer e escala × aptidão. Também uma vez por dia, também sem derrubar.
+  if (!continua && Date.now() - iniciado < ORCAMENTO_MS - 8_000) {
+    for (const empresa of empresas) {
+      try {
+        const r = await rodarAgenteMotoristas(empresa.id);
+        if (!r.jaRodouHoje) resultados.push({ empresa: empresa.name, motoristas: r });
+      } catch (e) {
+        resultados.push({ empresa: empresa.name, motoristas: { erro: redigir(e instanceof Error ? e.message : "erro desconhecido").slice(0, 300) } });
       }
       if (Date.now() - iniciado > ORCAMENTO_MS) break;
     }

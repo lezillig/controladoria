@@ -894,6 +894,8 @@ model ControladoriaConfig {
   emailsRadar                         String    @default("")
   // Quem recebe os avisos diários da frota (documentos, apólices, parcelas).
   emailsFrota                         String    @default("")
+  // Quem recebe os avisos de documentos e férias dos motoristas (RH).
+  emailsPessoas                       String    @default("")
   dataInicioBase                      DateTime
   limiteAlcadaCents                   Int?
   metaMargemPercent                   Float?
@@ -2576,24 +2578,29 @@ model CadVeiculo {
 // CPF é a chave natural da pessoa (spec 01). Fica só aqui e na gestão: não
 // vai para log de auditoria em claro, relatório nem tela sem permissão.
 model CadPessoa {
-  id               String    @id @default(cuid())
-  companyId        String
-  cpf              String
-  nome             String
-  dataNasc         DateTime?
+  id                String    @id @default(cuid())
+  companyId         String
+  cpf               String
+  nome              String
+  dataNasc          DateTime?
   // motorista | monitor | mecanico | adm | gestor
-  cargo            String
-  dataAdmissao     DateTime?
-  dataDesligamento DateTime?
-  matriculaPonto   String?
-  telefone         String?
-  email            String?
-  ativo            Boolean   @default(true)
-  origens          Json      @default("{}")
-  criadoEm         DateTime  @default(now())
-  atualizadoEm     DateTime  @updatedAt
+  cargo             String
+  dataAdmissao      DateTime?
+  dataDesligamento  DateTime?
+  matriculaPonto    String?
+  telefone          String?
+  email             String?
+  ativo             Boolean   @default(true)
+  // Dirige no transporte escolar: exige curso escolar e certidão de
+  // antecedentes para estar apto.
+  transportaEscolar Boolean   @default(false)
+  origens           Json      @default("{}")
+  criadoEm          DateTime  @default(now())
+  atualizadoEm      DateTime  @updatedAt
 
   linhasPadrao CadLinha[]
+  documentos   PesDocumento[]
+  ferias       PesFerias[]
 
   @@unique([companyId, cpf])
   @@unique([companyId, matriculaPonto])
@@ -2940,4 +2947,60 @@ model AudPendencia {
   erro            String?
 
   @@index([companyId, status, criadaEm])
+}
+
+// ---------------------------------------------------------------------------
+// PESSOAS (RH) — documentos com validade e férias dos motoristas.
+//
+// Do documento pessoal guarda-se o que o controle usa: tipo, validade, a
+// categoria da CNH e se ela tem EAR. O NÚMERO do documento (CNH, RG, CPF do
+// exame) não é gravado — não serve ao controle e é risco sem retorno (LGPD).
+// ---------------------------------------------------------------------------
+
+model PesDocumento {
+  id            String    @id @default(cuid())
+  companyId     String
+  pessoaId      String
+  pessoa        CadPessoa @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+  // cnh | curso_coletivo | curso_escolar | toxicologico | aso | credencial_emtu
+  // | credencial_artesp | credencial_escolar | antecedentes
+  // | direcao_defensiva | primeiros_socorros | acessibilidade
+  tipo          String
+  validade      DateTime?
+  // vigente | nao_se_aplica | pendente
+  situacao      String    @default("vigente")
+  // CNH: categoria (D, E, AD, AE…) e EAR (exerce atividade remunerada).
+  categoria     String?
+  ear           Boolean?
+  observacao    String?
+  atualizadoPor String?
+  criadoEm      DateTime  @default(now())
+  atualizadoEm  DateTime  @updatedAt
+
+  @@unique([pessoaId, tipo])
+  @@index([companyId, tipo, validade])
+}
+
+// Férias registradas (gozadas ou programadas, pela data). Vêm dos
+// afastamentos de férias da gestão (origem "gestao") ou são lançadas pelo RH
+// (origem "manual"). Os períodos aquisitivo e concessivo não são gravados:
+// saem da admissão e destas férias (src/lib/pessoas/ferias.ts).
+model PesFerias {
+  id            String    @id @default(cuid())
+  companyId     String
+  pessoaId      String
+  pessoa        CadPessoa @relation(fields: [pessoaId], references: [id], onDelete: Cascade)
+  inicio        DateTime
+  fim           DateTime
+  // Dias vendidos (abono pecuniário, até 10) — contam no direito de 30 dias.
+  abonoDias     Int       @default(0)
+  // gestao | manual
+  origem        String
+  origemId      String?
+  observacao    String?
+  registradoPor String?
+  criadoEm      DateTime  @default(now())
+
+  @@unique([pessoaId, inicio])
+  @@index([companyId, inicio])
 }
