@@ -73,6 +73,19 @@ EXECUTORES["contrato-quitado"] = async (p) => {
   return `contrato encerrado como quitado; ${alienados.length} veículo(s) desalienado(s)${alienados.length ? "; baixa do gravame aberta" : ""}`;
 };
 
+// COMPRA DE VEÍCULO aprovada pela Diretoria: o pedido passa a "aprovada" e
+// fica esperando os veículos (recebimento em Frota › Compras).
+EXECUTORES["compra-veiculo"] = async (p) => {
+  const a = p.acaoProposta as { compraId: string };
+  const c = await prisma.frotaCompra.findFirst({ where: { id: a.compraId, companyId: p.companyId } });
+  if (!c) throw new Error("pedido de compra não encontrado");
+  if (c.status === "cancelada") return "o pedido tinha sido cancelado antes da aprovação — nada a fazer";
+  if (c.status !== "solicitada") return `o pedido já estava ${c.status}`;
+  await prisma.frotaCompra.update({ where: { id: c.id }, data: { status: "aprovada", decididoPor: p.decididaPor, decididoEm: new Date() } });
+  await registrarAlteracao(prisma, { companyId: p.companyId, usuario: p.decididaPor, agente: "pendencia", tabela: "FrotaCompra", registroId: c.id, operacao: "update", antes: { status: "solicitada" }, depois: { status: "aprovada" } });
+  return `pedido aprovado: ${c.quantidade} veículo(s) a receber`;
+};
+
 export async function executarPendencia(id: string): Promise<void> {
   const p = await prisma.audPendencia.findUnique({ where: { id } });
   if (!p || p.status !== "aprovada") return;

@@ -26,6 +26,7 @@ import {
   TrendingUp,
   BadgeDollarSign,
   UserCheck,
+  ShoppingCart,
   UsersRound,
   Database,
   Radar,
@@ -81,6 +82,7 @@ const NAV: NavItem[] = [
   { href: "/frota/vencimentos", label: "Vencimentos e apólices", icon: CalendarClock, permissao: "frota" },
   { href: "/frota/financiamentos", label: "Financiamentos e consórcios", icon: HandCoins, permissao: "financiamentos" },
   { href: "/frota/fipe", label: "Valor de mercado", icon: BadgeDollarSign, permissao: "frota-valores" },
+  { href: "/frota/compras", label: "Compras de veículos", icon: ShoppingCart, permissao: "frota" },
 
   { secao: "Pessoas", href: "/motoristas", label: "Motoristas", icon: UserCheck, permissao: "motoristas" },
   { href: "/cadastro/pessoas", label: "Pessoas", icon: Contact, permissao: "cadastro-pessoas" },

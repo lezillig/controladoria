@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { contratosComSituacao } from "@/lib/frota/frotaNoBanco";
 import { coberturaDeApolice } from "@/lib/frota/controles";
-import { alertaDoDocumento, documentosExigidosDoVeiculo, ROTULO_SITUACAO_DOCUMENTO, SITUACOES_DOCUMENTO, TIPOS_DOCUMENTO } from "@/lib/frota/documentos";
+import { alertaDoDocumento, documentosExigidosDoVeiculo, documentosFaltando, ROTULO_SITUACAO_DOCUMENTO, SITUACOES_DOCUMENTO, TIPOS_DOCUMENTO } from "@/lib/frota/documentos";
 import { rateioDoContrato, ROTULO_PRODUTO, ROTULO_SITUACAO_CONSORCIO } from "@/lib/frota/financiamentos";
 import { investimentoDoVeiculo, ROTULO_IPVA, ROTULO_STATUS_VEICULO, ROTULO_TIPO_VEICULO, ROTULO_USO } from "@/lib/cadastro/fichaVeiculo";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
@@ -59,6 +59,7 @@ export default async function FichaVeiculoPage({ params, searchParams }: { param
   const docs = v.documentos.map((d) => ({ ...d, alerta: alertaDoDocumento(d, hoje) }));
   const vencidos = docs.filter((d) => d.alerta === "vencido");
   const exigidos = documentosExigidosDoVeiculo(v);
+  const faltando = documentosFaltando(v, v.documentos);
   const ativos = contratos.filter((c) => !c.situacao.quitado);
   const minhaParte = (c: (typeof contratos)[number]) => rateioDoContrato(c.veiculos).get(v.id) ?? 0;
   const saldo = ativos.reduce((s, c) => s + Math.round((c.situacao.saldoCents ?? 0) * minhaParte(c)), 0);
@@ -87,7 +88,12 @@ export default async function FichaVeiculoPage({ params, searchParams }: { param
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Kpi rotulo="Documentos" valor={vencidos.length ? `${vencidos.length} vencido(s)` : docs.some((d) => d.alerta === "7" || d.alerta === "30") ? "vencendo" : "em dia"} tom={vencidos.length ? "ruim" : docs.some((d) => d.alerta === "7" || d.alerta === "30") ? "atencao" : "bom"} apoio={`${docs.filter((d) => d.situacao !== "nao_se_aplica").length} controlado(s)`} />
+        <Kpi
+          rotulo="Documentos"
+          valor={vencidos.length ? `${vencidos.length} vencido(s)` : faltando.length ? `${faltando.length} a lançar` : docs.some((d) => d.alerta === "7" || d.alerta === "30") ? "vencendo" : "em dia"}
+          tom={vencidos.length ? "ruim" : faltando.length || docs.some((d) => d.alerta === "7" || d.alerta === "30") ? "atencao" : "bom"}
+          apoio={faltando.length ? `exigido(s) sem validade: ${faltando.map((t) => TIPOS_DOCUMENTO.find((x) => x.chave === t)?.rotulo ?? t).join(", ")}` : `${docs.filter((d) => d.situacao !== "nao_se_aplica").length} controlado(s)`}
+        />
         <Kpi rotulo="Apólice" valor={v.apolice ? v.apolice.descricao.split(" - ")[0] : "sem apólice"} tom={["coberto"].includes(cobertura) ? "bom" : cobertura === "nao_se_aplica" ? "neutro" : "ruim"} apoio={`vence ${fmtData(v.apoliceVencimento ?? v.apolice?.vigenciaFim ?? null)}`} />
         <Kpi rotulo="Financiamento" valor={ativos.length ? `${ativos.length} contrato(s)` : "livre"} apoio={alienado ? "alienado" : ativos.length ? "não alienado" : "sem contrato ativo"} tom={alienado ? "atencao" : "neutro"} />
         {veValores && <Kpi rotulo="Saldo devedor" valor={fmtBRL(saldo)} apoio={parcelaMensal ? `${fmtBRL(parcelaMensal)}/mês` : "—"} />}

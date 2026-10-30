@@ -252,6 +252,20 @@ async function puros() {
     ctl.impedimentosParaRodar({ status: "ativo", categoriaUso: "fretamento", tipo: "van", capacidade: 16, apoliceVencimento: null }, [{ tipo: "tacografo", situacao: "vigente", validade: d("2026-01-01") }], null, d("2026-10-30")),
     ["Tacógrafo (aferição) vencido", "sem apólice"]
   );
+
+  console.log("\nCompra de veículo: o pedido");
+  const compras = await import("../src/lib/frota/compras");
+  const pedido = { tipo: "van", marca: "Renault", modelo: "Master", anoMod: "2027", capacidade: "16", categoriaUso: "escolar", quantidade: "3", valorUnitario: "320.000,00", formaPagamento: "financiamento", instituicao: "BANCO X", fornecedorNome: "Concessionária Y", fornecedorDocumento: "12.345.678/0001-95", justificativa: "contrato novo" };
+  const lido = compras.lerPedido(pedido, true, d("2026-10-30"));
+  conferir("pedido lido, com valor para quem vê valores", lido.ok && [lido.dados.quantidade, lido.dados.valorUnitarioCents?.toString(), lido.dados.fornecedorDocumento, lido.dados.anoMod], [3, "32000000", "12345678000195", 2027]);
+  const pedidoSemValor = compras.lerPedido(pedido, false, d("2026-10-30"));
+  conferir("sem a permissão de valores, o valor não entra", pedidoSemValor.ok && pedidoSemValor.dados.valorUnitarioCents, null);
+  conferir(
+    "recusas: sem justificativa, financiado sem banco, ano impossível",
+    [compras.lerPedido({ ...pedido, justificativa: "" }, true, d("2026-10-30")).ok, compras.lerPedido({ ...pedido, instituicao: "" }, true, d("2026-10-30")).ok, compras.lerPedido({ ...pedido, anoMod: "2035" }, true, d("2026-10-30")).ok],
+    [false, false, false]
+  );
+  conferir("rejeição mora na pendência", [compras.situacaoDaCompra({ status: "solicitada" }, { status: "rejeitada" }), compras.situacaoDaCompra({ status: "solicitada" }, { status: "aguardando_aprovacao" }), compras.situacaoDaCompra({ status: "aprovada" }, null)], ["rejeitada", "solicitada", "aprovada"]);
 }
 
 async function noBanco() {
@@ -302,6 +316,15 @@ async function noBanco() {
       [depois?.ativo, depois?.dataQuitacao?.toISOString().slice(0, 10), depois?.veiculos.some((v) => v.alienado), gravame?.perfilAprovador, (await prisma.audPendencia.findUnique({ where: { id: p.id } }))?.status],
       [false, "2026-10-15", false, "operacao", "executada"]
     );
+
+    console.log("\n7. Compra aprovada pela Diretoria");
+    const compra = await prisma.frotaCompra.create({ data: { companyId: EMP, tipo: "van", quantidade: 2, formaPagamento: "a_vista", justificativa: "teste", solicitadoPor: "fulano" } });
+    const pc = await criarPendencia({ companyId: EMP, agente: "usuario:fulano", tipo: "compra-veiculo", titulo: "t", descricao: "d", severidade: "alta", evidencias: { compraId: compra.id, solicitadoPor: "fulano" }, acaoProposta: { compraId: compra.id }, perfilAprovador: "admin", chaveExcecao: `compra-veiculo:${compra.id}` });
+    await prisma.audPendencia.update({ where: { id: pc.id }, data: { status: "aprovada", decididaPor: "diretor" } });
+    await executarPendencia(pc.id);
+    const aprovada = await prisma.frotaCompra.findUnique({ where: { id: compra.id } });
+    conferir("o pedido fica aprovado, com quem decidiu", [aprovada?.status, aprovada?.decididoPor], ["aprovada", "diretor"]);
+    await prisma.frotaCompra.deleteMany({ where: { companyId: EMP } });
   } finally {
     await limpar();
     await prisma.$disconnect();

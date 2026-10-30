@@ -2547,6 +2547,9 @@ model CadVeiculo {
   apoliceId             String?
   apolice               FrotaApolice?  @relation(fields: [apoliceId], references: [id])
   apoliceVencimento     DateTime?
+  // O pedido de compra que trouxe o veículo (fluxo de compra).
+  compraId              String?
+  compra                FrotaCompra?   @relation(fields: [compraId], references: [id])
   // Venda (o veículo nunca é apagado).
   dataVenda             DateTime?
   valorVendaCents       BigInt?
@@ -3003,4 +3006,40 @@ model PesFerias {
 
   @@unique([pessoaId, inicio])
   @@index([companyId, inicio])
+}
+
+// PEDIDO DE COMPRA DE VEÍCULO: pedido → aprovação da Diretoria (pendência;
+// quem pede não aprova) → recebimento (o veículo entra no cadastro com a NF
+// das contas a pagar da Omie, os documentos exigidos e o checklist de
+// inclusão) → concluído quando chegam todos os veículos do pedido.
+model FrotaCompra {
+  id                  String       @id @default(cuid())
+  companyId           String
+  // solicitada | aprovada | concluida | cancelada (rejeitada: pela pendência)
+  status              String       @default("solicitada")
+  tipo                String
+  marca               String?
+  modelo              String?
+  anoMod              Int?
+  capacidade          Int?
+  categoriaUso        String?
+  quantidade          Int          @default(1)
+  valorUnitarioCents  BigInt?
+  // a_vista | financiamento | consorcio
+  formaPagamento      String
+  instituicao         String?
+  fornecedorNome      String?
+  fornecedorDocumento String?
+  // Para onde vão: o contrato ou linha, ou "renovação da frota".
+  destino             String?
+  justificativa       String
+  solicitadoPor       String
+  pendenciaId         String?
+  decididoPor         String?
+  decididoEm          DateTime?
+  criadoEm            DateTime     @default(now())
+  atualizadoEm        DateTime     @updatedAt
+  veiculos            CadVeiculo[]
+
+  @@index([companyId, status])
 }
