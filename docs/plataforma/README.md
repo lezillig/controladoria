@@ -77,8 +77,12 @@ pendência para quem decide.
 - [x] Motoristas: documentos com validade (sem guardar o número), aptidão
   para a escala, férias pelo art. 137 com as férias do ponto, escala da
   gestão × aptidão.
-- [ ] Multas (processo a partir da consulta de placa, indicação de condutor,
-  desconto em folha) — próximo módulo.
-- [ ] Custo por veículo e por km — depende do acesso à API da Ituran.
+- [x] Multas: condutor pela escala e uso do veículo (ou diário de bordo),
+  termo, indicação no prazo (risco de NIC), pagamento achado na Omie pelo
+  AIT, desconto em folha aprovado pelo RH, pontos por motorista; migração
+  da planilha CONTROLE MULTAS.
+- [x] Custo de propriedade por veículo na Rentabilidade: depreciação sobre
+  compra + adaptações, juros pela taxa do contrato e multas assumidas.
+- [ ] Custo por km — depende do acesso à API da Ituran.
 - [ ] Contratos e linhas — em espera, a pedido (lembrete agendado).
 
