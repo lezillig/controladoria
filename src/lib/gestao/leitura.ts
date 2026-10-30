@@ -589,6 +589,39 @@ export async function lerMultasAssumidas(companyId: string, inicio: Date, fim: D
   return new Map(linhas.map((l) => [l.vehicleId, Number(l.totalCents ?? 0)]));
 }
 
+// OS KM RODADOS POR VEÍCULO no período: as viagens da Ituran que a gestão
+// importa (VehicleTrip, a distância de cada viagem) e, para o veículo sem
+// viagem da Ituran, os check-ins com km inicial e final (VehicleUsageLog).
+// Opcional: depende do GRANT de VehicleTrip.
+export type KmDoVeiculo = { km: number; fonte: "ituran" | "check-in" };
+export async function lerKmPorVeiculo(companyId: string, inicio: Date, fim: Date): Promise<Map<string, KmDoVeiculo>> {
+  const [ituran, checkins] = await Promise.all([
+    lerOpcional(
+      () => prismaGestao.$queryRaw<{ vehicleId: string; km: number | null }[]>`
+        SELECT "vehicleId", SUM("distanceKm")::float8 AS km
+        FROM public."VehicleTrip"
+        WHERE "companyId" = ${companyId} AND "startAt" >= ${inicio} AND "startAt" <= ${fim}
+        GROUP BY "vehicleId"
+      `,
+      "as viagens da Ituran (VehicleTrip)"
+    ),
+    lerOpcional(
+      () => prismaGestao.$queryRaw<{ vehicleId: string; km: number | null }[]>`
+        SELECT "vehicleId", SUM("kmFinal" - "kmInicial")::float8 AS km
+        FROM public."VehicleUsageLog"
+        WHERE "companyId" = ${companyId} AND "checkInAt" >= ${inicio} AND "checkInAt" <= ${fim}
+          AND "kmFinal" IS NOT NULL AND "kmInicial" IS NOT NULL AND "kmFinal" > "kmInicial"
+        GROUP BY "vehicleId"
+      `,
+      "o uso dos veículos (VehicleUsageLog)"
+    ),
+  ]);
+  const r = new Map<string, KmDoVeiculo>();
+  for (const c of checkins) if (c.km && c.km > 0) r.set(c.vehicleId, { km: Math.round(c.km), fonte: "check-in" });
+  for (const i of ituran) if (i.km && i.km > 0) r.set(i.vehicleId, { km: Math.round(i.km), fonte: "ituran" });
+  return r;
+}
+
 // OS CONTRATOS DA GESTÃO, inteiros, para a conferência das parcelas na Omie
 // (src/lib/frota/contratosDaGestao.ts). O cadastro é da gestão (Cadastros ›
 // Veículos › Financiamentos); aqui só se lê. Devolve null quando a leitura

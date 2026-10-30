@@ -119,6 +119,15 @@ async function puros() {
   conferir("token: sem configurar, certo, errado, ausente", [semToken, ig.integracaoAutorizada(req("Bearer segredo-de-teste")), ig.integracaoAutorizada(req("Bearer segredo-de-testX")), ig.integracaoAutorizada(req())], ["nao-configurada", true, false, false]);
   if (antes === undefined) delete process.env.INTEGRACAO_TOKEN;
   else process.env.INTEGRACAO_TOKEN = antes;
+
+  console.log("\n4b. Custo por km");
+  const { custoPorKm } = await import("../src/lib/frota/custoPorKm");
+  const ck = custoPorKm(
+    [{ vehicleId: "a", custoCents: 1_000_000 }, { vehicleId: "b", custoCents: 500_000 }, { vehicleId: "c", custoCents: null }],
+    new Map([["a", { km: 4000, fonte: "ituran" as const }], ["c", { km: 3000, fonte: "check-in" as const }]])
+  );
+  conferir("por veículo: com km e custo; sem km ou sem custo, sem número", ck.linhas.map((l) => l.custoPorKmCents), [250, null, null]);
+  conferir("média da frota só com quem tem os dois", [ck.frota.custoPorKmCents, ck.frota.km, ck.frota.veiculos], [250, 4000, 1]);
 }
 
 async function noBanco() {
@@ -146,6 +155,8 @@ async function noBanco() {
     ["FinanciamentoVeiculo", `CREATE TABLE public."FinanciamentoVeiculo" (id text PRIMARY KEY, "companyId" text, "financiamentoId" text, placa text, "vehicleId" text, "parcelaCents" int, "saldoCents" int, ativo boolean DEFAULT true)`],
     ["Vehicle", `CREATE TABLE public."Vehicle" (id text PRIMARY KEY, "companyId" text, plate text, status text, "currentMileage" int, model text, type text, year int)`],
     ["Multa", `CREATE TABLE public."Multa" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "dataInfracao" timestamp, "valorCents" int, "omieValorPagoCents" int, "quemPaga" text)`],
+    ["VehicleTrip", `CREATE TABLE public."VehicleTrip" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "startAt" timestamp, "distanceKm" float8)`],
+    ["VehicleUsageLog", `CREATE TABLE public."VehicleUsageLog" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "driverId" text, "checkInAt" timestamp, "checkOutAt" timestamp, "kmInicial" int, "kmFinal" int)`],
   ] as const) {
     if (!(await existe(t))) {
       await sql(ddl);
@@ -155,7 +166,7 @@ async function noBanco() {
   for (const col of [`chassi text`, `"dataCompra" timestamp`, `"valorCompraCents" int`, `"dataVenda" timestamp`]) await sql(`ALTER TABLE public."Vehicle" ADD COLUMN IF NOT EXISTS ${col}`);
 
   const limpar = async () => {
-    for (const t of ["FinanciamentoVeiculo", "Financiamento", "Vehicle", "Multa"]) if (await existe(t)) await sql(`DELETE FROM public."${t}" WHERE "companyId" = '${EMP}'`);
+    for (const t of ["FinanciamentoVeiculo", "Financiamento", "Vehicle", "Multa", "VehicleTrip", "VehicleUsageLog"]) if (await existe(t)) await sql(`DELETE FROM public."${t}" WHERE "companyId" = '${EMP}'`);
     for (const t of ["audPendencia", "audLog", "frotaParcelaOmie", "frotaInstituicaoParceiro", "omieBaixa", "omieTitulo", "omieParceiro", "omieConexao"] as const) {
       await (prisma[t] as unknown as { deleteMany: (a: object) => Promise<unknown> }).deleteMany({ where: { companyId: EMP } });
     }
@@ -242,6 +253,11 @@ async function noBanco() {
       ('mu-1', '${EMP}', 'vf-a', '2026-10-05', 19523, 15618, 'empresa'), ('mu-2', '${EMP}', 'vf-a', '2026-10-06', 13000, NULL, 'motorista'), ('mu-3', '${EMP}', 'vf-a', '2026-09-06', 9000, NULL, 'empresa')`);
     const pat = await patrimonioDaFrota(EMP, { inicio: d("2026-10-01"), fim: d("2026-10-31") });
     conferir("multas assumidas no mês, pelo valor pago na Omie (a do motorista e a de outro mês ficam fora)", pat.multas.get("vf-a"), 15618);
+    const { lerKmPorVeiculo } = await import("../src/lib/gestao/leitura");
+    await sql(`INSERT INTO public."VehicleTrip" (id, "companyId", "vehicleId", "startAt", "distanceKm") VALUES ('t-1', '${EMP}', 'vf-a', '2026-10-03 08:00', 120.4), ('t-2', '${EMP}', 'vf-a', '2026-10-04 08:00', 80.0), ('t-3', '${EMP}', 'vf-a', '2026-09-30 08:00', 999)`);
+    await sql(`INSERT INTO public."VehicleUsageLog" (id, "companyId", "vehicleId", "driverId", "checkInAt", "kmInicial", "kmFinal") VALUES ('u-1', '${EMP}', 'vf-a', 'd', '2026-10-03 07:00', 1000, 1300), ('u-2', '${EMP}', 'vf-b', 'd', '2026-10-05 07:00', 5000, 5150)`);
+    const km = await lerKmPorVeiculo(EMP, d("2026-10-01"), d("2026-10-31"));
+    conferir("km do mês: Ituran quando há viagem, check-in quando não há", [km.get("vf-a"), km.get("vf-b")], [{ km: 200, fonte: "ituran" }, { km: 150, fonte: "check-in" }]);
     const fa = pat.financiamentos.filter((x) => x.vehicleId === "vf-a");
     conferir("compra da gestão; metade do CDC no veículo; juros pela taxa", [pat.saldoPelaOmie, pat.veiculos.find((v) => v.id === "vf-a")?.valorCompraCents, fa.map((x) => x.parcelaCents), (pat.juros.get("vf-a") ?? 0) > 0], [true, 25570930, [624848], true]);
 

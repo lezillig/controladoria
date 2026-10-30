@@ -104,6 +104,9 @@ GRANT SELECT ON public."AdaptacaoVeiculo"     TO controladoria_leitura;
 -- Multas que a empresa assumiu (custo do veículo na rentabilidade).
 GRANT SELECT ON public."Multa"                TO controladoria_leitura;
 
+-- Viagens da Ituran (km rodado por veículo: custo por km na rentabilidade).
+GRANT SELECT ON public."VehicleTrip"          TO controladoria_leitura;
+
 -- ---------------------------------------------------------------------------
 -- 4. Garantir que continue somente leitura no futuro
 -- ---------------------------------------------------------------------------

@@ -7,6 +7,8 @@ import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
 import { casarClientes } from "@/lib/controladoria/casamentoClientes";
 import { custoDeCapitalPorVeiculo, premissasDaBase } from "@/lib/controladoria/custoDeCapital";
 import { patrimonioDaFrota } from "@/lib/frota/patrimonio";
+import { custoPorKm } from "@/lib/frota/custoPorKm";
+import { lerKmPorVeiculo } from "@/lib/gestao/leitura";
 import { baseVigente } from "@/lib/simulador/baseDeCustos";
 import { AvisoVazio, Barra, Kpi, Secao, Tabela } from "../_componentes";
 import Filtros from "../Filtros";
@@ -46,7 +48,7 @@ export default async function RentabilidadePage({
   const casamento = casarClientes(ctx, periodo);
   // A frota da gestão (compra + adaptações) com os contratos conferidos na
   // Omie (saldo andando com os pagamentos, juros pela taxa).
-  const [patrimonio, base] = await Promise.all([patrimonioDaFrota(session.companyId, periodo), baseVigente(session.companyId, periodo.fim)]);
+  const [patrimonio, base, kmDoMes] = await Promise.all([patrimonioDaFrota(session.companyId, periodo), baseVigente(session.companyId, periodo.fim), lerKmPorVeiculo(session.companyId, periodo.inicio, periodo.fim)]);
   const fontePatrimonio = patrimonio.saldoPelaOmie ? "a ficha do veículo na gestão (compra + adaptações) e os contratos com o saldo pela Omie" : "a ficha da gestão, com o saldo da última posição informada";
   const premissasDep = premissasDaBase(base.parametros);
   const capital = custoDeCapitalPorVeiculo(patrimonio.veiculos, patrimonio.financiamentos, premissasDep, periodo);
@@ -58,6 +60,12 @@ export default async function RentabilidadePage({
   const veiculos = custoPorVeiculo(ctx, periodo);
   const funcionarios = custoPorFuncionario(ctx, periodo);
   const custoOperacaoPorVeiculo = new Map(veiculos.linhas.map((l) => [l.id, l.custoCents]));
+  // O custo total do mês de cada veículo (o da tabela de custo de
+  // propriedade) e o custo por km pelos km da Ituran (ou dos check-ins).
+  const custoTotalDoVeiculo = (c: (typeof capital)[number]) =>
+    c.depreciacaoCents != null ? (custoOperacaoPorVeiculo.get(c.vehicleId) ?? 0) + c.depreciacaoCents + (patrimonio.juros.get(c.vehicleId) ?? 0) + (patrimonio.multas.get(c.vehicleId) ?? 0) : null;
+  const porKm = custoPorKm(capital.map((c) => ({ vehicleId: c.vehicleId, custoCents: custoTotalDoVeiculo(c) })), kmDoMes);
+  const kmDe = new Map(porKm.linhas.map((l) => [l.vehicleId, l]));
 
   // O QUE A OMIE JÁ SABE SOZINHA, sem de-para: a margem de cada OS (projeto),
   // as OS somadas pelo cliente cobrado e o faturado contra o contratado. A
@@ -397,16 +405,17 @@ export default async function RentabilidadePage({
 
       <Secao
         titulo="Custo de propriedade por veículo"
-        descricao={`Depreciação linear: (valor de compra − ${fmtPercent(premissasDep.valorResidualPct * 100)} residual) ÷ ${premissasDep.vidaUtilAnos} anos (fonte: ${premissasDep.fonte}). A parcela do financiamento ou consórcio é caixa e aparece ao lado, sem somar: o veículo seria contado duas vezes. Fonte: ${fontePatrimonio}. ${capitalSemCompra} veículo(s) sem valor ou data de compra.${patrimonio.saldoPelaOmie ? " Juros do mês estimados pelo saldo × a taxa de cada contrato (consórcio não tem juros)." : ""} Multas: as que a empresa assumiu no fechamento da multa (gestão), pela data da infração.`}
+        descricao={`Depreciação linear: (valor de compra − ${fmtPercent(premissasDep.valorResidualPct * 100)} residual) ÷ ${premissasDep.vidaUtilAnos} anos (fonte: ${premissasDep.fonte}). A parcela do financiamento ou consórcio é caixa e aparece ao lado, sem somar: o veículo seria contado duas vezes. Fonte: ${fontePatrimonio}. ${capitalSemCompra} veículo(s) sem valor ou data de compra.${patrimonio.saldoPelaOmie ? " Juros do mês estimados pelo saldo × a taxa de cada contrato (consórcio não tem juros)." : ""} Multas: as que a empresa assumiu no fechamento da multa (gestão), pela data da infração. Km: as viagens da Ituran no mês (ou os check-ins, sem Ituran).${porKm.frota.custoPorKmCents !== null ? ` Custo médio da frota: ${fmtBRL(porKm.frota.custoPorKmCents)} por km (${porKm.frota.veiculos} veículo(s), ${porKm.frota.km.toLocaleString("pt-BR")} km).` : ""}`}
       >
         <Tabela
-          colunas={["Veículo", "Operação (Omie + cartão)", "Depreciação", "Juros do mês", "Multas assumidas", "Custo total", "Parcela no mês", "Saldo a pagar"]}
-          alinharDireita={[1, 2, 3, 4, 5, 6, 7]}
+          colunas={["Veículo", "Operação (Omie + cartão)", "Depreciação", "Juros do mês", "Multas assumidas", "Custo total", "Km no mês", "Custo por km", "Parcela no mês", "Saldo a pagar"]}
+          alinharDireita={[1, 2, 3, 4, 5, 6, 7, 8, 9]}
           vazio="Sem dados de compra ou financiamento lidos da gestão."
           linhas={capital.slice(0, 40).map((c) => {
             const operacao = custoOperacaoPorVeiculo.get(c.vehicleId) ?? 0;
             const juros = patrimonio.juros.get(c.vehicleId) ?? null;
             const multas = patrimonio.multas.get(c.vehicleId) ?? null;
+            const k = kmDe.get(c.vehicleId);
             return [
               <span key="p" className="font-medium text-slate-800">
                 {c.placa}
@@ -417,6 +426,8 @@ export default async function RentabilidadePage({
               juros != null ? fmtBRL(juros) : "—",
               multas != null ? fmtBRL(multas) : "—",
               c.depreciacaoCents != null ? fmtBRL(operacao + c.depreciacaoCents + (juros ?? 0) + (multas ?? 0)) : "—",
+              k?.km != null ? <span key="k" title={k.fonteKm === "check-in" ? "pelos check-ins (sem viagem da Ituran)" : "viagens da Ituran"}>{k.km.toLocaleString("pt-BR")}{k.fonteKm === "check-in" ? "*" : ""}</span> : "—",
+              k?.custoPorKmCents != null ? fmtBRL(k.custoPorKmCents) : "—",
               c.parcelaCents ? fmtBRL(c.parcelaCents) : "—",
               c.saldoCents ? fmtBRL(c.saldoCents) : "—",
             ];
