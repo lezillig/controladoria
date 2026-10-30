@@ -3057,61 +3057,100 @@ model FrotaCompra {
 // ---------------------------------------------------------------------------
 
 model FrotaMulta {
-  id                    String       @id @default(cuid())
-  companyId             String
-  veiculoId             String?
-  veiculo               CadVeiculo?  @relation(fields: [veiculoId], references: [id])
-  placa                 String
-  orgao                 String
+  id                          String       @id @default(cuid())
+  companyId                   String
+  veiculoId                   String?
+  veiculo                     CadVeiculo?  @relation(fields: [veiculoId], references: [id])
+  placa                       String
+  orgao                       String
   // Número do auto de infração.
-  ait                   String
-  dataInfracao          DateTime
-  especificacao         String
-  codigoInfracao        String?
-  pontos                Int?
-  valorCents            Int
+  ait                         String
+  dataInfracao                DateTime
+  especificacao               String
+  codigoInfracao              String?
+  pontos                      Int?
+  valorCents                  Int
   // Quando a multa apareceu na consulta de placa (LW, Fazenda…).
-  incluidaEm            DateTime?
+  incluidaEm                  DateTime?
   // planilha | manual | consulta
-  origem                String       @default("manual")
+  origem                      String       @default("manual")
   // Quem dirigia.
-  condutorPessoaId      String?
-  condutor              CadPessoa?   @relation("MultaCondutor", fields: [condutorPessoaId], references: [id])
+  condutorPessoaId            String?
+  condutor                    CadPessoa?   @relation("MultaCondutor", fields: [condutorPessoaId], references: [id])
   // Nome como veio da planilha, quando não casa com o cadastro.
-  condutorNome          String?
+  condutorNome                String?
   // escala | uso | diario | manual | planilha
-  condutorFonte         String?
-  condutorNaoLocalizado Boolean      @default(false)
+  condutorFonte               String?
+  condutorNaoLocalizado       Boolean      @default(false)
   // A sugestão do agente (escala/uso do veículo na hora), para confirmar.
-  sugeridoPessoaId      String?
-  sugeridoFonte         String?
-  diarioSolicitadoEm    DateTime?
-  diarioRecebidoEm      DateTime?
+  sugeridoPessoaId            String?
+  sugeridoFonte               String?
+  diarioSolicitadoEm          DateTime?
+  diarioRecebidoEm            DateTime?
   // a_definir | motorista | empresa
-  responsavel           String       @default("a_definir")
-  termoAssinadoEm       DateTime?
-  termoRecusado         Boolean      @default(false)
+  responsavel                 String       @default("a_definir")
+  termoAssinadoEm             DateTime?
+  termoRecusado               Boolean      @default(false)
   // Prazo para indicar o condutor (o vencimento da notificação).
-  prazoIndicacao        DateTime?
-  indicadoEm            DateTime?
-  vencimentoBoleto      DateTime?
-  pagoEm                DateTime?
-  tituloOmieId          String?
+  prazoIndicacao              DateTime?
+  indicadoEm                  DateTime?
+  // condutor | proprietario — infração de responsabilidade do proprietário
+  // (documentação, equipamento, peso) não se indica e não se desconta.
+  responsabilidadeInfracao    String       @default("condutor")
+  vencimentoBoleto            DateTime?
+  pagoEm                      DateTime?
+  // O que se pagou de fato (com o desconto de 20%/40% do SNE, ou com juros).
+  valorPagoCents              Int?
+  tituloOmieId                String?
+  // Recurso: defesa_previa | jari | cetran; resultado pendente | deferido |
+  // indeferido (deferido anula a multa).
+  recursoFase                 String?
+  recursoProtocoladoEm        DateTime?
+  recursoResultado            String?
   // Competência (1º dia do mês) e valor do desconto em folha.
-  descontoCompetencia   DateTime?
-  descontoValorCents    Int?
+  descontoCompetencia         DateTime?
+  descontoValorCents          Int?
+  // Mandado à Contabilidade nos eventos da competência; conferido na folha
+  // processada (o valor que de fato saiu no holerite).
+  descontoEnviadoEm           DateTime?
+  descontoConferidoEm         DateTime?
+  descontoConferidoValorCents Int?
+  // Decisão de não descontar (RH negou, desligado sem saldo, recurso…).
+  semDesconto                 Boolean      @default(false)
+  semDescontoMotivo           String?
   // NIC: esta multa é a por não indicação de outra.
-  ehNic                 Boolean      @default(false)
-  nicDeId               String?
-  nicDe                 FrotaMulta?  @relation("MultaNic", fields: [nicDeId], references: [id])
-  nics                  FrotaMulta[] @relation("MultaNic")
+  ehNic                       Boolean      @default(false)
+  nicDeId                     String?
+  nicDe                       FrotaMulta?  @relation("MultaNic", fields: [nicDeId], references: [id])
+  nics                        FrotaMulta[] @relation("MultaNic")
   // aberta | finalizada | cancelada (recurso deferido, multa anulada)
-  situacao              String       @default("aberta")
-  observacao            String?
-  criadoEm              DateTime     @default(now())
-  atualizadoEm          DateTime     @updatedAt
+  situacao                    String       @default("aberta")
+  observacao                  String?
+  criadoEm                    DateTime     @default(now())
+  atualizadoEm                DateTime     @updatedAt
 
   @@unique([companyId, ait])
   @@index([companyId, situacao])
   @@index([companyId, condutorPessoaId, dataInfracao])
+}
+
+// OS DESCONTOS DE MULTA LIDOS DA FOLHA PROCESSADA (o relatório de eventos do
+// sistema de folha), para conferir com os descontos aprovados. Guarda só as
+// linhas de evento de multa: matrícula, nome, evento e valor — nada de
+// documento pessoal.
+model PesFolhaEventoMulta {
+  id           String   @id @default(cuid())
+  companyId    String
+  // 1º dia do mês da folha.
+  competencia  DateTime
+  matricula    String?
+  nome         String
+  pessoaId     String?
+  evento       String
+  valorCents   Int
+  arquivoNome  String
+  importadoPor String?
+  importadoEm  DateTime @default(now())
+
+  @@index([companyId, competencia])
 }

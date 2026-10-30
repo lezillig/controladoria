@@ -10,7 +10,9 @@ const COR_PASSO: Record<Passo, string> = {
   colher_termo: "bg-blue-50 text-blue-800",
   indicar_condutor: "bg-red-50 text-red-800",
   pagar: "bg-slate-100 text-slate-700",
+  ligar_titulo: "bg-orange-50 text-orange-800",
   descontar: "bg-violet-50 text-violet-800",
+  conferir_desconto: "bg-violet-50 text-violet-800",
   concluir: "bg-emerald-50 text-emerald-700",
 };
 export function SeloPasso({ passo }: { passo: Passo }) {

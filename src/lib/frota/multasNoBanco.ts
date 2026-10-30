@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { registrarAlteracao } from "@/lib/auditoria/trilha";
 import { lerEscalas, lerUsosDeVeiculo } from "@/lib/gestao/leitura";
 import { condutorPelosRegistros, type LeituraMultas } from "./multas";
+import { responsabilidadePelaDescricao } from "./fechamentoMultas";
 
 // AS MULTAS NO BANCO: a migração da planilha (uma vez; a segunda não duplica
 // nem sobrescreve), o pagamento achado nas contas a pagar da Omie pelo número
@@ -49,13 +50,16 @@ export async function gravarMultas(companyId: string, usuario: string, leitura: 
       vencimentoBoleto: m.vencimentoBoleto,
       descontoCompetencia: m.descontoCompetencia,
       descontoValorCents: m.descontoValorCents,
+      // Desconto que a planilha já registrou foi mandado à Contabilidade na
+      // época; a conferência com a folha daquele mês é que diz se saiu.
+      descontoEnviadoEm: m.descontoCompetencia,
       situacao: m.situacao,
       ehNic: m.ehNic,
       observacao: m.observacao,
     };
     const atual = atuais.get(m.ait);
     if (!atual) {
-      const nova = await prisma.frotaMulta.create({ data: { companyId, ait: m.ait, origem: "planilha", ...campos } });
+      const nova = await prisma.frotaMulta.create({ data: { companyId, ait: m.ait, origem: "planilha", responsabilidadeInfracao: m.ehNic ? "condutor" : responsabilidadePelaDescricao(m.especificacao), ...campos } });
       await registrarAlteracao(prisma, { companyId, usuario, agente: "migracao-planilhas", tabela: "FrotaMulta", registroId: nova.id, operacao: "insert", depois: { ait: m.ait, placa: m.placa, valorCents: m.valorCents, situacao: m.situacao } });
       atuais.set(m.ait, nova);
       r.novas++;
@@ -85,8 +89,21 @@ export async function gravarMultas(companyId: string, usuario: string, leitura: 
 // O PAGAMENTO NA OMIE: título a pagar com o número do AIT no documento ou na
 // observação, liquidado (ou pago no valor) → a multa está paga.
 export async function conciliarPagamentosOmie(companyId: string): Promise<number> {
-  const abertas = await prisma.frotaMulta.findMany({ where: { companyId, situacao: "aberta", pagoEm: null }, select: { id: true, ait: true, valorCents: true, dataInfracao: true } });
   let pagas = 0;
+  // Já ligadas a um título que ainda não estava pago: confere se pagou.
+  // Abertas e finalizadas (a finalizada sem título é histórico a conferir).
+  const ligadas = await prisma.frotaMulta.findMany({ where: { companyId, situacao: { in: ["aberta", "finalizada"] }, pagoEm: null, tituloOmieId: { not: null } }, select: { id: true, tituloOmieId: true } });
+  if (ligadas.length) {
+    const titulos = new Map((await prisma.omieTitulo.findMany({ where: { id: { in: ligadas.map((m) => m.tituloOmieId!) } }, select: { id: true, numeroDocumento: true, liquidado: true, valorPagoCents: true, valorDocumentoCents: true, dataUltimaBaixa: true } })).map((t) => [t.id, t]));
+    for (const m of ligadas) {
+      const t = titulos.get(m.tituloOmieId!);
+      if (!t || !(t.liquidado || (t.valorPagoCents > 0 && t.valorPagoCents >= t.valorDocumentoCents - 100))) continue;
+      await prisma.frotaMulta.update({ where: { id: m.id }, data: { pagoEm: t.dataUltimaBaixa ?? new Date(), valorPagoCents: t.valorPagoCents || t.valorDocumentoCents } });
+      await registrarAlteracao(prisma, { companyId, agente: "agente-frota", tabela: "FrotaMulta", registroId: m.id, operacao: "update", depois: { pagoEm: t.dataUltimaBaixa, tituloOmie: t.numeroDocumento } });
+      pagas++;
+    }
+  }
+  const abertas = await prisma.frotaMulta.findMany({ where: { companyId, situacao: { in: ["aberta", "finalizada"] }, tituloOmieId: null }, select: { id: true, ait: true, valorCents: true, dataInfracao: true } });
   for (let i = 0; i < abertas.length; i += 40) {
     const lote = abertas.slice(i, i + 40).filter((m) => m.ait.length >= 6);
     if (!lote.length) continue;
@@ -105,7 +122,7 @@ export async function conciliarPagamentosOmie(companyId: string): Promise<number
       const t = titulos.find((x) => `${x.numeroDocumento ?? ""} ${x.observacao ?? ""}`.toUpperCase().includes(m.ait));
       if (!t) continue;
       const pago = t.liquidado || (t.valorPagoCents > 0 && t.valorPagoCents >= t.valorDocumentoCents - 100);
-      const data: Prisma.FrotaMultaUpdateInput = { tituloOmieId: t.id, ...(pago ? { pagoEm: t.dataUltimaBaixa ?? new Date() } : {}) };
+      const data: Prisma.FrotaMultaUpdateInput = { tituloOmieId: t.id, ...(pago ? { pagoEm: t.dataUltimaBaixa ?? new Date(), valorPagoCents: t.valorPagoCents || t.valorDocumentoCents } : {}) };
       await prisma.frotaMulta.update({ where: { id: m.id }, data });
       if (pago) {
         await registrarAlteracao(prisma, { companyId, agente: "agente-frota", tabela: "FrotaMulta", registroId: m.id, operacao: "update", depois: { pagoEm: t.dataUltimaBaixa, tituloOmie: t.numeroDocumento } });

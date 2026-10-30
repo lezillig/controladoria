@@ -10,6 +10,9 @@ import { Secao, Tabela } from "../../../_componentes";
 import FormAcao from "../../FormAcao";
 import { tratarMulta } from "../actions";
 import { SeloPasso, SeloPrazo } from "../_multas";
+import { checklistDeFechamento, valorDoDesconto } from "@/lib/frota/fechamentoMultas";
+import { titulosDeMultaSemMulta } from "@/lib/frota/fechamentoMultasNoBanco";
+import { decidirSemDesconto } from "../actions";
 
 // A FICHA DA MULTA: os dados do auto e o processo, passo a passo — cada
 // passo mostra o que já foi feito e, para quem trata multas, o formulário.
@@ -40,7 +43,7 @@ function Passo({ n, titulo, feito, children, form }: { n: number; titulo: string
 export default async function MultaPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await exigirPermissao("multas");
-  const [podeEditar, veMotorista] = await Promise.all([podeAcao(session, "gerir-multas"), podeAcao(session, "motoristas-documentos")]);
+  const [podeEditar, veMotorista, podeRh] = await Promise.all([podeAcao(session, "gerir-multas"), podeAcao(session, "motoristas-documentos"), podeAcao(session, "gerir-motoristas")]);
   const hoje = new Date();
   const m = await prisma.frotaMulta.findFirst({
     where: { id, companyId: session.companyId },
@@ -50,11 +53,14 @@ export default async function MultaPage({ params }: { params: Promise<{ id: stri
   const [sugerido, pessoas, titulo, historico, pendencias] = await Promise.all([
     m.sugeridoPessoaId ? prisma.cadPessoa.findUnique({ where: { id: m.sugeridoPessoaId }, select: { id: true, nome: true } }) : null,
     podeEditar ? prisma.cadPessoa.findMany({ where: { companyId: session.companyId, cargo: { in: ["motorista", "monitor"] } }, select: { id: true, nome: true, ativo: true }, orderBy: [{ ativo: "desc" }, { nome: "asc" }] }) : [],
-    m.tituloOmieId ? prisma.omieTitulo.findUnique({ where: { id: m.tituloOmieId }, select: { numeroDocumento: true, conexaoApelido: true, dataVencimento: true, valorPagoCents: true } }) : null,
+    m.tituloOmieId ? prisma.omieTitulo.findUnique({ where: { id: m.tituloOmieId }, select: { numeroDocumento: true, conexaoApelido: true, dataVencimento: true, valorPagoCents: true, liquidado: true } }) : null,
     prisma.audLog.findMany({ where: { companyId: session.companyId, registroId: m.id }, orderBy: { dataHora: "desc" }, take: 40 }),
     prisma.audPendencia.findMany({ where: { companyId: session.companyId, chaveExcecao: { in: [`desconto-multa:${m.id}`, `multa-indicacao:${m.id}`, `multa-termo-recusado:${m.id}`] } }, select: { tipo: true, status: true, decididaPor: true, comentario: true } }),
   ]);
   const passos = passosAbertos(m);
+  const fechamento = checklistDeFechamento({ ...m, temNic: m.nics.length > 0 });
+  // Para ligar o pagamento: os títulos de multa da Omie ainda sem multa.
+  const titulosLivres = podeEditar && !m.tituloOmieId ? await titulosDeMultaSemMulta(session.companyId, new Date(m.dataInfracao.getTime() - 30 * 86_400_000)) : [];
   const prazo = prazoDeIndicacao(m, hoje);
   const form = (passo: string, campos: ReactNode, rotulo = "Gravar") =>
     podeEditar ? (
@@ -91,6 +97,17 @@ export default async function MultaPage({ params }: { params: Promise<{ id: stri
         {m.nics.length > 0 && <p className="mt-1 text-sm font-semibold text-red-700">Gerou NIC: {m.nics.map((n) => `${n.ait} (${fmtBRL(n.valorCents)})`).join(", ")}</p>}
         {m.observacao && <p className="mt-1 text-xs text-slate-500">{m.observacao}</p>}
       </div>
+
+      <Secao titulo={`Fechamento: ${fechamento.filter((i) => i.ok !== false).length} de 4`} descricao="A multa só fecha com os quatro resolvidos — pagamento conferido na Omie e desconto conferido na folha. O agente finaliza sozinho.">
+        <div className="grid gap-2 sm:grid-cols-4">
+          {fechamento.map((i) => (
+            <div key={i.chave} className={`rounded-md border p-2 text-xs ${i.ok === false ? "border-red-200 bg-red-50 text-red-800" : i.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-slate-50 text-slate-500"}`}>
+              <p className="font-semibold">{i.ok === false ? "✗" : i.ok ? "✓" : "—"} {i.rotulo}</p>
+              <p>{i.detalhe}</p>
+            </div>
+          ))}
+        </div>
+      </Secao>
 
       <Secao titulo="O processo">
         <div className="space-y-2">
@@ -182,24 +199,66 @@ export default async function MultaPage({ params }: { params: Promise<{ id: stri
           <Passo
             n={6}
             titulo="Pagamento"
-            feito={<>{m.pagoEm ? `pago em ${fmtData(m.pagoEm)}` : "não pago"}{m.vencimentoBoleto ? <span className="text-xs text-slate-500"> · boleto vence {fmtData(m.vencimentoBoleto)}</span> : null}{titulo ? <span className="text-xs text-slate-500"> · Omie {titulo.conexaoApelido} doc. {titulo.numeroDocumento}</span> : null}</>}
+            feito={
+              <>
+                {m.pagoEm ? `pago em ${fmtData(m.pagoEm)}${m.valorPagoCents !== null ? ` · ${fmtBRL(m.valorPagoCents)}${m.valorPagoCents < m.valorCents ? ` (desconto de ${fmtBRL(m.valorCents - m.valorPagoCents)})` : m.valorPagoCents > m.valorCents ? ` (${fmtBRL(m.valorPagoCents - m.valorCents)} de juros/atraso)` : ""}` : ""}` : "não pago"}
+                {m.vencimentoBoleto ? <span className="text-xs text-slate-500"> · boleto vence {fmtData(m.vencimentoBoleto)}</span> : null}
+                {titulo ? <span className="text-xs text-slate-500"> · Omie {titulo.conexaoApelido} doc. {titulo.numeroDocumento}{titulo.liquidado ? " (liquidado)" : " (em aberto)"}</span> : null}
+              </>
+            }
             form={form(
               "pagamento",
               <>
                 <label className="flex flex-col gap-0.5">Boleto vence<input type="date" name="vencimentoBoleto" defaultValue={dataIso(m.vencimentoBoleto)} className={ent} /></label>
                 <label className="flex flex-col gap-0.5">Pago em<input type="date" name="pagoEm" defaultValue={dataIso(m.pagoEm)} className={ent} /></label>
+                <label className="flex flex-col gap-0.5">Valor pago (R$)<input name="valorPago" defaultValue={m.valorPagoCents !== null ? (m.valorPagoCents / 100).toFixed(2).replace(".", ",") : ""} inputMode="decimal" className={`${ent} w-28`} /></label>
               </>
             )}
           >
-            {!m.pagoEm && !titulo && <p className="mt-1 text-xs text-slate-500">O agente procura o pagamento nas contas a pagar da Omie pelo número do AIT (no documento ou na observação do título).</p>}
+            {!m.tituloOmieId && <p className="mt-1 text-xs text-slate-500">O agente procura o pagamento nas contas a pagar da Omie pelo número do AIT (no documento ou na observação do título). Sem o AIT no título, ligue abaixo. Pagando sem recorrer, o SNE dá 40% de desconto (20% pagando até o vencimento).</p>}
+            {podeEditar && (
+              <div className="mt-2">
+                {form(
+                  "titulo",
+                  <select name="tituloId" defaultValue={m.tituloOmieId ?? ""} className={`${ent} min-w-96`}>
+                    <option value="">{m.tituloOmieId ? "— desligar o título —" : "— ligar a um título de multa da Omie —"}</option>
+                    {titulosLivres.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {fmtData(t.dataVencimento)} · {t.conexaoApelido} · doc. {t.numeroDocumento ?? "—"} · {t.parceiroNome ?? ""} · {fmtBRL(t.valorDocumentoCents)}
+                      </option>
+                    ))}
+                  </select>,
+                  m.tituloOmieId ? "Desligar" : "Ligar"
+                )}
+              </div>
+            )}
           </Passo>
 
           {m.responsavel === "motorista" && (
             <Passo
               n={7}
               titulo="Desconto em folha"
-              feito={m.descontoCompetencia ? `${fmtBRL(m.descontoValorCents ?? 0)} na folha de ${m.descontoCompetencia.toISOString().slice(5, 7)}/${m.descontoCompetencia.getUTCFullYear()}` : desconto ? `pendência do RH: ${desconto.status === "aguardando_aprovacao" ? "aguardando" : desconto.status}${desconto.comentario ? ` — ${desconto.comentario}` : ""}` : m.termoAssinadoEm ? "o agente abre a pendência para o RH" : "depende do termo assinado"}
-            />
+              feito={
+                m.semDesconto
+                  ? `sem desconto — ${m.semDescontoMotivo ?? ""}`
+                  : m.descontoCompetencia
+                    ? `${fmtBRL(valorDoDesconto(m))} na folha de ${m.descontoCompetencia.toISOString().slice(5, 7)}/${m.descontoCompetencia.getUTCFullYear()}${m.descontoEnviadoEm ? ` · mandado à Contabilidade em ${fmtData(m.descontoEnviadoEm)}` : " · ainda não mandado à Contabilidade"}${m.descontoConferidoEm ? ` · conferido na folha (${fmtBRL(m.descontoConferidoValorCents ?? 0)})` : " · não conferido na folha"}`
+                    : desconto
+                      ? `pendência do RH: ${desconto.status === "aguardando_aprovacao" ? "aguardando" : desconto.status}${desconto.comentario ? ` — ${desconto.comentario}` : ""}`
+                      : m.termoAssinadoEm
+                        ? "o agente abre a pendência para o RH"
+                        : "depende do termo assinado (CLT, art. 462, §1º)"
+              }
+            >
+              {m.descontoCompetencia && <Link href={`/frota/multas/folha?competencia=${m.descontoCompetencia.toISOString().slice(0, 7)}`} className="mt-1 inline-block text-xs text-blue-800 hover:underline">Ver a competência em Desconto em folha</Link>}
+              {podeRh && (
+                <FormAcao acao={decidirSemDesconto} rotulo={m.semDesconto ? "Voltar a descontar" : "Não descontar"} classe="mt-2 flex flex-wrap items-end gap-2 text-xs" botaoClasse="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  <input type="hidden" name="multaId" value={m.id} />
+                  <input type="hidden" name="semDesconto" value={m.semDesconto ? "0" : "1"} />
+                  {!m.semDesconto && <input name="motivo" placeholder="Motivo (desligado sem saldo, recurso, acordo…)" className={`${ent} min-w-72`} />}
+                </FormAcao>
+              )}
+            </Passo>
           )}
 
           <Passo
@@ -221,6 +280,42 @@ export default async function MultaPage({ params }: { params: Promise<{ id: stri
 
           <Passo
             n={9}
+            titulo="De quem é a infração"
+            feito={m.responsabilidadeInfracao === "proprietario" ? "do proprietário (documentação, equipamento, peso): não se indica nem se desconta" : "do condutor"}
+            form={form(
+              "responsabilidade",
+              <select name="responsabilidadeInfracao" defaultValue={m.responsabilidadeInfracao} className={ent}>
+                <option value="condutor">do condutor</option>
+                <option value="proprietario">do proprietário (CTB, art. 257, §2º)</option>
+              </select>
+            )}
+          />
+
+          <Passo
+            n={10}
+            titulo="Recurso"
+            feito={m.recursoFase ? `${{ defesa_previa: "defesa prévia", jari: "JARI", cetran: "CETRAN" }[m.recursoFase] ?? m.recursoFase}${m.recursoProtocoladoEm ? ` protocolado em ${fmtData(m.recursoProtocoladoEm)}` : ""} · ${m.recursoResultado ?? "pendente"}` : "sem recurso"}
+            form={form(
+              "recurso",
+              <>
+                <select name="recursoFase" defaultValue={m.recursoFase ?? ""} className={ent}>
+                  <option value="">sem recurso</option>
+                  <option value="defesa_previa">defesa prévia (da autuação)</option>
+                  <option value="jari">JARI (1ª instância)</option>
+                  <option value="cetran">CETRAN (2ª instância)</option>
+                </select>
+                <label className="flex flex-col gap-0.5">Protocolado em<input type="date" name="recursoProtocoladoEm" defaultValue={dataIso(m.recursoProtocoladoEm)} className={ent} /></label>
+                <select name="recursoResultado" defaultValue={m.recursoResultado ?? "pendente"} className={ent}>
+                  <option value="pendente">pendente</option>
+                  <option value="deferido">deferido (anula a multa)</option>
+                  <option value="indeferido">indeferido</option>
+                </select>
+              </>
+            )}
+          />
+
+          <Passo
+            n={11}
             titulo="Pontos"
             feito={m.pontos !== null ? `${m.pontos}` : "não lançados"}
             form={form("pontos", <input name="pontos" defaultValue={m.pontos ?? ""} inputMode="numeric" placeholder="Pontos" className={`${ent} w-24`} />)}

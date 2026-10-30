@@ -24,7 +24,7 @@ const br = (d: Date) => d.toISOString().slice(0, 10).split("-").reverse().join("
 export const RESPONSAVEIS = ["a_definir", "motorista", "empresa"] as const;
 export const ROTULO_RESPONSAVEL: Record<string, string> = { a_definir: "a definir", motorista: "motorista", empresa: "a empresa assume" };
 
-export type Passo = "identificar_condutor" | "aguardando_diario" | "nao_localizado" | "definir_responsavel" | "colher_termo" | "indicar_condutor" | "pagar" | "descontar" | "concluir";
+export type Passo = "identificar_condutor" | "aguardando_diario" | "nao_localizado" | "definir_responsavel" | "colher_termo" | "indicar_condutor" | "pagar" | "ligar_titulo" | "descontar" | "conferir_desconto" | "concluir";
 export const ROTULO_PASSO: Record<Passo, string> = {
   identificar_condutor: "identificar o condutor",
   aguardando_diario: "aguardando o diário de bordo",
@@ -33,7 +33,9 @@ export const ROTULO_PASSO: Record<Passo, string> = {
   colher_termo: "colher o termo",
   indicar_condutor: "indicar o condutor ao órgão",
   pagar: "pagar",
+  ligar_titulo: "ligar o pagamento à Omie",
   descontar: "descontar em folha",
+  conferir_desconto: "conferir o desconto na folha",
   concluir: "pronta para finalizar",
 };
 
@@ -52,11 +54,17 @@ export type MultaRegra = {
   indicadoEm: Date | null;
   pagoEm: Date | null;
   descontoCompetencia: Date | null;
+  responsabilidadeInfracao?: string;
+  tituloOmieId?: string | null;
+  descontoConferidoEm?: Date | null;
+  semDesconto?: boolean;
 };
 
-// O que falta fazer, em ordem. A NIC não se indica (já é a multa da empresa).
+// O que falta fazer, em ordem. A NIC não se indica (já é a multa da empresa);
+// a infração do proprietário não tem condutor, indicação nem desconto.
 export function passosAbertos(m: MultaRegra): Passo[] {
   if (m.situacao !== "aberta") return [];
+  if (m.responsabilidadeInfracao === "proprietario") return !m.pagoEm ? ["pagar"] : !m.tituloOmieId ? ["ligar_titulo"] : ["concluir"];
   const r: Passo[] = [];
   const temCondutor = !!m.condutorPessoaId || !!m.condutorNome;
   if (!m.ehNic && m.responsavel !== "empresa" && !temCondutor) {
@@ -68,7 +76,11 @@ export function passosAbertos(m: MultaRegra): Passo[] {
   if (m.responsavel === "motorista" && !m.termoAssinadoEm && !m.termoRecusado) r.push("colher_termo");
   if (!m.ehNic && m.responsavel !== "empresa" && !m.indicadoEm) r.push("indicar_condutor");
   if (!m.pagoEm) r.push("pagar");
-  if (m.responsavel === "motorista" && m.termoAssinadoEm && !m.descontoCompetencia) r.push("descontar");
+  else if (m.tituloOmieId === null) r.push("ligar_titulo");
+  if (m.responsavel === "motorista" && !m.ehNic && !m.semDesconto) {
+    if (m.termoAssinadoEm && !m.descontoCompetencia) r.push("descontar");
+    else if (m.descontoCompetencia && m.descontoConferidoEm === null) r.push("conferir_desconto");
+  }
   return r.length ? r : ["concluir"];
 }
 
@@ -76,7 +88,7 @@ export function passosAbertos(m: MultaRegra): Passo[] {
 // enquanto a indicação ainda é devida.
 export type SituacaoPrazo = "perdido" | "urgente" | "em_dia" | "sem_prazo" | "nao_se_aplica";
 export function prazoDeIndicacao(m: MultaRegra, hoje: Date): { situacao: SituacaoPrazo; dias: number | null } {
-  if (m.situacao !== "aberta" || m.ehNic || m.responsavel === "empresa" || m.indicadoEm) return { situacao: "nao_se_aplica", dias: null };
+  if (m.situacao !== "aberta" || m.ehNic || m.responsavel === "empresa" || m.responsabilidadeInfracao === "proprietario" || m.indicadoEm) return { situacao: "nao_se_aplica", dias: null };
   if (!m.prazoIndicacao) return { situacao: "sem_prazo", dias: null };
   const dias = diasAte(m.prazoIndicacao, hoje);
   return { situacao: dias < 0 ? "perdido" : dias <= 7 ? "urgente" : "em_dia", dias };

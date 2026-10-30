@@ -8,6 +8,8 @@ import { Kpi, Secao, Tabela } from "../../_componentes";
 import FormAcao from "../FormAcao";
 import { lancarMulta } from "./actions";
 import { SeloPasso, SeloPrazo } from "./_multas";
+import { checklistDeFechamento, type ItemFechamento } from "@/lib/frota/fechamentoMultas";
+import { titulosDeMultaSemMulta } from "@/lib/frota/fechamentoMultasNoBanco";
 
 // MULTAS — o que fazer em cada multa (o próximo passo e o prazo de indicação),
 // os motoristas com mais multas e pontos, e as NIC (custo evitável).
@@ -16,6 +18,7 @@ export const maxDuration = 60;
 const ent = "rounded-md border border-slate-300 px-2 py-1.5 text-sm";
 const VISTAS = [
   { chave: "afazer", rotulo: "A fazer" },
+  { chave: "fechamento", rotulo: "Fechamento (folha e financeiro)" },
   { chave: "motoristas", rotulo: "Por motorista" },
   { chave: "todas", rotulo: "Todas" },
   { chave: "nic", rotulo: "NIC" },
@@ -30,7 +33,7 @@ export default async function MultasPage({ searchParams }: { searchParams: Promi
   const vista = VISTAS.find((v) => v.chave === sp.vista)?.chave ?? "afazer";
   const multas = await prisma.frotaMulta.findMany({
     where: { companyId: session.companyId },
-    include: { condutor: { select: { id: true, nome: true } }, veiculo: { select: { id: true, modelo: true } } },
+    include: { condutor: { select: { id: true, nome: true } }, veiculo: { select: { id: true, modelo: true } }, _count: { select: { nics: true } } },
     orderBy: { dataInfracao: "desc" },
   });
   const sugeridos = new Map(
@@ -141,6 +144,8 @@ export default async function MultasPage({ searchParams }: { searchParams: Promi
         </Secao>
       )}
 
+      {vista === "fechamento" && <Fechamento multas={multas} companyId={session.companyId} hoje={hoje} />}
+
       {vista === "motoristas" && <PorMotorista multas={multas} hoje={hoje} comLink={veMotorista} />}
 
       {(vista === "todas" || vista === "nic") && (
@@ -209,5 +214,75 @@ function PorMotorista({ multas, hoje, comLink }: { comLink: boolean; multas: { c
         vazio="Nenhuma multa com condutor do cadastro nos últimos 12 meses."
       />
     </Secao>
+  );
+}
+
+const MARCA = (i: ItemFechamento) => (i.ok === null ? <span key={i.chave} className="text-xs text-slate-400" title={i.detalhe}>—</span> : i.ok ? <span key={i.chave} className="text-xs font-semibold text-emerald-700" title={i.detalhe}>✓</span> : <span key={i.chave} className="text-xs font-semibold text-red-700">✗ {i.detalhe}</span>);
+
+// O FECHAMENTO: cada multa só fecha com condutor, indicação, pagamento
+// (conferido na Omie) e desconto (conferido na folha). Mais os títulos de
+// multa que o Financeiro pagou e o processo não conhece.
+async function Fechamento({ multas, companyId, hoje }: { multas: (Parameters<typeof checklistDeFechamento>[0] & { id: string; ait: string; placa: string; dataInfracao: Date; valorCents: number; _count: { nics: number } })[]; companyId: string; hoje: Date }) {
+  const ano = multas.filter((m) => m.dataInfracao.getUTCFullYear() === hoje.getUTCFullYear());
+  const linhas = multas.map((m) => ({ m, itens: checklistDeFechamento({ ...m, temNic: m._count.nics > 0 }) }));
+  const fechadas = linhas.filter((l) => l.itens.every((i) => i.ok !== false));
+  const abertas = linhas.filter((l) => l.m.situacao === "aberta" && l.itens.some((i) => i.ok === false));
+  // Finalizadas sem os quatro conferidos: o histórico da planilha (ou fechada
+  // à mão). Confere-se subindo as folhas daqueles meses e com a Omie.
+  const legado = linhas.filter((l) => l.m.situacao === "finalizada" && l.itens.some((i) => i.ok === false));
+  const falta = (c: ItemFechamento["chave"]) => abertas.filter((l) => l.itens.find((i) => i.chave === c)?.ok === false).length;
+  const semMulta = await titulosDeMultaSemMulta(companyId, new Date(hoje.getTime() - 400 * 86_400_000));
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <Kpi rotulo="Fechadas 100%" valor={`${fechadas.length} de ${multas.length}`} apoio={multas.length ? `${Math.round((fechadas.length / multas.length) * 100)}%` : ""} tom={abertas.length ? "atencao" : "bom"} />
+        <Kpi rotulo="Falta o condutor" valor={fmtNumero(falta("condutor"))} apoio={legado.length ? `${legado.length} finalizada(s) sem conferência` : "nas abertas"} />
+        <Kpi rotulo="Falta a indicação" valor={fmtNumero(falta("indicacao"))} />
+        <Kpi rotulo="Pagamento não conferido" valor={fmtNumero(falta("pagamento"))} apoio="sem título pago na Omie" />
+        <Kpi rotulo="Desconto não conferido" valor={fmtNumero(falta("desconto"))} apoio="sem desconto na folha" />
+        <Kpi rotulo="Pagos sem multa" valor={fmtNumero(semMulta.length)} apoio={fmtBRL(semMulta.reduce((s, t) => s + t.valorDocumentoCents, 0))} tom={semMulta.length ? "ruim" : "bom"} />
+      </div>
+      <Secao
+        titulo="O que falta para fechar"
+        descricao={`Cada multa fecha quando os quatro estão resolvidos; o agente diário finaliza sozinho. ${ano.length} multa(s) neste ano.`}
+        acao={<Link href="/frota/multas/folha" className="rounded-md border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">Desconto em folha</Link>}
+      >
+        <Tabela
+          colunas={["AIT", "Placa", "Infração", "Valor", "Condutor", "Indicação", "Pagamento", "Desconto"]}
+          alinharDireita={[3]}
+          linhas={abertas.slice(0, 300).map(({ m, itens }) => [
+            <Link key="a" href={`/frota/multas/${m.id}`} className="font-mono text-blue-800 hover:underline">{m.ait}</Link>,
+            <span key="p" className="font-mono">{m.placa}</span>,
+            fmtData(m.dataInfracao),
+            fmtBRL(m.valorCents),
+            ...itens.map(MARCA),
+          ])}
+          vazio="Todas as multas estão fechadas."
+        />
+      </Secao>
+      {legado.length > 0 && (
+        <Secao titulo={`Finalizadas sem conferência completa (${legado.length})`} descricao="Vieram finalizadas da planilha (ou foram fechadas à mão) sem pagamento conferido na Omie ou desconto conferido na folha. O agente liga os títulos pelo AIT; para os descontos, suba a folha processada daqueles meses em Desconto em folha.">
+          <Tabela
+            colunas={["AIT", "Placa", "Infração", "Valor", "Condutor", "Indicação", "Pagamento", "Desconto"]}
+            alinharDireita={[3]}
+            linhas={legado.slice(0, 200).map(({ m, itens }) => [
+              <Link key="a" href={`/frota/multas/${m.id}`} className="font-mono text-blue-800 hover:underline">{m.ait}</Link>,
+              <span key="p" className="font-mono">{m.placa}</span>,
+              fmtData(m.dataInfracao),
+              fmtBRL(m.valorCents),
+              ...itens.map(MARCA),
+            ])}
+          />
+        </Secao>
+      )}
+      <Secao titulo="Pagamentos de multa na Omie sem multa no sistema" descricao="Títulos a pagar da categoria de multas que nenhuma multa explica: lance a multa ou ligue o título na ficha dela (passo Pagamento).">
+        <Tabela
+          colunas={["Vencimento", "Empresa", "Documento", "Favorecido", "Valor", "Pago"]}
+          alinharDireita={[4, 5]}
+          linhas={semMulta.slice(0, 200).map((t) => [fmtData(t.dataVencimento), t.conexaoApelido, t.numeroDocumento ?? "—", t.parceiroNome ?? "—", fmtBRL(t.valorDocumentoCents), t.valorPagoCents ? fmtBRL(t.valorPagoCents) : "—"])}
+          vazio="Nenhum — todo pagamento de multa tem a multa no sistema."
+        />
+      </Secao>
+    </>
   );
 }

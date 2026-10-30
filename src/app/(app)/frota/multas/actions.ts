@@ -8,6 +8,7 @@ import { lerReaisEmCents } from "@/lib/controladoria/format";
 import { lerData, lerInteiro } from "@/lib/cadastro/fichaVeiculo";
 import { normalizarPlaca } from "@/lib/cadastro/normalizacao";
 import { diferencas, registrarAlteracao } from "@/lib/auditoria/trilha";
+import { responsabilidadePelaDescricao } from "@/lib/frota/fechamentoMultas";
 import { exigirPermissao } from "../../_dados";
 
 // AS AÇÕES DAS MULTAS — lançar e tratar cada passo, com "gerir-multas". O
@@ -41,7 +42,7 @@ export async function lancarMulta(fd: FormData): Promise<Resposta> {
     if (await prisma.frotaMulta.findFirst({ where: { companyId, ait }, select: { id: true } })) return { erro: `O AIT ${ait} já está lançado.` };
     const veiculo = await prisma.cadVeiculo.findFirst({ where: { companyId, placa }, select: { id: true } });
     const nova = await prisma.frotaMulta.create({
-      data: { companyId, ait, placa, veiculoId: veiculo?.id ?? null, orgao, especificacao, codigoInfracao: texto(fd, "codigo", 20), pontos, valorCents: valor, dataInfracao, prazoIndicacao: prazo, incluidaEm: new Date(), origem: fd.get("origem") === "consulta" ? "consulta" : "manual" },
+      data: { companyId, ait, placa, veiculoId: veiculo?.id ?? null, orgao, especificacao, responsabilidadeInfracao: responsabilidadePelaDescricao(especificacao), codigoInfracao: texto(fd, "codigo", 20), pontos, valorCents: valor, dataInfracao, prazoIndicacao: prazo, incluidaEm: new Date(), origem: fd.get("origem") === "consulta" ? "consulta" : "manual" },
     });
     await registrarAlteracao(prisma, { companyId, usuario: session.name, tabela: "FrotaMulta", registroId: nova.id, operacao: "insert", depois: { ait, placa, orgao, especificacao, valorCents: valor, dataInfracao } });
     revalidatePath("/frota/multas");
@@ -108,7 +109,39 @@ export async function tratarMulta(fd: FormData): Promise<Resposta> {
         const venc = data("vencimentoBoleto");
         const pago = data("pagoEm");
         if (venc === "invalida" || pago === "invalida") return { erro: "Data inválida." };
-        depois = { vencimentoBoleto: venc, pagoEm: pago };
+        const valorPago = lerReaisEmCents(String(fd.get("valorPago") ?? ""));
+        if (valorPago === "invalido") return { erro: "Valor pago inválido." };
+        depois = { vencimentoBoleto: venc, pagoEm: pago, valorPagoCents: valorPago };
+        break;
+      }
+      case "titulo": {
+        // Liga o título das contas a pagar da Omie (o pagamento conferido).
+        const tituloId = String(fd.get("tituloId") ?? "");
+        if (!tituloId) {
+          depois = { tituloOmieId: null };
+          break;
+        }
+        const t = await prisma.omieTitulo.findFirst({ where: { id: tituloId, companyId, natureza: "PAGAR" }, select: { id: true, liquidado: true, valorPagoCents: true, valorDocumentoCents: true, dataUltimaBaixa: true } });
+        if (!t) return { erro: "Título não encontrado." };
+        if (await prisma.frotaMulta.findFirst({ where: { companyId, tituloOmieId: t.id, NOT: { id: m.id } }, select: { ait: true } })) return { erro: "Esse título já está ligado a outra multa." };
+        const pago = t.liquidado || (t.valorPagoCents > 0 && t.valorPagoCents >= t.valorDocumentoCents - 100);
+        depois = { tituloOmieId: t.id, ...(pago ? { pagoEm: t.dataUltimaBaixa ?? m.pagoEm ?? new Date(), valorPagoCents: t.valorPagoCents || t.valorDocumentoCents } : {}) };
+        break;
+      }
+      case "responsabilidade": {
+        const r = String(fd.get("responsabilidadeInfracao") ?? "");
+        if (!["condutor", "proprietario"].includes(r)) return { erro: "Escolha de quem é a infração." };
+        depois = { responsabilidadeInfracao: r };
+        break;
+      }
+      case "recurso": {
+        const fase = String(fd.get("recursoFase") ?? "");
+        const resultado = String(fd.get("recursoResultado") ?? "pendente");
+        if (fase && !["defesa_previa", "jari", "cetran"].includes(fase)) return { erro: "Fase inválida." };
+        if (!["pendente", "deferido", "indeferido"].includes(resultado)) return { erro: "Resultado inválido." };
+        const protocolo = data("recursoProtocoladoEm");
+        if (protocolo === "invalida") return { erro: "Data inválida." };
+        depois = { recursoFase: fase || null, recursoProtocoladoEm: protocolo, recursoResultado: fase ? resultado : null, ...(resultado === "deferido" ? { situacao: "cancelada" } : {}) };
         break;
       }
       case "pontos": {
@@ -135,6 +168,26 @@ export async function tratarMulta(fd: FormData): Promise<Resposta> {
     }
     revalidatePath(`/frota/multas/${m.id}`);
     revalidatePath("/frota/multas");
+    return { ok: true };
+  } catch (e) {
+    return falha(e);
+  }
+}
+
+// A DECISÃO DE NÃO DESCONTAR (é do RH): desligado sem saldo, recurso em
+// andamento, acordo… Com o motivo; volta atrás desmarcando.
+export async function decidirSemDesconto(fd: FormData): Promise<Resposta> {
+  const session = await exigirPermissao("gerir-motoristas");
+  try {
+    const m = await prisma.frotaMulta.findFirst({ where: { id: String(fd.get("multaId") ?? ""), companyId: session.companyId } });
+    if (!m) return { erro: "Multa não encontrada." };
+    const sem = fd.get("semDesconto") === "1";
+    const motivo = texto(fd, "motivo", 300);
+    if (sem && !motivo) return { erro: "Diga o motivo de não descontar." };
+    const depois = { semDesconto: sem, semDescontoMotivo: sem ? `RH (${session.name}): ${motivo}` : null };
+    await prisma.frotaMulta.update({ where: { id: m.id }, data: depois });
+    await registrarAlteracao(prisma, { companyId: session.companyId, usuario: session.name, tabela: "FrotaMulta", registroId: m.id, operacao: "update", antes: { semDesconto: m.semDesconto, semDescontoMotivo: m.semDescontoMotivo }, depois });
+    revalidatePath(`/frota/multas/${m.id}`);
     return { ok: true };
   } catch (e) {
     return falha(e);

@@ -97,6 +97,43 @@ async function puros() {
   conferir("NIC com a linha deslocada: a data vem da coluna seguinte", porAit.get("I000080022")?.dataInfracao.toISOString().slice(0, 10), "2026-05-30");
 }
 
+async function fechamento() {
+  const fe = await import("../src/lib/frota/fechamentoMultas");
+  console.log("\n3. O fechamento (100%)");
+  const m: Parameters<typeof fe.checklistDeFechamento>[0] = { situacao: "aberta", ehNic: false, responsavel: "motorista", responsabilidadeInfracao: "condutor", condutorPessoaId: "p", condutorNome: null, indicadoEm: d("2026-10-01"), pagoEm: d("2026-10-05"), tituloOmieId: "t", valorCents: 29347, valorPagoCents: 17608, termoAssinadoEm: d("2026-09-20"), descontoCompetencia: d("2026-10-01"), descontoValorCents: null, descontoConferidoEm: d("2026-11-06"), descontoConferidoValorCents: 17608, semDesconto: false };
+  conferir("tudo conferido: fecha; o desconto é pelo valor pago (SNE 40%)", [fe.fechada100(m), fe.valorDoDesconto(m)], [true, 17608]);
+  const sem = (x: Partial<typeof m>) => fe.checklistDeFechamento({ ...m, ...x }).filter((i) => i.ok === false).map((i) => `${i.chave}: ${i.detalhe}`);
+  conferir("pago sem título na Omie não fecha", sem({ tituloOmieId: null }), ["pagamento: pago sem título na Omie: ligar o título"]);
+  conferir("desconto aprovado e não conferido na folha não fecha", sem({ descontoConferidoEm: null, descontoConferidoValorCents: null }), ["desconto: aprovado para 10/2026: conferir na folha"]);
+  conferir("folha descontou outro valor: não fecha", sem({ descontoConferidoValorCents: 29347 }), ["desconto: a folha descontou outro valor"]);
+  conferir("sem termo não se desconta", sem({ termoAssinadoEm: null, descontoCompetencia: null, descontoConferidoEm: null }), ["desconto: sem termo assinado: não pode descontar"]);
+  conferir("RH decidiu não descontar: fecha", fe.fechada100({ ...m, descontoCompetencia: null, descontoConferidoEm: null, semDesconto: true }), true);
+  conferir("a empresa assumiu sem indicar: fecha com o pagamento", fe.fechada100({ ...m, responsavel: "empresa", condutorPessoaId: null, indicadoEm: null, termoAssinadoEm: null, descontoCompetencia: null, descontoConferidoEm: null }), true);
+  conferir("infração do proprietário: só o pagamento", fe.checklistDeFechamento({ ...m, responsabilidadeInfracao: "proprietario", condutorPessoaId: null, indicadoEm: null, pagoEm: null }).map((i) => i.ok), [null, null, false, null]);
+  conferir("anulada no recurso: fecha sem pagar", fe.fechada100({ ...m, situacao: "cancelada", pagoEm: null, tituloOmieId: null }), true);
+  conferir("sem indicação, mas a NIC já lançada: indicação resolvida", fe.checklistDeFechamento({ ...m, indicadoEm: null, temNic: true })[1].ok, true);
+  conferir("proprietário pela descrição", ["DOCUMENTAÇÃO", "BALANÇA DE PESAGEM", "VELOCIDADE", "COR INCORRETA"].map(fe.responsabilidadePelaDescricao), ["proprietario", "proprietario", "condutor", "proprietario"]);
+  const conf = fe.conferirDescontos(
+    [{ multaId: "a", chave: "p1", nome: "A", valorCents: 10000 }, { multaId: "b", chave: "p1", nome: "A", valorCents: 5000 }, { multaId: "c", chave: "p2", nome: "B", valorCents: 8000 }, { multaId: "d", chave: "p3", nome: "C", valorCents: 3000 }],
+    [{ chave: "p1", nome: "A", valorCents: 15000 }, { chave: "p2", nome: "B", valorCents: 7000 }, { chave: "p4", nome: "D", valorCents: 2000 }]
+  );
+  conferir("conferência por pessoa: bate (duas multas), diverge, não descontado, descontado sem multa", conf.map((r) => [r.nome, r.situacao]).sort(), [["A", "ok"], ["B", "divergente"], ["C", "nao_descontado"], ["D", "sem_multa"]]);
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Eventos");
+  ws.addRow(["Relatório de eventos — 10/2026"]);
+  ws.addRow([]);
+  ws.addRow(["Matrícula", "Nome", "Evento", "Descrição Evento", "Valor"].slice(0, 2).concat(["Evento", "Valor"]));
+  ws.addRow(["101", "PESSOA A", "SALARIO BASE", 3000]);
+  ws.addRow(["101", "PESSOA A", "DESCONTO MULTA DE TRANSITO", -150]);
+  ws.addRow(["102", "PESSOA B", "DESC. MULTA TRÂNSITO", "70,00"]);
+  ws.addRow(["103", "PESSOA C", "VALE TRANSPORTE", 200]);
+  const lido = fe.lerEventosDeMulta(wb);
+  conferir("relatório de eventos: só as linhas de multa, valor positivo", [lido.erro, lido.lidas, lido.linhas.map((l) => [l.matricula, l.nome, l.valorCents])], [null, 4, [["101", "PESSOA A", 15000], ["102", "PESSOA B", 7000]]]);
+  const vazio = new ExcelJS.Workbook();
+  vazio.addWorksheet("x").addRow(["a", "b"]);
+  conferir("planilha sem as colunas: erro explicando o que mandar", fe.lerEventosDeMulta(vazio).erro?.startsWith("Não achei as colunas"), true);
+}
+
 async function noBanco() {
   const url = process.env.TESTE_DATABASE_URL;
   if (!url) {
@@ -114,6 +151,7 @@ async function noBanco() {
   const limpar = async () => {
     await prisma.audPendencia.deleteMany({ where: { companyId: EMP } });
     await prisma.audLog.deleteMany({ where: { companyId: EMP } });
+    await prisma.pesFolhaEventoMulta.deleteMany({ where: { companyId: EMP } });
     await prisma.frotaMulta.updateMany({ where: { companyId: EMP }, data: { nicDeId: null } });
     await prisma.frotaMulta.deleteMany({ where: { companyId: EMP } });
     await prisma.cadPessoa.deleteMany({ where: { companyId: EMP } });
@@ -152,6 +190,22 @@ async function noBanco() {
     await executarPendencia(desconto.id);
     const m = await prisma.frotaMulta.findFirst({ where: { companyId: EMP, ait: "1DK2312751" } });
     conferir("aprovado pelo RH: competência e valor gravados", [m?.descontoCompetencia?.toISOString().slice(0, 10), m?.descontoValorCents], ["2026-11-01", 23478]);
+
+    console.log("\n4. Fechamento no banco");
+    const { gravarEventosDaFolha, finalizarFechadas, eventosParaContabilidade } = await import("../src/lib/frota/fechamentoMultasNoBanco");
+    const ev = await eventosParaContabilidade(EMP, d("2026-11-01"));
+    conferir("eventos para a Contabilidade: a pessoa, o valor e o AIT", ev.map((e) => [e.nome, e.valorCents, e.aits, e.enviado]), [["Pessoa A", 23478, ["1DK2312751"], false]]);
+    const c1 = await gravarEventosDaFolha(EMP, d("2026-11-01"), [{ linha: 5, matricula: null, nome: "PESSOA A", evento: "DESC MULTA", valorCents: 20000 }], "folha.xlsx", "teste");
+    conferir("folha com outro valor: diverge, não confere", [c1.resultado.map((r) => r.situacao), (await prisma.frotaMulta.findFirst({ where: { companyId: EMP, ait: "1DK2312751" } }))?.descontoConferidoEm], [["divergente"], null]);
+    const c2 = await gravarEventosDaFolha(EMP, d("2026-11-01"), [{ linha: 5, matricula: null, nome: "Pessoa A", evento: "DESC MULTA", valorCents: 23478 }], "folha2.xlsx", "teste");
+    const conferida = await prisma.frotaMulta.findFirst({ where: { companyId: EMP, ait: "1DK2312751" } });
+    conferir("folha corrigida: bate e a multa fica com o desconto conferido", [c2.resultado.map((r) => r.situacao), conferida?.descontoConferidoValorCents], [["ok"], 23478]);
+    await prisma.frotaMulta.update({ where: { id: conferida!.id }, data: { indicadoEm: d("2026-07-01"), pagoEm: d("2026-07-10") } });
+    conferir("paga sem título da Omie: ainda não finaliza", await finalizarFechadas(EMP), 0);
+    await prisma.frotaMulta.update({ where: { id: conferida!.id }, data: { tituloOmieId: "titulo-de-teste" } });
+    const fin = await finalizarFechadas(EMP);
+    conferir("com o título: fecha 100% e o agente finaliza", [fin >= 1, (await prisma.frotaMulta.findUnique({ where: { id: conferida!.id } }))?.situacao], [true, "finalizada"]);
+    await prisma.pesFolhaEventoMulta.deleteMany({ where: { companyId: EMP } });
   } finally {
     await limpar();
     await prisma.$disconnect();
@@ -159,6 +213,7 @@ async function noBanco() {
 }
 
 puros()
+  .then(fechamento)
   .then(noBanco)
   .then(() => {
     console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTudo certo.");
