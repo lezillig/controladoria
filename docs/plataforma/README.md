@@ -51,10 +51,34 @@ Os documentos do azul-gestao estão copiados aqui, como vieram:
 - [x] Carga a partir das fontes já ligadas: parceiros da Omie (as duas empresas) → cliente/fornecedor; motoristas da gestão → pessoa; veículos da gestão → veículo (`src/lib/cadastro/carga.ts`). Cria e completa; divergência vira relatório.
 - [x] Centro de custo `V-<placa>` para cada veículo; pendência única para o financeiro criar na Omie.
 - [x] Telas: Cadastro mestre, Pessoas (CPF mascarado), Pendências (aprovar/rejeitar com trilha).
-- [ ] Importar planilha "CONTROLE INFORMAÇÕES GERAIS" (FROTA ATIVA + VENDIDOS) → veículo — **aguardando a planilha**.
-- [ ] Importar "Consórcios e Financiamentos" → `FrotaFinanciamento` — **aguardando a planilha**.
+- [x] Migração única das planilhas "CONTROLE INFORMAÇÕES GERAIS" e "Consórcios e Financiamentos" (Configurações › Migração das planilhas, com prévia) — **falta enviar as planilhas em produção**.
 - [ ] Ituran: relação oficial de placas e divergências — **aguardando acesso à API**.
 - [ ] Sistema de ponto (TiqueTaque, hoje na gestão) como segunda fonte de pessoas e matrícula.
 - [ ] Contratos e linhas ativos → `CadContrato`/`CadLinha` (+ centro `C-<número>`).
-- [ ] Edição manual dos registros na tela (com trilha).
+- [x] Edição manual dos registros na tela (com trilha): ficha do veículo, contratos, motoristas.
 - [ ] Veículos do sistema de multas como fonte (quando o banco do multas for ligado).
+
+## Frota, financiamentos e motoristas — situação
+
+Substituem as planilhas de frota e de financiamentos; tudo com trilha e
+pendência para quem decide.
+
+- [x] Frota: ficha do veículo (documentos, contratos, valor, adaptações,
+  consultas, histórico), vencimentos com aviso por e-mail, controle de
+  apólice ativa para todo veículo em operação, documentos exigidos pela
+  categoria, pendência ao alocar veículo com impedimento.
+- [x] Financiamentos e consórcios ligados às contas a pagar da Omie: parcelas
+  pagas, em atraso, a vencer e não lançadas; saldo para quitação por placa;
+  quitação detectada pela Omie → encerrar → baixa do gravame.
+- [x] Valor de mercado: Tabela FIPE (escolha por grupo de veículos iguais,
+  releitura mensal) e preço ajustado.
+- [x] Fluxos de compra (pedido → Diretoria → recebimento com a NF da Omie →
+  inclusão) e de venda/baixa (Diretoria → checklist de saída).
+- [x] Motoristas: documentos com validade (sem guardar o número), aptidão
+  para a escala, férias pelo art. 137 com as férias do ponto, escala da
+  gestão × aptidão.
+- [ ] Multas (processo a partir da consulta de placa, indicação de condutor,
+  desconto em folha) — próximo módulo.
+- [ ] Custo por veículo e por km — depende do acesso à API da Ituran.
+- [ ] Contratos e linhas — em espera, a pedido (lembrete agendado).
+
