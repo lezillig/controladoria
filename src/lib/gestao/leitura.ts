@@ -572,6 +572,23 @@ export async function lerAdaptacoes(companyId: string): Promise<Map<string, numb
   return new Map(linhas.map((l) => [l.vehicleId, Number(l.totalCents ?? 0)]));
 }
 
+// AS MULTAS QUE A EMPRESA ASSUMIU no período (decisão "quem paga" do
+// fechamento da multa na gestão), por veículo, pela data da infração — pelo
+// valor pago na Omie quando já conferido. Opcional: depende do GRANT de Multa.
+export async function lerMultasAssumidas(companyId: string, inicio: Date, fim: Date): Promise<Map<string, number>> {
+  const linhas = await lerOpcional(
+    () => prismaGestao.$queryRaw<{ vehicleId: string; totalCents: number | bigint | null }[]>`
+      SELECT "vehicleId", SUM(COALESCE("omieValorPagoCents", "valorCents")) AS "totalCents"
+      FROM public."Multa"
+      WHERE "companyId" = ${companyId} AND "quemPaga" = 'empresa' AND "vehicleId" IS NOT NULL
+        AND "dataInfracao" >= ${inicio} AND "dataInfracao" <= ${fim}
+      GROUP BY "vehicleId"
+    `,
+    "as multas assumidas pela empresa (Multa)"
+  );
+  return new Map(linhas.map((l) => [l.vehicleId, Number(l.totalCents ?? 0)]));
+}
+
 // OS CONTRATOS DA GESTÃO, inteiros, para a conferência das parcelas na Omie
 // (src/lib/frota/contratosDaGestao.ts). O cadastro é da gestão (Cadastros ›
 // Veículos › Financiamentos); aqui só se lê. Devolve null quando a leitura

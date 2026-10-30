@@ -1,4 +1,4 @@
-import { lerAdaptacoes, lerPatrimonioDaFrota, type FinanciamentoVeiculoGestao, type PatrimonioVeiculoGestao } from "@/lib/gestao/leitura";
+import { lerAdaptacoes, lerMultasAssumidas, lerPatrimonioDaFrota, type FinanciamentoVeiculoGestao, type PatrimonioVeiculoGestao } from "@/lib/gestao/leitura";
 import { rateioDoContrato } from "./financiamentos";
 import { contratosComSituacao } from "./contratosDaGestao";
 
@@ -8,19 +8,21 @@ import { contratosComSituacao } from "./contratosDaGestao";
 // parte de cada um, com o saldo andando pelos pagamentos na Omie. Junto, os
 // JUROS DO MÊS estimados (saldo × taxa do contrato; consórcio não tem juros).
 // Se os contratos não puderem ser conferidos, vale a posição informada na
-// gestão, sem juros.
+// gestão, sem juros. E as MULTAS que a empresa assumiu no período (a decisão
+// do fechamento da multa na gestão).
 
 export type PatrimonioDaFrota = {
   veiculos: PatrimonioVeiculoGestao[];
   financiamentos: FinanciamentoVeiculoGestao[];
   juros: Map<string, number>;
+  multas: Map<string, number>;
   saldoPelaOmie: boolean;
 };
 
 export async function patrimonioDaFrota(companyId: string, periodo: { inicio: Date; fim: Date }): Promise<PatrimonioDaFrota> {
-  const [lido, adaptacoes, conferidos] = await Promise.all([lerPatrimonioDaFrota(companyId), lerAdaptacoes(companyId), contratosComSituacao(companyId, periodo.fim)]);
+  const [lido, adaptacoes, conferidos, multas] = await Promise.all([lerPatrimonioDaFrota(companyId), lerAdaptacoes(companyId), contratosComSituacao(companyId, periodo.fim), lerMultasAssumidas(companyId, periodo.inicio, periodo.fim)]);
   const veiculos = lido.veiculos.map((v) => ({ ...v, valorCompraCents: v.valorCompraCents !== null ? Number(v.valorCompraCents) + (adaptacoes.get(v.id) ?? 0) : null }));
-  if (!conferidos.gestaoDisponivel) return { veiculos, financiamentos: lido.financiamentos, juros: new Map(), saldoPelaOmie: false };
+  if (!conferidos.gestaoDisponivel) return { veiculos, financiamentos: lido.financiamentos, juros: new Map(), multas, saldoPelaOmie: false };
   const financiamentos: FinanciamentoVeiculoGestao[] = [];
   const juros = new Map<string, number>();
   for (const c of conferidos.contratos) {
@@ -41,5 +43,5 @@ export async function patrimonioDaFrota(companyId: string, periodo: { inicio: Da
       if (!c.situacao.quitado && c.produto !== "consorcio" && c.taxaPct !== null && saldo) juros.set(v.veiculoId, (juros.get(v.veiculoId) ?? 0) + Math.round((saldo * c.taxaPct) / 100));
     }
   }
-  return { veiculos, financiamentos, juros, saldoPelaOmie: true };
+  return { veiculos, financiamentos, juros, multas, saldoPelaOmie: true };
 }

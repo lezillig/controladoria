@@ -397,15 +397,16 @@ export default async function RentabilidadePage({
 
       <Secao
         titulo="Custo de propriedade por veículo"
-        descricao={`Depreciação linear: (valor de compra − ${fmtPercent(premissasDep.valorResidualPct * 100)} residual) ÷ ${premissasDep.vidaUtilAnos} anos (fonte: ${premissasDep.fonte}). A parcela do financiamento ou consórcio é caixa e aparece ao lado, sem somar: o veículo seria contado duas vezes. Fonte: ${fontePatrimonio}. ${capitalSemCompra} veículo(s) sem valor ou data de compra.${patrimonio.saldoPelaOmie ? " Juros do mês estimados pelo saldo × a taxa de cada contrato (consórcio não tem juros)." : ""}`}
+        descricao={`Depreciação linear: (valor de compra − ${fmtPercent(premissasDep.valorResidualPct * 100)} residual) ÷ ${premissasDep.vidaUtilAnos} anos (fonte: ${premissasDep.fonte}). A parcela do financiamento ou consórcio é caixa e aparece ao lado, sem somar: o veículo seria contado duas vezes. Fonte: ${fontePatrimonio}. ${capitalSemCompra} veículo(s) sem valor ou data de compra.${patrimonio.saldoPelaOmie ? " Juros do mês estimados pelo saldo × a taxa de cada contrato (consórcio não tem juros)." : ""} Multas: as que a empresa assumiu no fechamento da multa (gestão), pela data da infração.`}
       >
         <Tabela
-          colunas={["Veículo", "Operação (Omie + cartão)", "Depreciação", "Juros do mês", "Custo total", "Parcela no mês", "Saldo a pagar"]}
-          alinharDireita={[1, 2, 3, 4, 5, 6]}
+          colunas={["Veículo", "Operação (Omie + cartão)", "Depreciação", "Juros do mês", "Multas assumidas", "Custo total", "Parcela no mês", "Saldo a pagar"]}
+          alinharDireita={[1, 2, 3, 4, 5, 6, 7]}
           vazio="Sem dados de compra ou financiamento lidos da gestão."
           linhas={capital.slice(0, 40).map((c) => {
             const operacao = custoOperacaoPorVeiculo.get(c.vehicleId) ?? 0;
             const juros = patrimonio.juros.get(c.vehicleId) ?? null;
+            const multas = patrimonio.multas.get(c.vehicleId) ?? null;
             return [
               <span key="p" className="font-medium text-slate-800">
                 {c.placa}
@@ -414,7 +415,8 @@ export default async function RentabilidadePage({
               fmtBRL(operacao),
               c.depreciacaoCents != null ? fmtBRL(c.depreciacaoCents) : <span key="d" className="text-xs text-amber-700">{c.motivo}</span>,
               juros != null ? fmtBRL(juros) : "—",
-              c.depreciacaoCents != null ? fmtBRL(operacao + c.depreciacaoCents + (juros ?? 0)) : "—",
+              multas != null ? fmtBRL(multas) : "—",
+              c.depreciacaoCents != null ? fmtBRL(operacao + c.depreciacaoCents + (juros ?? 0) + (multas ?? 0)) : "—",
               c.parcelaCents ? fmtBRL(c.parcelaCents) : "—",
               c.saldoCents ? fmtBRL(c.saldoCents) : "—",
             ];

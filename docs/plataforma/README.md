@@ -78,8 +78,8 @@ Omie:
   Omie e títulos de multa sem AIT conhecido).
 - [x] Custo de propriedade por veículo na Rentabilidade: compra + adaptações
   da ficha da gestão, saldo pela Omie e juros pela taxa do contrato.
-- [ ] Multas assumidas pela empresa no custo do veículo — quando a gestão
-  guardar quem paga cada multa.
+- [x] Multas assumidas pela empresa no custo do veículo (a decisão "quem
+  paga" do fechamento da multa na gestão).
 - [ ] Custo por km — depende do acesso à API da Ituran.
 - [ ] Contratos e linhas — em espera, a pedido (lembrete agendado).
 

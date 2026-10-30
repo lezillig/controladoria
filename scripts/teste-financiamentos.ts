@@ -145,6 +145,7 @@ async function noBanco() {
     ["Financiamento", `CREATE TABLE public."Financiamento" (id text PRIMARY KEY, "companyId" text, chave text, banco text, modalidade text, "numeroContrato" text, grupo text, cota text, "valorCents" int, "taxaPct" numeric(9,4), "diaVencimento" int, "totalParcelas" int, "parcelasPagas" int, "valorParcelaCents" int, "saldoQuitacaoCents" int, "dataFinal" timestamp, situacao text, contemplacao text, "dataContemplacao" timestamp, quitado boolean DEFAULT false, "posicaoEm" timestamp, origem text)`],
     ["FinanciamentoVeiculo", `CREATE TABLE public."FinanciamentoVeiculo" (id text PRIMARY KEY, "companyId" text, "financiamentoId" text, placa text, "vehicleId" text, "parcelaCents" int, "saldoCents" int, ativo boolean DEFAULT true)`],
     ["Vehicle", `CREATE TABLE public."Vehicle" (id text PRIMARY KEY, "companyId" text, plate text, status text, "currentMileage" int, model text, type text, year int)`],
+    ["Multa", `CREATE TABLE public."Multa" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "dataInfracao" timestamp, "valorCents" int, "omieValorPagoCents" int, "quemPaga" text)`],
   ] as const) {
     if (!(await existe(t))) {
       await sql(ddl);
@@ -154,7 +155,7 @@ async function noBanco() {
   for (const col of [`chassi text`, `"dataCompra" timestamp`, `"valorCompraCents" int`, `"dataVenda" timestamp`]) await sql(`ALTER TABLE public."Vehicle" ADD COLUMN IF NOT EXISTS ${col}`);
 
   const limpar = async () => {
-    for (const t of ["FinanciamentoVeiculo", "Financiamento", "Vehicle"]) if (await existe(t)) await sql(`DELETE FROM public."${t}" WHERE "companyId" = '${EMP}'`);
+    for (const t of ["FinanciamentoVeiculo", "Financiamento", "Vehicle", "Multa"]) if (await existe(t)) await sql(`DELETE FROM public."${t}" WHERE "companyId" = '${EMP}'`);
     for (const t of ["audPendencia", "audLog", "frotaParcelaOmie", "frotaInstituicaoParceiro", "omieBaixa", "omieTitulo", "omieParceiro", "omieConexao"] as const) {
       await (prisma[t] as unknown as { deleteMany: (a: object) => Promise<unknown> }).deleteMany({ where: { companyId: EMP } });
     }
@@ -237,7 +238,10 @@ async function noBanco() {
     conferir("rodar de novo não duplica", [ag2.pendencias, await prisma.audPendencia.count({ where: { companyId: EMP } })], [0, 3]);
 
     console.log("\n8. O patrimônio para a rentabilidade");
+    await sql(`INSERT INTO public."Multa" (id, "companyId", "vehicleId", "dataInfracao", "valorCents", "omieValorPagoCents", "quemPaga") VALUES
+      ('mu-1', '${EMP}', 'vf-a', '2026-10-05', 19523, 15618, 'empresa'), ('mu-2', '${EMP}', 'vf-a', '2026-10-06', 13000, NULL, 'motorista'), ('mu-3', '${EMP}', 'vf-a', '2026-09-06', 9000, NULL, 'empresa')`);
     const pat = await patrimonioDaFrota(EMP, { inicio: d("2026-10-01"), fim: d("2026-10-31") });
+    conferir("multas assumidas no mês, pelo valor pago na Omie (a do motorista e a de outro mês ficam fora)", pat.multas.get("vf-a"), 15618);
     const fa = pat.financiamentos.filter((x) => x.vehicleId === "vf-a");
     conferir("compra da gestão; metade do CDC no veículo; juros pela taxa", [pat.saldoPelaOmie, pat.veiculos.find((v) => v.id === "vf-a")?.valorCompraCents, fa.map((x) => x.parcelaCents), (pat.juros.get("vf-a") ?? 0) > 0], [true, 25570930, [624848], true]);
 

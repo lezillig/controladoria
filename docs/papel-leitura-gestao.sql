@@ -101,6 +101,9 @@ GRANT SELECT ON public."FinanciamentoVeiculo" TO controladoria_leitura;
 -- propriedade. Opcional como as de cima.
 GRANT SELECT ON public."AdaptacaoVeiculo"     TO controladoria_leitura;
 
+-- Multas que a empresa assumiu (custo do veículo na rentabilidade).
+GRANT SELECT ON public."Multa"                TO controladoria_leitura;
+
 -- ---------------------------------------------------------------------------
 -- 4. Garantir que continue somente leitura no futuro
 -- ---------------------------------------------------------------------------
