@@ -63,7 +63,10 @@ export const CATALOGO_SUBGRUPOS: SubgrupoCatalogo[] = [
   s("DEDUCOES", "PIS e COFINS", "TRIBUTO", /\bpis\b|cofins/i),
   s("DEDUCOES", "ICMS", "TRIBUTO", /icms/i),
   s("DEDUCOES", "IRPJ e CSLL", "TRIBUTO", /irpj|csll|imposto de renda|contribui[çc][ãa]o social/i),
-  s("DEDUCOES", "Simples Nacional", "TRIBUTO", /simples|\bdas\b/i),
+  // "DAS" é a guia do Simples, mas "das" também é preposição ("Taxas das
+  // prefeituras"): só a sigla sozinha, no começo ou no fim, ou seguida de
+  // traço, barra ou parêntese.
+  s("DEDUCOES", "Simples Nacional", "TRIBUTO", /simples|^das\b|\bdas$|\bdas\s*[-–(\/]|guia (do )?das\b/i),
 
   s("OUTRAS_RECEITAS", "Indenizações e sinistros", "N", /sinistro|indeniza|lucros cessantes|seguro|avaria/i),
   s("OUTRAS_RECEITAS", "Venda de sucata e materiais", "N", /venda de (pneu|[óo]leo|sucata|material)|sucata/i),

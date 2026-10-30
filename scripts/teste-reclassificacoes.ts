@@ -85,6 +85,8 @@ ok("todo subgrupo do catálogo está numa linha classificável", CATALOGO_SUBGRU
 ok("nomes únicos por linha", CATALOGO_SUBGRUPOS.every((c, i) => CATALOGO_SUBGRUPOS.findIndex((x) => x.linha === c.linha && x.nome === c.nome) === i));
 ok("FGTS rescisório é rescisão antes de ser encargo", sugerirSubgrupo("DESPESA_SALARIOS", "FGTS Rescisório") === "13º, férias e rescisões");
 ok("FGTS é encargo", sugerirSubgrupo("DESPESA_SALARIOS", "FGTS") === "Encargos (INSS e FGTS)");
+ok("DAS e Simples são Simples Nacional", ["Simples Nacional", "DAS", "DAS - Documento de Arrecadação", "Guia DAS"].every((d) => sugerirSubgrupo("DEDUCOES", d) === "Simples Nacional"));
+ok("a preposição 'das' não é a guia do Simples", sugerirSubgrupo("DEDUCOES", "Taxas das prefeituras") !== "Simples Nacional");
 ok("licenciamento+DPVAT+IPVA+multas é IPVA, não multa", sugerirSubgrupo("DESPESA_VEICULOS", "Licenciamento+DPVAT+IPVA+Multas") === "IPVA, licenciamento e despachante");
 ok("sistema de multas é monitoramento", sugerirSubgrupo("DESPESA_VEICULOS", "Sistema de multas Frota") === "Monitoramento e sistemas de frota");
 ok("seguro de vida é benefício, seguro de veículo é frota", sugerirSubgrupo("DESPESA_SALARIOS", "Seguro de Vida") === "Benefícios" && sugerirSubgrupo("DESPESA_VEICULOS", "Seguro Veículos APP") === "Seguro de frota");
