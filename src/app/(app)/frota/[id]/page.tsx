@@ -247,9 +247,16 @@ export default async function FichaVeiculoPage({ params, searchParams }: { param
               </FormAcao>
               <div className="rounded-md border border-slate-200 p-3 text-xs text-slate-600">
                 <p className="font-semibold text-slate-700">Tabela FIPE</p>
-                <p className="mt-1">
-                  <Link href={`/frota/${v.id}/fipe`} className="font-semibold text-blue-800 underline">Escolher o modelo na FIPE</Link> — uma vez; depois o valor atualiza todo mês.
-                </p>
+                {v.fipeCodigo ? (
+                  <p className="mt-1">
+                    {v.fipeModelo} · código {v.fipeCodigo} · {v.fipeReferencia}. O valor atualiza sozinho todo mês.{" "}
+                    {podeEditar && <Link href={`/frota/${v.id}/fipe`} className="font-semibold text-blue-800 underline">Trocar o modelo</Link>}
+                  </p>
+                ) : (
+                  <p className="mt-1">
+                    {podeEditar ? <Link href={`/frota/${v.id}/fipe`} className="font-semibold text-blue-800 underline">Escolher o modelo na FIPE</Link> : "Modelo da FIPE ainda não escolhido"} — uma vez; depois o valor atualiza todo mês.
+                  </p>
+                )}
               </div>
             </div>
           </Secao>

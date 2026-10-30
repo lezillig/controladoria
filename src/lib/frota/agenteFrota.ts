@@ -5,6 +5,7 @@ import { alertaDoDocumento, TIPO_DOCUMENTO } from "./documentos";
 import { coberturaDeApolice, EM_OPERACAO, ROTULO_COBERTURA } from "./controles";
 import { conciliarParcelasOmie } from "./parcelasOmie";
 import { contratosComSituacao } from "./frotaNoBanco";
+import { atualizarFipeDoMes, type ResultadoFipeMensal } from "./fipeMensal";
 
 // O AGENTE DIÁRIO DA FROTA (docs/plataforma/docs/04-padrao-de-agentes.md):
 // coleta → compara → aponta exceção → pendência (para uma pessoa decidir) e
@@ -17,7 +18,8 @@ import { contratosComSituacao } from "./frotaNoBanco";
 //   4. parcela vencida e não paga na Omie → pendência para o Financeiro;
 //      parcela que vence em 60 dias e não foi lançada → pendência;
 //   5. e-mail aos destinatários da frota quando algum documento ou apólice
-//      chega hoje a 60, 30 ou 7 dias, ou venceu ontem — não todo dia.
+//      chega hoje a 60, 30 ou 7 dias, ou venceu ontem — não todo dia;
+//   6. quando sai a tabela FIPE do mês, relê o valor dos modelos escolhidos.
 // A pendência é idempotente pela chave (veículo/contrato + tipo): reaparecer
 // amanhã atualiza a mesma, não abre outra.
 
@@ -25,7 +27,7 @@ const AGENTE = "agente-frota";
 const MARCOS = [60, 30, 7, -1];
 const diasAte = (d: Date, hoje: Date) => Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) - Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate())) / 86_400_000);
 
-export type ResultadoAgenteFrota = { parcelasLigadas: number; pendencias: number; aviso: string | null; jaRodouHoje?: boolean };
+export type ResultadoAgenteFrota = { parcelasLigadas: number; pendencias: number; aviso: string | null; fipe?: ResultadoFipeMensal; jaRodouHoje?: boolean };
 
 async function pendencia(p: Parameters<typeof criarPendencia>[0]) {
   const r = await criarPendencia(p);
@@ -129,6 +131,7 @@ export async function rodarAgenteFrota(companyId: string, hoje = new Date(), for
       aviso = r.enviado ? `e-mail com ${avisos.length} aviso(s) para ${para.length} destinatário(s)` : `e-mail não enviado: ${r.erro}`;
     } else aviso = `${avisos.length} aviso(s) sem destinatário configurado`;
   }
-  await prisma.audLog.create({ data: { companyId, agente: AGENTE, tabela: "Agente", registroId: marca, operacao: "insert", depois: { parcelasLigadas, pendencias, avisos: avisos.length, aviso } } });
-  return { parcelasLigadas, pendencias, aviso };
+  const fipe = await atualizarFipeDoMes(companyId, AGENTE);
+  await prisma.audLog.create({ data: { companyId, agente: AGENTE, tabela: "Agente", registroId: marca, operacao: "insert", depois: { parcelasLigadas, pendencias, avisos: avisos.length, aviso, fipe } } });
+  return { parcelasLigadas, pendencias, aviso, fipe };
 }

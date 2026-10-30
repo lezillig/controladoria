@@ -194,6 +194,47 @@ async function puros() {
     cotas.map((c) => [c.cota, c.situacaoConsorcio, c.lanceCents, c.quitado, c.taxaPct]),
     [["26", "contemplada_com_bem", Math.round(0.475 * 9929810), false, 17], ["73", "nao_contemplada", 0, false, 17], ["5", "contemplada_sem_bem", null, false, 0.17], ["1", "contemplada_com_bem", null, true, 0.17]]
   );
+
+  console.log("\nFIPE: a sugestão a partir do cadastro e a tabela do mês");
+  const fipe = await import("../src/lib/frota/fipe");
+  conferir("preço da FIPE em centavos", [fipe.lerPrecoFipe("R$ 40.202,00"), fipe.lerPrecoFipe("R$ 1.234.567,89"), fipe.lerPrecoFipe("sem preço")], [4020200, 123456789, null]);
+  conferir("van e carro na tabela de carros; micro e ônibus na de caminhões", ["van", "carro", "micro", "onibus", "caminhao"].map(fipe.tipoFipeDoVeiculo), ["cars", "cars", "trucks", "trucks", "trucks"]);
+  const marcasCarros = [{ codigo: "39", nome: "Mercedes-Benz" }, { codigo: "48", nome: "Renault" }, { codigo: "59", nome: "VW - VolksWagen" }, { codigo: "13", nome: "Citroën" }];
+  const marcasCaminhoes = [{ codigo: "108", nome: "MARCOPOLO" }, { codigo: "109", nome: "MERCEDES-BENZ" }, { codigo: "102", nome: "AGRALE" }];
+  conferir(
+    "marca: apelidos da planilha (MB, VW, Volare, sem acento)",
+    [fipe.marcaSugerida(marcasCarros, "MB")?.codigo, fipe.marcaSugerida(marcasCarros, "vw")?.codigo, fipe.marcaSugerida(marcasCarros, "Citroen")?.codigo, fipe.marcaSugerida(marcasCaminhoes, "Volare")?.codigo, fipe.marcaSugerida(marcasCaminhoes, "MERCEDES")?.codigo, fipe.marcaSugerida(marcasCarros, "Tesla")],
+    ["39", "59", "13", "108", "109", null]
+  );
+  const modelos = [{ codigo: "1", nome: "Sprinter 415 Furgão Curto T.B. 2.2 Dies." }, { codigo: "2", nome: "Master Furgão L3H2 2.3 Diesel" }, { codigo: "3", nome: "Master Minibus Exec. L3H2 2.3 Diesel" }, { codigo: "4", nome: "Kangoo Express 1.6" }];
+  conferir("modelos: os parecidos com o cadastro primeiro", fipe.modelosParecidos(modelos, "MASTER MINIBUS").map((m) => m.codigo), ["3", "2", "4", "1"]);
+  const masters = [{ codigo: "c", nome: "Master 2.3 dCi Chassi 16V Diesel" }, { codigo: "f", nome: "Master 2.3 dCi Furgão 16V Diesel" }, { codigo: "e", nome: "Master 2.3 dCi Executive Longo 16L Dies" }, { codigo: "s", nome: "Master 2.3 dCi STD Médio Esco. 20L Dies." }, { codigo: "k", nome: "Kangoo Express 1.6" }];
+  conferir(
+    "van de passageiros: versão de passageiro antes de chassi e furgão; capacidade e uso desempatam",
+    [
+      fipe.modelosParecidos(masters, "Master", { tipo: "van", capacidade: 16, categoriaUso: "fretamento" }).map((m) => m.codigo),
+      fipe.modelosParecidos(masters, "Master", { tipo: "van", capacidade: 20, categoriaUso: "escolar" })[0].codigo,
+      fipe.modelosParecidos(masters, "Master", { tipo: "caminhao" })[0].codigo,
+    ],
+    [["e", "s", "c", "f", "k"], "s", "c"]
+  );
+  const anos = [{ codigo: "32000-3", nome: "32000 Diesel" }, { codigo: "2026-3", nome: "2026 Diesel" }, { codigo: "2025-1", nome: "2025 Gasolina" }, { codigo: "2025-3", nome: "2025 Diesel" }];
+  conferir(
+    "ano: o do cadastro (diesel antes); o do ano que vem cai no Zero KM",
+    [fipe.anoSugerido(anos, 2025)?.codigo, fipe.anoSugerido(anos, 2027)?.codigo, fipe.anoSugerido(anos, 2019), fipe.anoSugerido(anos, null)],
+    ["2025-3", "32000-3", null, null]
+  );
+  conferir(
+    "a referência da lista e a do preço são a mesma",
+    [fipe.chaveDaReferencia("outubro/2026") === fipe.chaveDaReferencia("outubro de 2026"), fipe.chaveDaReferencia("março de 2026") === fipe.chaveDaReferencia("marco/2026"), fipe.chaveDaReferencia("setembro/2026") === fipe.chaveDaReferencia("outubro de 2026")],
+    [true, true, false]
+  );
+  const { chaveDoGrupoFipe } = await import("../src/lib/frota/frotaNoBanco");
+  conferir(
+    "veículos iguais: mesma marca, modelo e ano, sem diferença de caixa",
+    [chaveDoGrupoFipe({ tipo: "van", marca: "Renault", modelo: "Master", anoMod: 2024 }) === chaveDoGrupoFipe({ tipo: "van", marca: "RENAULT", modelo: "master ", anoMod: 2024 }), chaveDoGrupoFipe({ tipo: "van", marca: "Renault", modelo: "Master", anoMod: 2024 }) === chaveDoGrupoFipe({ tipo: "van", marca: "Renault", modelo: "Master", anoMod: 2025 })],
+    [true, false]
+  );
 }
 
 async function noBanco() {

@@ -24,6 +24,7 @@ import {
   SlidersHorizontal,
   Target,
   TrendingUp,
+  BadgeDollarSign,
   UsersRound,
   Database,
   Radar,
@@ -78,6 +79,7 @@ const NAV: NavItem[] = [
   { secao: "Frota", href: "/frota", label: "Veículos", icon: Truck, permissao: "frota" },
   { href: "/frota/vencimentos", label: "Vencimentos e apólices", icon: CalendarClock, permissao: "frota" },
   { href: "/frota/financiamentos", label: "Financiamentos e consórcios", icon: HandCoins, permissao: "financiamentos" },
+  { href: "/frota/fipe", label: "Valor de mercado", icon: BadgeDollarSign, permissao: "frota-valores" },
 
   { secao: "Pessoas", href: "/cadastro/pessoas", label: "Pessoas", icon: Contact, permissao: "cadastro-pessoas" },
   // O checklist mensal do fluxograma da folha validado pelo RH e pela Contabilidade.

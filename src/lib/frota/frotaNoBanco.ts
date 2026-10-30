@@ -120,3 +120,18 @@ export async function listarFrota(companyId: string, hoje: Date): Promise<{ linh
   });
   return { linhas, contratos };
 }
+
+// VEÍCULOS IGUAIS para a FIPE: mesmo tipo, marca, modelo e ano-modelo do
+// cadastro, ainda na frota. Escolhe-se o modelo da FIPE uma vez por grupo.
+const textoDoGrupo = (x: string | null) => (x ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+export const chaveDoGrupoFipe = (v: { tipo: string; marca: string | null; modelo: string | null; anoMod: number | null }) => [v.tipo, textoDoGrupo(v.marca), textoDoGrupo(v.modelo), v.anoMod ?? ""].join("|");
+
+export async function veiculosIguais(companyId: string, v: { id: string; tipo: string; marca: string | null; modelo: string | null; anoMod: number | null }) {
+  if (!v.marca || !v.modelo || !v.anoMod) return [];
+  const chave = chaveDoGrupoFipe(v);
+  const candidatos = await prisma.cadVeiculo.findMany({
+    where: { companyId, tipo: v.tipo, anoMod: v.anoMod, status: { notIn: ["vendido", "baixado"] }, NOT: { id: v.id } },
+    select: { id: true, placa: true, tipo: true, marca: true, modelo: true, anoMod: true, fipeCodigo: true },
+  });
+  return candidatos.filter((c) => chaveDoGrupoFipe(c) === chave);
+}

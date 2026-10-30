@@ -2522,6 +2522,8 @@ model CadVeiculo {
   // VALOR DE MERCADO: a Tabela FIPE (o modelo escolhido uma vez; o valor
   // atualiza todo mês) e o preço ajustado, quando a FIPE não tem o modelo
   // certo (micro adaptado, unidade móvel) — o ajustado prevalece.
+  // cars | trucks (a tabela da FIPE onde o modelo está).
+  fipeTipo              String?
   fipeCodigo            String?
   fipeModelo            String?
   fipeAnoModelo         String?
