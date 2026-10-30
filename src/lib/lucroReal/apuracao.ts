@@ -1,4 +1,4 @@
-import { LINHAS_DRE } from "../controladoria/dre";
+import { LINHAS_DRE, type TituloDoDre } from "../controladoria/dre";
 import type { HorasDeOperacao } from "../gestao/leitura";
 import { ALIQUOTAS, tipoDaCategoria, type TipoDeGasto } from "./catalogo";
 
@@ -24,6 +24,9 @@ import { ALIQUOTAS, tipoDaCategoria, type TipoDeGasto } from "./catalogo";
 // ele vai e o que mexe nele.
 
 export type ItemApuracao = {
+  // Os maiores títulos da categoria no período (os do DRE), para o drill-down.
+  titulos?: TituloDoDre[];
+  totalDeTitulos?: number;
   chave: string;
   descricao: string;
   linha: string;
@@ -72,19 +75,48 @@ export type InsumosLucroReal = {
   titulosComPendencia: TituloComPendencia[];
   extratoSemCausa: { cents: number; quantidade: number; maiores: MovimentoSemCausa[] };
   recebiveisVencidos: { ate15mil: FaixaDeCredito; de15a100mil: FaixaDeCredito; acima100mil: FaixaDeCredito };
-  frota: { veiculos: number; semValor: number; custoCents: number; depreciacao20Cents: number; depreciacao25Cents: number } | null;
+  frota: {
+    veiculos: number;
+    semValor: number;
+    custoCents: number;
+    depreciacao20Cents: number;
+    depreciacao25Cents: number;
+    // Veículo a veículo, para o drill-down da depreciação (e a lista do que falta).
+    detalhe?: VeiculoDepreciado[];
+    placasSemValor?: string[];
+  } | null;
   horas: HorasDeOperacao | null;
   // De onde vieram: o balanço lançado em Indicadores e a TJLP do Banco
   // Central, ou o que alguém digitou na tela por cima.
   jcp: { plCents: number | null; tjlp: number | null; fontePl?: string | null; fonteTjlp?: string | null };
 };
 
-export type Ajuste = { codigo: string; rotulo: string; cents: number; explicacao: string };
+export type VeiculoDepreciado = { placa: string; dataCompra: Date; custoCents: number; depreciacaoCents: number };
+
+// Uma categoria aberta até os títulos: o degrau do drill-down.
+export type CategoriaDetalhada = {
+  descricao: string;
+  cents: number;
+  origem: ItemApuracao["origem"];
+  titulos: TituloDoDre[];
+  totalDeTitulos: number;
+};
+
+export type Ajuste = {
+  codigo: string;
+  rotulo: string;
+  cents: number;
+  explicacao: string;
+  // O que compõe o ajuste: as categorias (até os títulos) ou os veículos.
+  categorias?: CategoriaDetalhada[];
+  veiculos?: VeiculoDepreciado[];
+  placasSemValor?: string[];
+};
 
 export type GastoPorTipo = {
   tipo: TipoDeGasto;
   cents: number;
-  categorias: { descricao: string; cents: number; origem: ItemApuracao["origem"] }[];
+  categorias: CategoriaDetalhada[];
 };
 
 export type Pendencia = {
@@ -132,6 +164,9 @@ export type RelatorioLucroReal = {
   real: Impostos;
   presumido: Impostos & { disponivel: boolean; baseCsllCents: number };
   porTipo: GastoPorTipo[];
+  // O resultado gerencial aberto pelas linhas do DRE, com sinal (receita
+  // soma, despesa subtrai), cada uma até as categorias e os títulos.
+  composicaoGerencial: { chave: string; rotulo: string; cents: number; categorias: CategoriaDetalhada[] }[];
   emDiscussao: GastoPorTipo[];
   pendencias: Pendencia[];
   oportunidades: Oportunidade[];
@@ -200,8 +235,15 @@ export function apurarLucroReal(ins: InsumosLucroReal): RelatorioLucroReal {
 
   // Despesas (lado de saída) acima do LAIR, por tipo.
   const despesasAcima = acima.filter((i) => !i.ehReceita);
-  const somaDoTipo = (codigos: string[]) =>
-    despesasAcima.filter((i) => codigos.includes(tipoDaChave(i.chave, i.descricao).codigo)).reduce((a, i) => a + Math.abs(i.valorCents), 0);
+  const doTipo = (codigos: string[]) => despesasAcima.filter((i) => codigos.includes(tipoDaChave(i.chave, i.descricao).codigo));
+  const somaDoTipo = (codigos: string[]) => doTipo(codigos).reduce((a, i) => a + Math.abs(i.valorCents), 0);
+
+  const composicaoGerencial = LINHAS_DRE.filter((l) => LINHAS_ACIMA_DO_LAIR.has(l.chave))
+    .map((l) => {
+      const daLinha = acima.filter((i) => i.linha === l.chave);
+      return { chave: l.chave as string, rotulo: l.rotulo as string, cents: soma(daLinha), categorias: detalhar(daLinha, true) };
+    })
+    .filter((l) => l.categorias.length > 0);
 
   // ---- 1. Do gerencial ao contábil ----
   const ajustesDaBase: Ajuste[] = [];
@@ -212,18 +254,21 @@ export function apurarLucroReal(ins: InsumosLucroReal): RelatorioLucroReal {
     codigo: "IRPJ_CSLL",
     rotulo: "(+) IRPJ e CSLL lançados como despesa",
     cents: somaDoTipo(["IRPJ_CSLL"]),
+    categorias: detalhar(doTipo(["IRPJ_CSLL"])),
     explicacao: "No Presumido a empresa os mostra como dedução da receita; no Real saem da base e voltam calculados sobre o lucro.",
   });
   empurrar(ajustesDaBase, {
     codigo: "IMOBILIZADO",
     rotulo: "(+) Compra de bens do ativo lançada como despesa",
     cents: somaDoTipo(["IMOBILIZADO"]),
+    categorias: detalhar(doTipo(["IMOBILIZADO"])),
     explicacao: "Veículo, máquina e bem durável acima de R$ 1.200 vão para o ativo e entram pela depreciação.",
   });
   empurrar(ajustesDaBase, {
     codigo: "FINANCIAMENTO",
     rotulo: "(+) Parcelas de financiamento lançadas como despesa",
     cents: somaDoTipo(["FINANCIAMENTO", "DISTRIBUICAO"]),
+    categorias: detalhar(doTipo(["FINANCIAMENTO", "DISTRIBUICAO"])),
     explicacao: "O principal da dívida e a distribuição de lucro não são despesa. Os juros das parcelas são — ver a oportunidade de separar.",
   });
   if (ins.frota && ins.frota.depreciacao20Cents > 0) {
@@ -231,6 +276,8 @@ export function apurarLucroReal(ins: InsumosLucroReal): RelatorioLucroReal {
       codigo: "DEPRECIACAO",
       rotulo: "(−) Depreciação da frota (20% ao ano)",
       cents: -ins.frota.depreciacao20Cents,
+      veiculos: ins.frota.detalhe,
+      placasSemValor: ins.frota.placasSemValor,
       explicacao: `${ins.frota.veiculos} veículo(s) com valor de compra na gestão, depreciados a 20% ao ano até o custo.${
         ins.frota.semValor > 0 ? ` ${ins.frota.semValor} sem valor de compra ficaram fora — cada um é depreciação perdida.` : ""
       }`,
@@ -240,13 +287,15 @@ export function apurarLucroReal(ins: InsumosLucroReal): RelatorioLucroReal {
   // se o custo de pessoas dela não traz o INSS patronal, ele passa a existir.
   const pessoasCorp = ins.itens.filter((i) => i.origem === "PESSOAS_CORPORATIVA" && !i.ehReceita);
   const temPatronal = pessoasCorp.some((i) => ENCARGO_PATRONAL.test(i.descricao));
-  const baseSalarialCorp = pessoasCorp.filter((i) => PESSOAS_SALARIO.test(i.descricao)).reduce((a, i) => a + Math.abs(i.valorCents), 0);
+  const salariosCorp = pessoasCorp.filter((i) => PESSOAS_SALARIO.test(i.descricao));
+  const baseSalarialCorp = salariosCorp.reduce((a, i) => a + Math.abs(i.valorCents), 0);
   const encargosNovosCents = !temPatronal && baseSalarialCorp > 0 ? pct(baseSalarialCorp, ALIQUOTAS.encargosPatronais) : 0;
   empurrar(ajustesDaBase, {
     codigo: "ENCARGOS_TRANSFERENCIA",
     rotulo: `(−) Encargos patronais da folha que vem da ${ins.corporativa ?? "corporativa"} (estimativa)`,
     cents: -encargosNovosCents,
-    explicacao: `Fora do Simples, a folha paga INSS de 20%, RAT ajustado pelo FAP e terceiros (FPAS 612): cerca de ${decimal(ALIQUOTAS.encargosPatronais * 100)}% sobre a base salarial. Não encontrei INSS patronal no custo de pessoas da ${ins.corporativa ?? "corporativa"}; conferir com a contabilidade.`,
+    categorias: detalhar(salariosCorp),
+    explicacao: `Base salarial de ${reais(baseSalarialCorp)} (abaixo). Fora do Simples, a folha paga INSS de 20%, RAT ajustado pelo FAP e terceiros (FPAS 612): cerca de ${decimal(ALIQUOTAS.encargosPatronais * 100)}% sobre a base salarial. Não encontrei INSS patronal no custo de pessoas da ${ins.corporativa ?? "corporativa"}; conferir com a contabilidade.`,
   });
   const lucroContabilCents = lucroGerencialCents + ajustesDaBase.reduce((a, x) => a + x.cents, 0);
 
@@ -255,7 +304,7 @@ export function apurarLucroReal(ins: InsumosLucroReal): RelatorioLucroReal {
   const porTipo = agruparPorTipo(despesasAcima, tipoDaChave);
   for (const g of porTipo) {
     if (g.tipo.tratamento !== "ADICAO" || g.tipo.codigo === "IRPJ_CSLL") continue;
-    adicoes.push({ codigo: g.tipo.codigo, rotulo: `(+) ${g.tipo.nome}`, cents: g.cents, explicacao: `${g.tipo.baseLegal}.` });
+    adicoes.push({ codigo: g.tipo.codigo, rotulo: `(+) ${g.tipo.nome}`, cents: g.cents, explicacao: `${g.tipo.baseLegal}.`, categorias: g.categorias });
   }
   const doacoes = somaDoTipo(["DOACOES"]);
   if (doacoes > 0) {
@@ -264,6 +313,7 @@ export function apurarLucroReal(ins: InsumosLucroReal): RelatorioLucroReal {
       codigo: "DOACOES",
       rotulo: "(+) Doações acima do limite",
       cents: Math.max(0, doacoes - limite),
+      categorias: detalhar(doTipo(["DOACOES"])),
       explicacao: "Lei 9.249/1995, art. 13, § 2º: até 2% do lucro operacional, e só para entidades qualificadas — conferir cada entidade.",
     });
   }
@@ -303,11 +353,26 @@ export function apurarLucroReal(ins: InsumosLucroReal): RelatorioLucroReal {
     real,
     presumido,
     porTipo,
+    composicaoGerencial,
     emDiscussao,
     pendencias,
     oportunidades,
     coberturaDocumental,
   };
+}
+
+// Cada item como categoria aberta, do maior para o menor. Com sinal, a receita
+// soma e a despesa subtrai (a composição do resultado); sem, o valor em módulo.
+function detalhar(itens: ItemApuracao[], comSinal = false): CategoriaDetalhada[] {
+  return itens
+    .map((i) => ({
+      descricao: i.descricao,
+      cents: comSinal ? efeito(i) : Math.abs(i.valorCents),
+      origem: i.origem,
+      titulos: i.titulos ?? [],
+      totalDeTitulos: i.totalDeTitulos ?? i.titulos?.length ?? 0,
+    }))
+    .sort((a, b) => Math.abs(b.cents) - Math.abs(a.cents));
 }
 
 function agruparPorTipo(itens: ItemApuracao[], tipoDaChave: (chave: string, descricao: string) => TipoDeGasto): GastoPorTipo[] {
@@ -316,7 +381,7 @@ function agruparPorTipo(itens: ItemApuracao[], tipoDaChave: (chave: string, desc
     const tipo = tipoDaChave(i.chave, i.descricao);
     const g = grupos.get(tipo.codigo) ?? { tipo, cents: 0, categorias: [] };
     g.cents += Math.abs(i.valorCents);
-    g.categorias.push({ descricao: i.descricao, cents: Math.abs(i.valorCents), origem: i.origem });
+    g.categorias.push(...detalhar([i]));
     grupos.set(tipo.codigo, g);
   }
   for (const g of grupos.values()) g.categorias.sort((a, b) => b.cents - a.cents);
@@ -426,7 +491,7 @@ function montarOportunidades(
     economiaCents: jcpCents !== null ? Math.round(jcpCents * marginal) : null,
     como:
       jcpCents !== null
-        ? `JCP de ${reais(jcpCents)} no ano: PL de ${reais(plCents!)} × TJLP de ${decimal(tjlp! * 100)}% a.a.${
+        ? `JCP de ${reais(jcpCents)} no ano: PL de ${reais(plCents!)} × TJLP de ${(tjlp! * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}% a.a.${
             jcpCents < Math.round(plCents! * tjlp!) ? ", limitado a 50% do lucro" : ""
           }${fontes ? ` (${fontes})` : ""}. A empresa deduz e deixa de pagar ${Math.round(marginal * 100)}%; o sócio paga 17,5% retido na fonte, definitivo. Ganho líquido para o grupo: cerca de ${decimal((marginal - ALIQUOTAS.irrfJcp) * 100)} pontos sobre o valor pago.`
         : `${!plCents ? "Falta o patrimônio líquido: lance o balanço da empresa em Indicadores (ou digite abaixo). " : ""}${!tjlp ? "A TJLP do Banco Central não respondeu: digite abaixo. " : ""} A conta: PL × TJLP do período, limitado a 50% do lucro do exercício ou dos lucros acumulados e reservas. A empresa deduz ${Math.round(marginal * 100)}% e o sócio paga 17,5% na fonte — é a forma mais barata de levar lucro ao sócio dentro do limite.`,

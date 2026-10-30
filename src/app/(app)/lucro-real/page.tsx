@@ -1,5 +1,6 @@
+import type { ReactNode } from "react";
 import { ALIQUOTAS, ROTULO_TRATAMENTO, type Tratamento } from "@/lib/lucroReal/catalogo";
-import { apurarLucroReal, ROTULO_NATUREZA, type Natureza } from "@/lib/lucroReal/apuracao";
+import { apurarLucroReal, ROTULO_NATUREZA, type CategoriaDetalhada, type Natureza, type VeiculoDepreciado } from "@/lib/lucroReal/apuracao";
 import { dozeMesesFechados, insumosDoLucroReal } from "@/lib/lucroReal/noBanco";
 import { URL_TJLP_BNDES } from "@/lib/lucroReal/tjlp";
 import { fmtBRL, fmtData, fmtPercent } from "@/lib/controladoria/format";
@@ -21,6 +22,7 @@ import { Kpi, Secao, Tabela } from "../_componentes";
 
 export const maxDuration = 60;
 
+const cartao = "block rounded-2xl transition hover:ring-2 hover:ring-blue-200";
 const reais = (cents: number) => fmtBRL(Math.round(cents / 100) * 100).replace(/,00$/, "");
 const corTratamento: Record<Tratamento, string> = {
   DEDUTIVEL: "bg-emerald-100 text-emerald-800",
@@ -88,42 +90,69 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
         </p>
       )}
 
+      {/* Cada cartão leva ao que o compõe, e de lá se desce até o título. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <Kpi rotulo="Lucro real estimado" valor={reais(r.lucroRealCents)} apoio="12 meses" tom={r.lucroRealCents >= 0 ? "neutro" : "atencao"} />
-        <Kpi rotulo="IRPJ + CSLL no Real" valor={reais(r.real.totalCents)} apoio={`${fmtPercent(r.receitaBrutaCents > 0 ? (r.real.totalCents / r.receitaBrutaCents) * 100 : 0, 1)} da receita`} />
-        <Kpi
-          rotulo="No Presumido"
-          valor={reais(r.presumido.totalCents)}
-          apoio={r.presumido.disponivel ? "mesma receita, com a LC 224/2025" : "referência — não é opção"}
-          tom={r.presumido.totalCents < r.real.totalCents ? "atencao" : "neutro"}
-        />
-        <Kpi rotulo="Economia identificada" valor={reais(economia)} apoio="por ano, se os requisitos forem cumpridos" tom="bom" />
-        <Kpi rotulo="Despesa sem documento" valor={reais(pendente)} apoio="glosável numa fiscalização" tom={pendente > 0 ? "ruim" : "bom"} />
+        <a href="#quadro" className={cartao} title="Ver o que compõe este número">
+          <Kpi rotulo="Lucro real estimado" valor={reais(r.lucroRealCents)} apoio="12 meses" tom={r.lucroRealCents >= 0 ? "neutro" : "atencao"} />
+        </a>
+        <a href="#impostos" className={cartao} title="Ver o que compõe este número">
+          <Kpi rotulo="IRPJ + CSLL no Real" valor={reais(r.real.totalCents)} apoio={`${fmtPercent(r.receitaBrutaCents > 0 ? (r.real.totalCents / r.receitaBrutaCents) * 100 : 0, 1)} da receita`} />
+        </a>
+        <a href="#presumido" className={cartao} title="Ver o que compõe este número">
+          <Kpi
+            rotulo="No Presumido"
+            valor={reais(r.presumido.totalCents)}
+            apoio={r.presumido.disponivel ? "mesma receita, com a LC 224/2025" : "referência — não é opção"}
+            tom={r.presumido.totalCents < r.real.totalCents ? "atencao" : "neutro"}
+          />
+        </a>
+        <a href="#oportunidades" className={cartao} title="Ver o que compõe este número">
+          <Kpi rotulo="Economia identificada" valor={reais(economia)} apoio="por ano, se os requisitos forem cumpridos" tom="bom" />
+        </a>
+        <a href="#pendencias" className={cartao} title="Ver o que compõe este número">
+          <Kpi rotulo="Despesa sem documento" valor={reais(pendente)} apoio="glosável numa fiscalização" tom={pendente > 0 ? "ruim" : "bom"} />
+        </a>
       </div>
 
+      <div id="quadro" className="scroll-mt-4">
       <Secao
         titulo="Do resultado ao lucro real"
-        descricao="O resultado da tela de Custos e DRE (até o resultado antes dos investimentos), corrigido para o que a contabilidade de competência apuraria, e as adições do e-Lalur."
+        descricao="O resultado da tela de Custos e DRE (até o resultado antes dos investimentos), corrigido para o que a contabilidade de competência apuraria, e as adições do e-Lalur. Clique numa linha para abrir: linhas do DRE, categorias e os maiores títulos de cada uma."
       >
-        <table className="min-w-full text-sm">
-          <tbody>
-            <LinhaQuadro rotulo="Resultado gerencial" valor={r.lucroGerencialCents} forte />
-            {r.ajustesDaBase.map((a) => (
-              <LinhaQuadro key={a.codigo} rotulo={a.rotulo} valor={a.cents} explicacao={a.explicacao} />
+        <div className="divide-y divide-slate-100 text-sm">
+          <LinhaQuadro rotulo="Resultado gerencial" valor={r.lucroGerencialCents} forte>
+            {r.composicaoGerencial.map((l) => (
+              <LinhaQuadro key={l.chave} rotulo={l.rotulo} valor={l.cents}>
+                <Categorias categorias={l.categorias} nomeCorp={nomeCorp} />
+              </LinhaQuadro>
             ))}
-            <LinhaQuadro rotulo="= Lucro contábil estimado" valor={r.lucroContabilCents} forte />
-            {r.adicoes.map((a) => (
-              <LinhaQuadro key={a.codigo} rotulo={a.rotulo} valor={a.cents} explicacao={a.explicacao} />
-            ))}
-            <LinhaQuadro rotulo="= Lucro real estimado" valor={r.lucroRealCents} forte />
-            <LinhaQuadro rotulo="IRPJ (15%)" valor={r.real.irpjCents} />
-            <LinhaQuadro rotulo="Adicional de IRPJ (10% acima de R$ 240 mil no ano)" valor={r.real.adicionalCents} />
-            <LinhaQuadro rotulo="CSLL (9%)" valor={r.real.csllCents} />
+          </LinhaQuadro>
+          {r.ajustesDaBase.map((a) => (
+            <LinhaQuadro key={a.codigo} rotulo={a.rotulo} valor={a.cents} explicacao={a.explicacao}>
+              {a.categorias && a.categorias.length > 0 && <Categorias categorias={a.categorias} nomeCorp={nomeCorp} />}
+              {a.veiculos && <Veiculos veiculos={a.veiculos} semValor={a.placasSemValor ?? []} />}
+            </LinhaQuadro>
+          ))}
+          <LinhaQuadro rotulo="= Lucro contábil estimado" valor={r.lucroContabilCents} forte />
+          {r.adicoes.map((a) => (
+            <LinhaQuadro key={a.codigo} rotulo={a.rotulo} valor={a.cents} explicacao={a.explicacao}>
+              {a.categorias && a.categorias.length > 0 && <Categorias categorias={a.categorias} nomeCorp={nomeCorp} />}
+            </LinhaQuadro>
+          ))}
+          <LinhaQuadro rotulo="= Lucro real estimado" valor={r.lucroRealCents} forte />
+          <div id="impostos" className="scroll-mt-4 divide-y divide-slate-100">
+            <LinhaQuadro rotulo="IRPJ (15%)" valor={r.real.irpjCents} explicacao={`15% sobre ${reais(Math.max(0, r.lucroRealCents))}.`} />
+            <LinhaQuadro
+              rotulo="Adicional de IRPJ (10% acima de R$ 240 mil no ano)"
+              valor={r.real.adicionalCents}
+              explicacao={`10% sobre ${reais(Math.max(0, r.lucroRealCents - 240_000_00))}, o que passa de R$ 20 mil por mês.`}
+            />
+            <LinhaQuadro rotulo="CSLL (9%)" valor={r.real.csllCents} explicacao={`9% sobre ${reais(Math.max(0, r.lucroRealCents))}.`} />
             <LinhaQuadro rotulo="= IRPJ + CSLL no Lucro Real" valor={r.real.totalCents} forte />
-          </tbody>
-        </table>
+          </div>
+        </div>
         <div className="mt-4 grid gap-4 text-sm lg:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 p-4">
+          <div id="presumido" className="scroll-mt-4 rounded-lg border border-slate-200 p-4">
             <p className="font-semibold text-slate-800">Lucro Presumido, mesma receita</p>
             <p className="mt-1 text-slate-600">
               Base do IRPJ {reais(r.presumido.baseCents)} (16% da receita, 17,6% sobre o que passa de R$ 5 milhões no ano, mais as receitas
@@ -150,7 +179,9 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
       </Secao>
+      </div>
 
+      <div id="oportunidades" className="scroll-mt-4">
       <Secao
         titulo="Oportunidades lícitas"
         descricao="Do que reduz o imposto de forma permanente ao que só antecipa a dedução. Cada uma com o que precisa existir para valer numa fiscalização. As marcadas “conferir” dependem de confirmação da assessoria antes de virar procedimento."
@@ -210,6 +241,9 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
         </div>
       </Secao>
 
+      </div>
+
+      <div id="pendencias" className="scroll-mt-4">
       <Secao
         titulo="Despesa sem o documento que sustenta a dedução"
         descricao={`Títulos a pagar da ${insumos.empresa} no período (sem os pagos à ${nomeCorp}). No Lucro Real cada um destes é base glosável; corrigir na Omie agora custa menos que defender depois.`}
@@ -246,6 +280,8 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
         )}
       </Secao>
 
+      </div>
+
       <Secao
         titulo="Cada despesa no Lucro Real"
         descricao="Pelo nome da categoria da Omie (e, sem nome reconhecido, pela linha do DRE). Abra a linha para ver as categorias."
@@ -263,15 +299,7 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
                 <p>{g.tipo.observacao}</p>
                 {g.tipo.documentos.length > 0 && <p>Documentos: {g.tipo.documentos.join("; ")}.</p>}
                 <p className="text-slate-500">{g.tipo.baseLegal}</p>
-                <ul className="space-y-0.5">
-                  {g.categorias.slice(0, 12).map((c, i) => (
-                    <li key={`${c.descricao}-${i}`} className="flex gap-2">
-                      <span>{c.descricao}</span>
-                      {c.origem === "PESSOAS_CORPORATIVA" && <span className="text-slate-400">({nomeCorp})</span>}
-                      <span className="ml-auto tabular-nums">{reais(c.cents)}</span>
-                    </li>
-                  ))}
-                </ul>
+                <Categorias categorias={g.categorias} nomeCorp={nomeCorp} />
               </div>
             </details>
           ))}
@@ -314,14 +342,83 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
   );
 }
 
-function LinhaQuadro({ rotulo, valor, forte, explicacao }: { rotulo: string; valor: number; forte?: boolean; explicacao?: string }) {
-  return (
-    <tr className={`border-b border-slate-100 align-top ${forte ? "font-semibold text-slate-900" : "text-slate-700"}`}>
-      <td className={`py-1.5 pr-4 ${forte ? "" : "pl-4"}`}>
+// Uma linha do quadro; com filhos, abre (details) para o que a compõe.
+function LinhaQuadro({ rotulo, valor, forte, explicacao, children }: { rotulo: string; valor: number; forte?: boolean; explicacao?: string; children?: ReactNode }) {
+  const linha = (
+    <div className={`flex items-start gap-4 py-1.5 ${forte ? "font-semibold text-slate-900" : "pl-4 text-slate-700"}`}>
+      <div className="flex-1">
         {rotulo}
         {explicacao && <p className="mt-0.5 text-xs font-normal text-slate-500">{explicacao}</p>}
-      </td>
-      <td className={`whitespace-nowrap py-1.5 text-right tabular-nums ${valor < 0 ? "text-red-700" : ""}`}>{reais(valor)}</td>
-    </tr>
+      </div>
+      <span className={`whitespace-nowrap text-right tabular-nums ${valor < 0 ? "text-red-700" : ""}`}>{reais(valor)}</span>
+    </div>
+  );
+  const temFilhos = Array.isArray(children) ? children.some(Boolean) : !!children;
+  if (!temFilhos) return linha;
+  return (
+    <details>
+      <summary className="cursor-pointer list-none hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+        <div className="flex items-start">
+          <span className="mt-2 w-4 shrink-0 text-xs text-slate-400 [details[open]>summary_&]:rotate-90">▸</span>
+          <div className="flex-1">{linha}</div>
+        </div>
+      </summary>
+      <div className="mb-2 ml-4 border-l border-slate-200 pl-3">{children}</div>
+    </details>
+  );
+}
+
+// As categorias, cada uma abrindo nos maiores títulos do período.
+function Categorias({ categorias, nomeCorp }: { categorias: CategoriaDetalhada[]; nomeCorp: string }) {
+  return (
+    <ul className="divide-y divide-slate-50 text-xs">
+      {categorias.map((c, i) => (
+        <li key={`${c.descricao}-${c.origem}-${i}`}>
+          <details>
+            <summary className="flex cursor-pointer list-none items-center gap-2 py-1 text-slate-700 hover:bg-slate-50 [&::-webkit-details-marker]:hidden">
+              <span className="w-3 text-slate-400 [details[open]>summary_&]:rotate-90">▸</span>
+              <span>{c.descricao}</span>
+              {c.origem === "PESSOAS_CORPORATIVA" && <span className="text-slate-400">(pessoas da {nomeCorp})</span>}
+              <span className={`ml-auto tabular-nums ${c.cents < 0 ? "text-red-700" : ""}`}>{reais(c.cents)}</span>
+            </summary>
+            {c.titulos.length === 0 ? (
+              <p className="py-1 pl-5 text-slate-400">Sem títulos listados para esta parte.</p>
+            ) : (
+              <div className="py-1 pl-5">
+                <Tabela
+                  colunas={["Data", "Parceiro", "Documento", "Empresa", "Valor"]}
+                  alinharDireita={[4]}
+                  linhas={c.titulos.map((t) => [fmtData(t.data), t.parceiro, t.documento ?? "—", t.empresa, reais(t.valorCents)])}
+                />
+                {c.totalDeTitulos > c.titulos.length && (
+                  <p className="mt-1 text-slate-400">
+                    Os {c.titulos.length} maiores de {c.totalDeTitulos} títulos.
+                  </p>
+                )}
+              </div>
+            )}
+          </details>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+// A depreciação veículo a veículo, e os que ficaram fora por falta de valor.
+function Veiculos({ veiculos, semValor }: { veiculos: VeiculoDepreciado[]; semValor: string[] }) {
+  return (
+    <div className="space-y-2 py-1 text-xs">
+      <Tabela
+        colunas={["Placa", "Compra", "Custo (com adaptações)", "Depreciação no período"]}
+        alinharDireita={[2, 3]}
+        linhas={veiculos.map((v) => [v.placa, fmtData(v.dataCompra), reais(v.custoCents), reais(v.depreciacaoCents)])}
+      />
+      {semValor.length > 0 && (
+        <p className="text-amber-800">
+          Sem valor ou data de compra na gestão ({semValor.length}): {semValor.join(", ")}. Carregar a planilha CONTROLE INFORMACOES GERAIS em
+          Cadastros › Veículos › Importar controle, na gestão.
+        </p>
+      )}
+    </div>
   );
 }

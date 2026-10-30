@@ -259,7 +259,14 @@ async function banco() {
       de15a100mil: { cents: 50_000_00, quantidade: 1 },
       acima100mil: { cents: 0, quantidade: 0 },
     });
-    conferir("frota", ins.frota, { veiculos: 1, semValor: 1, custoCents: 300_000_00, depreciacao20Cents: 60_000_00, depreciacao25Cents: 75_000_00 });
+    conferir("frota", ins.frota && { ...ins.frota, detalhe: undefined, placasSemValor: undefined }, {
+      veiculos: 1,
+      semValor: 1,
+      custoCents: 300_000_00,
+      depreciacao20Cents: 60_000_00,
+      depreciacao25Cents: 75_000_00,
+    });
+    conferir("frota veículo a veículo, e o que falta", [ins.frota?.detalhe?.map((v) => [v.placa, v.depreciacaoCents]), ins.frota?.placasSemValor], [[["AAA1A11", 60_000_00]], ["BBB2B22"]]);
     conferir("horas da Ituran", [ins.horas?.medianaEmViagem, ins.horas?.medianaJanela, ins.horas?.veiculoDias], [6, 14, 10]);
     conferir("saída sem causa (sem a transferência e a tarifa)", [ins.extratoSemCausa.cents, ins.extratoSemCausa.quantidade], [7_000_00, 1]);
 
@@ -272,6 +279,20 @@ async function banco() {
       ["ENCARGOS_TRANSFERENCIA", -42_300_00],
     ]);
     conferir("adição da multa de trânsito", r.adicoes.map((a) => [a.codigo, a.cents]), [["MULTA_TRANSITO", 5_000_00]]);
+    // O drill-down: o resultado aberto por linha do DRE, e cada ajuste nas
+    // categorias até os títulos.
+    conferir(
+      "resultado gerencial por linha soma o todo",
+      r.composicaoGerencial.reduce((a, l) => a + l.cents, 0),
+      r.lucroGerencialCents
+    );
+    conferir("a receita abre nos títulos", r.composicaoGerencial[0]?.categorias[0]?.titulos.map((t) => t.valorCents), [1_000_000_00]);
+    const encargos = r.ajustesDaBase.find((a) => a.codigo === "ENCARGOS_TRANSFERENCIA");
+    conferir("encargos abrem na base salarial da MCZ, com os títulos dela", [encargos?.categorias?.map((c) => [c.descricao, c.cents, c.origem]), encargos?.categorias?.[0]?.titulos.length], [
+      [["Salários", 150_000_00, "PESSOAS_CORPORATIVA"]],
+      1,
+    ]);
+    conferir("a adição abre na categoria", r.adicoes[0]?.categorias?.map((c) => c.descricao), ["Multas de trânsito"]);
     conferir("lucro real e imposto", [r.lucroRealCents, r.real.totalCents], [606_700_00, 91_005_00 + 36_670_00 + 54_603_00]);
     conferir("presumido: R$ 1 milhão, sem acréscimo", [r.presumido.totalCents, r.presumido.disponivel], [24_000_00 + 10_800_00, true]);
     conferir(

@@ -169,20 +169,24 @@ export async function insumosDoLucroReal(params: {
     for (const i of linha.itens) {
       if (i.valorCents === 0) continue;
       const base = { chave: i.categoriaCodigo, descricao: i.descricao, linha: linha.chave, ehReceita: i.ehReceita };
+      // Os títulos do drill-down vão com a parte a que pertencem: a da empresa
+      // ou a das pessoas da corporativa.
+      const daEmpresa = { titulos: i.titulos.filter((t) => !t.corporativo) };
+      const daCorp = { titulos: i.titulos.filter((t) => t.corporativo) };
       // As duas linhas de pessoas já vêm separadas por empresa pelo DRE.
       if (linha.chave === "DESPESA_SALARIOS_CORPORATIVO") {
-        itens.push({ ...base, valorCents: i.valorCents, origem: "PESSOAS_CORPORATIVA" });
+        itens.push({ ...base, valorCents: i.valorCents, origem: "PESSOAS_CORPORATIVA", titulos: i.titulos, totalDeTitulos: i.totalDeTitulos });
         continue;
       }
       const p = parcelas.get(i.categoriaCodigo);
       const parte = linha.chave !== "DESPESA_SALARIOS" && p && p.totalCents !== 0 ? p.corpCents / p.totalCents : 0;
       if (parte <= 0) {
-        itens.push({ ...base, valorCents: i.valorCents, origem: "EMPRESA" });
+        itens.push({ ...base, valorCents: i.valorCents, origem: "EMPRESA", titulos: i.titulos, totalDeTitulos: i.totalDeTitulos });
         continue;
       }
       const daCorporativa = Math.round(i.valorCents * parte);
-      if (i.valorCents - daCorporativa !== 0) itens.push({ ...base, valorCents: i.valorCents - daCorporativa, origem: "EMPRESA" });
-      if (TIPOS_DE_PESSOAS.has(tipoDaCategoria(i.descricao, linha.chave).codigo)) itens.push({ ...base, valorCents: daCorporativa, origem: "PESSOAS_CORPORATIVA" });
+      if (i.valorCents - daCorporativa !== 0) itens.push({ ...base, valorCents: i.valorCents - daCorporativa, origem: "EMPRESA", ...daEmpresa });
+      if (TIPOS_DE_PESSOAS.has(tipoDaCategoria(i.descricao, linha.chave).codigo)) itens.push({ ...base, valorCents: daCorporativa, origem: "PESSOAS_CORPORATIVA", ...daCorp });
       else corporativaForaCents += Math.abs(daCorporativa);
     }
   }
@@ -220,6 +224,18 @@ export async function insumosDoLucroReal(params: {
           custoCents: comValor.reduce((a, x) => a + custo(x), 0),
           depreciacao20Cents: comValor.reduce((a, x) => a + depreciacaoNoPeriodo(custo(x), new Date(x.dataCompra!), 0.2, periodo), 0),
           depreciacao25Cents: comValor.reduce((a, x) => a + depreciacaoNoPeriodo(custo(x), new Date(x.dataCompra!), 0.25, periodo), 0),
+          detalhe: comValor
+            .map((x) => ({
+              placa: x.plate ?? "sem placa",
+              dataCompra: new Date(x.dataCompra!),
+              custoCents: custo(x),
+              depreciacaoCents: depreciacaoNoPeriodo(custo(x), new Date(x.dataCompra!), 0.2, periodo),
+            }))
+            .sort((a, b) => b.depreciacaoCents - a.depreciacaoCents),
+          placasSemValor: ativos
+            .filter((x) => !(x.valorCompraCents && x.dataCompra))
+            .map((x) => x.plate ?? "sem placa")
+            .sort(),
         }
       : null;
 
