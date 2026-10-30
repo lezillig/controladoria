@@ -149,6 +149,8 @@ async function noBanco() {
   const vazios = new Set(["500"]);
   // Lançamentos que a Omie recusa por consumo (item 7).
   const limitados = new Set<string>();
+  // Item 8: o que a Omie devolve hoje para o mês antigo (código → status).
+  const antigosNaOmie = new Map<string, string>();
   const vazio = () => new Response(JSON.stringify({ faultstring: "ERROR: Não existem registros para a página [1]!" }), { status: 500 });
   const chamadas: string[] = [];
   const fetchOriginal = globalThis.fetch;
@@ -157,6 +159,17 @@ async function noBanco() {
     const p = corpo.param[0];
     chamadas.push(corpo.call);
     if (corpo.call === "PesquisarLancamentos") {
+      // Item 8: o mês antigo, a pagar pelo vencimento.
+      if (p.dDtVencDe === "01/06/2024" && p.cNatureza === "P") {
+        return new Response(
+          JSON.stringify({
+            nPagina: 1,
+            nTotPaginas: 1,
+            titulosEncontrados: [...antigosNaOmie].map(([c, cStatus]) => ({ cabecTitulo: { nCodTitulo: Number(c), nValorTitulo: 959.7, dDtVenc: "02/06/2024", dDtEmissao: "02/01/2024", cStatus } })),
+          }),
+          { status: 200 }
+        );
+      }
       const setembro = p.dDtEmisDe === "01/09/2026";
       if (!setembro || p.cNatureza !== "R") return vazio();
       return new Response(
@@ -261,6 +274,25 @@ async function noBanco() {
     conferir("no ciclo seguinte continua de onde parou: sem relistar agosto", chamadas.filter((c) => c === "PesquisarLancamentos").length, 1);
     conferir("os recusados voltam a ser consultados e saem", [r7b.faseConcluida, r7b.excluidos, (await t("1001"))?.cancelado], [true, 5, true]);
     conferir("varredura concluída: o ponto guardado some", [!!cx7b?.exclusoesVarridasEm, cx7b?.exclusoesCursor ?? null], [true, null]);
+
+    console.log("\n8. Título em aberto antigo: relido no ciclo diário, mesmo fora das janelas");
+    // Duas parcelas de jun/2024 em aberto no espelho, "A VENCER" — o que a
+    // tela mostrava com 800 dias de atraso. Na Omie, hoje: 2001 foi paga (a
+    // baixa lançada depois, com a data antiga); 2002 foi apagada.
+    const parcela = (codigo: string) => ({ ...titulo(codigo, new Date(2024, 0, 2)), natureza: "PAGAR" as const, dataVencimento: new Date(2024, 5, 2), valorDocumentoCents: 95970 });
+    await prisma.omieTitulo.createMany({ data: [parcela("2001"), parcela("2002")] });
+    antigosNaOmie.set("2001", "PAGO");
+    naoCadastrados.add("2002");
+    chamadas.length = 0;
+    const diario = { ...ctx, ...instante(), cursor: null, janelaInicio: new Date(2026, 8, 27), janelaFim: new Date(2026, 8, 30, 23, 59, 59) };
+    const t8 = await executarFase("titulos", diario, false);
+    const pagar = async (codigo: string) =>
+      prisma.omieTitulo.findFirst({ where: { companyId: EMPRESA, natureza: "PAGAR", codigoLancamento: codigo }, select: { status: true, liquidado: true, cancelado: true } });
+    conferir("a fase de títulos relê o mês antigo e conclui", t8.faseConcluida, true);
+    conferir("a parcela paga na Omie deixa de estar em aberto", await pagar("2001"), { status: "PAGO", liquidado: true, cancelado: false });
+    const e8 = await executarFase("exclusoes", { ...diario, ...instante() }, false);
+    conferir("a varredura diária confere o mês antigo e conclui", e8.faseConcluida, true);
+    conferir("a parcela apagada na Omie sai do espelho", (await pagar("2002"))?.status, "EXCLUÍDO NA OMIE");
   } finally {
     globalThis.fetch = fetchOriginal;
     await limpar();

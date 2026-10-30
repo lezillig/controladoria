@@ -33,7 +33,7 @@ import {
   normalizarSaldosDoExtrato,
 } from "./mapping";
 import type { OmieNatureza, VersaoContrato } from "./types";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 
 // Motor de sincronizacao Omie -> espelho local.
 //
@@ -475,17 +475,40 @@ async function gravarCadastros(
 // PULADO — nunca derruba os demais.
 
 type PassoTitulo = { id: string; natureza: OmieNatureza; param: Record<string, unknown> };
-type CursorTitulos = { passo: number; pagina: number };
+// `antigos`: os meses de títulos em aberto antigos escolhidos no início da
+// execução (ver abaixo), guardados para a retomada reler os mesmos.
+type CursorTitulos = { passo: number; pagina: number; antigos?: string[] };
 
 // Janela de vencimento revisada a cada execucao diaria. 120 dias para tras
 // cobre a inadimplencia recente que ainda esta sendo cobrada; 120 para
 // frente cobre a projecao de fluxo de caixa que o painel mostra.
 const DIAS_REVISAO_VENCIMENTO = 120;
 
+// OS EM ABERTO ANTIGOS. Fora dos 120 dias, um título em aberto no espelho só
+// voltava a ser lido se fosse pago DENTRO da janela do dia — e a baixa lançada
+// na Omie depois, com a data antiga (o pagamento de 2024 conciliado em 2026),
+// ou o título apagado, nunca chegavam. Ficava "A VENCER" com 800 dias de
+// atraso na tela, que é o que a Omie não mostra. Por isso cada execução
+// diária relê também, pelo vencimento, os meses antigos que ainda têm título
+// em aberto no espelho: até MESES_ABERTOS_ANTIGOS por natureza, primeiro os
+// lidos há mais tempo — o mês relido hoje vai para o fim da fila, e os
+// meses se revezam até não sobrar título parado.
+const MESES_ABERTOS_ANTIGOS = 6;
+
+export type MesAntigo = { natureza: OmieNatureza; mes: Date };
+export const mesAntigoParaTexto = (m: MesAntigo) => `${m.natureza}|${m.mes.getFullYear()}-${String(m.mes.getMonth() + 1).padStart(2, "0")}`;
+export function mesAntigoDoTexto(texto: string): MesAntigo | null {
+  const [natureza, mes] = texto.split("|");
+  const [a, m] = (mes ?? "").split("-").map(Number);
+  if ((natureza !== "PAGAR" && natureza !== "RECEBER") || !a || !m) return null;
+  return { natureza, mes: new Date(a, m - 1, 1) };
+}
+
 export function planejarPassosTitulos(
   janelaInicio: Date,
   janelaFim: Date,
-  backfill: boolean
+  backfill: boolean,
+  antigos: MesAntigo[] = []
 ): PassoTitulo[] {
   const de = formatarDataOmie(janelaInicio);
   const ate = formatarDataOmie(janelaFim);
@@ -521,10 +544,53 @@ export function planejarPassosTitulos(
           dDtVencAte: formatarDataOmie(revisaoAte),
         },
       });
+      for (const a of antigos.filter((x) => x.natureza === natureza)) {
+        const fim = new Date(a.mes.getFullYear(), a.mes.getMonth() + 1, 0);
+        // Só a parte do mês que fica antes da janela de revisão: o resto ela já lê.
+        const ate = fim < revisaoDe ? fim : new Date(revisaoDe.getTime() - 86_400_000);
+        if (ate < a.mes) continue;
+        passos.push({
+          id: `${natureza}:abertos-antigos:${mesAntigoParaTexto(a).split("|")[1]}`,
+          natureza,
+          param: { cNatureza, dDtVencDe: formatarDataOmie(a.mes), dDtVencAte: formatarDataOmie(ate) },
+        });
+      }
     }
   }
   return passos;
 }
+
+// Os meses (pelo vencimento) com título em aberto no espelho anterior à janela
+// de revisão, dos lidos há mais tempo para os mais recentes.
+async function mesesComAbertosAntigos(conexaoId: string, antesDe: Date, criterio: "vencimento" | "competencia"): Promise<MesAntigo[]> {
+  // Para a varredura de exclusões, o mês é o do critério dela: a pagar pelo
+  // vencimento, a receber pela emissão.
+  const dataDoMes =
+    criterio === "vencimento"
+      ? Prisma.sql`t."dataVencimento"`
+      : Prisma.sql`(CASE WHEN t.natureza = 'PAGAR' THEN t."dataVencimento" ELSE COALESCE(t."dataEmissao", t."dataVencimento") END)`;
+  const desatualizado = criterio === "vencimento" ? Prisma.sql`t."sincronizadoEm"` : Prisma.sql`COALESCE(t."vistoNaListagemEm", 'epoch'::timestamp)`;
+  const linhas = await prisma.$queryRaw<{ natureza: OmieNatureza; mes: Date }[]>`
+    SELECT natureza, mes FROM (
+      SELECT t.natureza::text AS natureza, date_trunc('month', ${dataDoMes}) AS mes, MIN(${desatualizado}) AS lido,
+             ROW_NUMBER() OVER (PARTITION BY t.natureza ORDER BY MIN(${desatualizado}) ASC, date_trunc('month', ${dataDoMes}) ASC) AS n
+        FROM ${tabela("OmieTitulo")} t
+       WHERE t."conexaoId" = ${conexaoId}
+         AND t.cancelado = false
+         AND t.liquidado = false
+         AND t."dataVencimento" < ${antesDe}
+       GROUP BY t.natureza, 2
+    ) x
+    WHERE n <= ${MESES_ABERTOS_ANTIGOS}
+    ORDER BY natureza, mes`;
+  return linhas.map((l) => ({ natureza: l.natureza, mes: new Date(l.mes) }));
+}
+
+const inicioDaRevisao = (janelaFim: Date) => {
+  const d = new Date(janelaFim);
+  d.setDate(d.getDate() - DIAS_REVISAO_VENCIMENTO);
+  return d;
+};
 
 // `lDadosCad: true` pede o bloco `info` (quem incluiu/alterou, quando) junto
 // com cada título. A documentação diz que o parâmetro existe; se a conta
@@ -555,8 +621,14 @@ async function buscarTitulos(
 
 async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise<ResultadoFase> {
   const res = vazio();
-  const passos = planejarPassosTitulos(ctx.janelaInicio, ctx.janelaFim, backfill);
   const cursor = lerCursor<CursorTitulos>(ctx.cursor, { passo: 0, pagina: 1 });
+  // Os meses antigos são escolhidos uma vez por execução e seguem no cursor:
+  // recalculados na retomada, a fila já teria andado e os passos mudariam de
+  // posição.
+  const antigosTexto =
+    cursor.antigos ?? (backfill ? [] : (await mesesComAbertosAntigos(ctx.conexaoId, inicioDaRevisao(ctx.janelaFim), "vencimento")).map(mesAntigoParaTexto));
+  const antigos = antigosTexto.map(mesAntigoDoTexto).filter((m): m is MesAntigo => m !== null);
+  const passos = planejarPassosTitulos(ctx.janelaInicio, ctx.janelaFim, backfill, antigos);
 
   let indice = cursor.passo;
   let pagina = cursor.pagina;
@@ -568,7 +640,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
       if (acabouOTempo(ctx)) {
         return {
           ...res,
-          proximoCursor: JSON.stringify({ passo: indice, pagina } satisfies CursorTitulos),
+          proximoCursor: JSON.stringify({ passo: indice, pagina, antigos: antigosTexto } satisfies CursorTitulos),
         };
       }
 
@@ -577,7 +649,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         resposta = await buscarTitulos(ctx, { nPagina: pagina, nRegPorPagina: REGISTROS_POR_PAGINA, ...passo.param });
       } catch (e) {
         if (e instanceof OmieVazioError) break;
-        const pausa = pausaPorFalhaPassageira(res, `títulos ${passo.id}`, e, { passo: indice, pagina } satisfies CursorTitulos);
+        const pausa = pausaPorFalhaPassageira(res, `títulos ${passo.id}`, e, { passo: indice, pagina, antigos: antigosTexto } satisfies CursorTitulos);
         if (pausa) return pausa;
         res.erros.push(`títulos ${passo.id}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
         break;
@@ -1264,6 +1336,9 @@ export function existenciaDaConsulta(
 }
 
 type CursorExclusoes = {
+  // Os meses antigos com título em aberto, além dos da varredura normal
+  // (escolhidos no início da execução e guardados para a retomada).
+  antigos?: string[];
   mes: number;
   natureza: number;
   pagina: number;
@@ -1290,6 +1365,24 @@ async function sincronizarExclusoes(ctx: ContextoFase, backfill: boolean): Promi
     inicioDaBase: config?.dataInicioBase ?? null,
   });
   const c = lerCursor<CursorExclusoes>(ctx.cursor, { mes: 0, natureza: 0, pagina: 1, desde: null, listado: false, pulados: [] });
+  // OS MESES ANTIGOS COM TÍTULO EM ABERTO: a varredura só olhava de jan/2025
+  // em diante e, depois dela, os três últimos meses — título de 2024 apagado
+  // na Omie ficava no espelho como em aberto. Na execução diária, entram
+  // também os meses (de antes da janela) com título em aberto não conferido
+  // na listagem há mais tempo; no dia seguinte, os próximos.
+  if (!backfill && conexao?.exclusoesVarridasEm) {
+    c.antigos ??= (await mesesComAbertosAntigos(ctx.conexaoId, meses[0]?.inicio ?? ctx.janelaInicio, "competencia")).map((m) => `${m.mes.getFullYear()}-${String(m.mes.getMonth() + 1).padStart(2, "0")}`);
+    const jaNaLista = new Set(meses.map((m) => m.inicio.getTime()));
+    const extras = [...new Set(c.antigos)]
+      .map((t) => {
+        const [a, m] = t.split("-").map(Number);
+        return new Date(a, m - 1, 1);
+      })
+      .filter((d) => !jaNaLista.has(d.getTime()))
+      .sort((a, b) => a.getTime() - b.getTime())
+      .map((d) => ({ inicio: d, fim: new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999) }));
+    meses.unshift(...extras);
+  }
   const pausa = () => ({ ...res, proximoCursor: JSON.stringify(c) });
   // A VARREDURA HISTÓRICA PARADA num ciclo anterior pelo limite de consumo:
   // continua do mês (por data) e da natureza em que parou.
