@@ -6,6 +6,7 @@ import { categoriaSql, ehIntercompanySql } from "../controladoria/escopoSql";
 import type { Periodo } from "../controladoria/periodos";
 import { lerAdaptacoes, lerHorasDeOperacao, lerPatrimonioDaFrota } from "../gestao/leitura";
 import { tipoDaCategoria } from "./catalogo";
+import { lerTjlp, type Tjlp } from "./tjlp";
 import type { DocumentacaoAgregada, InsumosLucroReal, ItemApuracao, MovimentoSemCausa, TituloComPendencia } from "./apuracao";
 
 // A COLHEITA DA APURAÇÃO DO LUCRO REAL — a conta está em apuracao.ts.
@@ -49,7 +50,8 @@ export async function insumosDoLucroReal(params: {
   corporativa: { id: string; apelido: string } | null;
   periodo: Periodo;
   hoje: Date;
-  jcp: InsumosLucroReal["jcp"];
+  // O que alguém digitou na tela vale por cima do balanço e da TJLP do Banco Central.
+  jcpManual: { plCents: number | null; tjlp: number | null };
 }): Promise<InsumosLucroReal> {
   const { companyId, empresa, corporativa, periodo, hoje } = params;
   const escopo = { companyId, conexaoId: null, janela: { desde: periodo.inicio, ate: null } };
@@ -59,7 +61,7 @@ export async function insumosDoLucroReal(params: {
   const seisMeses = new Date(hoje.getFullYear(), hoje.getMonth() - 6, hoje.getDate());
   const umAno = new Date(hoje.getFullYear() - 1, hoje.getMonth(), hoje.getDate());
 
-  const [guardadas, parcelas, eliminado, documentacao, pendentes, semCausa, vencidos, patrimonio, adaptacoes, horas] = await Promise.all([
+  const [guardadas, parcelas, eliminado, documentacao, pendentes, semCausa, vencidos, patrimonio, adaptacoes, horas, balancos, tjlp] = await Promise.all([
     prisma.dreClassificacao.findMany({ where: { companyId }, select: { categoriaCodigo: true, linha: true, subgrupo: true, origem: true } }),
     parcelaCorporativaPorCategoria(escopo, periodo),
     intercompanyEliminado(escopo, periodo, "competencia"),
@@ -148,6 +150,13 @@ export async function insumosDoLucroReal(params: {
     lerPatrimonioDaFrota(companyId),
     lerAdaptacoes(companyId),
     lerHorasDeOperacao(companyId, new Date(hoje.getTime() - 90 * 86_400_000)),
+    // O balanço lançado em Indicadores: o da empresa, ou o do grupo na falta dele.
+    prisma.balancoPatrimonial.findMany({
+      where: { companyId, escopo: { in: [empresa.id, "GRUPO"] } },
+      orderBy: { dataBase: "desc" },
+      select: { escopo: true, dataBase: true, patrimonioLiquido: true },
+    }),
+    params.jcpManual.tjlp ? Promise.resolve(null) : lerTjlp(periodo, hoje),
   ]);
 
   const classificacoes = new Map(guardadas.map((c) => [c.categoriaCodigo, { linha: c.linha, subgrupo: c.subgrupo, confirmada: c.origem === "CONFIRMADA" }]));
@@ -230,6 +239,32 @@ export async function insumosDoLucroReal(params: {
     },
     frota,
     horas,
-    jcp: params.jcp,
+    jcp: jcpDoPeriodo(params.jcpManual, balancos.find((b) => b.escopo === empresa.id) ?? balancos[0] ?? null, empresa.apelido, tjlp),
+  };
+}
+
+const dataCurta = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+
+export function jcpDoPeriodo(
+  manual: { plCents: number | null; tjlp: number | null },
+  balanco: { escopo: string; dataBase: Date; patrimonioLiquido: { toString(): string } } | null,
+  empresa: string,
+  tjlp: Tjlp | null
+): InsumosLucroReal["jcp"] {
+  const plDoBalanco = balanco ? Math.round(Number(balanco.patrimonioLiquido.toString()) * 100) : null;
+  const plCents = manual.plCents ?? (plDoBalanco && plDoBalanco > 0 ? plDoBalanco : null);
+  return {
+    plCents,
+    tjlp: manual.tjlp ?? tjlp?.mediaAa ?? null,
+    fontePl: manual.plCents
+      ? "PL digitado na tela"
+      : plCents && balanco
+        ? `PL do balanço de ${dataCurta(balanco.dataBase)} lançado em Indicadores${balanco.escopo === "GRUPO" ? ` — o do grupo, falta o da ${empresa}` : ""}`
+        : null,
+    fonteTjlp: manual.tjlp
+      ? "TJLP digitada na tela"
+      : tjlp
+        ? `TJLP média dos ${tjlp.meses} meses, Banco Central (a mesma do BNDES); hoje em ${(tjlp.atualAa * 100).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}% a.a.`
+        : null,
   };
 }

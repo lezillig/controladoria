@@ -11,6 +11,7 @@ export {};
 import { PrismaClient } from "@prisma/client";
 import { tipoDaCategoria } from "../src/lib/lucroReal/catalogo";
 import { apurarLucroReal, coeficienteDeTurnos, impostosDoPresumido, impostosDoReal } from "../src/lib/lucroReal/apuracao";
+import { tjlpDaSerie } from "../src/lib/lucroReal/tjlp";
 
 let falhas = 0;
 function conferir(nome: string, real: unknown, esperado: unknown) {
@@ -59,6 +60,19 @@ function pura() {
   const p = impostosDoPresumido(10_000_000_00, 100_000_00);
   conferir("Presumido com o acréscimo da LC 224/2025", [p.baseCents, p.baseCsllCents], [1_600_000_00 + 80_000_00 + 100_000_00, 1_200_000_00 + 60_000_00 + 100_000_00]);
   conferir("turnos", [coeficienteDeTurnos(7.5), coeficienteDeTurnos(8.5), coeficienteDeTurnos(16), coeficienteDeTurnos(17)], [1, 1.5, 1.5, 2]);
+
+  console.log("\nTJLP do Banco Central");
+  const periodo = { inicio: new Date(2025, 9, 1), fim: new Date(2026, 8, 30, 23, 59, 59), rotulo: "" };
+  const serie = [
+    { data: "01/09/2025", valor: "8.00" },
+    ...["10", "11", "12"].map((m) => ({ data: `01/${m}/2025`, valor: "9.00" })),
+    ...["01", "02", "03", "04", "05", "06", "07", "08", "09"].map((m) => ({ data: `01/${m}/2026`, valor: "10.00" })),
+    { data: "01/10/2026", valor: "9.29" },
+    { data: "01/11/2026", valor: "9.29" },
+  ];
+  const tj = tjlpDaSerie(serie, periodo, new Date(2026, 9, 30));
+  conferir("média dos doze meses e a de hoje", [tj?.meses, Math.round((tj?.mediaAa ?? 0) * 1e6), tj?.atualAa], [12, Math.round(((3 * 0.09 + 9 * 0.1) / 12) * 1e6), 0.0929]);
+  conferir("sem meses no período, nada", tjlpDaSerie([{ data: "01/01/2020", valor: "5" }], periodo, new Date(2026, 9, 30)), null);
 
   console.log("\nApuração com insumos montados à mão");
   const r = apurarLucroReal({
@@ -129,6 +143,7 @@ async function banco() {
     await prisma.omieTitulo.deleteMany({ where: { companyId: E } });
     await prisma.omieCategoria.deleteMany({ where: { companyId: E } });
     await prisma.dreClassificacao.deleteMany({ where: { companyId: E } });
+    await prisma.balancoPatrimonial.deleteMany({ where: { companyId: E } });
     await prisma.omieConexao.deleteMany({ where: { companyId: E } });
   };
   await limpar();
@@ -219,7 +234,20 @@ async function banco() {
     conferir("doze meses fechados", [periodo.inicio.getMonth(), periodo.inicio.getFullYear(), periodo.fim.getMonth(), periodo.fim.getDate()], [9, 2025, 8, 30]);
     conferir("depreciação: o ano inteiro a 20%; nada depois da vida útil", [depreciacaoNoPeriodo(30_000_000, new Date(2024, 5, 1), 0.2, periodo), depreciacaoNoPeriodo(30_000_000, new Date(2018, 0, 1), 0.2, periodo)], [6_000_000, 0]);
 
-    const ins = await insumosDoLucroReal({ companyId: E, empresa: { id: az.id, apelido: "AZ" }, corporativa: { id: mc.id, apelido: "MC" }, periodo, hoje, jcp: { plCents: null, tjlp: null } });
+    // O balanço do grupo e o da Azul lançados em Indicadores: vale o da Azul.
+    const balanco = (escopo: string, pl: number) => ({
+      companyId: E, escopo, dataBase: new Date(Date.UTC(2025, 11, 31)), caixa: 0, contasReceber: 0, ativoCirculante: 0, imobilizadoLiquido: 0,
+      ativoTotal: 0, fornecedores: 0, passivoCirculante: 0, dividaCurtoPrazo: 0, dividaLongoPrazo: 0, patrimonioLiquido: pl,
+    });
+    await prisma.balancoPatrimonial.createMany({ data: [balanco("GRUPO", 9_000_000), balanco(az.id, 2_000_000.5)] });
+    // A TJLP digitada: o teste não depende da internet.
+    const ins = await insumosDoLucroReal({ companyId: E, empresa: { id: az.id, apelido: "AZ" }, corporativa: { id: mc.id, apelido: "MC" }, periodo, hoje, jcpManual: { plCents: null, tjlp: 0.0929 } });
+    conferir("JCP: PL do balanço da Azul e a TJLP digitada", [ins.jcp.plCents, ins.jcp.tjlp, ins.jcp.fontePl, ins.jcp.fonteTjlp], [
+      200_000_050,
+      0.0929,
+      "PL do balanço de 31/12/2025 lançado em Indicadores",
+      "TJLP digitada na tela",
+    ]);
     const porChave = (origem: string) =>
       Object.fromEntries(ins.itens.filter((i) => i.origem === origem).map((i) => [i.chave, i.valorCents]).sort(([a], [b]) => String(a).localeCompare(String(b))));
     conferir("da Azul: tudo menos o pago à MCZ", porChave("EMPRESA"), { C1: 120_000_00, F1: 50_000_00, I1: 30_000_00, M1: 5_000_00, R1: 1_000_000_00, S1: 11_000_00 });
@@ -266,6 +294,17 @@ async function banco() {
       0,
     ]);
     conferir("veículo sem valor de compra apontado", "FROTA_SEM_VALOR" in op, true);
+    // PL R$ 2.000.000,50 × 9,29% = R$ 185.800,05, abaixo de 50% do lucro; a 34%.
+    conferir("JCP com o balanço", op.JCP, Math.round(Math.round(200_000_050 * 0.0929) * 0.34));
+
+    const { jcpDoPeriodo } = await import("../src/lib/lucroReal/noBanco");
+    const doGrupo = jcpDoPeriodo({ plCents: null, tjlp: null }, { escopo: "GRUPO", dataBase: new Date(Date.UTC(2025, 11, 31)), patrimonioLiquido: "9000000" }, "AZ", { mediaAa: 0.0915, atualAa: 0.0929, meses: 12 });
+    conferir("sem o balanço da empresa, o do grupo — e a tela diz", [doGrupo.plCents, doGrupo.tjlp, doGrupo.fontePl, doGrupo.fonteTjlp], [
+      900_000_000,
+      0.0915,
+      "PL do balanço de 31/12/2025 lançado em Indicadores — o do grupo, falta o da AZ",
+      "TJLP média dos 12 meses, Banco Central (a mesma do BNDES); hoje em 9,29% a.a.",
+    ]);
   } finally {
     await limpar();
     for (const t of criadas) await sql(`DROP TABLE public."${t}"`);

@@ -74,7 +74,9 @@ export type InsumosLucroReal = {
   recebiveisVencidos: { ate15mil: FaixaDeCredito; de15a100mil: FaixaDeCredito; acima100mil: FaixaDeCredito };
   frota: { veiculos: number; semValor: number; custoCents: number; depreciacao20Cents: number; depreciacao25Cents: number } | null;
   horas: HorasDeOperacao | null;
-  jcp: { plCents: number | null; tjlp: number | null };
+  // De onde vieram: o balanço lançado em Indicadores e a TJLP do Banco
+  // Central, ou o que alguém digitou na tela por cima.
+  jcp: { plCents: number | null; tjlp: number | null; fontePl?: string | null; fonteTjlp?: string | null };
 };
 
 export type Ajuste = { codigo: string; rotulo: string; cents: number; explicacao: string };
@@ -413,7 +415,8 @@ function montarOportunidades(
   const r: Oportunidade[] = [];
 
   // Juros sobre capital próprio.
-  const { plCents, tjlp } = ins.jcp;
+  const { plCents, tjlp, fontePl, fonteTjlp } = ins.jcp;
+  const fontes = [fontePl, fonteTjlp].filter(Boolean).join("; ");
   const limiteJcp = Math.max(0, Math.round(c.lucroContabilCents * 0.5));
   const jcpCents = plCents && tjlp ? Math.min(Math.round(plCents * tjlp), limiteJcp) : null;
   r.push({
@@ -423,10 +426,12 @@ function montarOportunidades(
     economiaCents: jcpCents !== null ? Math.round(jcpCents * marginal) : null,
     como:
       jcpCents !== null
-        ? `JCP de ${reais(jcpCents)} no ano (PL × TJLP, limitado a 50% do lucro). A empresa deduz e deixa de pagar ${Math.round(marginal * 100)}%; o sócio paga 17,5% retido na fonte, definitivo. Ganho líquido para o grupo: cerca de ${decimal((marginal - ALIQUOTAS.irrfJcp) * 100)} pontos sobre o valor pago.`
-        : `Informe o patrimônio líquido e a TJLP abaixo. A conta: PL × TJLP do período, limitado a 50% do lucro do exercício ou dos lucros acumulados e reservas. A empresa deduz ${Math.round(marginal * 100)}% e o sócio paga 17,5% na fonte — é a forma mais barata de levar lucro ao sócio dentro do limite.`,
+        ? `JCP de ${reais(jcpCents)} no ano: PL de ${reais(plCents!)} × TJLP de ${decimal(tjlp! * 100)}% a.a.${
+            jcpCents < Math.round(plCents! * tjlp!) ? ", limitado a 50% do lucro" : ""
+          }${fontes ? ` (${fontes})` : ""}. A empresa deduz e deixa de pagar ${Math.round(marginal * 100)}%; o sócio paga 17,5% retido na fonte, definitivo. Ganho líquido para o grupo: cerca de ${decimal((marginal - ALIQUOTAS.irrfJcp) * 100)} pontos sobre o valor pago.`
+        : `${!plCents ? "Falta o patrimônio líquido: lance o balanço da empresa em Indicadores (ou digite abaixo). " : ""}${!tjlp ? "A TJLP do Banco Central não respondeu: digite abaixo. " : ""} A conta: PL × TJLP do período, limitado a 50% do lucro do exercício ou dos lucros acumulados e reservas. A empresa deduz ${Math.round(marginal * 100)}% e o sócio paga 17,5% na fonte — é a forma mais barata de levar lucro ao sócio dentro do limite.`,
     requisitos: [
-      "Patrimônio líquido apurado em balanço (ECD) — sem contabilidade completa não há JCP",
+      "Patrimônio líquido apurado em balanço (ECD) — sem contabilidade completa não há JCP. Só entram capital social, reservas de capital e de lucros, ações em tesouraria e prejuízos acumulados (Lei 9.249/1995, art. 9º, § 8º)",
       "Deliberação em ata ou alteração contratual e crédito individualizado a cada sócio",
       "IRRF de 17,5% recolhido até o terceiro dia útil do decêndio seguinte",
       "Respeitar o limite de 50% do lucro do período ou dos lucros acumulados e reservas, o maior",

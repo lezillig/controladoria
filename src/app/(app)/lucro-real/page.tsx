@@ -1,6 +1,7 @@
 import { ALIQUOTAS, ROTULO_TRATAMENTO, type Tratamento } from "@/lib/lucroReal/catalogo";
 import { apurarLucroReal, ROTULO_NATUREZA, type Natureza } from "@/lib/lucroReal/apuracao";
 import { dozeMesesFechados, insumosDoLucroReal } from "@/lib/lucroReal/noBanco";
+import { URL_TJLP_BNDES } from "@/lib/lucroReal/tjlp";
 import { fmtBRL, fmtData, fmtPercent } from "@/lib/controladoria/format";
 import { badgeClass, larguraPainel } from "@/lib/ui";
 import { escopoDaPagina } from "../_dados";
@@ -62,7 +63,7 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
     corporativa: corporativa ? { id: corporativa.id, apelido: corporativa.apelido } : null,
     periodo,
     hoje,
-    jcp: { plCents: plReais ? Math.round(plReais * 100) : null, tjlp: tjlpPct ? tjlpPct / 100 : null },
+    jcpManual: { plCents: plReais ? Math.round(plReais * 100) : null, tjlp: tjlpPct ? tjlpPct / 100 : null },
   });
   const r = apurarLucroReal(insumos);
   const economia = r.oportunidades.reduce((a, o) => a + Math.max(0, o.economiaCents ?? 0), 0);
@@ -157,15 +158,32 @@ export default async function LucroRealPage({ searchParams }: { searchParams: Pr
         <form method="get" action="/lucro-real" className="mb-4 flex flex-wrap items-end gap-2 text-sm">
           <label className="flex flex-col text-xs text-slate-500">
             Patrimônio líquido (R$)
-            <input name="pl" defaultValue={params.pl ?? ""} placeholder="do último balanço" className="mt-1 w-44 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+            <input
+              name="pl"
+              defaultValue={params.pl ?? ""}
+              placeholder={insumos.jcp.plCents && !plReais ? reais(insumos.jcp.plCents) : "do balanço"}
+              className="mt-1 w-44 rounded-md border border-slate-300 px-2 py-1 text-sm"
+            />
           </label>
           <label className="flex flex-col text-xs text-slate-500">
-            TJLP do período (% a.a.)
-            <input name="tjlp" defaultValue={params.tjlp ?? ""} placeholder="ex.: 7,5" className="mt-1 w-32 rounded-md border border-slate-300 px-2 py-1 text-sm" />
+            TJLP (% a.a.)
+            <input
+              name="tjlp"
+              defaultValue={params.tjlp ?? ""}
+              placeholder={insumos.jcp.tjlp && !tjlpPct ? fmtPercent(insumos.jcp.tjlp * 100, 2) : "ex.: 9,29"}
+              className="mt-1 w-32 rounded-md border border-slate-300 px-2 py-1 text-sm"
+            />
           </label>
           <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
-            Calcular o JCP
+            Recalcular o JCP
           </button>
+          <p className="basis-full text-xs text-slate-500">
+            Em branco, vale o patrimônio líquido do balanço lançado em Indicadores e a TJLP do Banco Central (a mesma da{" "}
+            <a href={URL_TJLP_BNDES} target="_blank" rel="noreferrer" className="text-blue-700 hover:underline">
+              tabela do BNDES
+            </a>
+            ). Digite só para simular outro valor.
+          </p>
         </form>
         <div className="space-y-3">
           {r.oportunidades.map((o) => (
