@@ -62,7 +62,8 @@
     "teste:folha": "tsx scripts/teste-folha.ts",
     "teste:conciliado-ate": "tsx scripts/teste-conciliado-ate.ts",
     "teste:auditoria-mes": "tsx scripts/teste-auditoria-mes.ts",
-    "teste:recuperacao": "tsx scripts/teste-recuperacao.ts"
+    "teste:recuperacao": "tsx scripts/teste-recuperacao.ts",
+    "teste:cadastro": "tsx scripts/teste-cadastro.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

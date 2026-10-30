@@ -29,6 +29,9 @@ import {
   Radar,
   Wallet,
   ClipboardCheck,
+  Truck,
+  Contact,
+  Inbox,
 } from "lucide-react";
 import type { Permissao } from "@/lib/acessos";
 
@@ -105,6 +108,10 @@ const NAV: NavItem[] = [
   { href: "/simulador/base", label: "Custos base", icon: Database, permissao: "simulador", sub: true },
   { href: "/simulador/radar", label: "Radar de licitações", icon: Radar, permissao: "simulador", sub: true },
 
+  // A plataforma única (Fase 0): o cadastro mestre e a fila de decisões.
+  { secao: "Cadastro", href: "/pendencias", label: "Pendências", icon: Inbox, permissao: "pendencias" },
+  { href: "/cadastro", label: "Cadastro mestre", icon: Truck, permissao: "cadastro" },
+  { href: "/cadastro/pessoas", label: "Pessoas", icon: Contact, permissao: "cadastro-pessoas", sub: true },
   // Por último: o que muda como o sistema se comporta, e não o que ele mostra
   // sobre a empresa.
   { secao: "Configurações", href: "/relatorios", label: "Relatórios diários", icon: Mail, permissao: "relatorios" },

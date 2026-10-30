@@ -384,26 +384,26 @@ model OmieProjeto {
 }
 
 model OmieContaCorrente {
-  id                String      @id @default(cuid())
-  companyId         String
-  conexaoId         String
-  conexao           OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
-  conexaoApelido    String
-  codigo            String
-  descricao         String
-  tipo              String?
-  banco             String?
-  agencia           String?
-  numeroConta       String?
-  saldoInicialCents Int         @default(0)
-  inativa           Boolean     @default(false)
+  id                       String      @id @default(cuid())
+  companyId                String
+  conexaoId                String
+  conexao                  OmieConexao @relation(fields: [conexaoId], references: [id], onDelete: Cascade)
+  conexaoApelido           String
+  codigo                   String
+  descricao                String
+  tipo                     String?
+  banco                    String?
+  agencia                  String?
+  numeroConta              String?
+  saldoInicialCents        Int         @default(0)
+  inativa                  Boolean     @default(false)
   // Marcas da própria Omie que excluem a conta do resumo de caixa e da
   // projeção de fluxo. Guardadas porque uma conta por onde passa dinheiro e
   // que não aparece no relatório de caixa da empresa é, no mínimo, uma
   // pergunta — e havia usos legítimos demais (aplicação, cartão,
   // transferência interna) para transformar a marca em suspeita automática.
-  naoEntraNoResumo  Boolean     @default(false)
-  naoEntraNoFluxo   Boolean     @default(false)
+  naoEntraNoResumo         Boolean     @default(false)
+  naoEntraNoFluxo          Boolean     @default(false)
   // O SALDO QUE A PRÓPRIA OMIE CALCULA, devolvido no cabeçalho do extrato
   // (ListarExtrato): atual, conciliado e disponível (com limite), e o tipo da
   // conta (corrente, caixa, aplicação…). Gravado só pela janela mais recente
@@ -416,7 +416,7 @@ model OmieContaCorrente {
   limiteCreditoCents       Int?
   // Fim do período do extrato de onde o saldo veio.
   saldoOmieEm              DateTime?
-  sincronizadoEm    DateTime    @default(now())
+  sincronizadoEm           DateTime    @default(now())
 
   @@unique([conexaoId, codigo])
   @@index([companyId])
@@ -2420,4 +2420,290 @@ model RadarVarredura {
   companyId    String   @id
   ultimoDia    DateTime
   atualizadoEm DateTime @updatedAt
+}
+
+// =====================================================================
+// PLATAFORMA ÚNICA — FASE 0, CADASTRO MESTRE (docs/plataforma/specs/01).
+//
+// A fonte única de veículo, pessoa, cliente, fornecedor, contrato, linha e
+// centro de custo: os outros módulos referenciam estas tabelas, em vez de
+// repetir placa ou nome em texto livre. Os domínios do modelo de dados da
+// plataforma (cadastro, frota, auditoria) viram PREFIXO de tabela (Cad*,
+// Frota*, Aud*) no mesmo schema da Controladoria, e não schema Postgres
+// próprio: o Prisma deste projeto opera no schema da URL de conexão, e
+// separar em schemas reais fica para quando os três bancos forem um só.
+// Chaves naturais (placa, CPF, CNPJ, número do contrato) são únicas por
+// empresa; nada é apagado — `ativo`/`status` e data de baixa.
+// =====================================================================
+
+model CadFornecedor {
+  id           String   @id @default(cuid())
+  companyId    String
+  // Só dígitos, validado (src/lib/cadastro/normalizacao.ts).
+  cnpj         String
+  razaoSocial  String
+  nomeFantasia String?
+  // combustivel | pecas | seguro | financiamento | servicos | outros
+  categoria    String?
+  // Código do parceiro em cada conta Omie: { "AZUL": "123", "MCZ": "456" }.
+  idsOmie      Json     @default("{}")
+  origens      Json     @default("{}")
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  veiculos CadVeiculo[]
+
+  @@unique([companyId, cnpj])
+}
+
+model CadCliente {
+  id           String   @id @default(cuid())
+  companyId    String
+  cnpj         String
+  razaoSocial  String
+  nomeFantasia String?
+  // privado | publico
+  tipo         String   @default("privado")
+  contato      Json?
+  idsOmie      Json     @default("{}")
+  origens      Json     @default("{}")
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  contratos CadContrato[]
+
+  @@unique([companyId, cnpj])
+}
+
+model CadVeiculo {
+  id               String         @id @default(cuid())
+  companyId        String
+  // Normalizada: maiúscula, sem hífen (ABC1234 ou ABC1D23).
+  placa            String
+  renavam          String?
+  chassi           String?
+  // van | micro | onibus | outro
+  tipo             String         @default("outro")
+  marca            String?
+  modelo           String?
+  anoFab           Int?
+  anoMod           Int?
+  capacidade       Int?
+  // fretamento | escolar | cargas | misto
+  categoriaUso     String?
+  // ativo | manutencao | reserva | vendido | baixado
+  status           String         @default("ativo")
+  // Empresa proprietária no grupo (apelido da conexão Omie: AZUL, MCZ…).
+  empresa          String?
+  dataCompra       DateTime?
+  valorCompraCents BigInt?
+  fornecedorId     String?
+  fornecedor       CadFornecedor? @relation(fields: [fornecedorId], references: [id])
+  dataVenda        DateTime?
+  valorVendaCents  BigInt?
+  vidaUtilMeses    Int            @default(120)
+  idIturan         String?
+  observacoes      String?
+  // De onde veio cada dado: { "gestao": "<id>", "planilha": "FROTA ATIVA" }.
+  origens          Json           @default("{}")
+  criadoEm         DateTime       @default(now())
+  atualizadoEm     DateTime       @updatedAt
+
+  financiamentos FrotaFinanciamento[]
+  centrosCusto   CadCentroCusto[]
+  linhasPadrao   CadLinha[]
+
+  @@unique([companyId, placa])
+  @@index([companyId, status])
+}
+
+// CPF é a chave natural da pessoa (spec 01). Fica só aqui e na gestão: não
+// vai para log de auditoria em claro, relatório nem tela sem permissão.
+model CadPessoa {
+  id               String    @id @default(cuid())
+  companyId        String
+  cpf              String
+  nome             String
+  dataNasc         DateTime?
+  // motorista | monitor | mecanico | adm | gestor
+  cargo            String
+  dataAdmissao     DateTime?
+  dataDesligamento DateTime?
+  matriculaPonto   String?
+  telefone         String?
+  email            String?
+  ativo            Boolean   @default(true)
+  origens          Json      @default("{}")
+  criadoEm         DateTime  @default(now())
+  atualizadoEm     DateTime  @updatedAt
+
+  linhasPadrao CadLinha[]
+
+  @@unique([companyId, cpf])
+  @@unique([companyId, matriculaPonto])
+  @@index([companyId, ativo])
+}
+
+model CadContrato {
+  id               String     @id @default(cuid())
+  companyId        String
+  numeroContrato   String
+  clienteId        String
+  cliente          CadCliente @relation(fields: [clienteId], references: [id])
+  // fretamento_continuo | escolar | eventual | locacao
+  tipo             String
+  segmento         String?
+  inicio           DateTime
+  fim              DateTime?
+  valorMensalCents BigInt?
+  // IPCA | IGPM | planilha | ...
+  indiceReajuste   String?
+  dataBaseReajuste DateTime?
+  // {"pontualidade_min_pct": 95, "tolerancia_atraso_min": 10}
+  sla              Json?
+  calendario       Json?
+  // licitacao | privado
+  origem           String?
+  licitacaoId      String?
+  // vigente | encerrado | suspenso
+  status           String     @default("vigente")
+  criadoEm         DateTime   @default(now())
+  atualizadoEm     DateTime   @updatedAt
+
+  linhas       CadLinha[]
+  centrosCusto CadCentroCusto[]
+
+  @@unique([companyId, numeroContrato])
+}
+
+model CadLinha {
+  id                String           @id @default(cuid())
+  companyId         String
+  contratoId        String
+  contrato          CadContrato      @relation(fields: [contratoId], references: [id])
+  codigo            String
+  nome              String?
+  // manha | tarde | noite | integral
+  turno             String?
+  kmPlanejado       Int?
+  horarioSaida      String?
+  horarioChegada    String?
+  veiculoPadraoId   String?
+  veiculoPadrao     CadVeiculo?      @relation(fields: [veiculoPadraoId], references: [id])
+  motoristaPadraoId String?
+  motoristaPadrao   CadPessoa?       @relation(fields: [motoristaPadraoId], references: [id])
+  idIturanRota      String?
+  ativo             Boolean          @default(true)
+  paradas           CadPontoParada[]
+
+  @@unique([contratoId, codigo])
+}
+
+model CadPontoParada {
+  id              String   @id @default(cuid())
+  linhaId         String
+  linha           CadLinha @relation(fields: [linhaId], references: [id])
+  ordem           Int
+  nome            String?
+  lat             Float?
+  lng             Float?
+  horarioPrevisto String?
+
+  @@unique([linhaId, ordem])
+}
+
+// Um por veículo (V-<placa>) e um por contrato (C-<número>), criados junto
+// com eles: o elo com a Omie. O centro de custo da FOLHA (CentroCusto) é
+// outra coisa — o código do sistema de folha — e será ligado a este quando o
+// módulo financeiro migrar.
+model CadCentroCusto {
+  id         String       @id @default(cuid())
+  companyId  String
+  codigo     String
+  // veiculo | contrato | administrativo
+  tipo       String
+  veiculoId  String?
+  veiculo    CadVeiculo?  @relation(fields: [veiculoId], references: [id])
+  contratoId String?
+  contrato   CadContrato? @relation(fields: [contratoId], references: [id])
+  idsOmie    Json         @default("{}")
+  ativo      Boolean      @default(true)
+  criadoEm   DateTime     @default(now())
+
+  @@unique([companyId, codigo])
+}
+
+// Planilha "Consórcios e Financiamentos": uma linha por veículo × contrato.
+model FrotaFinanciamento {
+  id                String     @id @default(cuid())
+  companyId         String
+  veiculoId         String
+  veiculo           CadVeiculo @relation(fields: [veiculoId], references: [id])
+  instituicao       String
+  // CDC | consorcio | leasing
+  tipo              String?
+  parcelas          Int?
+  parcelasPagas     Int?
+  valorParcelaCents BigInt?
+  saldoDevedorCents BigInt?
+  vencimentoDia     Int?
+  contratoNumero    String?
+  ativo             Boolean    @default(true)
+  criadoEm          DateTime   @default(now())
+  atualizadoEm      DateTime   @updatedAt
+
+  @@index([companyId, veiculoId])
+}
+
+// A TRILHA: tudo que muda dado de domínio — quem (usuário ou agente),
+// quando, qual registro, antes e depois (src/lib/auditoria/trilha.ts).
+model AudLog {
+  id         String   @id @default(cuid())
+  companyId  String
+  dataHora   DateTime @default(now())
+  usuario    String?
+  agente     String?
+  // Nome da tabela de domínio: CadVeiculo, CadPessoa…
+  tabela     String
+  registroId String
+  // insert | update | desativar
+  operacao   String
+  antes      Json?
+  depois     Json?
+
+  @@index([companyId, tabela, registroId])
+  @@index([companyId, dataHora])
+}
+
+// A FILA ÚNICA DE DECISÕES HUMANAS: agente ou carga propõe, uma pessoa do
+// perfil aprovador decide (src/lib/auditoria/pendencias.ts). Nenhuma ação
+// financeira ou trabalhista executa sem passar por aqui.
+model AudPendencia {
+  id              String    @id @default(cuid())
+  companyId       String
+  agente          String?
+  tipo            String
+  titulo          String
+  descricao       String?
+  // baixa | media | alta | critica
+  severidade      String    @default("media")
+  evidencias      Json?
+  acaoProposta    Json?
+  // admin | gestor | operacao | financeiro | rh
+  perfilAprovador String
+  // Idempotência: agente:tipo:referencia — a mesma exceção não abre duas
+  // pendências enquanto uma aguarda (índice parcial na migração).
+  chaveExcecao    String?
+  // aguardando_aprovacao | aprovada | rejeitada | executada | erro
+  status          String    @default("aguardando_aprovacao")
+  criadaEm        DateTime  @default(now())
+  decididaPor     String?
+  decididaEm      DateTime?
+  comentario      String?
+  executadaEm     DateTime?
+  erro            String?
+
+  @@index([companyId, status, criadaEm])
 }

@@ -42,6 +42,9 @@ export const PERMISSOES = [
   { chave: "relatorios", rotulo: "Relatórios diários", grupo: "Telas" },
   { chave: "sincronizacao", rotulo: "Sincronização", grupo: "Telas" },
   { chave: "conexoes", rotulo: "Conexões Omie", grupo: "Telas" },
+  { chave: "cadastro", rotulo: "Cadastro mestre (veículos, clientes, fornecedores, centros de custo)", grupo: "Telas" },
+  { chave: "cadastro-pessoas", rotulo: "Cadastro de pessoas", grupo: "Telas" },
+  { chave: "pendencias", rotulo: "Pendências para decidir", grupo: "Telas" },
 
   { chave: "tratar-achado", rotulo: "Tratar achado de auditoria", grupo: "Ações" },
   { chave: "investigar", rotulo: "Investigar com a IA (cada pergunta tem custo)", grupo: "Ações" },
@@ -58,6 +61,8 @@ export const PERMISSOES = [
   { chave: "sincronizar", rotulo: "Disparar sincronização e relatório", grupo: "Ações" },
   { chave: "gerir-conexoes", rotulo: "Cadastrar conexões Omie", grupo: "Ações" },
   { chave: "gerir-modelo", rotulo: "Alterar o modelo de gestão", grupo: "Ações" },
+  { chave: "gerir-cadastro", rotulo: "Atualizar o cadastro mestre a partir das fontes", grupo: "Ações" },
+  { chave: "decidir-pendencia", rotulo: "Aprovar ou rejeitar pendências (do perfil aprovador)", grupo: "Ações" },
   { chave: "gerir-usuarios", rotulo: "Criar usuários e definir perfis", grupo: "Ações" },
 ] as const;
 
