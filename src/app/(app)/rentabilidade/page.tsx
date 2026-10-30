@@ -1,7 +1,7 @@
 import { fmtBRL, fmtData, fmtDocumento, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { montarComparativo } from "@/lib/controladoria/analytics";
 import { ultimoMesFechado } from "@/lib/controladoria/periodos";
-import { custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
+import { centrosDeCustoDoMes, custoPorFuncionario, custoPorVeiculo, rentabilidadePorContrato } from "@/lib/controladoria/unitEconomics";
 import { faturadoVersusContratado, margemPorClienteOmie, margemPorOs } from "@/lib/controladoria/margemOmie";
 import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "../_dados";
 import { casarClientes } from "@/lib/controladoria/casamentoClientes";
@@ -41,6 +41,9 @@ export default async function RentabilidadePage({
   const nomesCliente = new Map(ctx.clientes.map((c) => [c.id, c.nome]));
   const contratos = rentabilidadePorContrato(ctx, periodo, nomesCliente);
   const casamento = casarClientes(ctx, periodo);
+  const centros = centrosDeCustoDoMes(ctx, periodo);
+  const centrosSemDestino = centros.filter((c) => c.destino === "nenhum");
+  const ROTULO_DESTINO = { "de-para": "de-para", placa: "placa no nome", contrato: "contrato no nome", nenhum: "sem destino" } as const;
   const semCnpj = casamento.clientes.filter((c) => !c.cnpj).length;
   const veiculos = custoPorVeiculo(ctx, periodo);
   const funcionarios = custoPorFuncionario(ctx, periodo);
@@ -223,6 +226,32 @@ export default async function RentabilidadePage({
             </div>
           )}
         </div>
+      </Secao>
+
+      <Secao
+        titulo="Centros de custo da Omie no mês"
+        descricao={`Departamento ou projeto com a placa do veículo ou o número do contrato (cadastrado na gestão) no nome vai sozinho para ele; o resto precisa do de-para abaixo. ${centrosSemDestino.length} de ${centros.length} sem destino, somando ${fmtBRL(centrosSemDestino.reduce((s, c) => s + c.valorCents, 0))}.`}
+      >
+        <Tabela
+          colunas={["Empresa", "Centro", "Valor no mês", "Vai para"]}
+          alinharDireita={[2]}
+          linhas={centros.slice(0, 40).map((c) => [
+            c.empresa,
+            <span key="c">
+              <span className="text-xs text-slate-500">{c.tipo} {c.codigo} · </span>
+              {c.nome}
+            </span>,
+            fmtBRL(c.valorCents),
+            c.destino === "nenhum" ? (
+              <span key="d" className="text-xs font-medium text-amber-700">sem destino</span>
+            ) : (
+              <span key="d" className="text-xs text-slate-600">
+                {c.alvo ?? "—"} <span className="text-slate-400">({ROTULO_DESTINO[c.destino]})</span>
+              </span>
+            ),
+          ])}
+          vazio="Nenhum título com departamento ou projeto no mês."
+        />
       </Secao>
 
       <Secao

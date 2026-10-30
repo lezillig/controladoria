@@ -9,7 +9,7 @@
 // Sem banco: o contexto é montado à mão, como nos outros conjuntos.
 import type { OmieCategoria, OmieTitulo, OmieVinculoCentroCusto } from "@prisma/client";
 import { casarClientes } from "../src/lib/controladoria/casamentoClientes";
-import { custoPorFuncionario, custoPorVeiculo, custoTotalPeriodo, custosDoPeriodo, rentabilidadePorContrato } from "../src/lib/controladoria/unitEconomics";
+import { centrosDeCustoDoMes, custoPorFuncionario, custoPorVeiculo, custoTotalPeriodo, custosDoPeriodo, rentabilidadePorContrato } from "../src/lib/controladoria/unitEconomics";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 import type { AbastecimentoGestao } from "../src/lib/gestao/leitura";
 import type { Periodo } from "../src/lib/controladoria/periodos";
@@ -230,6 +230,34 @@ console.log("\nRECEITA PELO CNPJ DO CLIENTE DA GESTÃO — sem de-para");
   );
   const comDePara = rentabilidadePorContrato(contexto({ titulos: [titulo({ ...daPrefeitura, id: "dp", departamentoCodigo: "D1" })], vinculos: [vinculo({ clienteId: "cli1" })] }), AGOSTO, nomes);
   conferir("de-para confirmado continua valendo antes do CNPJ", comDePara.linhas[0]?.receitaCents, 10_000_00);
+}
+
+console.log("\nCENTRO DE CUSTO BATIZADO COM A PLACA OU O CONTRATO — sem de-para");
+{
+  const base = contexto({});
+  const ctx = {
+    ...base,
+    clientes: [{ id: "cli1", nome: "PREFEITURA", active: true, cnpj: null, numerosDeContrato: ["CT 12/2026"] }, { id: "cli2", nome: "UNILEVER", active: true, cnpj: null, numerosDeContrato: ["7"] }],
+    departamentos: [
+      { conexaoId: "x", codigo: "D10", descricao: "VAN ABC-1D23" },
+      { conexaoId: "x", codigo: "D11", descricao: "Contrato CT 12/2026 - Prefeitura" },
+      { conexaoId: "x", codigo: "D12", descricao: "ABC1D23 e CT 12/2026 (rateio)" },
+      { conexaoId: "x", codigo: "D13", descricao: "Oficina 7" },
+    ],
+    projetos: [],
+  } as unknown as ContextoAuditoria;
+  const t10 = titulo({ departamentoCodigo: "D10", valorDocumentoCents: 700_00 });
+  const t11 = titulo({ departamentoCodigo: "D11", valorDocumentoCents: 900_00 });
+  const t12 = titulo({ departamentoCodigo: "D12", valorDocumentoCents: 100_00 });
+  const t13 = titulo({ departamentoCodigo: "D13", valorDocumentoCents: 50_00 });
+  const c = { ...ctx, titulos: [t10, t11, t12, t13] } as ContextoAuditoria;
+  conferir("placa no nome do departamento leva ao veículo", custoPorVeiculo(c, AGOSTO).linhas.map((l) => [l.id, l.custoCents]), [["v1", 700_00]]);
+  conferir("número do contrato no nome leva ao cliente dele", rentabilidadePorContrato(c, AGOSTO, nomes).linhas.map((l) => [l.id, l.custoCents]), [["cli1", 900_00]]);
+  conferir(
+    "duas coisas no nome é rateio (de-para); número curto não casa",
+    centrosDeCustoDoMes(c, AGOSTO).map((x) => [x.codigo, x.destino, x.alvo]),
+    [["D11", "contrato", "PREFEITURA"], ["D10", "placa", "ABC1D23"], ["D12", "nenhum", null], ["D13", "nenhum", null]]
+  );
 }
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);

@@ -75,6 +75,10 @@ export type ClienteGestao = {
   // cliente com o parceiro da Omie — nome não serve, a mesma empresa aparece
   // com três grafias. Nulo enquanto o cadastro não foi completado.
   cnpj: string | null;
+  // Números dos contratos operacionais do cliente (tabela Contrato da
+  // gestão, ADR-009). Departamento ou projeto da Omie com esse número no
+  // nome é centro de custo do contrato. Vazio sem o GRANT da tabela.
+  numerosDeContrato: string[];
 };
 
 export type AbastecimentoGestao = {
@@ -313,14 +317,27 @@ export async function lerAfastamentos(companyId: string, desde: Date): Promise<A
 }
 
 export async function lerClientes(companyId: string): Promise<ClienteGestao[]> {
-  return ler(
-    () => prismaGestao.$queryRaw<ClienteGestao[]>`
-      SELECT id, nome, active, cnpj
-      FROM public."Cliente"
-      WHERE "companyId" = ${companyId}
-    `,
-    "os contratos"
-  );
+  const [clientes, contratos] = await Promise.all([
+    ler(
+      () => prismaGestao.$queryRaw<Omit<ClienteGestao, "numerosDeContrato">[]>`
+        SELECT id, nome, active, cnpj
+        FROM public."Cliente"
+        WHERE "companyId" = ${companyId}
+      `,
+      "os contratos"
+    ),
+    lerOpcional(
+      () => prismaGestao.$queryRaw<{ clienteId: string; numero: string }[]>`
+        SELECT "clienteId", numero
+        FROM public."Contrato"
+        WHERE "companyId" = ${companyId}
+      `,
+      "os contratos operacionais (Contrato)"
+    ),
+  ]);
+  const porCliente = new Map<string, string[]>();
+  for (const c of contratos) porCliente.set(c.clienteId, [...(porCliente.get(c.clienteId) ?? []), c.numero]);
+  return clientes.map((c) => ({ ...c, numerosDeContrato: porCliente.get(c.id) ?? [] }));
 }
 
 // Abastecimentos do cartão de frota. Recortado por data porque é a maior
