@@ -21,13 +21,22 @@ const PAPEL_DO_PERFIL: Record<string, string[]> = {
   rh: ["FOLHA"],
   admin: [],
 };
+// Os nomes de perfil de acesso que valem por cada perfil aprovador.
+const ALIAS_DO_PERFIL: Record<string, string[]> = {
+  admin: ["diretoria", "administr", "admin"],
+  gestor: ["gestor", "gerente", "diretoria"],
+  operacao: ["operac", "frota", "trafego", "documenta"],
+  financeiro: ["financ"],
+  rh: ["rh", "recursos humanos", "departamento pessoal", "dp"],
+};
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 
 export function podeDecidir(p: { papel: string; temPermissao: boolean; perfis: string[]; perfilAprovador: string }): boolean {
   if (p.papel === "ADMIN") return true;
   if (!p.temPermissao) return false;
   if ((PAPEL_DO_PERFIL[p.perfilAprovador] ?? []).includes(p.papel)) return true;
-  return p.perfis.some((n) => semAcento(n) === semAcento(p.perfilAprovador) || semAcento(n).startsWith(semAcento(p.perfilAprovador)));
+  const nomes = ALIAS_DO_PERFIL[p.perfilAprovador] ?? [semAcento(p.perfilAprovador)];
+  return p.perfis.some((n) => nomes.some((a) => semAcento(n).startsWith(a)));
 }
 
 export type NovaPendencia = {
@@ -88,6 +97,10 @@ export async function decidirPendencia(p: {
     return { ok: false, erro: `Só o perfil ${pend.perfilAprovador} (ou um administrador) decide esta pendência.` };
   }
   if (p.decisao === "rejeitada" && !p.comentario?.trim()) return { ok: false, erro: "Para rejeitar, escreva o motivo." };
+  // QUEM PEDIU NÃO APROVA (segregação de funções); o administrador pode,
+  // porque em empresa pequena às vezes é a mesma pessoa — e fica na trilha.
+  const solicitante = (pend.evidencias as { solicitadoPor?: string } | null)?.solicitadoPor;
+  if (p.decisao === "aprovada" && solicitante && solicitante === p.usuario && p.papel !== "ADMIN") return { ok: false, erro: "Quem pediu não aprova: outra pessoa do perfil aprovador precisa decidir." };
   const agora = new Date();
   await prisma.$transaction(async (tx) => {
     // Condicional no status: duas pessoas decidindo ao mesmo tempo, só uma vale.
@@ -106,5 +119,9 @@ export async function decidirPendencia(p: {
       depois: { status: p.decisao, comentario: p.comentario?.trim() || null },
     });
   });
+  if (p.decisao === "aprovada") {
+    const { executarPendencia } = await import("./executores");
+    await executarPendencia(pend.id);
+  }
   return { ok: true };
 }

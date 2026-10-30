@@ -892,6 +892,8 @@ model ControladoriaConfig {
   // Quem recebe o e-mail do radar de licitações (comercial), separado do
   // relatório da controladoria: são outras pessoas.
   emailsRadar                         String    @default("")
+  // Quem recebe os avisos diários da frota (documentos, apólices, parcelas).
+  emailsFrota                         String    @default("")
   dataInicioBase                      DateTime
   limiteAlcadaCents                   Int?
   metaMargemPercent                   Float?
@@ -2777,6 +2779,8 @@ model FrotaInstituicaoParceiro {
   parceiroCodigo String
   parceiroNome   String?
   confirmado     Boolean  @default(false)
+  // Sugestão recusada pelo financeiro: não volta a ser sugerida nem usada.
+  rejeitado      Boolean  @default(false)
   criadoEm       DateTime @default(now())
 
   @@unique([companyId, instituicao, produto, conexaoId, parceiroCodigo])

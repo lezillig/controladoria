@@ -143,6 +143,39 @@ async function puros() {
   const porVeic = f.saldoPorVeiculo([{ instituicao: "X", valorParcelaCents: 400, situacao: { ...pelasDatas, quitado: false, saldoCents: 1000 }, veiculos: [{ veiculoId: "a", parcelaCents: 300 }, { veiculoId: "b", parcelaCents: 100 }] }]);
   conferir("saldo devedor por veículo", porVeic.get("a"), { saldoCents: 750, parcelaMensalCents: 300, contratos: 1, instituicoes: ["X"] });
 
+  const po = await import("../src/lib/frota/parcelasOmie");
+  conferir("palavras da instituição", [po.palavrasDaInstituicao("BANCO ITAUCARD"), po.palavrasDaInstituicao("BB CONSÓRCIOS"), po.palavrasDaInstituicao("CNP CONSÓRCIO (CAIXA)"), po.palavrasDaInstituicao("BRADESCO FINANCIAMENTOS")], [["ITAU"], ["BB", "BRASIL"], ["CNP", "CAIXA"], ["BRADESCO"]]);
+  conferir(
+    "parceiro: banco × administradora × quem vendeu o veículo",
+    [
+      po.parceiroCombina("BANCO STELLANTIS S.A.", ["STELLANTIS"], false),
+      po.parceiroCombina("STELLANTIS AUTOMOVEIS BRASIL LTDA", ["STELLANTIS"], false),
+      po.parceiroCombina("SANTANDER ADMINISTRADORA DE CONSORCIOS", ["SANTANDER"], false),
+      po.parceiroCombina("SANTANDER ADMINISTRADORA DE CONSORCIOS", ["SANTANDER"], true),
+      po.parceiroCombina("BB ADMINISTRADORA DE CONSORCIOS S.A.", ["BB", "BRASIL"], true),
+    ],
+    [true, false, false, true, true]
+  );
+  const ctr = (id: string, extra: Record<string, unknown> = {}) => ({ id, instituicao: "X", produto: "consorcio", contratoNumero: null, grupo: null, cota: null, valorParcelaCents: BigInt(1_850_68), vencimentoDia: 15, parcelas: 34, dataInicio: d("2024-01-01"), dataFinal: d("2027-12-31"), ...extra });
+  const tit = (id: string, venc: string, valor: number, doc: string | null = null, parc: string | null = null) => ({ id, numeroDocumento: doc, numeroParcela: parc, dataVencimento: d(venc), valorDocumentoCents: valor });
+  const lig = po.ligarTitulos(
+    [ctr("c1", { contratoNumero: "806595", produto: "financiamento_bens", valorParcelaCents: BigInt(23_000_00) }), ctr("c2", { grupo: "2123", cota: "73" }), ctr("c3"), ctr("c4")],
+    [
+      tit("t1", "2026-09-15", 23_000_00, "CTR 806595", "028/036"),
+      tit("t2", "2026-09-15", 1_850_68, "GR 2123 CT 73"),
+      tit("t3", "2026-09-16", 1_850_68),
+      tit("t4", "2026-09-15", 1_850_68),
+      tit("t5", "2026-09-17", 1_850_68),
+      tit("t6", "2026-10-15", 1_850_68),
+      tit("t7", "2026-09-15", 999_00),
+    ]
+  );
+  conferir(
+    "títulos → contratos: pelo número, pela cota, pelo valor (um por mês em cotas iguais); sobra o que não cabe",
+    [lig.ligacoes.map((l) => `${l.tituloId}>${l.financiamentoId}:${l.criterio}${l.numeroParcela ? `#${l.numeroParcela}` : ""}`), lig.sobras],
+    [["t1>c1:contrato#28", "t2>c2:cota", "t4>c3:valor", "t3>c4:valor", "t6>c2:valor"], 2]
+  );
+
   console.log("\n4. Leitura das planilhas");
   const r = lerPlanilhas(planilhas());
   const placa = (p: string) => r.veiculos.find((v) => v.placa === p)!;

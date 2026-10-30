@@ -45,6 +45,8 @@ export const PERMISSOES = [
   { chave: "cadastro", rotulo: "Cadastro mestre (veículos, clientes, fornecedores, centros de custo)", grupo: "Telas" },
   { chave: "cadastro-pessoas", rotulo: "Cadastro de pessoas", grupo: "Telas" },
   { chave: "pendencias", rotulo: "Pendências para decidir", grupo: "Telas" },
+  { chave: "frota", rotulo: "Frota (veículos, documentos, vencimentos, apólices)", grupo: "Telas" },
+  { chave: "financiamentos", rotulo: "Financiamentos e consórcios", grupo: "Telas" },
 
   { chave: "tratar-achado", rotulo: "Tratar achado de auditoria", grupo: "Ações" },
   { chave: "investigar", rotulo: "Investigar com a IA (cada pergunta tem custo)", grupo: "Ações" },
@@ -63,6 +65,11 @@ export const PERMISSOES = [
   { chave: "gerir-modelo", rotulo: "Alterar o modelo de gestão", grupo: "Ações" },
   { chave: "gerir-cadastro", rotulo: "Atualizar o cadastro mestre a partir das fontes", grupo: "Ações" },
   { chave: "decidir-pendencia", rotulo: "Aprovar ou rejeitar pendências (do perfil aprovador)", grupo: "Ações" },
+  { chave: "gerir-frota", rotulo: "Editar a ficha do veículo, documentos, apólices e consultas", grupo: "Ações" },
+  { chave: "frota-valores", rotulo: "Ver e editar valores do veículo (compra, venda, FIPE, adaptações)", grupo: "Ações" },
+  { chave: "vender-veiculo", rotulo: "Registrar venda ou baixa de veículo", grupo: "Ações" },
+  { chave: "gerir-financiamentos", rotulo: "Editar financiamentos, cotas e parcelas", grupo: "Ações" },
+  { chave: "migrar-planilhas", rotulo: "Migrar as planilhas de frota e financiamentos", grupo: "Ações" },
   { chave: "gerir-usuarios", rotulo: "Criar usuários e definir perfis", grupo: "Ações" },
 ] as const;
 
@@ -167,20 +174,47 @@ export const PERFIS_SUGERIDOS: { nome: string; descricao: string; permissoes: Pe
   },
   {
     nome: "Diretoria",
-    descricao: "Vê tudo, não altera nada. O recorte de quem decide sem operar.",
-    permissoes: PERMISSOES.filter((p) => p.grupo === "Telas").map((p) => p.chave),
+    descricao: "Vê tudo, com os valores da frota, e decide as pendências que pedem a Diretoria (venda de veículo, quitação). Não opera o dia a dia.",
+    permissoes: [...PERMISSOES.filter((p) => p.grupo === "Telas").map((p) => p.chave), "decidir-pendencia", "frota-valores"],
   },
   {
     nome: "Financeiro",
-    descricao: "O dia a dia da tesouraria: caixa, títulos, conciliação e conferência de CT-e.",
+    descricao: "Tesouraria e dívidas: caixa, títulos, conciliação, CT-e, financiamentos e consórcios (com as parcelas na Omie), e as pendências do financeiro.",
     permissoes: [
       "painel",
+      "pendencias",
+      "decidir-pendencia",
       "titulos",
       "fluxo-caixa",
       "conciliacao",
+      "informar-saldo",
       "cte",
       "conferir-cte",
       "resultados",
+      "frota",
+      "frota-valores",
+      "financiamentos",
+      "gerir-financiamentos",
     ],
+  },
+  {
+    nome: "Frota e documentação",
+    descricao: "A ficha dos veículos, documentos e licenças, apólices, consultas de placa; registra venda e baixa (a Diretoria aprova). Vê se o veículo está alienado, não os valores.",
+    permissoes: ["pendencias", "decidir-pendencia", "frota", "gerir-frota", "vender-veiculo", "cadastro"],
+  },
+  {
+    nome: "Operação",
+    descricao: "Consulta a frota e o que vence, e decide as pendências da operação (documento vencido, checklist de saída).",
+    permissoes: ["pendencias", "decidir-pendencia", "frota"],
+  },
+  {
+    nome: "RH",
+    descricao: "Pessoas e fechamento da folha, e as pendências do RH.",
+    permissoes: ["pendencias", "decidir-pendencia", "cadastro-pessoas", "folha", "marcar-folha"],
+  },
+  {
+    nome: "Contador",
+    descricao: "Leitura de todas as telas, para fechar a contabilidade. Não altera nada.",
+    permissoes: PERMISSOES.filter((p) => p.grupo === "Telas").map((p) => p.chave),
   },
 ];

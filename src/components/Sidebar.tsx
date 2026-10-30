@@ -32,6 +32,9 @@ import {
   Truck,
   Contact,
   Inbox,
+  CalendarClock,
+  HandCoins,
+  FileUp,
 } from "lucide-react";
 import type { Permissao } from "@/lib/acessos";
 
@@ -54,71 +57,74 @@ type NavItem = {
 // O MENU EM SEÇÕES, cada uma respondendo a uma pergunta de quem usa — e,
 // dentro dela, na ordem em que as telas costumam ser abertas:
 //
-//   Painel             como estamos hoje? (a primeira tela da manhã)
-//   Resultado          quanto ganhamos e para onde foi o dinheiro — DRE e
-//                      fluxo de caixa lado a lado, depois a série do ano e a
-//                      margem por contrato
-//   Rotina financeira  o dia a dia: títulos, extrato, documento fiscal
-//   Controle e riscos  o que precisa de atenção: auditoria e conformidade
-//   Planejamento       para onde vamos: metas, cenários, preço de contrato
-//                      novo (o simulador e a sua base)
-//   Configurações      o que muda o sistema para os outros, por último
+//   Início               como estamos hoje, e o que espera uma decisão minha
+//   Frota                os veículos, o que vence, o que está financiado
+//   Pessoas              quem trabalha e o fechamento da folha
+//   Financeiro           o dia a dia do dinheiro: títulos, extrato, caixa
+//   Resultado            quanto ganhamos e onde: DRE, série do ano, margem
+//   Comercial            preço de contrato novo e licitações
+//   Controle e auditoria o que precisa de atenção e as conferências
+//   Planejamento         metas e cenários
+//   Configurações        o que muda o sistema para os outros, por último
 //
-// A seção é dita pelo título, não só pela ordem: com 20 itens, sem rótulo o
-// menu vira uma lista para ler inteira toda vez.
+// A seção é dita pelo título, não só pela ordem: com 30 itens, sem rótulo o
+// menu vira uma lista para ler inteira toda vez. Cada pessoa vê só as seções
+// que o perfil dela alcança.
 const NAV: NavItem[] = [
-  { href: "/", label: "Painel financeiro", icon: LayoutDashboard, permissao: "painel" },
+  { secao: "Início", href: "/", label: "Painel financeiro", icon: LayoutDashboard, permissao: "painel" },
+  // A fila de decisões: o que agentes e cargas propõem e uma pessoa aprova.
+  { href: "/pendencias", label: "Pendências", icon: Inbox, permissao: "pendencias" },
 
-  { secao: "Resultado", href: "/custos", label: "Custos e DRE", icon: TrendingUp, permissao: "custos" },
-  // O mesmo DRE aberto pelos centros de custo da folha — relatório à parte,
-  // logo abaixo do DRE de que ele sai.
-  { href: "/dre-centro-custo", label: "DRE por centro de custo", icon: Network, permissao: "custos" },
-  { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote, permissao: "fluxo-caixa" },
-  // O caixa que já passou, mês a mês, e a auditoria de uma conta (a Omie.CASH).
-  { href: "/caixa-mensal", label: "Caixa mês a mês", icon: Wallet, permissao: "fluxo-caixa" },
-  { href: "/resultados", label: "Resultado mês a mês", icon: CalendarRange, permissao: "resultados" },
-  { href: "/rentabilidade", label: "Rentabilidade por contrato", icon: PiggyBank, permissao: "rentabilidade" },
-  // O retorno sobre o capital fecha a seção: DRE, caixa e margem respondem
-  // "quanto ganhamos"; os indicadores, "quanto isso rende sobre o que está
-  // posto no negócio".
-  { href: "/indicadores", label: "Indicadores", icon: Gauge, permissao: "indicadores" },
+  { secao: "Frota", href: "/frota", label: "Veículos", icon: Truck, permissao: "frota" },
+  { href: "/frota/vencimentos", label: "Vencimentos e apólices", icon: CalendarClock, permissao: "frota" },
+  { href: "/frota/financiamentos", label: "Financiamentos e consórcios", icon: HandCoins, permissao: "financiamentos" },
 
-  { secao: "Rotina financeira", href: "/titulos", label: "Contas a pagar e receber", icon: Receipt, permissao: "titulos" },
-  { href: "/conciliacao", label: "Conciliação bancária", icon: Landmark, permissao: "conciliacao" },
-  // A mesma pergunta dos títulos vista do outro lado: cada cobrança tem o
-  // documento fiscal que a justifica? A Omie não expõe CT-e pela API, então é
-  // a única tela que depende de alguém colar uma lista.
-  { href: "/cte", label: "Conferência de CT-e", icon: FileCheck, permissao: "cte" },
-  // O projeto (OS) do custo contra o da cobrança: serviço pago e não faturado.
-  { href: "/conferencia-os", label: "Conferência de OS", icon: ListChecks, permissao: "titulos" },
+  { secao: "Pessoas", href: "/cadastro/pessoas", label: "Pessoas", icon: Contact, permissao: "cadastro-pessoas" },
   // O checklist mensal do fluxograma da folha validado pelo RH e pela Contabilidade.
   { href: "/folha", label: "Fechamento da folha", icon: ClipboardCheck, permissao: "folha" },
 
-  // As duas leituras do mesmo risco — a que o sistema faz nos dados e a que a
-  // consultoria faz na empresa.
-  { secao: "Controle e riscos", href: "/auditoria", label: "Auditoria e achados", icon: ShieldCheck, permissao: "auditoria" },
-  { href: "/conformidade", label: "Conformidade", icon: ScrollText, permissao: "conformidade" },
+  { secao: "Financeiro", href: "/titulos", label: "Contas a pagar e receber", icon: Receipt, permissao: "titulos" },
+  { href: "/conciliacao", label: "Conciliação bancária", icon: Landmark, permissao: "conciliacao" },
+  { href: "/fluxo-caixa", label: "Fluxo de caixa", icon: Banknote, permissao: "fluxo-caixa" },
+  // O caixa que já passou, mês a mês, e a auditoria de uma conta (a Omie.CASH).
+  { href: "/caixa-mensal", label: "Caixa mês a mês", icon: Wallet, permissao: "fluxo-caixa" },
 
-  // As metas medem o presente; os cenários dizem para onde a empresa vai; o
-  // simulador custeia a operação que ainda não existe (licitação, contrato
+  { secao: "Resultado", href: "/custos", label: "Custos e DRE", icon: TrendingUp, permissao: "custos" },
+  // O mesmo DRE aberto pelos centros de custo da folha — logo abaixo do DRE.
+  { href: "/dre-centro-custo", label: "DRE por centro de custo", icon: Network, permissao: "custos" },
+  { href: "/resultados", label: "Resultado mês a mês", icon: CalendarRange, permissao: "resultados" },
+  { href: "/rentabilidade", label: "Rentabilidade por contrato", icon: PiggyBank, permissao: "rentabilidade" },
+  // O retorno sobre o capital fecha a seção.
+  { href: "/indicadores", label: "Indicadores", icon: Gauge, permissao: "indicadores" },
+
+  // O simulador custeia a operação que ainda não existe (licitação, contrato
   // novo, renovação) a partir dos custos que a controladoria mede.
-  { secao: "Planejamento", href: "/bsc", label: "Balanced Scorecard", icon: Target, permissao: "bsc" },
-  { href: "/cenarios", label: "Cenários e orçamento", icon: Compass, permissao: "cenarios" },
-  { href: "/simulador", label: "Simulador de custos", icon: Calculator, permissao: "simulador" },
+  { secao: "Comercial", href: "/simulador", label: "Simulador de custos", icon: Calculator, permissao: "simulador" },
   { href: "/simulador/base", label: "Custos base", icon: Database, permissao: "simulador", sub: true },
   { href: "/simulador/radar", label: "Radar de licitações", icon: Radar, permissao: "simulador", sub: true },
 
-  // A plataforma única (Fase 0): o cadastro mestre e a fila de decisões.
-  { secao: "Cadastro", href: "/pendencias", label: "Pendências", icon: Inbox, permissao: "pendencias" },
-  { href: "/cadastro", label: "Cadastro mestre", icon: Truck, permissao: "cadastro" },
-  { href: "/cadastro/pessoas", label: "Pessoas", icon: Contact, permissao: "cadastro-pessoas", sub: true },
+  // O risco lido nos dados (auditoria), na empresa (conformidade) e as
+  // conferências de documento contra pagamento.
+  { secao: "Controle e auditoria", href: "/auditoria", label: "Auditoria e achados", icon: ShieldCheck, permissao: "auditoria" },
+  { href: "/conformidade", label: "Conformidade", icon: ScrollText, permissao: "conformidade" },
+  // O projeto (OS) do custo contra o da cobrança: serviço pago e não faturado.
+  { href: "/conferencia-os", label: "Conferência de OS", icon: ListChecks, permissao: "titulos" },
+  // Cada cobrança tem o documento fiscal que a justifica? A Omie não expõe CT-e
+  // pela API: é a única tela que depende de alguém colar uma lista.
+  { href: "/cte", label: "Conferência de CT-e", icon: FileCheck, permissao: "cte" },
+
+  { secao: "Planejamento", href: "/bsc", label: "Balanced Scorecard", icon: Target, permissao: "bsc" },
+  { href: "/cenarios", label: "Cenários e orçamento", icon: Compass, permissao: "cenarios" },
+
   // Por último: o que muda como o sistema se comporta, e não o que ele mostra
   // sobre a empresa.
-  { secao: "Configurações", href: "/relatorios", label: "Relatórios diários", icon: Mail, permissao: "relatorios" },
-  { href: "/sincronizacao", label: "Sincronização", icon: RefreshCw, permissao: "sincronizacao" },
-  { href: "/conexoes", label: "Conexões Omie", icon: Building2, permissao: "conexoes" },
-  { href: "/configuracao", label: "Modelo de gestão", icon: SlidersHorizontal, permissao: "gerir-modelo" },
+  { secao: "Configurações", href: "/cadastro", label: "Cadastro mestre", icon: Database, permissao: "cadastro" },
   { href: "/usuarios", label: "Usuários e acessos", icon: UsersRound, permissao: "gerir-usuarios" },
+  { href: "/conexoes", label: "Conexões Omie", icon: Building2, permissao: "conexoes" },
+  { href: "/sincronizacao", label: "Sincronização", icon: RefreshCw, permissao: "sincronizacao" },
+  { href: "/relatorios", label: "Relatórios diários", icon: Mail, permissao: "relatorios" },
+  { href: "/configuracao", label: "Modelo de gestão", icon: SlidersHorizontal, permissao: "gerir-modelo" },
+  { href: "/frota/migracao", label: "Migração das planilhas", icon: FileUp, permissao: "migrar-planilhas" },
 ];
 
 // A seção de cada item: a do próprio item ou a do último que abriu uma.

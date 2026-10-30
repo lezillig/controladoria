@@ -84,8 +84,10 @@ conferir("e não há nome de perfil", c.perfilNome, null);
 // deveria, o erro entra no sistema pela porta da frente — pré-marcado.
 console.log("\n5. Perfis sugeridos");
 const diretoria = PERFIS_SUGERIDOS.find((p) => p.nome === "Diretoria")!;
-conferir("Diretoria vê tudo", [...diretoria.permissoes].sort(), [...TELAS].sort());
-conferir("Diretoria não altera nada", diretoria.permissoes.filter((p) => (ACOES as string[]).includes(p)), []);
+conferir("Diretoria vê tudo", [...diretoria.permissoes].filter((p) => (TELAS as string[]).includes(p)).sort(), [...TELAS].sort());
+// A Diretoria não opera: as únicas ações são decidir as pendências que pedem
+// a Diretoria (venda de veículo, quitação) e ver os valores da frota.
+conferir("Diretoria só decide pendências e vê valores", diretoria.permissoes.filter((p) => (ACOES as string[]).includes(p)).sort(), ["decidir-pendencia", "frota-valores"]);
 
 const financeiro = PERFIS_SUGERIDOS.find((p) => p.nome === "Financeiro")!;
 conferir("Financeiro não trata achado", financeiro.permissoes.includes("tratar-achado"), false);
