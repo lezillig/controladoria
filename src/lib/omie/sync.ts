@@ -629,6 +629,8 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
     cursor.antigos ?? (backfill ? [] : (await mesesComAbertosAntigos(ctx.conexaoId, inicioDaRevisao(ctx.janelaFim), "vencimento")).map(mesAntigoParaTexto));
   const antigos = antigosTexto.map(mesAntigoDoTexto).filter((m): m is MesAntigo => m !== null);
   const passos = planejarPassosTitulos(ctx.janelaInicio, ctx.janelaFim, backfill, antigos);
+  // Na carga histórica não há meses antigos: o cursor fica como sempre foi.
+  const noCursor = backfill ? {} : { antigos: antigosTexto };
 
   let indice = cursor.passo;
   let pagina = cursor.pagina;
@@ -640,7 +642,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
       if (acabouOTempo(ctx)) {
         return {
           ...res,
-          proximoCursor: JSON.stringify({ passo: indice, pagina, antigos: antigosTexto } satisfies CursorTitulos),
+          proximoCursor: JSON.stringify({ passo: indice, pagina, ...noCursor } satisfies CursorTitulos),
         };
       }
 
@@ -649,7 +651,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         resposta = await buscarTitulos(ctx, { nPagina: pagina, nRegPorPagina: REGISTROS_POR_PAGINA, ...passo.param });
       } catch (e) {
         if (e instanceof OmieVazioError) break;
-        const pausa = pausaPorFalhaPassageira(res, `títulos ${passo.id}`, e, { passo: indice, pagina, antigos: antigosTexto } satisfies CursorTitulos);
+        const pausa = pausaPorFalhaPassageira(res, `títulos ${passo.id}`, e, { passo: indice, pagina, ...noCursor } satisfies CursorTitulos);
         if (pausa) return pausa;
         res.erros.push(`títulos ${passo.id}: ${e instanceof Error ? e.message : "erro desconhecido"}`);
         break;
