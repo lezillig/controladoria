@@ -8,8 +8,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // O nome da empresa vem do cadastro da gestão. Indisponível, o sistema
   // continua funcionando com o nome genérico — nome no cabeçalho não é motivo
   // para derrubar a tela inteira.
-  const empresa = await buscarEmpresa(session.companyId);
-  const acesso = await acessoDaSessao(session);
+  // As duas leituras não dependem uma da outra: em paralelo, uma ida ao banco
+  // a menos em toda navegação.
+  const [empresa, acesso] = await Promise.all([buscarEmpresa(session.companyId), acessoDaSessao(session)]);
 
   return (
     <AppShell

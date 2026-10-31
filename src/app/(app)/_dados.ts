@@ -4,7 +4,8 @@ import { requireRole } from "@/lib/auth";
 import type { SessionPayload } from "@/lib/auth";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { fimDoMes, inicioDoDia, rotuloMes } from "@/lib/controladoria/periodos";
-import { carregarContexto, garantirConfig, janelaDeAuditoria } from "@/lib/controladoria/contexto";
+import { garantirConfig, janelaDeAuditoria } from "@/lib/controladoria/contexto";
+import { contextoEmCache } from "@/lib/controladoria/contextoEmCache";
 import type { ContextoAuditoria } from "@/lib/controladoria/types";
 import type { ControladoriaConfig, OmieConexao } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -110,7 +111,8 @@ export async function contextoDaPagina(
   const session = await exigirPermissao(permissao);
   const escopo = await resolverEscopo(session.companyId, empresaParam);
   const periodo = resolverPeriodo(competenciaParam);
-  const ctx = await carregarContexto(session.companyId, periodo.dataReferencia, escopo.conexaoId ?? undefined, {
+  // Reaproveitado entre cliques enquanto o dado não muda (contextoEmCache.ts).
+  const ctx = await contextoEmCache(session.companyId, periodo.dataReferencia, escopo.conexaoId ?? undefined, {
     desde: desdeParam ?? janelaDeAuditoria(periodo.dataReferencia),
   });
   return { session, ctx, escopo, periodo };

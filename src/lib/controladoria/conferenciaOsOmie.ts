@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { redigir } from "./falhas";
+import { invalidarContextoEmCache } from "./contextoEmCache";
 
 // A OS CONFERIDA NA OMIE, TÍTULO A TÍTULO — "o custo desta OS é este mesmo?".
 //
@@ -144,5 +145,8 @@ export async function conferirTitulosNaOmie(params: { companyId: string; ids: st
     }
     saida.push({ id: t.id, situacao: mudancas.length > 0 ? "corrigido" : "igual", statusOmie: lido.status, mudancas });
   }
+  // A tela que mostra o resultado sai com o título já corrigido (o cache das
+  // telas, contextoEmCache.ts, também vê a mudança pela versão dos títulos).
+  if (saida.some((x) => x.situacao !== "igual")) invalidarContextoEmCache(params.companyId);
   return saida;
 }
