@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { motivoDaFalhaDosContratos } from "@/lib/gestao/leitura";
 import { contratosComSituacao, type ContratoComSituacao } from "@/lib/frota/contratosDaGestao";
 import { controleGeral, ROTULO_PRODUTO, ROTULO_SITUACAO_CONSORCIO, saldoPorVeiculo } from "@/lib/frota/financiamentos";
 import { linkDaGestao } from "@/lib/gestao/endereco";
@@ -33,6 +34,7 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
   const podeEditar = await podeAcao(session, "gerir-financiamentos");
   const hoje = new Date();
   const { contratos, gestaoDisponivel } = await contratosComSituacao(session.companyId, hoje);
+  const falha = gestaoDisponivel ? null : motivoDaFalhaDosContratos();
   const cadastro = linkDaGestao("/cadastros/veiculos/financiamentos");
   const ver = VISOES.find((v) => v.chave === params.ver)?.chave ?? "geral";
   const ativos = contratos.filter((c) => !c.situacao.quitado);
@@ -73,11 +75,11 @@ export default async function FinanciamentosPage({ searchParams }: { searchParam
       </div>
 
       {!gestaoDisponivel ? (
-        <Secao titulo="A gestão não respondeu">
+        <Secao titulo={falha?.titulo ?? "A gestão não respondeu"}>
           <p className="text-sm text-slate-600">
-            Os contratos são lidos do sistema de gestão, que não respondeu agora (ou o papel de leitura ainda não tem acesso às tabelas Financiamento e FinanciamentoVeiculo — ver
-            docs/papel-leitura-gestao.sql). As ligações com a Omie continuam gravadas; tente de novo em instantes.
+            {falha?.texto ?? "Os contratos são lidos do sistema de gestão, que não respondeu agora. As ligações com a Omie continuam gravadas; tente de novo em instantes."}
           </p>
+          {falha?.sql && <pre className="mt-3 overflow-x-auto rounded-md bg-slate-900 px-3 py-2 text-xs text-slate-100">{falha.sql}</pre>}
         </Secao>
       ) : contratos.length === 0 ? (
         <Secao titulo="Nenhum contrato ainda">

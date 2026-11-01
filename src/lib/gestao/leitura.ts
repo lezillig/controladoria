@@ -1,5 +1,7 @@
 import { prismaGestao } from "./cliente";
 import { redigir } from "@/lib/controladoria/falhas";
+import { motivoDaFalhaNaGestao, type MotivoDaFalha } from "./diagnostico";
+import { modoDaConexaoGestao } from "./cliente";
 
 // LEITURA DO SISTEMA DE GESTÃO (schema `public`) — SOMENTE LEITURA.
 //
@@ -724,9 +726,23 @@ export async function lerContratosDaGestao(companyId: string): Promise<{ contrat
       `,
     ]);
     leiturasOpcionaisIndisponiveis = leiturasOpcionaisIndisponiveis.filter((r) => r !== rotulo);
+    motivoDosContratos = null;
     return { contratos, veiculos };
-  } catch {
+  } catch (e) {
     if (!leiturasOpcionaisIndisponiveis.includes(rotulo)) leiturasOpcionaisIndisponiveis.push(rotulo);
+    // O motivo vai para a tela e para o log da Vercel: "não respondeu" para
+    // tudo escondia que era permissão faltando, e o conserto é outro.
+    const mensagem = redigir(e instanceof Error ? e.message : String(e));
+    motivoDosContratos = motivoDaFalhaNaGestao(mensagem, ["Financiamento", "FinanciamentoVeiculo"], modoDaConexaoGestao());
+    console.error(`[gestao] leitura dos contratos falhou (${motivoDosContratos.tipo}): ${mensagem.slice(0, 300)}`);
     return null;
   }
+}
+
+// Por que a última leitura dos contratos falhou (nula se a última deu certo).
+// O motivo é do banco (permissão, versão, conexão), não da empresa: o mesmo
+// para quem pergunta logo depois.
+let motivoDosContratos: MotivoDaFalha | null = null;
+export function motivoDaFalhaDosContratos(): MotivoDaFalha | null {
+  return motivoDosContratos;
 }

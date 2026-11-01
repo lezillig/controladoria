@@ -211,17 +211,22 @@ export default function Sidebar({ permissoes }: { permissoes: string[] }) {
 
   // Menu curto nasce aberto: agrupar ajuda quem tem trinta telas; para quem
   // tem quatro, só acrescenta um clique antes de cada uma. O tema da tela
-  // aberta fica sempre aberto (abaixo), sem precisar estar aqui.
-  const [abertos, setAbertos] = useState<Set<string>>(() =>
-    telas.length <= 8 ? new Set(itens.filter(ehTema).map((t) => t.label)) : new Set()
-  );
-  const alternar = (chave: string) =>
-    setAbertos((antes) => {
-      const depois = new Set(antes);
-      if (depois.has(chave)) depois.delete(chave);
-      else depois.add(chave);
-      return depois;
-    });
+  // aberta também nasce aberto: quem chega por um link vê onde está.
+  const padraoAberto = telas.length <= 8;
+
+  // A ESCOLHA DA PESSOA VALE SOBRE O PADRÃO — inclusive fechar o tema da tela
+  // aberta. Antes o tema ativo ficava aberto à força (`ativo || escolhido`):
+  // o clique em "Financeiro" com uma tela dele aberta não fazia nada, e o
+  // grupo parecia quebrado. A escolha guarda a rota em que foi feita: no tema
+  // da tela aberta ela vale enquanto a pessoa está naquela tela; ao navegar
+  // para outra, o tema da nova tela volta a abrir sozinho.
+  const [escolhas, setEscolhas] = useState<Record<string, { aberto: boolean; rota: string }>>({});
+  const estaAberto = (tema: string, temaAtivo: boolean) => {
+    const escolha = escolhas[tema];
+    if (temaAtivo) return escolha && escolha.rota === pathname ? escolha.aberto : true;
+    return escolha ? escolha.aberto : padraoAberto;
+  };
+  const alternar = (tema: string, aberto: boolean) => setEscolhas((antes) => ({ ...antes, [tema]: { aberto: !aberto, rota: pathname } }));
 
   const classeDaTela = (ativa: boolean) => (ativa ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900");
 
@@ -243,7 +248,7 @@ export default function Sidebar({ permissoes }: { permissoes: string[] }) {
           );
         }
         const temaAtivo = item.children.some((c) => c.href === ativoHref);
-        const aberto = temaAtivo || abertos.has(item.label);
+        const aberto = estaAberto(item.label, temaAtivo);
         return (
           <div key={item.label}>
             {/* A linha inteira abre e fecha: clicar no rótulo é o gesto
@@ -252,7 +257,7 @@ export default function Sidebar({ permissoes }: { permissoes: string[] }) {
                 mas escurece o texto: diz onde você está. */}
             <button
               type="button"
-              onClick={() => alternar(item.label)}
+              onClick={() => alternar(item.label, aberto)}
               aria-expanded={aberto}
               className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors hover:bg-slate-100 hover:text-slate-900 ${
                 temaAtivo ? "text-slate-900" : "text-slate-600"
