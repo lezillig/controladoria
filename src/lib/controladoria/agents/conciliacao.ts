@@ -1,4 +1,5 @@
 import { fmtBRL, fmtData, fmtPercent } from "../format";
+import { montarSaldos, totais, type SaldoDaConta } from "../saldosDasContas";
 import { diasEntre, inicioDoMes, somarDias } from "../periodos";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import { agrupar, chaveAchado, chaveMes, materialidadeCents, severidadePorValor, somar } from "./comum";
@@ -453,20 +454,34 @@ export function saldoPorContaCents(
   return linhas.filter((l) => l.saldoCents !== 0).sort((a, b) => b.saldoCents - a.saldoCents);
 }
 
+// O SALDO DE CADA CONTA PELO MESMO CRITÉRIO DA CONCILIAÇÃO (saldosDasContas.ts):
+// o informado do banco quando há, senão o que a própria Omie calcula, senão o
+// do extrato espelhado (saldo inicial + lançamentos, o de saldoPorContaCents).
+export function saldosConsideradosDoContexto(ctx: ContextoAuditoria): SaldoDaConta[] {
+  const movimentado = new Map<string, number>(ctx.movimentoAntesDaJanelaCents ?? []);
+  for (const m of ctx.movimentos) {
+    if (m.data > ctx.dataReferencia) continue;
+    const chave = `${m.conexaoId}:${m.contaCorrenteCodigo}`;
+    movimentado.set(chave, (movimentado.get(chave) ?? 0) + m.valorCents);
+  }
+  const apelido = new Map(ctx.conexoes.map((c) => [c.id, c.apelido]));
+  return montarSaldos({
+    contas: ctx.contasCorrentes,
+    movimentado,
+    informados: (ctx.saldosInformados ?? []).map((i) => ({ ...i, valorCents: Number(i.valorCents), empresa: apelido.get(i.conexaoId) ?? "?" })),
+  });
+}
+
+// SALDO EM CAIXA = o DISPONÍVEL: contas correntes e caixa, sem aplicações,
+// cartões e contas inativas, cada conta pelo critério acima.
+//
+// Era o saldo inicial cadastrado mais todo o extrato espelhado, de todas as
+// contas — aplicação, cartão e conta inativa juntas, e só o que estava lançado
+// na Omie. O painel mostrava um número que não batia com o disponível no banco;
+// a conciliação, outro. Agora painel, fluxo de caixa, alerta e BSC usam o
+// mesmo número da conciliação.
 export function saldoAtualCents(ctx: ContextoAuditoria): number {
-  const inicial = somar(
-    ctx.contasCorrentes.filter((c) => !c.inativa),
-    (c) => c.saldoInicialCents
-  );
-  const movimentado = somar(
-    ctx.movimentos.filter((m) => m.data <= ctx.dataReferencia),
-    (m) => m.valorCents
-  );
-  // O extrato de antes do corte da janela conta: sem ele, o saldo "zerava" a
-  // cada 1º de janeiro o que se moveu no ano anterior.
-  let antesDaJanela = 0;
-  for (const v of ctx.movimentoAntesDaJanelaCents?.values() ?? []) antesDaJanela += v;
-  return inicial + movimentado + antesDaJanela;
+  return totais(saldosConsideradosDoContexto(ctx)).disponivel;
 }
 
 // CB-TRANSFERENCIA-INTERGRUPO — dinheiro que passou de uma empresa para a outra

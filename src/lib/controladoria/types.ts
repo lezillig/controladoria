@@ -6,6 +6,7 @@ import type {
   OmieCategoria,
   OmieConexao,
   OmieContaCorrente,
+  SaldoBancarioInformado,
   OmieDepartamento,
   OmieProjeto,
   OmieMovimento,
@@ -118,6 +119,9 @@ export type ContextoAuditoria = {
   // só saberia dizer "projeto 14516" — número que ninguém reconhece.
   projetos: OmieProjeto[];
   contasCorrentes: OmieContaCorrente[];
+  // O saldo do banco informado na conciliação, do mais recente para o mais
+  // antigo. Opcional: contextos montados à mão (testes) não precisam dele.
+  saldosInformados?: SaldoBancarioInformado[];
   vinculos: OmieVinculoCentroCusto[];
 
   // Dados operacionais lidos do SISTEMA DE GESTAO (schema public, somente

@@ -3,7 +3,8 @@ import { AlertTriangle, Banknote, Landmark, Lightbulb, TrendingDown, TrendingUp 
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { montarPanorama } from "@/lib/controladoria/analytics";
-import { saldoPorContaCents } from "@/lib/controladoria/agents/conciliacao";
+import { saldosConsideradosDoContexto } from "@/lib/controladoria/agents/conciliacao";
+import { fonteDoSaldo, totais } from "@/lib/controladoria/saldosDasContas";
 import { agruparComposicao, composicaoDoPeriodo } from "@/lib/controladoria/composicao";
 import { medirBsc, PERSPECTIVAS } from "@/lib/controladoria/bsc";
 import { fmtBRL, fmtData, fmtDataHora, fmtNumero, fmtPercent, fmtVariacao } from "@/lib/controladoria/format";
@@ -171,7 +172,11 @@ export default async function ControladoriaPage({
     porCategoria.set(g.categoria, (porCategoria.get(g.categoria) ?? 0) + g._count);
   }
   const ORDEM_SEVERIDADE = ["CRITICA", "ALTA", "MEDIA", "BAIXA", "INFO"];
-  const saldos = saldoPorContaCents(ctx);
+  // O saldo de cada conta pelo critério da conciliação (banco > Omie > extrato).
+  const saldos = saldosConsideradosDoContexto(ctx);
+  const saldosTotais = totais(saldos);
+  const contasDisponiveis = saldos.filter((l) => l.grupo === "disponivel" && !l.inativa).sort((a, b) => b.consideradoCents - a.consideradoCents);
+  const inativasCents = saldos.filter((l) => l.inativa).reduce((a, l) => a + l.consideradoCents, 0);
 
   // LINK PARA O DETALHAMENTO, preservando o recorte da tela.
   //
@@ -338,29 +343,36 @@ export default async function ControladoriaPage({
             DRE completo, mês a mês →
           </Link>
         </KpiExpansivel>
-        {/* Saldo conta a conta. O total do cartão é a soma exata destas linhas
-            (ver saldoPorContaCents), inclusive quando uma delas é negativa —
-            é justamente a conta no vermelho que precisa aparecer. */}
+        {/* O DISPONÍVEL, conta a conta: o total do cartão é a soma exata das
+            contas correntes listadas, cada uma pelo saldo do banco informado,
+            senão o da Omie, senão o do extrato — o mesmo da conciliação.
+            Aplicação, cartão e conta inativa aparecem embaixo, fora da soma. */}
         <KpiExpansivel
           rotulo="Saldo em caixa"
           valor={fmtBRL(panorama.saldoAtualCents)}
-          apoio={`A pagar em aberto ${fmtBRL(panorama.aPagarEmAbertoCents)} · clique para abrir`}
+          apoio={`Disponível nas contas correntes · a pagar em aberto ${fmtBRL(panorama.aPagarEmAbertoCents)} · clique para abrir`}
           tom={panorama.saldoAtualCents >= 0 ? "neutro" : "ruim"}
           icone={<Banknote className="h-4 w-4" />}
         >
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Por conta</p>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Disponível, por conta</p>
           <LinhasDeValor
-            vazio="Nenhuma conta com saldo. Sem extrato bancário espelhado, o saldo vem só do saldo inicial cadastrado."
-            linhas={saldos.map((l) => ({
-              rotulo: l.conta,
-              valor: fmtBRL(l.saldoCents),
-              detalhe: `${l.empresa}${l.inativa ? " · conta inativa" : ""}`,
-              tom: l.saldoCents < 0 ? ("ruim" as const) : ("neutro" as const),
-              href: l.chave ? detalhe({ fonte: "caixa", conta: l.chave }) : undefined,
-            }))}
+            vazio="Nenhuma conta corrente com saldo."
+            linhas={[
+              ...contasDisponiveis.map((l) => ({
+                rotulo: l.descricao,
+                valor: fmtBRL(l.consideradoCents),
+                detalhe: `${l.empresa} · ${fonteDoSaldo(l)}`,
+                tom: l.consideradoCents < 0 ? ("ruim" as const) : ("neutro" as const),
+                href: l.contaCodigo ? detalhe({ fonte: "caixa", conta: l.chave }) : undefined,
+              })),
+              { rotulo: "= Disponível", valor: fmtBRL(saldosTotais.disponivel), destaque: true },
+              ...(saldosTotais.aplicacao !== 0 ? [{ rotulo: "Aplicações (fora do disponível)", valor: fmtBRL(saldosTotais.aplicacao) }] : []),
+              ...(saldosTotais.cartao !== 0 ? [{ rotulo: "Cartões (fora do disponível)", valor: fmtBRL(saldosTotais.cartao) }] : []),
+              ...(inativasCents !== 0 ? [{ rotulo: "Contas inativas (fora do disponível)", valor: fmtBRL(inativasCents) }] : []),
+            ]}
           />
-          <Link href="/fluxo-caixa" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
-            Projeção de caixa e conciliação →
+          <Link href="/conciliacao#saldo-por-conta" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+            Conferir com o banco e informar o saldo do dia →
           </Link>
         </KpiExpansivel>
       </div>

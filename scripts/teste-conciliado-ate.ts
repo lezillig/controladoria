@@ -1,7 +1,9 @@
 // ATÉ QUE DIA CADA CONTA ESTÁ CONCILIADA — `npm run teste:conciliado-ate`.
 import { PrismaClient } from "@prisma/client";
 import { conciliadoAte } from "../src/lib/controladoria/conciliadoAte";
-import { grupoDaConta, montarSaldos, totais } from "../src/lib/controladoria/saldosDasContas";
+import { fonteDoSaldo, grupoDaConta, montarSaldos, totais } from "../src/lib/controladoria/saldosDasContas";
+import { saldoAtualCents, saldosConsideradosDoContexto } from "../src/lib/controladoria/agents/conciliacao";
+import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 import { normalizarSaldosDoExtrato } from "../src/lib/omie/mapping";
 import { contaDoOfx, cruzarOfx, lerOfx, valorOfx } from "../src/lib/controladoria/ofx";
 
@@ -75,6 +77,44 @@ function pura() {
   conferir("cruzamento", [cr.casados.map((c) => [c.banco.id, c.omie.id, c.dias]), cr.soNoBanco.map((l) => l.id), cr.soNaOmie.map((o) => o.id), cr.agendados.map((l) => l.id)], [[["A1", "o1", 1]], ["A2"], ["o2", "o3"], ["A3"]]);
 
   conferir("totais", totais(linhas), { disponivel: 590_00, aplicacao: 2_700_000_00, cartao: 0, total: 2_700_590_00 });
+
+  console.log("\nSaldo em caixa (painel, fluxo de caixa, alerta, BSC) = o disponível da conciliação");
+  // Era o saldo inicial + todo o extrato de todas as contas: não batia com o
+  // banco. Agora cada conta pelo critério da conciliação, e só o disponível.
+  const conta = (codigo: string, descricao: string, x: Record<string, unknown> = {}) => ({
+    conexaoId: "AZ", conexaoApelido: "AZUL", codigo, descricao, banco: null, inativa: false, tipoCodigo: null, tipoDescricao: null,
+    saldoInicialCents: 0, saldoOmieCents: null, saldoConciliadoOmieCents: null, saldoDisponivelOmieCents: null, saldoOmieEm: null, ...x,
+  });
+  const ctx = {
+    dataReferencia: d("2026-10-30"),
+    conexoes: [{ id: "AZ", apelido: "AZUL" }],
+    contasCorrentes: [
+      conta("1", "Itaú", { saldoInicialCents: 100_00, saldoOmieCents: 500_00, saldoOmieEm: d("2026-10-30") }),
+      conta("2", "Bradesco"),
+      conta("3", "Caixinha", { saldoInicialCents: 10_00 }),
+      conta("4", "Aplicação CDB", { saldoOmieCents: 1_000_00 }),
+      conta("5", "Cartão Visa", { saldoOmieCents: -300_00 }),
+      conta("6", "Banco antigo", { inativa: true, saldoOmieCents: 70_00 }),
+    ],
+    movimentos: [
+      { conexaoId: "AZ", contaCorrenteCodigo: "3", data: d("2026-10-10"), valorCents: 5_00 },
+      // Depois da data de referência: não conta.
+      { conexaoId: "AZ", contaCorrenteCodigo: "3", data: d("2026-11-02"), valorCents: 999_00 },
+    ],
+    movimentoAntesDaJanelaCents: new Map(),
+    saldosInformados: [{ id: "s", companyId: "c", conexaoId: "AZ", contaCodigo: "2", descricao: "Bradesco", aplicacao: false, data: d("2026-10-30"), valorCents: BigInt(90_00), autorNome: null, criadoEm: d("2026-10-30") }],
+  } as unknown as ContextoAuditoria;
+  const porConta = saldosConsideradosDoContexto(ctx);
+  conferir("cada conta: Omie, banco, extrato; aplicação, cartão e inativa marcadas", porConta.map((l) => [l.descricao, l.fonte, l.grupo, l.inativa, l.consideradoCents]), [
+    ["Itaú", "omie", "disponivel", false, 500_00],
+    ["Bradesco", "banco", "disponivel", false, 90_00],
+    ["Caixinha", "extrato", "disponivel", false, 15_00],
+    ["Aplicação CDB", "omie", "aplicacao", false, 1_000_00],
+    ["Cartão Visa", "omie", "cartao", false, -300_00],
+    ["Banco antigo", "omie", "disponivel", true, 70_00],
+  ]);
+  conferir("saldo em caixa = só o disponível das contas ativas", saldoAtualCents(ctx), 500_00 + 90_00 + 15_00);
+  conferir("de onde vem, com a data", porConta.slice(0, 3).map((l) => fonteDoSaldo(l)), ["saldo da Omie em 30/10", "banco, informado em 30/10", "extrato espelhado (saldo inicial + lançamentos)"]);
 }
 
 async function banco() {

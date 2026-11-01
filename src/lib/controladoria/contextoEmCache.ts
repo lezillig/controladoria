@@ -17,7 +17,8 @@ import type { ContextoAuditoria } from "./types";
 // reaproveita enquanto a VERSÃO DOS DADOS for a mesma — uma consulta só, com
 // o que muda o retrato: a sincronização (que grava a cada passo), a
 // classificação do DRE, os vínculos de centro de custo, as conexões, a
-// configuração e as correções feitas em título pela conferência de OS. O que
+// configuração, as correções feitas em título pela conferência de OS e o saldo
+// do banco informado na conciliação. O que
 // vem da gestão (abastecimento, escala, ponto) muda ao longo do dia e não tem
 // versão aqui: a validade de VALIDADE_MS limita o atraso.
 //
@@ -43,7 +44,8 @@ async function versaoDosDados(companyId: string): Promise<string> {
       (SELECT COUNT(*) || ':' || COALESCE(MAX("atualizadoEm")::text, '') FROM ${tabela("OmieVinculoCentroCusto")} WHERE "companyId" = ${companyId}),
       (SELECT COUNT(*) || ':' || COALESCE(MAX("atualizadoEm")::text, '') FROM ${tabela("OmieConexao")} WHERE "companyId" = ${companyId}),
       (SELECT MAX("atualizadoEm")::text FROM ${tabela("ControladoriaConfig")} WHERE "companyId" = ${companyId}),
-      (SELECT MAX("vistoEm")::text FROM ${tabela("OmieTituloVersao")} WHERE "companyId" = ${companyId})
+      (SELECT MAX("vistoEm")::text FROM ${tabela("OmieTituloVersao")} WHERE "companyId" = ${companyId}),
+      (SELECT COUNT(*) || ':' || COALESCE(MAX("criadoEm")::text, '') FROM ${tabela("SaldoBancarioInformado")} WHERE "companyId" = ${companyId})
     ) AS v`);
   return v?.v ?? "";
 }

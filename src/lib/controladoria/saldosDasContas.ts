@@ -24,6 +24,15 @@ export function grupoDaConta(c: { descricao: string; tipoDescricao?: string | nu
 
 export const ROTULO_GRUPO: Record<GrupoDaConta, string> = { disponivel: "Disponível", aplicacao: "Aplicação", cartao: "Cartão" };
 
+// De onde veio o número da conta, com a data — para quem compara com o banco
+// saber se está olhando o saldo do banco, o da Omie ou o do extrato.
+export function fonteDoSaldo(l: Pick<SaldoDaConta, "fonte" | "informado" | "omieEm">): string {
+  const dia = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  if (l.fonte === "banco" && l.informado) return `banco, informado em ${dia(l.informado.data)}`;
+  if (l.fonte === "omie") return l.omieEm ? `saldo da Omie em ${dia(l.omieEm)}` : "saldo da Omie";
+  return "extrato espelhado (saldo inicial + lançamentos)";
+}
+
 export type SaldoDaConta = {
   chave: string;
   conexaoId: string;
@@ -127,8 +136,10 @@ export function montarSaldos(params: {
   return linhas.filter((l) => !l.inativa || l.consideradoCents !== 0);
 }
 
+// Conta inativa fica fora dos totais: aparece na lista (com o saldo que
+// sobrou, para alguém olhar), mas conta encerrada não é dinheiro disponível.
 export function totais(linhas: SaldoDaConta[]) {
-  const soma = (g: GrupoDaConta) => linhas.filter((l) => l.grupo === g).reduce((s, l) => s + l.consideradoCents, 0);
+  const soma = (g: GrupoDaConta) => linhas.filter((l) => l.grupo === g && !l.inativa).reduce((s, l) => s + l.consideradoCents, 0);
   const disponivel = soma("disponivel");
   const aplicacao = soma("aplicacao");
   const cartao = soma("cartao");

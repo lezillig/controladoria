@@ -141,6 +141,7 @@ export async function carregarContexto(
     receita,
     movimentoAntesDoCorte,
     conexoesDoGrupo,
+    saldosInformados,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -280,6 +281,9 @@ export async function carregarContexto(
     // conexão desativada continua sendo operação interna.
     // O papel vem junto: decide a linha de pessoas do DRE (ver dre.ts).
     prisma.omieConexao.findMany({ where: { companyId }, select: { id: true, cnpj: true, papelNoGrupo: true } }),
+    // O saldo do banco digitado na conciliação: é ele que o "saldo em caixa"
+    // usa quando existe (ver saldosConsideradosDoContexto).
+    prisma.saldoBancarioInformado.findMany({ where: escopo, orderBy: { data: "desc" } }),
   ]);
 
   // As colisões de código entre as contas (chaveCategoria.ts), sobre TODAS as
@@ -320,6 +324,7 @@ export async function carregarContexto(
     departamentos,
     projetos,
     contasCorrentes,
+    saldosInformados,
     vinculos,
     motoristas,
     clientes,

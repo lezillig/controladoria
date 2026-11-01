@@ -1,5 +1,6 @@
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
-import { saldoAtualCents, saldoPorContaCents } from "@/lib/controladoria/agents/conciliacao";
+import { saldoAtualCents, saldosConsideradosDoContexto } from "@/lib/controladoria/agents/conciliacao";
+import { fonteDoSaldo } from "@/lib/controladoria/saldosDasContas";
 import { HORIZONTES_DIAS, calcularCiclo, horizonteValido, projetarFluxoCaixa } from "@/lib/controladoria/agents/fluxoCaixa";
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { somarDias } from "@/lib/controladoria/periodos";
@@ -119,7 +120,7 @@ export default async function FluxoCaixaPage({
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi href="#saldo-por-conta" rotulo="Saldo atual" valor={fmtBRL(saldo)} apoio="Soma das contas correntes ativas" tom={saldo >= 0 ? "neutro" : "ruim"} />
+        <Kpi href="#saldo-por-conta" rotulo="Saldo atual" valor={fmtBRL(saldo)} apoio="Disponível nas contas correntes (banco, Omie ou extrato)" tom={saldo >= 0 ? "neutro" : "ruim"} />
         <Kpi href={titulosEmAberto("PAGAR")} rotulo="A pagar em aberto" valor={fmtBRL(somar(pagarAberto, saldoAberto))} apoio={`Vencido: ${fmtBRL(vencidoPagar)}`} />
         <Kpi
           href={titulosEmAberto("RECEBER")}
@@ -237,24 +238,46 @@ export default async function FluxoCaixaPage({
         />
       </Secao>
 
-      {/* A composição do cartão "Saldo atual": a mesma conta, conta a conta. */}
-      <Secao id="saldo-por-conta" titulo="Saldo por conta" descricao="Saldo inicial de cada conta mais todo o extrato até a data de referência — a soma é o saldo atual do cartão.">
+      {/* A composição do cartão "Saldo atual": as contas correntes, cada uma
+          pelo critério da conciliação; o que fica fora da soma, embaixo. */}
+      <Secao
+        id="saldo-por-conta"
+        titulo="Saldo por conta"
+        descricao="O disponível nas contas correntes e no caixa: o saldo do banco informado na conciliação, senão o que a Omie calcula, senão o do extrato espelhado. Aplicações, cartões e contas inativas ficam fora da soma."
+      >
         <Tabela
-          colunas={["Conta", "Empresa", "Saldo"]}
-          alinharDireita={[2]}
+          colunas={["Conta", "Empresa", "De onde vem", "Saldo"]}
+          alinharDireita={[3]}
           vazio="Nenhuma conta com saldo."
           linhas={[
-            ...saldoPorContaCents(ctx).map((c) => [
-              <span key="c">
-                {c.conta}
-                {c.inativa && <span className="ml-1 text-xs text-slate-400">(inativa)</span>}
-              </span>,
-              c.empresa,
-              <span key="s" className={c.saldoCents < 0 ? "text-red-700" : ""}>
-                {fmtBRL(c.saldoCents)}
-              </span>,
-            ]),
-            [<strong key="t">Total</strong>, "", <strong key="v">{fmtBRL(saldo)}</strong>],
+            ...saldosConsideradosDoContexto(ctx)
+              .filter((c) => c.grupo === "disponivel" && !c.inativa)
+              .sort((a, b) => b.consideradoCents - a.consideradoCents)
+              .map((c) => [
+                c.descricao,
+                c.empresa,
+                <span key="f" className="text-xs text-slate-500">
+                  {fonteDoSaldo(c)}
+                </span>,
+                <span key="s" className={c.consideradoCents < 0 ? "text-red-700" : ""}>
+                  {fmtBRL(c.consideradoCents)}
+                </span>,
+              ]),
+            [<strong key="t">Disponível</strong>, "", "", <strong key="v">{fmtBRL(saldo)}</strong>],
+            ...saldosConsideradosDoContexto(ctx)
+              .filter((c) => c.grupo !== "disponivel" || c.inativa)
+              .map((c) => [
+                <span key="c" className="text-slate-500">
+                  {c.descricao}
+                </span>,
+                c.empresa,
+                <span key="f" className="text-xs text-slate-400">
+                  fora da soma ({c.inativa ? "conta inativa" : c.grupo === "aplicacao" ? "aplicação" : "cartão"})
+                </span>,
+                <span key="s" className="text-slate-500">
+                  {fmtBRL(c.consideradoCents)}
+                </span>,
+              ]),
           ]}
         />
       </Secao>
