@@ -120,7 +120,20 @@ async function gravarEmLotes<T>(operacoes: T[], executar: (lote: T[]) => Promise
 // Campos do título cuja mudança entre duas sincronizações é registrada como
 // versão. Status, baixas e valores pagos mudam por natureza (o título é pago)
 // e ficam de fora: versão é EDIÇÃO, não vida do título.
-const CAMPOS_VERSIONADOS = ["parceiroCodigo", "valorDocumentoCents", "categoriaCodigo", "contaCorrenteCodigo", "dataVencimento", "numeroDocumento"] as const;
+//
+// O boleto (hash do código e banco emissor) entra porque a troca do código de
+// barras num título já lançado é o próprio golpe do boleto frio: o
+// fornecedor, a nota e o valor ficam; muda para onde o dinheiro vai.
+const CAMPOS_VERSIONADOS = [
+  "parceiroCodigo", "valorDocumentoCents", "categoriaCodigo", "contaCorrenteCodigo", "dataVencimento", "numeroDocumento", "boletoHash", "boletoBanco",
+] as const;
+
+// Campos em que só a TROCA é edição. Boleto que aparece onde não havia é o
+// fluxo normal (a nota é lançada antes e o boleto chega depois) — e é também
+// o que acontece com todos os títulos na primeira leitura depois que o
+// código de barras passou a ser gravado. E o hash que ganha a chave
+// (CONTROLADORIA_HASH_KEY) muda de formato sem o boleto mudar.
+const SO_A_TROCA_E_EDICAO = new Set<string>(["boletoHash", "boletoBanco"]);
 
 type TituloExistente = {
   id: string;
@@ -131,6 +144,8 @@ type TituloExistente = {
   contaCorrenteCodigo: string | null;
   dataVencimento: Date;
   numeroDocumento: string | null;
+  boletoHash: string | null;
+  boletoBanco: string | null;
 };
 
 function textoDeCampo(valor: unknown): string | null {
@@ -141,7 +156,7 @@ function textoDeCampo(valor: unknown): string | null {
 
 export function detectarVersoes(
   existentes: TituloExistente[],
-  novos: Pick<TituloNormalizado, "codigoLancamento" | "parceiroCodigo" | "valorDocumentoCents" | "categoriaCodigo" | "contaCorrenteCodigo" | "dataVencimento" | "numeroDocumento">[],
+  novos: Pick<TituloNormalizado, "codigoLancamento" | (typeof CAMPOS_VERSIONADOS)[number]>[],
   companyId: string
 ): { companyId: string; tituloId: string; campo: string; de: string | null; para: string | null }[] {
   const porCodigo = new Map(existentes.map((e) => [e.codigoLancamento, e]));
@@ -154,6 +169,7 @@ export function detectarVersoes(
       const para = textoDeCampo(n[campo]);
       // Campo que a Omie deixou de informar (para nulo) não é edição.
       if (para === null || de === para) continue;
+      if (SO_A_TROCA_E_EDICAO.has(campo) && (de === null || de.startsWith("h1:") !== para.startsWith("h1:"))) continue;
       versoes.push({ companyId, tituloId: e.id, campo, de, para });
     }
   }
@@ -746,7 +762,7 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
         where: { conexaoId: ctx.conexaoId, natureza: passo.natureza, codigoLancamento: { in: comNome.map((t) => t.codigoLancamento) } },
         select: {
           id: true, codigoLancamento: true, parceiroCodigo: true, valorDocumentoCents: true, categoriaCodigo: true,
-          contaCorrenteCodigo: true, dataVencimento: true, numeroDocumento: true,
+          contaCorrenteCodigo: true, dataVencimento: true, numeroDocumento: true, boletoHash: true, boletoBanco: true,
         },
       });
       const versoes = detectarVersoes(existentes, comNome, ctx.companyId);

@@ -452,6 +452,19 @@ model OmieTitulo {
   numeroDocumento     String?
   numeroParcela       String?
   tipoDocumento       String?
+  // O BOLETO DO TÍTULO A PAGAR, lido do código de barras da Omie
+  // (src/lib/controladoria/boleto.ts) — para o antifraude de boleto frio
+  // (agents/antifraudeBoleto.ts). O código inteiro NÃO é guardado: o campo
+  // livre carrega agência e conta do beneficiário, e dado bancário aqui é só
+  // hash. Fica o que as regras usam: o banco emissor (código público da
+  // instituição), o valor e o vencimento impressos, se o dígito fecha, e o
+  // hash do código (troca de boleto entre duas leituras, mesmo boleto em dois
+  // títulos).
+  boletoHash          String?
+  boletoBanco         String?
+  boletoValorCents    Int?
+  boletoVencimento    DateTime?
+  boletoDigitoValido  Boolean?
   categoriaCodigo     String?
   categoriaDescricao  String?
   departamentoCodigo  String?
@@ -563,6 +576,7 @@ model OmieTitulo {
   // 20260914150000, com as medições).
   @@index([companyId, parceiroDocumento])
   @@index([companyId, numeroDocumento])
+  @@index([companyId, boletoHash])
   @@index([companyId, projetoCodigo])
   @@index([conexaoId, natureza, projetoConferidoEm])
 }

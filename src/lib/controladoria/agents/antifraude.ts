@@ -15,6 +15,7 @@ import {
   valoresRedondos,
 } from "./antifraudeFornecedor";
 import { desvioDeBenford, kickbackPorCategoria } from "./antifraudeEstatistica";
+import { auditarBoletos } from "./antifraudeBoleto";
 import { cnaeIncompativel, cnpjIrregular, cnpjRecente, meiAcimaDoTeto, socioQueEFuncionario } from "./antifraudeReceita";
 import {
   agravar,
@@ -54,7 +55,7 @@ export const agenteAntifraude: Agente = {
   nome: "Antifraude e integridade",
   area: "Controladoria",
   descricao:
-    "Procura padrões que exigem verificação. Para quem se pagou: troca de conta bancária de fornecedor às vésperas do pagamento, fracionamento para burlar alçada, fornecedor com documento inválido ou igual ao de funcionário, cadastros duplicados, pagamentos em dia não útil e desvio da distribuição esperada de valores (Lei de Benford). Por onde o dinheiro saiu: conta excluída do resumo de caixa com movimento, pagamento por conta diferente da do título, baixa sem conta corrente, baixa em título cancelado, pagamento anterior à emissão, baixa com data no futuro e baixa repetida no mesmo título. O que sumiu do lado de receber: recebível cancelado sem substituto, desconto que engole o título e parceiro que é cliente e fornecedor ao mesmo tempo.",
+    "Procura padrões que exigem verificação. Para quem se pagou: troca de conta bancária de fornecedor às vésperas do pagamento, fracionamento para burlar alçada, fornecedor com documento inválido ou igual ao de funcionário, cadastros duplicados, pagamentos em dia não útil e desvio da distribuição esperada de valores (Lei de Benford). Por onde o dinheiro saiu: conta excluída do resumo de caixa com movimento, pagamento por conta diferente da do título, baixa sem conta corrente, baixa em título cancelado, pagamento anterior à emissão, baixa com data no futuro e baixa repetida no mesmo título. O boleto (golpe do boleto frio ou adulterado): código de barras trocado num título já lançado, banco que o fornecedor nunca usou, o mesmo boleto em dois títulos, valor diferente do da nota e código que não fecha o dígito. O que sumiu do lado de receber: recebível cancelado sem substituto, desconto que engole o título e parceiro que é cliente e fornecedor ao mesmo tempo.",
   executar: auditarFraude,
 };
 
@@ -100,6 +101,10 @@ export function auditarFraude(ctx: ContextoAuditoria): AchadoNovo[] {
   achados.push(...lancamentoManualSemDocumento(ctx, materialidade));
   achados.push(...kickbackPorCategoria(ctx, materialidade));
   achados.push(...contaAlteradaRepetida(ctx, materialidade));
+  // O boleto do título a pagar (antifraudeBoleto.ts): código trocado depois
+  // de lançado, banco que o fornecedor nunca usou, o mesmo boleto em dois
+  // títulos, valor diferente do título, dígito que não fecha.
+  achados.push(...auditarBoletos(ctx, materialidade));
   // O que a Receita Federal diz do CNPJ (antifraudeReceita.ts): situação
   // irregular, empresa recém-aberta, CNAE incompatível com o que se paga,
   // sócio com nome de motorista da folha, MEI acima do teto. Caladas sem

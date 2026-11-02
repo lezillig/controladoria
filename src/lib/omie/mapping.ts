@@ -1,4 +1,5 @@
 import { createHash, createHmac } from "crypto";
+import { lerBoleto } from "@/lib/controladoria/boleto";
 import type {
   BaixaNormalizada,
   CategoriaNormalizada,
@@ -240,6 +241,30 @@ export function ehTrocaDeConta(antes: string | null, depois: string | null): boo
   const depoisComChave = depois.startsWith("h1:");
   if (antesComChave !== depoisComChave) return false;
   return true;
+}
+
+// O BOLETO DO TÍTULO A PAGAR, sem guardar o código. O campo livre do código
+// de barras traz agência e conta do beneficiário: como a conta do fornecedor
+// (hashContaBancaria), o código vira hash — com a mesma chave, quando há. O
+// resto (banco emissor, valor, vencimento, dígito) é o que as regras de
+// boleto frio usam e não identifica conta de ninguém.
+export type BoletoDoTitulo = Pick<TituloNormalizado, "boletoHash" | "boletoBanco" | "boletoValorCents" | "boletoVencimento" | "boletoDigitoValido">;
+const SEM_BOLETO: BoletoDoTitulo = { boletoHash: null, boletoBanco: null, boletoValorCents: null, boletoVencimento: null, boletoDigitoValido: null };
+
+export function boletoDoTitulo(texto: string | null, vencimentoDoTitulo: Date): BoletoDoTitulo {
+  const b = lerBoleto(texto, vencimentoDoTitulo);
+  if (!b) return SEM_BOLETO;
+  const chave = process.env.CONTROLADORIA_HASH_KEY;
+  const hash = chave ? `h1:${createHmac("sha256", chave).update(b.codigoDeBarras).digest("hex")}` : createHash("sha256").update(b.codigoDeBarras).digest("hex");
+  if (b.tipo === "arrecadacao") return { ...SEM_BOLETO, boletoHash: hash, boletoValorCents: b.valorCents };
+  return {
+    boletoHash: hash,
+    boletoBanco: b.banco,
+    // Zero no código é "valor livre" (quem paga digita): não é valor impresso.
+    boletoValorCents: b.valorCents > 0 ? b.valorCents : null,
+    boletoVencimento: b.vencimento,
+    boletoDigitoValido: b.digitoValido,
+  };
 }
 
 export function obj(bruto: Bruto, ...keys: string[]): Bruto | null {
@@ -494,6 +519,12 @@ export function normalizarTitulo(bruto: Bruto, natureza: OmieNatureza): TituloNo
     numeroDocumento: str(cabec, "cNumDocFiscal", "numero_documento", "cNumTitulo"),
     numeroParcela: str(cabec, "cNumParcela", "numero_parcela"),
     tipoDocumento: str(cabec, "cTipo", "codigo_tipo_documento", "cCodTipoDoc"),
+    // `cCodigoBarras` na pesquisa de títulos; os outros dois nomes são os da
+    // consulta da conta a pagar. Só do lado a pagar: o boleto a receber é
+    // nosso.
+    ...(natureza === "PAGAR"
+      ? boletoDoTitulo(str(cabec, "cCodigoBarras", "codigo_barras_ficha_compensacao", "codigo_barras_boleto"), dataVencimento)
+      : SEM_BOLETO),
     categoriaCodigo: str(cabec, "cCodCateg", "codigo_categoria"),
     categoriaDescricao: str(cabec, "cDescCateg", "descricao_categoria"),
     departamentoCodigo:

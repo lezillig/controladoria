@@ -93,6 +93,12 @@ export type TituloNormalizado = {
   numeroDocumento: string | null;
   numeroParcela: string | null;
   tipoDocumento: string | null;
+  // O boleto do título a pagar, sem o código inteiro (ver OmieTitulo no schema).
+  boletoHash: string | null;
+  boletoBanco: string | null;
+  boletoValorCents: number | null;
+  boletoVencimento: Date | null;
+  boletoDigitoValido: boolean | null;
   categoriaCodigo: string | null;
   categoriaDescricao: string | null;
   departamentoCodigo: string | null;
