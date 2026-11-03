@@ -1,4 +1,5 @@
 import { fmtBRL, fmtData } from "../format";
+import { diasEntre } from "../periodos";
 import { nomeDoBanco } from "../boleto";
 import type { AchadoNovo, ContextoAuditoria } from "../types";
 import type { AuditSeveridade, OmieTitulo } from "@prisma/client";
@@ -114,6 +115,23 @@ function boletoTrocado(ctx: ContextoAuditoria, materialidade: number): AchadoNov
   return achados;
 }
 
+// O INDÍCIO DA TROCA NO PASSADO. Antes de 01/11/2026 o código de barras não
+// era guardado, então a troca em si (código A → código B) não aparece. O que
+// a Omie guarda é a ÚLTIMA alteração do título (quem e quando, bloco `info`).
+// Título alterado depois de lançado e ANTES de pago, com boleto de banco fora
+// do hábito do fornecedor, é o rastro que a troca deixa. A baixa e a
+// conciliação também mexem na data de alteração: por isso, no título pago, só
+// vale alteração pelo menos um dia antes do pagamento — a de depois pode ser a
+// própria baixa, e apagou a anterior.
+export function alteracaoAntesDoPagamento(t: OmieTitulo): { quando: Date; quem: string | null; outraPessoa: boolean; diasDepoisDeLancado: number } | null {
+  if (!t.alteradoEmOmie || !t.dataInclusaoOmie) return null;
+  const diasDepoisDeLancado = diasEntre(t.dataInclusaoOmie, t.alteradoEmOmie);
+  if (diasDepoisDeLancado < 1) return null;
+  if (pago(t) && (!t.dataUltimaBaixa || diasEntre(t.alteradoEmOmie, t.dataUltimaBaixa) < 1)) return null;
+  const outraPessoa = Boolean(t.usuarioAlteracao && t.usuarioInclusao && t.usuarioAlteracao.trim().toLowerCase() !== t.usuarioInclusao.trim().toLowerCase());
+  return { quando: t.alteradoEmOmie, quem: t.usuarioAlteracao, outraPessoa, diasDepoisDeLancado };
+}
+
 // FR-BOLETO-BANCO-NOVO — o fornecedor cobrou por um ou dois bancos em todos
 // os boletos anteriores e este vem de outro. Só o PRIMEIRO boleto do banco
 // novo é apontado: a partir dele, o banco passa a ser do histórico.
@@ -129,18 +147,29 @@ function bancoNovo(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidad
       if (habituais.has(t.boletoBanco as string) || t.valorDocumentoCents < materialidade / 2) continue;
       const nome = nomeParceiro(ctx, t);
       const deSempre = [...habituais].map(banco).join(", ");
+      const alteracao = alteracaoAntesDoPagamento(t);
+      // Sem agravar: troca de banco de cobrança é comum e legítima; o que
+      // pesa é o valor. A pagar, no mínimo média — ainda dá para segurar.
+      // Com o título alterado depois de lançado (o rastro da troca), agrava;
+      // alterado por outra pessoa que não quem lançou, agrava de novo.
+      let severidade = pago(t) ? severidadePorValor(t.valorDocumentoCents, materialidade) : peloMenos(severidadePorValor(t.valorDocumentoCents, materialidade), "MEDIA");
+      if (alteracao) severidade = peloMenos(agravar(severidade), "MEDIA");
+      if (alteracao?.outraPessoa) severidade = agravar(severidade);
       achados.push({
         regra: "FR-BOLETO-BANCO-NOVO",
         tipo: "ESTADO",
-        // Sem agravar: troca de banco de cobrança é comum e legítima; o que
-        // pesa é o valor. A pagar, no mínimo média — ainda dá para segurar.
-        severidade: pago(t) ? severidadePorValor(t.valorDocumentoCents, materialidade) : peloMenos(severidadePorValor(t.valorDocumentoCents, materialidade), "MEDIA"),
+        severidade,
         categoria: "FRAUDE",
-        titulo: `${nome} sempre cobrou por ${deSempre}; este boleto é de ${banco(t.boletoBanco)}`,
+        titulo: `${nome} sempre cobrou por ${deSempre}; este boleto é de ${banco(t.boletoBanco)}${alteracao ? " (título alterado antes de pagar)" : ""}`,
         descricao:
           `Os ${anteriores.length} boletos anteriores deste fornecedor vieram de ${deSempre}. O de ${referenciaTitulo(t)} (${fmtBRL(t.valorDocumentoCents)}) ` +
           `vem de ${banco(t.boletoBanco)}. Boleto de banco que o fornecedor nunca usou é o sinal mais comum do boleto frio — e também o que acontece quando ` +
-          `ele troca de banco de cobrança, por isso confirmar. ${situacaoDoPagamento(t)}`,
+          `ele troca de banco de cobrança, por isso confirmar. ` +
+          (alteracao
+            ? `O título foi alterado na Omie em ${fmtData(alteracao.quando)}${alteracao.quem ? ` por ${alteracao.quem}` : ""}, ${alteracao.diasDepoisDeLancado} dia(s) depois de lançado` +
+              `${alteracao.outraPessoa ? " (por outra pessoa, não quem lançou)" : ""}${pago(t) ? " e antes do pagamento" : ""}: é o rastro que a troca do código de barras deixa. `
+            : "") +
+          situacaoDoPagamento(t),
         recomendacao: CONFIRMAR,
         valorCents: t.valorDocumentoCents,
         dataReferencia: t.dataVencimento,
@@ -155,6 +184,9 @@ function bancoNovo(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidad
           vencimento: fmtData(t.dataVencimento),
           valor: t.valorDocumentoCents,
           pago: pago(t),
+          incluidoPor: t.usuarioInclusao ?? "—",
+          alteradoEm: alteracao ? fmtData(alteracao.quando) : "—",
+          alteradoPor: alteracao?.quem ?? "—",
         },
         chave: chaveAchado("FR-BOLETO-BANCO-NOVO", t.conexaoApelido, t.codigoLancamento),
       });

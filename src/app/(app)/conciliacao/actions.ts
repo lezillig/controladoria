@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { lerReaisEmCents } from "@/lib/controladoria/format";
+import { fmtDocumento, lerReaisEmCents } from "@/lib/controladoria/format";
 import { registrarEvento } from "@/lib/controladoria/trilha";
 import { exigirPermissao, podeAcao } from "../_dados";
 
@@ -90,6 +90,13 @@ export type ResultadoOfx = {
   soNoBanco?: { data: string; valorCents: number; memo: string }[];
   soNaOmie?: { data: string; valorCents: number; descricao: string; conciliado: boolean }[];
   agendados?: { data: string; valorCents: number; memo: string }[];
+  // Quem recebeu: o nome que o banco escreveu na linha do pagamento contra o
+  // fornecedor do lançamento casado na Omie (beneficiarioOfx.ts).
+  beneficiarios?: {
+    conferidos: number;
+    semNome: number;
+    divergentes: { data: string; valorCents: number; memo: string; nomeNoBanco: string | null; fornecedor: string; documento: string }[];
+  };
   saldoGravado?: boolean;
 };
 
@@ -99,6 +106,7 @@ export async function conferirOfx(_anterior: ResultadoOfx | null, formData: Form
   if (!(arquivo instanceof File) || arquivo.size === 0) return { erro: "Escolha o arquivo OFX do banco." };
   if (arquivo.size > 5_000_000) return { erro: "Arquivo grande demais (máximo 5 MB)." };
   const { lerOfx, contaDoOfx, cruzarOfx } = await import("@/lib/controladoria/ofx");
+  const { conferirBeneficiario, memoSemCpf, nomeNoExtrato } = await import("@/lib/controladoria/beneficiarioOfx");
   const texto = Buffer.from(await arquivo.arrayBuffer()).toString("latin1");
   const ofx = lerOfx(texto);
   if (ofx.lancamentos.length === 0 && ofx.saldoCents === null) return { erro: "Não encontrei lançamentos nem saldo no arquivo. É um OFX?" };
@@ -126,7 +134,7 @@ export async function conferirOfx(_anterior: ResultadoOfx | null, formData: Form
   const de = new Date(Math.min(...datas, ate.getTime()) - 3 * 86_400_000);
   const omie = await prisma.omieMovimento.findMany({
     where: { conexaoId: conta.conexaoId, contaCorrenteCodigo: conta.codigo, data: { gte: de, lte: new Date(ate.getTime() + 86_399_999) } },
-    select: { id: true, data: true, valorCents: true, parceiroNome: true, observacao: true, documento: true, conciliado: true },
+    select: { id: true, data: true, valorCents: true, parceiroCodigo: true, parceiroNome: true, observacao: true, documento: true, conciliado: true },
   });
   // Só o que está dentro do período do arquivo entra como "só na Omie".
   const inicioArquivo = datas.length ? Math.min(...datas) : ate.getTime();
@@ -135,6 +143,37 @@ export async function conferirOfx(_anterior: ResultadoOfx | null, formData: Form
     omie: omie.map((o) => ({ id: o.id, data: o.data, valorCents: o.valorCents, descricao: [o.parceiroNome, o.observacao, o.documento].filter(Boolean).join(" · ") || "—", conciliado: o.conciliado })),
     ate,
   });
+
+  // QUEM RECEBEU. Para cada saída casada com um lançamento da Omie que tem
+  // fornecedor, o nome que o banco escreveu é o do fornecedor? O boleto frio
+  // tem tudo certo na Omie; o beneficiário do banco é o que o denuncia.
+  const movimentoPorId = new Map(omie.map((o) => [o.id, o]));
+  const saidas = r.casados.filter((c) => c.banco.valorCents < 0 && (movimentoPorId.get(c.omie.id)?.parceiroCodigo || movimentoPorId.get(c.omie.id)?.parceiroNome));
+  const codigos = [...new Set(saidas.map((c) => movimentoPorId.get(c.omie.id)?.parceiroCodigo).filter((x): x is string => Boolean(x)))];
+  const parceiros = codigos.length
+    ? await prisma.omieParceiro.findMany({ where: { conexaoId: conta.conexaoId, codigoOmie: { in: codigos } }, select: { codigoOmie: true, nome: true, nomeFantasia: true, documento: true } })
+    : [];
+  const parceiroPorCodigo = new Map(parceiros.map((p) => [p.codigoOmie, p]));
+  const beneficiarios: NonNullable<ResultadoOfx["beneficiarios"]> = { conferidos: 0, semNome: 0, divergentes: [] };
+  for (const c of saidas) {
+    const m = movimentoPorId.get(c.omie.id)!;
+    const p = m.parceiroCodigo ? parceiroPorCodigo.get(m.parceiroCodigo) : undefined;
+    const veredito = conferirBeneficiario(c.banco.memo, { nomes: [m.parceiroNome, p?.nome ?? null, p?.nomeFantasia ?? null], documento: p?.documento ?? null });
+    if (veredito === "sem-nome") {
+      beneficiarios.semNome++;
+      continue;
+    }
+    beneficiarios.conferidos++;
+    if (veredito === "diverge")
+      beneficiarios.divergentes.push({
+        data: iso(c.banco.data)!,
+        valorCents: c.banco.valorCents,
+        memo: memoSemCpf(c.banco.memo),
+        nomeNoBanco: nomeNoExtrato(c.banco.memo),
+        fornecedor: p?.nome ?? m.parceiroNome ?? "—",
+        documento: fmtDocumento(p?.documento),
+      });
+  }
 
   let saldoGravado = false;
   if (formData.get("gravarSaldo") === "1" && ofx.saldoCents !== null && (await podeAcao(session, "informar-saldo"))) {
@@ -150,9 +189,11 @@ export async function conferirOfx(_anterior: ResultadoOfx | null, formData: Form
     casados: r.casados.length,
     casadosCents: r.casados.reduce((s, c) => s + c.banco.valorCents, 0),
     comDiferencaDeData: r.casados.filter((c) => c.dias !== 0).length,
-    soNoBanco: r.soNoBanco.map((l) => ({ data: iso(l.data)!, valorCents: l.valorCents, memo: l.memo })),
+    // CPF escrito pelo banco na linha não sai inteiro na tela.
+    soNoBanco: r.soNoBanco.map((l) => ({ data: iso(l.data)!, valorCents: l.valorCents, memo: memoSemCpf(l.memo) })),
     soNaOmie: r.soNaOmie.filter((o) => o.data.getTime() >= inicioArquivo).map((o) => ({ data: iso(o.data)!, valorCents: o.valorCents, descricao: o.descricao, conciliado: o.conciliado })),
-    agendados: r.agendados.map((l) => ({ data: iso(l.data)!, valorCents: l.valorCents, memo: l.memo })),
+    agendados: r.agendados.map((l) => ({ data: iso(l.data)!, valorCents: l.valorCents, memo: memoSemCpf(l.memo) })),
+    beneficiarios,
     saldoGravado,
   };
 }

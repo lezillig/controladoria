@@ -7,7 +7,8 @@ export {};
 import { digitoGeral, lerBoleto, nomeDoBanco } from "../src/lib/controladoria/boleto";
 import { boletoDoTitulo } from "../src/lib/omie/mapping";
 import { detectarVersoes } from "../src/lib/omie/sync";
-import { auditarBoletos } from "../src/lib/controladoria/agents/antifraudeBoleto";
+import { alteracaoAntesDoPagamento, auditarBoletos } from "../src/lib/controladoria/agents/antifraudeBoleto";
+import { conferirBeneficiario, memoSemCpf, nomeNoExtrato } from "../src/lib/controladoria/beneficiarioOfx";
 import type { ContextoAuditoria } from "../src/lib/controladoria/types";
 
 let falhas = 0;
@@ -163,6 +164,36 @@ conferir("boleto trocado num título a pagar, com troca de banco", achadoTroca.m
 conferir("o achado diz de qual banco para qual", achadoTroca[0]?.titulo.includes("Itaú (341) → Nubank (260)"), true);
 conferir("título pequeno trocado e ainda a pagar: no mínimo ALTA", auditarBoletos(ctx([{ ...trocado, valorDocumentoCents: 100_00 }], versoes.slice(0, 1)), 10_000_00).map((a) => a.severidade), ["ALTA"]);
 conferir("sem boleto, nada", auditarBoletos(ctx([titulo({ boletoHash: null, boletoBanco: null })]), 10_000_00), []);
+
+console.log("Indício de troca no passado (alterado depois de lançado, antes de pago)");
+const comAlteracao = (p: Partial<Titulo>) =>
+  titulo({ boletoBanco: "260", valorDocumentoCents: 15_000_00, dataVencimento: new Date("2026-09-10T12:00:00Z"), dataInclusaoOmie: d0("2026-08-01"), usuarioInclusao: "ana", ...p });
+function d0(iso: string) {
+  return new Date(`${iso}T12:00:00Z`);
+}
+const sev = (t: Titulo) => auditarBoletos(ctx([...pagos(3, "341"), t]), 10_000_00).map((a) => a.severidade);
+conferir("banco novo sem alteração: média", sev(comAlteracao({})), ["MEDIA"]);
+conferir("alterado 4 dias depois de lançado, pela mesma pessoa: alta", sev(comAlteracao({ alteradoEmOmie: d0("2026-08-05"), usuarioAlteracao: "ana" })), ["ALTA"]);
+conferir("alterado por outra pessoa: crítica", sev(comAlteracao({ alteradoEmOmie: d0("2026-08-05"), usuarioAlteracao: "bruno" })), ["CRITICA"]);
+const pagoNaBaixa = comAlteracao({ liquidado: true, valorPagoCents: 15_000_00, dataUltimaBaixa: d0("2026-09-10"), alteradoEmOmie: d0("2026-09-10"), usuarioAlteracao: "bruno" });
+conferir("pago: alteração no dia da baixa pode ser a própria baixa — não conta", alteracaoAntesDoPagamento(pagoNaBaixa), null);
+const pagoDepois = comAlteracao({ liquidado: true, valorPagoCents: 15_000_00, dataUltimaBaixa: d0("2026-09-10"), alteradoEmOmie: d0("2026-09-02"), usuarioAlteracao: "bruno" });
+conferir("pago: alterado 8 dias antes do pagamento conta", alteracaoAntesDoPagamento(pagoDepois)?.outraPessoa, true);
+conferir("o achado diz quem alterou", auditarBoletos(ctx([...pagos(3, "341"), pagoDepois]), 10_000_00)[0]?.descricao.includes("por bruno"), true);
+conferir("alterado no mesmo dia em que foi lançado não conta", alteracaoAntesDoPagamento(comAlteracao({ alteradoEmOmie: d0("2026-08-01") })), null);
+
+console.log("Quem recebeu: o nome no extrato do banco × fornecedor");
+const posto = { nomes: ["AUTO POSTO SAO JORGE LTDA", "Posto São Jorge"], documento: "12345678000190" };
+conferir("o nome que sobra da linha", nomeNoExtrato("PAG BOLETO OUTROS BANCOS - AUTO POSTO SAO JO 10/08"), "AUTO POSTO SAO JO");
+conferir("linha sem nome", [nomeNoExtrato("PAGTO TITULO 123456"), nomeNoExtrato("TARIFA BANCARIA PACOTE"), nomeNoExtrato("SISPAG FORNECEDORES TED")], [null, null, null]);
+conferir("mesmo fornecedor, nome cortado pelo banco", conferirBeneficiario("PAG BOLETO OUTROS BANCOS - AUTO POSTO SAO JO", posto), "confere");
+conferir("mesmo fornecedor pelo nome fantasia", conferirBeneficiario("PIX ENVIADO POSTO SAO JORGE", posto), "confere");
+conferir("outra pessoa recebeu", conferirBeneficiario("PAGAMENTO DE BOLETO - MARIA APARECIDA SILVA", posto), "diverge");
+conferir("CNPJ da filial do fornecedor confere (mesma raiz)", conferirBeneficiario("PIX ENVIADO 12.345.678/0002-71", posto), "confere");
+conferir("CNPJ de outra empresa diverge, mesmo com o nome parecido", conferirBeneficiario("PIX ENVIADO POSTO SAO JORGE 98.765.432/0001-10", posto), "diverge");
+conferir("só vocabulário do banco: não se julga", conferirBeneficiario("PAGTO COBRANCA 0012345", posto), "sem-nome");
+conferir("palavra genérica (LTDA, COMERCIO) não basta para conferir", conferirBeneficiario("PAG BOLETO COMERCIO LTDA", { nomes: ["COMERCIO DE PECAS ALFA LTDA"], documento: null }), "diverge");
+conferir("CPF da linha sai mascarado", memoSemCpf("PIX ENVIADO 123.456.789-01 FULANO"), "PIX ENVIADO ***.456.789-** FULANO");
 
 if (falhas) {
   console.log(`\n${falhas} falha(s).`);
