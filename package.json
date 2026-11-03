@@ -10,6 +10,7 @@
     "teste:cte": "tsx scripts/teste-cte.ts",
     "teste:antifraude": "tsx scripts/teste-antifraude.ts",
     "teste:boleto": "tsx scripts/teste-boleto.ts",
+    "teste:vazamentos": "tsx scripts/teste-vazamentos.ts",
     "teste:diagnostico-gestao": "tsx scripts/teste-diagnostico-gestao.ts",
     "teste:dre": "tsx scripts/teste-dre.ts",
     "teste:dre-banco": "tsx scripts/teste-dre-banco.ts",

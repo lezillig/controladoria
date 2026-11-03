@@ -15,6 +15,7 @@ import { rotuloCompetencia } from "@/lib/conformidade/tipos";
 import { competenciasDisponiveis, contextoDaPagina, podeAcao } from "./_dados";
 import { alertasDaFolha } from "@/lib/controladoria/fechamentoFolhaNoBanco";
 import { saudeDaSincronizacao } from "@/lib/controladoria/ciclo";
+import { ehRecorrente, vazamentosNoBanco } from "@/lib/controladoria/vazamentos";
 import {
   AvisoVazio,
   BadgeSeveridade,
@@ -89,6 +90,7 @@ export default async function ControladoriaPage({
     somaPerdas,
     maioresOportunidades,
     maioresPerdas,
+    vazamentos,
   ] = await Promise.all([
     prisma.auditFinding.findMany({
       where: { companyId: ctx.companyId, status: { in: ["ABERTO", "EM_ANALISE"] } },
@@ -133,6 +135,9 @@ export default async function ControladoriaPage({
       orderBy: { valorCents: "desc" },
       take: 6,
     }),
+    // As perdas do mês pela ORIGEM (fornecedor, conta, cliente), na mesma
+    // janela e com o mesmo filtro do cartão "Perdas do mês".
+    vazamentosNoBanco({ companyId: ctx.companyId, conexaoId: escopo.conexaoId, periodo: c.janelas.mesAtual }),
   ]);
   const totalEmAberto = contagemAchados.reduce((acc, g) => acc + g._count, 0);
   const totalCriticosAltos = contagemAchados
@@ -407,6 +412,11 @@ export default async function ControladoriaPage({
             Dinheiro que saiu sem comprar nada. Juros e multa são prazo perdido; tarifa é preço de conta; desconto
             concedido é margem entregue na baixa.
           </p>
+          {vazamentos.maiores.length > 0 && (
+            <a href="#vazamentos" className="mt-3 block text-xs font-medium text-blue-700 hover:underline">
+              De onde vem: os maiores vazamentos e o que fazer →
+            </a>
+          )}
         </KpiExpansivel>
         <KpiExpansivel
           rotulo="Economia identificada"
@@ -506,6 +516,41 @@ export default async function ControladoriaPage({
       )}
 
       {mesEmFormacao && <MesEmFormacaoPainel dados={mesEmFormacao} />}
+
+      {/* ONDE O DINHEIRO ESCAPA: as perdas do cartão pela origem, em ordem de
+          valor — o que atacar primeiro. Cada linha abre a lista que soma
+          exatamente ela; o total ao lado é o do cartão, para um desencontro
+          aparecer. */}
+      {vazamentos.maiores.length > 0 && (
+        <Secao
+          id="vazamentos"
+          titulo="Onde o dinheiro escapa"
+          descricao={`As ${vazamentos.maiores.length} maiores de ${vazamentos.origens} origem(ns) de perda no mês somam ${fmtBRL(vazamentos.somaDosMaioresCents)} dos ${fmtBRL(vazamentos.totalCents)} do cartão "Perdas do mês". Nenhuma delas trava a operação quando cortada.`}
+        >
+          <Tabela
+            colunas={["Origem", "No mês", "Média por mês (6 meses antes)", "Repete?", "O que fazer"]}
+            alinharDireita={[1, 2]}
+            linhas={vazamentos.maiores.map((v, i) => [
+              <Link key="o" href={detalhe({ fonte: "perda", ...Object.fromEntries(Object.entries(v.filtro).filter(([, x]) => x !== undefined)) })} className="font-medium text-blue-700 hover:underline">
+                {i === 0 ? "1º · " : `${i + 1}º · `}
+                {v.rotulo}
+              </Link>,
+              <span key="v" className="tabular-nums text-red-700">
+                {fmtBRL(v.valorCents)}
+              </span>,
+              <span key="m" className="tabular-nums">
+                {v.mediaMensalCents > 0 ? fmtBRL(v.mediaMensalCents) : "—"}
+              </span>,
+              <span key="r" className={ehRecorrente(v) ? "font-medium text-red-700" : "text-slate-500"}>
+                {v.mesesComPerda} de {v.mesesOlhados} meses
+              </span>,
+              <span key="a" className="text-xs text-slate-600">
+                {v.acao}
+              </span>,
+            ])}
+          />
+        </Secao>
+      )}
 
       <Secao
         titulo="Precisa de decisão"

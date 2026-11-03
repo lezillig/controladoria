@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { prisma } from "@/lib/prisma";
 import { montarJanelas } from "@/lib/controladoria/periodos";
 import { fmtBRL, fmtData, fmtNumero } from "@/lib/controladoria/format";
 import {
@@ -36,6 +37,9 @@ type Params = {
   valor?: string;
   parte?: string;
   conta?: string;
+  // Recorte de uma origem das perdas (vazamentos.ts): só este fornecedor ou
+  // cliente (vazio = sem nome no título). A conta usa o `conta` acima.
+  parceiro?: string;
   empresa?: string;
   competencia?: string;
   volta?: string;
@@ -63,14 +67,23 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
   const periodoDasPerdas = livre ?? mes;
   const ehPerda = params.fonte === "perda" && (params.parte === "juros_multa" || ehComponenteDePerda(params.parte));
 
+  // O recorte vem do ranking "onde o dinheiro escapa" do painel: a lista soma
+  // exatamente a linha que foi clicada.
+  const recorte = { parceiro: params.parceiro, conta: params.fonte === "perda" ? params.conta : undefined };
+  const nomeDaConta = recorte.conta
+    ? await prisma.omieContaCorrente
+        .findFirst({ where: { companyId: session.companyId, conexaoId: recorte.conta.split(":")[0], codigo: recorte.conta.split(":").slice(1).join(":") }, select: { descricao: true, conexaoApelido: true } })
+        .then((c) => (c ? `${c.conexaoApelido} · ${c.descricao}` : null))
+    : null;
+
   if (params.fonte === "perda" && params.parte === "juros_multa") {
-    dados = await detalharJurosEMulta({ ...base, periodo: periodoDasPerdas });
+    dados = await detalharJurosEMulta({ ...base, periodo: periodoDasPerdas, recorte });
   } else if (params.fonte === "titulos") {
     const natureza = params.natureza === "RECEBER" ? "RECEBER" : "PAGAR";
     const dimensao = params.dimensao === "tipo" ? "tipo" : params.dimensao === "categoria" ? "categoria" : null;
     dados = await detalharTitulos({ ...base, natureza, dimensao, valor: params.valor ?? null });
   } else if (params.fonte === "perda" && ehComponenteDePerda(params.parte)) {
-    dados = await detalharPerdas({ ...base, periodo: periodoDasPerdas, componente: params.parte });
+    dados = await detalharPerdas({ ...base, periodo: periodoDasPerdas, componente: params.parte, recorte, nomeDaConta });
   } else if (params.fonte === "caixa" && params.conta) {
     // `conexaoId:codigo` — o código da conta é único por conexão, não no grupo.
     const corte = params.conta.indexOf(":");
@@ -128,6 +141,9 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
         <form method="get" className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
           <input type="hidden" name="fonte" value="perda" />
           {params.empresa && <input type="hidden" name="empresa" value={params.empresa} />}
+          {/* O recorte de uma origem continua ao mudar o período; "ver todos" o tira. */}
+          {params.parceiro !== undefined && <input type="hidden" name="parceiro" value={params.parceiro} />}
+          {recorte.conta && <input type="hidden" name="conta" value={recorte.conta} />}
           <div>
             <label className="block text-xs font-medium text-slate-600">O quê</label>
             <select name="parte" defaultValue={params.parte} className={`${inputClass} w-56`}>

@@ -5,6 +5,7 @@ import { temColuna } from "./esquema";
 import { competenciaSql } from "./competencia";
 import { filtroConexaoBaixa, filtroConexaoTitulo } from "./escopoSql";
 import { codigosDoTipoDocumento } from "./composicao";
+import { filtroDeParceiroSql } from "./vazamentos";
 import type { Periodo } from "./periodos";
 
 // DETALHAMENTO — do total do painel até a linha que o compõe.
@@ -235,14 +236,41 @@ export function ehComponenteDePerda(valor: string | undefined | null): valor is 
   return valor === "juros" || valor === "multa" || valor === "tarifa" || valor === "desconto";
 }
 
+// O RECORTE DE UMA ORIGEM (vazamentos.ts): só um fornecedor ou cliente (pelo
+// nome do título; vazio = sem nome) ou só uma conta corrente
+// ("conexaoId:codigo"; código vazio = baixa sem conta). Ausentes, a lista é a
+// do componente inteiro, como sempre foi.
+export type RecorteDaPerda = { parceiro?: string | null; conta?: string | null };
+
+function filtroDoRecorte(recorte: RecorteDaPerda) {
+  const partes = [filtroDeParceiroSql(recorte.parceiro)];
+  if (recorte.conta) {
+    const corte = recorte.conta.indexOf(":");
+    const conexao = corte > 0 ? recorte.conta.slice(0, corte) : recorte.conta;
+    const codigo = corte > 0 ? recorte.conta.slice(corte + 1) : "";
+    partes.push(Prisma.sql`AND b."conexaoId" = ${conexao}`);
+    partes.push(codigo ? Prisma.sql`AND b."contaCorrenteCodigo" = ${codigo}` : Prisma.sql`AND (b."contaCorrenteCodigo" IS NULL OR b."contaCorrenteCodigo" = '')`);
+  }
+  return Prisma.join(partes, " ");
+}
+
+function rotuloDoRecorte(recorte: RecorteDaPerda, nomeDaConta?: string | null): string {
+  if (recorte.parceiro !== undefined && recorte.parceiro !== null) return ` · ${recorte.parceiro || "sem nome no título"}`;
+  if (recorte.conta) return ` · ${nomeDaConta ?? "conta não identificada"}`;
+  return "";
+}
+
 export async function detalharPerdas(params: {
   companyId: string;
   conexaoId?: string | null;
   periodo: Periodo;
   componente: ComponenteDePerda;
   limite?: number;
+  recorte?: RecorteDaPerda;
+  nomeDaConta?: string | null;
 }): Promise<Detalhamento> {
   const { companyId, conexaoId, periodo, componente, limite = LIMITE_PADRAO } = params;
+  const recorte = params.recorte ?? {};
   const { campo, natureza, rotulo } = COMPONENTES[componente];
 
   // `Prisma.raw` com valor de fora só é seguro porque `campo` vem da tabela
@@ -271,6 +299,7 @@ export async function detalharPerdas(params: {
        AND ${coluna} <> 0
        ${filtroNatureza}
        ${filtroEmpresa}
+       ${filtroDoRecorte(recorte)}
      ORDER BY ${coluna} DESC
      LIMIT ${limite}
   `;
@@ -285,8 +314,8 @@ export async function detalharPerdas(params: {
   return montar(
     linhas,
     {
-      titulo: `${rotulo} — ${periodo.rotulo}`,
-      criterio: `Baixa com data em ${periodo.rotulo} e ${rotulo.toLowerCase()} diferente de zero, ${deQuem}.`,
+      titulo: `${rotulo}${rotuloDoRecorte(recorte, params.nomeDaConta)} — ${periodo.rotulo}`,
+      criterio: `Baixa com data em ${periodo.rotulo} e ${rotulo.toLowerCase()} diferente de zero, ${deQuem}${recorte.conta ? ", só desta conta corrente" : recorte.parceiro !== undefined && recorte.parceiro !== null ? ", só deste parceiro" : ""}.`,
       rotuloData: "Data da baixa",
       rotuloValor: rotulo,
     },
@@ -308,8 +337,10 @@ export async function detalharJurosEMulta(params: {
   conexaoId?: string | null;
   periodo: Periodo;
   limite?: number;
+  recorte?: RecorteDaPerda;
 }): Promise<Detalhamento> {
   const { companyId, conexaoId, periodo, limite = LIMITE_JUROS_E_MULTA } = params;
+  const recorte = { parceiro: params.recorte?.parceiro };
   const linhas = await prisma.$queryRaw<LinhaJurosMulta[]>`
     SELECT b.id,
            b."dataBaixa" AS data,
@@ -332,13 +363,14 @@ export async function detalharJurosEMulta(params: {
        AND (b."jurosCents" <> 0 OR b."multaCents" <> 0)
        AND t.natureza::text = 'PAGAR'
        ${filtroConexaoBaixa(conexaoId, companyId)}
+       ${filtroDoRecorte(recorte)}
      ORDER BY (b."jurosCents" + b."multaCents") DESC, b."dataBaixa" ASC
      LIMIT ${limite}
   `;
   const base = montar(
     linhas,
     {
-      titulo: `Juros e multa por atraso — ${periodo.rotulo}`,
+      titulo: `Juros e multa por atraso${rotuloDoRecorte(recorte)} — ${periodo.rotulo}`,
       criterio: `Baixas de títulos A PAGAR com data de ${periodo.rotulo} e juros ou multa diferente de zero: o que a empresa pagou a mais por atraso.`,
       rotuloData: "Data da baixa",
       rotuloValor: "Juros + multa",
