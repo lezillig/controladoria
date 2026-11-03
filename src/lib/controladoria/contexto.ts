@@ -8,6 +8,8 @@ import {
   disponibilidadeGestaoDesde,
   marcadorDeFalhasDaGestao,
   lerAbastecimentos,
+  lerKmPorVeiculo,
+  lerPatrimonioDaFrota,
   lerClientes,
   lerEscalas,
   lerMotoristas,
@@ -19,7 +21,7 @@ import {
 } from "@/lib/gestao/leitura";
 import { carregarConformidade } from "@/lib/conformidade/panorama";
 import type { ContextoAuditoria } from "./types";
-import { fimDoDia, inicioDoAno, inicioDoDia, inicioDoMes, somarDias } from "./periodos";
+import { fimDoDia, inicioDoAno, inicioDoDia, inicioDoMes, somarDias, ultimoMesFechado } from "./periodos";
 import { raizesDoGrupo } from "./intercompany";
 
 // Data a partir da qual a base histórica é carregada.
@@ -142,6 +144,8 @@ export async function carregarContexto(
     movimentoAntesDoCorte,
     conexoesDoGrupo,
     saldosInformados,
+    patrimonioDaFrota,
+    kmDoMesFechado,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -284,6 +288,15 @@ export async function carregarContexto(
     // O saldo do banco digitado na conciliação: é ele que o "saldo em caixa"
     // usa quando existe (ver saldosConsideradosDoContexto).
     prisma.saldoBancarioInformado.findMany({ where: escopo, orderBy: { data: "desc" } }),
+    // O VEÍCULO PARADO QUE CONTINUA CUSTANDO (agents/rentabilidade.ts): a
+    // venda e a parcela de cada veículo, e os km do último mês fechado (Ituran
+    // ou check-in). Leituras opcionais: sem a permissão, vêm vazias e a regra
+    // se cala.
+    lerPatrimonioDaFrota(companyId),
+    (() => {
+      const mes = ultimoMesFechado(dataReferencia);
+      return lerKmPorVeiculo(companyId, mes.inicio, mes.fim);
+    })(),
   ]);
 
   // As colisões de código entre as contas (chaveCategoria.ts), sobre TODAS as
@@ -336,6 +349,16 @@ export async function carregarContexto(
     precosAnp,
     contaHistorico,
     versoesDeTitulo,
+    frota: {
+      vendaPorVeiculo: new Map(patrimonioDaFrota.veiculos.filter((v) => v.dataVenda).map((v) => [v.id, v.dataVenda as Date])),
+      // Só o financiamento ainda correndo: quitado ou com o prazo vencido não
+      // é parcela do mês.
+      parcelaPorVeiculo: patrimonioDaFrota.financiamentos.reduce((m, f) => {
+        if (f.quitado || !f.parcelaCents || (f.dataFinal && f.dataFinal < ultimoMesFechado(dataReferencia).inicio)) return m;
+        return m.set(f.vehicleId, (m.get(f.vehicleId) ?? 0) + Number(f.parcelaCents));
+      }, new Map<string, number>()),
+      kmDoMesFechado,
+    },
     // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
     // leitura (ver src/lib/gestao/leitura.ts), então só faz sentido consultá-la
     // quando as quatro já rodaram — e desde o marcador, para uma falha não ser

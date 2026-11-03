@@ -1,6 +1,6 @@
-import { fmtBRL, fmtPercent } from "../format";
-import { ultimoMesFechado, type Periodo } from "../periodos";
-import { custoPorVeiculo, rentabilidadePorContrato } from "../unitEconomics";
+import { fmtBRL, fmtData, fmtPercent } from "../format";
+import { dentro, ultimoMesFechado, type Periodo } from "../periodos";
+import { custoPorVeiculo, rentabilidadePorContrato, type LinhaCusto, type ResultadoRateio } from "../unitEconomics";
 import type { AchadoNovo, Agente, ContextoAuditoria } from "../types";
 import { chaveAchado, chaveMes, materialidadeCents, mediana, severidadePorValor } from "./comum";
 
@@ -20,7 +20,7 @@ export const agenteRentabilidade: Agente = {
   nome: "Rentabilidade por contrato",
   area: "Controladoria",
   descricao:
-    "Apura custo e receita por contrato, veículo e funcionário a partir do de-para de centro de custo, aponta contratos com margem negativa ou abaixo da meta, veículos com custo fora do padrão da frota e mede a cobertura do rateio.",
+    "Apura custo e receita por contrato, veículo e funcionário a partir do de-para de centro de custo, aponta contratos com margem negativa ou abaixo da meta, veículos com custo fora do padrão da frota, veículo parado ou já fora da frota que continua custando, e mede a cobertura do rateio.",
   executar: auditarRentabilidade,
 };
 
@@ -167,5 +167,105 @@ function auditarRentabilidade(ctx: ContextoAuditoria): AchadoNovo[] {
     }
   }
 
+  achados.push(...veiculoParadoComCusto(ctx, periodo, porVeiculo, materialidade));
+
+  return achados;
+}
+
+// O VEÍCULO QUE NÃO RODA E CONTINUA CUSTANDO — o custo escondido clássico da
+// frota. Dois casos, no último mês fechado:
+//
+//   RE-VEICULO-INATIVO-COM-CUSTO  fora da frota (INATIVO na gestão: vendido,
+//                                 baixado, sinistro) e com seguro, rastreador,
+//                                 IPVA ou parcela ainda saindo
+//   RE-VEICULO-OCIOSO             ATIVO na gestão, sem um km na Ituran nem no
+//                                 check-in, sem abastecimento, e custando
+//
+// O custo é o que a Omie já liga ao veículo (de-para, placa no centro de custo
+// ou no documento — unitEconomics.ts) mais a parcela do financiamento ou
+// consórcio ainda correndo (gestão). Os dois não se sobrepõem: o rateio por
+// veículo deixa financiamento fora do custo.
+//
+// Em manutenção, em preparação ou à venda, parado é o esperado: fica de fora.
+// E a regra de ocioso só fala quando a frota tem rastro no mês — se menos da
+// metade dos veículos ativos tem km ou abastecimento, o que falta é a
+// importação da Ituran, não o uso, e acusar a frota inteira seria ruído.
+const FRACAO_MINIMA_COM_RASTRO = 0.5;
+
+export function veiculoParadoComCusto(ctx: ContextoAuditoria, periodo: Periodo, porVeiculo: ResultadoRateio<LinhaCusto>, materialidade: number): AchadoNovo[] {
+  const frota = ctx.frota;
+  if (!frota) return [];
+  const achados: AchadoNovo[] = [];
+  const custoOmie = new Map(porVeiculo.linhas.map((l) => [l.id, l]));
+  // Abaixo disto não vale a conversa: uma tarifa de rastreador perdida.
+  const piso = Math.max(100_00, Math.round(materialidade / 20));
+
+  const comRastro = new Set<string>();
+  for (const [id, km] of frota.kmDoMesFechado) if (km.km > 0) comRastro.add(id);
+  for (const a of ctx.abastecimentos) if (a.vehicleId && dentro(a.dataHora, periodo)) comRastro.add(a.vehicleId);
+  for (const u of ctx.usosDeVeiculo ?? []) if (dentro(u.checkInAt, periodo)) comRastro.add(u.vehicleId);
+
+  const ativos = ctx.veiculos.filter((v) => v.status === "ATIVO" && !frota.vendaPorVeiculo.has(v.id));
+  const rastroSuficiente = ativos.length > 0 && ativos.filter((v) => comRastro.has(v.id)).length >= ativos.length * FRACAO_MINIMA_COM_RASTRO;
+
+  for (const v of ctx.veiculos) {
+    const venda = frota.vendaPorVeiculo.get(v.id) ?? null;
+    // Vendido no próprio mês: o custo até a venda é legítimo.
+    if (venda && venda >= periodo.inicio) continue;
+    const foraDaFrota = v.status === "INATIVO" || venda !== null;
+    const ocioso = !foraDaFrota && v.status === "ATIVO" && rastroSuficiente && !comRastro.has(v.id);
+    if (!foraDaFrota && !ocioso) continue;
+
+    const omie = custoOmie.get(v.id);
+    // O cartão de frota é uso, não custo de parado: se abasteceu, rodou — e
+    // no fora da frota, abastecimento é outro achado (frota.ts).
+    const origensSemCartao = (omie?.origens ?? []).filter((o) => o !== "cartao-frota");
+    // O rateio soma o cartão junto; aqui ele sai da conta.
+    const combustivel = ctx.abastecimentos.filter((a) => a.vehicleId === v.id && dentro(a.dataHora, periodo)).reduce((s2, a) => s2 + a.valorCents, 0);
+    const custoOmieCents = omie ? Math.max(0, omie.custoCents - combustivel) : 0;
+    const parcela = frota.parcelaPorVeiculo.get(v.id) ?? 0;
+    const custo = custoOmieCents + parcela;
+    if (custo < piso) continue;
+
+    const regra = foraDaFrota ? "RE-VEICULO-INATIVO-COM-CUSTO" : "RE-VEICULO-OCIOSO";
+    const partes = [
+      custoOmieCents > 0 ? `${fmtBRL(custoOmieCents)} em títulos da Omie ligados à placa (${origensSemCartao.join(", ") || "rateio"})` : null,
+      parcela > 0 ? `${fmtBRL(parcela)} de parcela de financiamento ou consórcio ainda correndo` : null,
+    ].filter(Boolean);
+    achados.push({
+      regra,
+      tipo: "EVENTO",
+      // Fora da frota, no mínimo média: não há uso que justifique o custo.
+      severidade: foraDaFrota && severidadePorValor(custo, materialidade) === "BAIXA" ? "MEDIA" : severidadePorValor(custo, materialidade),
+      categoria: foraDaFrota ? "PERDA_FINANCEIRA" : "OPORTUNIDADE",
+      titulo: foraDaFrota
+        ? `Veículo ${v.plate} fora da frota${venda ? ` (vendido em ${fmtData(venda)})` : ""} custou ${fmtBRL(custo)} em ${periodo.rotulo}`
+        : `Veículo ${v.plate} ficou parado em ${periodo.rotulo} e custou ${fmtBRL(custo)}`,
+      descricao: foraDaFrota
+        ? `O veículo está ${venda ? `vendido desde ${fmtData(venda)}` : "como inativo na gestão (vendido, baixado ou sinistro)"} e no mês ainda saiu: ${partes.join("; ")}. ` +
+          "Seguro, rastreador, IPVA e parcela de veículo que não é mais da frota é dinheiro saindo sem retorno — e, se foi vendido, parte disso é do comprador."
+        : `Ativo na gestão, mas sem nenhum km na Ituran ou no check-in e sem abastecimento no mês — e custou ${partes.join("; ")}. ` +
+          `A frota teve rastro no mês (${comRastro.size} veículo(s) com km ou abastecimento), então não é falta de dado: o veículo não rodou.`,
+      recomendacao: foraDaFrota
+        ? "Cancelar seguro e rastreador do veículo e conferir a transferência e o IPVA com o comprador; se é consórcio ou financiamento, confirmar a quitação ou a transferência. Pedir de volta o que foi pago depois da venda."
+        : "Realocar o veículo num contrato, colocá-lo à venda ou devolver; se está parado esperando oficina, mudar o status na gestão para MANUTENÇÃO, para a frota mostrar o que de fato está disponível.",
+      valorCents: custo,
+      dataReferencia: periodo.fim,
+      entidadeTipo: "Vehicle",
+      entidadeId: v.id,
+      entidadeRef: v.plate,
+      evidencia: {
+        placa: v.plate,
+        situacaoNaGestao: v.status,
+        vendidoEm: venda ? fmtData(venda) : "—",
+        custoNaOmie: custoOmieCents,
+        origensDoCusto: origensSemCartao,
+        parcelaDoFinanciamento: parcela,
+        kmNoMes: frota.kmDoMesFechado.get(v.id)?.km ?? 0,
+        mes: periodo.rotulo,
+      },
+      chave: chaveAchado(regra, v.id, chaveMes(periodo.inicio)),
+    });
+  }
   return achados;
 }

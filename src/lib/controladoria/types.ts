@@ -32,6 +32,7 @@ import type {
   VeiculoGestao,
   PontoGestao,
   AfastamentoGestao,
+  KmDoVeiculo,
 } from "@/lib/gestao/leitura";
 import type { DadosConformidade } from "@/lib/conformidade/panorama";
 
@@ -151,6 +152,14 @@ export type ContextoAuditoria = {
   // espelhados. Opcionais pelo mesmo motivo dos demais.
   contaHistorico?: OmieParceiroContaHistorico[];
   versoesDeTitulo?: OmieTituloVersao[];
+  // O patrimônio e o uso da frota (gestão): venda e parcela por veículo, km
+  // do último mês fechado. Opcional como as leituras acima: ausente ou vazio,
+  // a regra de veículo parado com custo se cala.
+  frota?: {
+    vendaPorVeiculo: Map<string, Date>;
+    parcelaPorVeiculo: Map<string, number>;
+    kmDoMesFechado: Map<string, KmDoVeiculo>;
+  };
   // Ponto e afastamento: só o agente de pessoal (agents/pessoal.ts) os lê,
   // pelo mesmo contrato — ausentes ou vazios, as regras ficam caladas.
   pontos?: PontoGestao[];
