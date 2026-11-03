@@ -4,7 +4,7 @@ import { fonteDoSaldo } from "@/lib/controladoria/saldosDasContas";
 import { HORIZONTES_DIAS, calcularCiclo, horizonteValido, projetarFluxoCaixa } from "@/lib/controladoria/agents/fluxoCaixa";
 import { diasDeAtraso, emAberto, saldoAberto, somar, titulosAtivos } from "@/lib/controladoria/agents/comum";
 import { somarDias } from "@/lib/controladoria/periodos";
-import { preverRecebimentosDoContexto } from "@/lib/controladoria/previsaoCaixa";
+import { preverRecebimentosDoContexto, quemCobrarAntes, semanasDeCaixa } from "@/lib/controladoria/previsaoCaixa";
 import { carregarHistoricoDeClientes } from "@/lib/controladoria/previsaoHistorico";
 import { competenciasDisponiveis, contextoDaPagina } from "../_dados";
 import { Kpi, Secao, Tabela } from "../_componentes";
@@ -32,6 +32,7 @@ export default async function FluxoCaixaPage({
   const previsao = preverRecebimentosDoContexto(ctx, await carregarHistoricoDeClientes(ctx));
   const clientesPeloHistorico = previsao.clientes.filter((c) => c.origem === "historico").length;
   const realistaPorDias = new Map(previsao.porHorizonte.map((p) => [p.dias, p.realistaCents]));
+  const pessimistaPorDias = new Map(previsao.porHorizonte.map((p) => [p.dias, p.pessimistaCents]));
   const previsto30 = realistaPorDias.get(30) ?? 0;
   const contratual30 = previsao.porHorizonte.find((p) => p.dias === 30)?.contratualCents ?? 0;
 
@@ -60,6 +61,23 @@ export default async function FluxoCaixaPage({
   }).filter((d) => d.entradas > 0 || d.saidas > 0);
 
   const ruptura = projecao.find((p) => p.saldoProjetadoCents < 0);
+  // O CENÁRIO PESSIMISTA semana a semana (13 semanas ≈ 90 dias): cada
+  // cliente no pior dia dele, as saídas pelo vencimento. A semana de menor
+  // saldo é onde o caixa aperta; quem cobrar antes é quem, pagando no dia de
+  // costume, tira a semana do aperto.
+  const pessimista = semanasDeCaixa({
+    saldoCents: saldo,
+    referencia: ctx.dataReferencia,
+    saidas: pagarAberto.map((t) => ({ data: t.dataVencimento, valorCents: saldoAberto(t) })),
+    entradas: previsao.previstos.map((p) => ({ data: p.dataPessimista, valorCents: p.saldoCents })),
+  });
+  const aperto = pessimista.aperto;
+  // A semana que importa primeiro é a PRIMEIRA negativa (é até ela que dá
+  // para agir); sem nenhuma negativa, a de menor saldo. A de menor saldo
+  // aparece junto quando é outra.
+  const primeiraNegativa = pessimista.semanas.find((w) => w.saldoCents < 0) ?? null;
+  const alvo = primeiraNegativa ?? aperto;
+  const cobrarAntes = alvo ? quemCobrarAntes(previsao.previstos, alvo.fim) : [];
   // O drill-down dos cartões de títulos: a lista de contas a pagar e receber,
   // com a mesma empresa e competência desta tela.
   const recorte = new URLSearchParams();
@@ -154,20 +172,24 @@ export default async function FluxoCaixaPage({
         titulo="Projeção por horizonte"
         descricao={
           "Contratual: cada recebível entra no vencimento. Realista: cada cliente entra quando costuma pagar, pelo histórico dele, " +
-          `e o vencido além do padrão fica de fora (${fmtBRL(previsao.incertoTotalCents)} hoje). A diferença entre as duas colunas é o otimismo embutido na primeira.`
+          `e o vencido além do padrão fica de fora (${fmtBRL(previsao.incertoTotalCents)} hoje). A diferença entre as duas colunas é o otimismo embutido na primeira. ` +
+          "Pessimista: os mesmos recebíveis da realista, cada cliente no pior dia dele."
         }
       >
         <Tabela
-          colunas={["Horizonte", "Data", "Entradas contratuais", "Entradas realistas", "Saídas previstas", "Saldo contratual", "Saldo realista"]}
-          alinharDireita={[2, 3, 4, 5, 6]}
+          colunas={["Horizonte", "Data", "Entradas contratuais", "Entradas realistas", "Entradas pessimistas", "Saídas previstas", "Saldo contratual", "Saldo realista", "Saldo pessimista"]}
+          alinharDireita={[2, 3, 4, 5, 6, 7, 8]}
           linhas={projecao.map((p) => {
             const realista = realistaPorDias.get(p.dias) ?? 0;
             const saldoRealista = saldo + realista - p.saidasCents;
+            const pess = pessimistaPorDias.get(p.dias) ?? 0;
+            const saldoPessimista = saldo + pess - p.saidasCents;
             return [
               `${p.dias} dias`,
               fmtData(p.data),
               fmtBRL(p.entradasCents),
               fmtBRL(realista),
+              fmtBRL(pess),
               fmtBRL(p.saidasCents),
               <span key="s" className={`font-semibold ${p.saldoProjetadoCents < 0 ? "text-red-700" : "text-emerald-700"}`}>
                 {fmtBRL(p.saldoProjetadoCents)}
@@ -175,8 +197,86 @@ export default async function FluxoCaixaPage({
               <span key="r" className={`font-semibold ${saldoRealista < 0 ? "text-red-700" : "text-emerald-700"}`}>
                 {fmtBRL(saldoRealista)}
               </span>,
+              <span key="p" className={`font-semibold ${saldoPessimista < 0 ? "text-red-700" : "text-emerald-700"}`}>
+                {fmtBRL(saldoPessimista)}
+              </span>,
             ];
           })}
+        />
+      </Secao>
+
+      {aperto && alvo && (
+        <Secao
+          id="aperto"
+          titulo={
+            primeiraNegativa
+              ? `No pessimista, o caixa fica negativo na semana de ${fmtData(primeiraNegativa.inicio)} a ${fmtData(primeiraNegativa.fim)}`
+              : `No pessimista, o caixa aperta na semana de ${fmtData(aperto.inicio)} a ${fmtData(aperto.fim)}`
+          }
+          descricao={`Pessimista: cada cliente paga no pior dia dele — o atraso que ele só passou em um de cada dez pagamentos (sem histórico próprio, ${fmtNumero(previsao.atrasoPadraoPessimistaDias)} dias, o do conjunto). As saídas são as mesmas das outras colunas. ${primeiraNegativa ? "É a primeira semana com saldo negativo nos próximos 90 dias." : "É a semana de menor saldo dos próximos 90 dias."}`}
+        >
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className={`rounded-lg border p-4 ${alvo.saldoCents < 0 ? "border-red-200 bg-red-50" : "border-amber-200 bg-amber-50"}`}>
+              <p className="text-xs text-slate-600">Saldo no fim da semana</p>
+              <p className={`text-2xl font-semibold ${alvo.saldoCents < 0 ? "text-red-700" : "text-slate-900"}`}>{fmtBRL(alvo.saldoCents)}</p>
+              <p className="mt-2 text-xs text-slate-600">
+                = saldo de hoje {fmtBRL(saldo)} + entradas pessimistas até {fmtData(alvo.fim)} {fmtBRL(alvo.entradasCents)} − saídas até lá {fmtBRL(alvo.saidasCents)}
+              </p>
+              {aperto !== alvo && (
+                <p className="mt-2 text-xs font-medium text-red-800">
+                  O ponto mais baixo vem depois: {fmtBRL(aperto.saldoCents)} na semana de {fmtData(aperto.inicio)} a {fmtData(aperto.fim)}.
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs font-medium text-slate-700">O que fazer antes dessa semana</p>
+              {cobrarAntes.length > 0 ? (
+                <>
+                  <p className="mt-1 text-xs text-slate-600">
+                    Cobrar antes, de quem no dia de costume pagaria até lá e no pior dia fica para depois. Se estes pagarem como costumam, entram{" "}
+                    {fmtBRL(cobrarAntes.reduce((s2, c2) => s2 + c2.valorCents, 0))} antes dessa semana:
+                  </p>
+                  <ul className="mt-1 space-y-0.5 text-xs">
+                    {cobrarAntes.map((c2) => (
+                      <li key={c2.cliente} className="flex justify-between gap-3">
+                        <span className="text-slate-700">{c2.cliente}</span>
+                        <span className="tabular-nums text-slate-900">{fmtBRL(c2.valorCents)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : (
+                <p className="mt-1 text-xs text-slate-600">Nenhum recebível muda de semana entre o dia de costume e o pior dia: o aperto vem das saídas.</p>
+              )}
+              <p className="mt-2 text-xs text-slate-600">
+                {alvo.saldoCents < 0
+                  ? "Depois: renegociar o vencimento dos maiores pagamentos dessa semana; só então comparar antecipação de recebíveis com capital de giro, pelo custo efetivo."
+                  : "Mesmo no pior dia de cada cliente o saldo fica positivo: a folga é esse valor."}
+              </p>
+            </div>
+          </div>
+        </Secao>
+      )}
+
+      <Secao
+        titulo="Projeção semanal"
+        descricao="O mesmo cenário pessimista, semana a semana: saldo de hoje mais as entradas pessimistas acumuladas, menos as saídas acumuladas."
+      >
+        <Tabela
+          colunas={["Semana", "Entradas até lá", "Saídas até lá", "Saldo pessimista"]}
+          alinharDireita={[1, 2, 3]}
+          linhas={pessimista.semanas.map((w) => [
+            <span key="w" className={w === aperto || w === primeiraNegativa ? "font-semibold" : ""}>
+              {fmtData(w.inicio)} a {fmtData(w.fim)}
+              {w === primeiraNegativa ? " · fica negativo" : ""}
+              {w === aperto ? " · menor saldo" : ""}
+            </span>,
+            fmtBRL(w.entradasCents),
+            fmtBRL(w.saidasCents),
+            <span key="s" className={`font-semibold ${w.saldoCents < 0 ? "text-red-700" : "text-emerald-700"}`}>
+              {fmtBRL(w.saldoCents)}
+            </span>,
+          ])}
         />
       </Secao>
 

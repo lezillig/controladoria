@@ -6,9 +6,13 @@
 // produz o pior tipo de número — uma previsão de caixa que parece precisa.
 import {
   atrasoGlobal,
+  atrasoPessimistaGlobal,
   comportamentoPorCliente,
   MINIMO_DE_AMOSTRA,
+  percentil,
   preverRecebimentos,
+  quemCobrarAntes,
+  semanasDeCaixa,
   type BaixaParaPrevisao,
   type TituloParaPrevisao,
 } from "../src/lib/controladoria/previsaoCaixa";
@@ -130,6 +134,44 @@ console.log("\n3. Contratual × realista por horizonte");
   const h90 = prev.porHorizonte.find((p) => p.dias === 90)!;
   conferir("realista 90d = 14.000 (sem os 9.000 incertos)", h90.realistaCents, 14_000);
   conferir("incerto total 9.000", prev.incertoTotalCents, 9_000);
+}
+
+console.log("\n3b. Pessimista: cada cliente no pior dia dele (p90 das baixas)");
+{
+  conferir("p90 pelo posto mais próximo", [percentil([59, 60, 60, 91], 0.9), percentil([0, 1, 0], 0.9), percentil([], 0.9)], [91, 1, 0]);
+  conferir("prefeitura: pior dia 91; corporativo: 1", [porNome("PREFEITURA").atrasoPessimistaDias, porNome("CORPORATIVO").atrasoPessimistaDias], [91, 1]);
+  conferir("conjunto: mediana dos piores dias (46), nunca abaixo do típico (30)", atrasoPessimistaGlobal(comp), 46);
+  const h = (dias: number) => prev.porHorizonte.find((p) => p.dias === dias)!.pessimistaCents;
+  // Prefeitura 10.000 vai de 22/10 para 22/11; o novo, de 17/10 para 02/11; o
+  // corporativo, de 22/09 para 23/09. O incerto continua fora.
+  conferir("pessimista por horizonte (7, 30, 45, 90)", [h(7), h(30), h(45), h(90)], [0, 3_000, 3_000, 14_000]);
+  conferir(
+    "contratual ≥ realista ≥ pessimista em todo horizonte",
+    prev.porHorizonte.every((p) => p.pessimistaCents <= p.realistaCents),
+    true
+  );
+  conferir(
+    "quem cobrar antes de 45 dias: o que no dia de costume entraria e no pior dia fica para depois",
+    quemCobrarAntes(prev.previstos, new Date(2026, 9, 27)),
+    [
+      { cliente: "PREFEITURA", valorCents: 10_000 },
+      { cliente: "NOVO", valorCents: 1_000 },
+    ]
+  );
+  const entradas = prev.previstos.map((p) => ({ data: p.dataPessimista, valorCents: p.saldoCents }));
+  const s = semanasDeCaixa({
+    saldoCents: 5_000,
+    referencia: HOJE,
+    saidas: [
+      { data: d("15/09/2026"), valorCents: 4_000 },
+      { data: d("02/09/2026"), valorCents: 2_000 }, // vencido: sai na primeira semana
+    ],
+    entradas,
+  });
+  conferir("13 semanas", s.semanas.length, 13);
+  conferir("primeira semana: 5.000 − 6.000 = −1.000", [s.semanas[0].saldoCents, s.semanas[0].fim.getDate()], [-1_000, 19]);
+  conferir("segunda: entra o corporativo (23/09)", s.semanas[1].saldoCents, 2_000);
+  conferir("o aperto é a semana de menor saldo", s.aperto?.saldoCents, -1_000);
 }
 
 console.log("\n4. Bordas");

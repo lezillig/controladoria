@@ -20,8 +20,12 @@ import type { ContextoAuditoria } from "./types";
 // previsão: entra numa coluna própria, "incerto", porque é o dinheiro que
 // precisa de cobrança, não de espera.
 //
-// Duas leituras lado a lado, contratual e realista, e a diferença entre elas
-// é o tamanho do otimismo embutido na primeira.
+// Três leituras lado a lado: contratual, realista e PESSIMISTA. A diferença
+// entre as duas primeiras é o otimismo embutido na contratual. A pessimista é
+// a realista no pior dia de cada cliente: o atraso que ele só ultrapassou em
+// um de cada dez pagamentos (percentil 90 das baixas dele). Não é chute de
+// cenário ("e se cair 20%?"): é o pior comportamento que o próprio cliente
+// já teve, e por isso dá para cobrar dele.
 
 // Menos baixas que isto e o cliente não tem padrão próprio: usa-se o do
 // conjunto, e a tela diz que usou.
@@ -46,6 +50,10 @@ export type ComportamentoCliente = {
   nome: string;
   amostra: number;
   atrasoMedianoDias: number;
+  // O atraso do pior dia: percentil 90 das baixas dele. Nulo quando o padrão
+  // veio do resumo mensal, que guarda a soma dos dias e não a distribuição —
+  // aí vale o do conjunto (atrasoPessimistaGlobal), se for maior.
+  atrasoPessimistaDias: number | null;
   // Nulo quando o padrão veio do resumo mensal (que guarda a soma dos dias,
   // não baixa a baixa) — a média de atraso existe, a pontualidade não.
   pontualidadePercent: number | null;
@@ -95,6 +103,7 @@ export function comportamentoPorCliente(
       nome,
       amostra: atrasos.length,
       atrasoMedianoDias: mediana(atrasos),
+      atrasoPessimistaDias: percentil(atrasos, 0.9),
       pontualidadePercent: (atrasos.filter((a) => a <= TOLERANCIA_PONTUAL_DIAS).length / atrasos.length) * 100,
       origem: "baixas",
     });
@@ -110,6 +119,7 @@ export function comportamentoPorCliente(
       nome: atual?.nome ?? h.nome?.trim() ?? "(cliente não identificado)",
       amostra: h.baixas,
       atrasoMedianoDias: media,
+      atrasoPessimistaDias: null,
       pontualidadePercent: null,
       origem: "historico",
     });
@@ -120,6 +130,23 @@ export function comportamentoPorCliente(
 // O atraso típico do conjunto, para cliente sem amostra própria: mediana dos
 // atrasos medianos, ponderando cada cliente uma vez — um cliente com mil
 // baixas não pode decidir sozinho o padrão dos outros.
+// Percentil pelo posto mais próximo (o valor que existe na amostra, sem
+// interpolar): com dez baixas, o p90 é a nona mais atrasada.
+export function percentil(valores: number[], p: number): number {
+  if (valores.length === 0) return 0;
+  const ordenado = [...valores].sort((a, b) => a - b);
+  return ordenado[Math.min(ordenado.length - 1, Math.max(0, Math.ceil(p * ordenado.length) - 1))];
+}
+
+// O pior dia do conjunto, para cliente sem distribuição própria: mediana dos
+// p90 dos clientes com amostra. Nunca abaixo do atraso típico do conjunto.
+export function atrasoPessimistaGlobal(comportamentos: Map<string, ComportamentoCliente>): number {
+  const valores = [...comportamentos.values()]
+    .filter((c) => c.amostra >= MINIMO_DE_AMOSTRA && c.atrasoPessimistaDias !== null)
+    .map((c) => c.atrasoPessimistaDias as number);
+  return Math.max(atrasoGlobal(comportamentos), valores.length > 0 ? Math.max(0, mediana(valores)) : 0);
+}
+
 export function atrasoGlobal(comportamentos: Map<string, ComportamentoCliente>): number {
   const valores = [...comportamentos.values()].filter((c) => c.amostra >= MINIMO_DE_AMOSTRA).map((c) => c.atrasoMedianoDias);
   return valores.length > 0 ? Math.max(0, mediana(valores)) : 0;
@@ -132,6 +159,11 @@ export type TituloPrevisto = {
   // data em que ele costumaria ter pago.
   dataPrevista: Date | null;
   atrasoUsadoDias: number;
+  // A data no pior dia do cliente (cenário pessimista). Nula quando a
+  // realista é nula: o pessimista só ATRASA o que a realista conta — nunca
+  // conta o que ela já deu por incerto, para os três cenários ficarem em
+  // ordem (contratual ≥ realista ≥ pessimista).
+  dataPessimista: Date | null;
   padraoProprio: boolean;
 };
 
@@ -139,7 +171,8 @@ export function preverTitulo(
   t: TituloParaPrevisao,
   comportamentos: Map<string, ComportamentoCliente>,
   atrasoPadraoDias: number,
-  referencia: Date
+  referencia: Date,
+  atrasoPadraoPessimistaDias: number = atrasoPadraoDias
 ): TituloPrevisto {
   const c = comportamentos.get(chaveParceiro(t));
   const padraoProprio = c !== undefined && c.amostra >= MINIMO_DE_AMOSTRA;
@@ -150,7 +183,12 @@ export function preverTitulo(
   // justamente o que a tela precisa apontar.
   const amanha = somarDias(referencia, 1);
   const dataPrevista = prevista >= amanha ? prevista : null;
-  return { titulo: t, saldoCents: saldoAberto(t), dataPrevista, atrasoUsadoDias: atraso, padraoProprio };
+  const atrasoPessimista = Math.max(
+    atraso,
+    padraoProprio ? (c.atrasoPessimistaDias ?? Math.max(c.atrasoMedianoDias, atrasoPadraoPessimistaDias)) : atrasoPadraoPessimistaDias
+  );
+  const dataPessimista = dataPrevista ? somarDias(t.dataVencimento, atrasoPessimista) : null;
+  return { titulo: t, saldoCents: saldoAberto(t), dataPrevista, atrasoUsadoDias: atraso, dataPessimista, padraoProprio };
 }
 
 export type PrevisaoCliente = {
@@ -176,6 +214,7 @@ export type PontoRealista = {
   dias: number;
   contratualCents: number;
   realistaCents: number;
+  pessimistaCents: number;
 };
 
 export type PrevisaoDeCaixa = {
@@ -184,6 +223,10 @@ export type PrevisaoDeCaixa = {
   atrasoPadraoDias: number;
   incertoTotalCents: number;
   clientesSemPadrao: number;
+  atrasoPadraoPessimistaDias: number;
+  // Título a título, com as duas datas: o que a semana de aperto e o "quem
+  // cobrar antes" usam.
+  previstos: { cliente: string; saldoCents: number; dataRealista: Date | null; dataPessimista: Date | null }[];
 };
 
 export function preverRecebimentos(params: {
@@ -196,9 +239,10 @@ export function preverRecebimentos(params: {
   const horizontes = params.horizontes ?? HORIZONTES_DIAS;
   const comportamentos = comportamentoPorCliente(params.titulos, params.baixas, params.historico);
   const atrasoPadraoDias = atrasoGlobal(comportamentos);
+  const atrasoPadraoPessimistaDias = atrasoPessimistaGlobal(comportamentos);
 
   const abertos = params.titulos.filter((t) => t.natureza === "RECEBER" && emAberto(t) && saldoAberto(t) > 0);
-  const previstos = abertos.map((t) => preverTitulo(t, comportamentos, atrasoPadraoDias, params.referencia));
+  const previstos = abertos.map((t) => preverTitulo(t, comportamentos, atrasoPadraoDias, params.referencia, atrasoPadraoPessimistaDias));
 
   const porCliente = new Map<string, PrevisaoCliente>();
   for (const p of previstos) {
@@ -242,7 +286,8 @@ export function preverRecebimentos(params: {
       .filter((t) => t.dataVencimento <= limite && t.dataVencimento >= params.referencia)
       .reduce((acc, t) => acc + saldoAberto(t), 0);
     const realista = clientes.reduce((acc, c) => acc + c.previstoPorHorizonte[dias], 0);
-    return { dias, contratualCents: contratual, realistaCents: realista };
+    const pessimista = previstos.filter((p) => p.dataPessimista !== null && p.dataPessimista <= limite).reduce((acc, p) => acc + p.saldoCents, 0);
+    return { dias, contratualCents: contratual, realistaCents: realista, pessimistaCents: pessimista };
   });
 
   return {
@@ -251,7 +296,54 @@ export function preverRecebimentos(params: {
     atrasoPadraoDias,
     incertoTotalCents: clientes.reduce((acc, c) => acc + c.incertoCents, 0),
     clientesSemPadrao: clientes.filter((c) => c.atrasoMedianoDias === null).length,
+    atrasoPadraoPessimistaDias,
+    previstos: previstos.map((p) => ({ cliente: nomeDe(p.titulo), saldoCents: p.saldoCents, dataRealista: p.dataPrevista, dataPessimista: p.dataPessimista })),
   };
+}
+
+// A SEMANA EM QUE O CAIXA APERTA, no cenário pessimista: o saldo de hoje,
+// mais o que entra até o fim de cada semana (pela data pessimista), menos o
+// que vence até lá (o vencido em aberto conta como saída já na primeira,
+// como na projeção contratual). A semana de menor saldo é o aperto — negativo
+// ou não, é onde olhar primeiro.
+export type SemanaDeCaixa = { inicio: Date; fim: Date; entradasCents: number; saidasCents: number; saldoCents: number };
+
+export function semanasDeCaixa(params: {
+  saldoCents: number;
+  referencia: Date;
+  saidas: { data: Date; valorCents: number }[];
+  entradas: { data: Date | null; valorCents: number }[];
+  semanas?: number;
+}): { semanas: SemanaDeCaixa[]; aperto: SemanaDeCaixa | null } {
+  const n = params.semanas ?? 13;
+  const semanas: SemanaDeCaixa[] = [];
+  for (let i = 0; i < n; i++) {
+    const inicio = somarDias(params.referencia, i * 7 + 1);
+    const fim = somarDias(params.referencia, (i + 1) * 7);
+    const limite = fim.getTime() + 86_399_999;
+    const entradasCents = params.entradas.filter((e) => e.data !== null && e.data.getTime() <= limite).reduce((s, e) => s + e.valorCents, 0);
+    const saidasCents = params.saidas.filter((e) => e.data.getTime() <= limite).reduce((s, e) => s + e.valorCents, 0);
+    semanas.push({ inicio, fim, entradasCents, saidasCents, saldoCents: params.saldoCents + entradasCents - saidasCents });
+  }
+  const aperto = semanas.reduce<SemanaDeCaixa | null>((m, s) => (!m || s.saldoCents < m.saldoCents ? s : m), null);
+  return { semanas, aperto };
+}
+
+// QUEM COBRAR ANTES: o que entraria até a data no dia de costume do cliente
+// e, no pior dia dele, fica para depois. Se esses clientes pagarem como
+// costumam, o aperto é o da realista.
+export function quemCobrarAntes(previstos: PrevisaoDeCaixa["previstos"], ate: Date, quantos = 3): { cliente: string; valorCents: number }[] {
+  const limite = ate.getTime() + 86_399_999;
+  const porCliente = new Map<string, number>();
+  for (const p of previstos) {
+    if (!p.dataRealista || p.dataRealista.getTime() > limite) continue;
+    if (p.dataPessimista && p.dataPessimista.getTime() <= limite) continue;
+    porCliente.set(p.cliente, (porCliente.get(p.cliente) ?? 0) + p.saldoCents);
+  }
+  return [...porCliente.entries()]
+    .map(([cliente, valorCents]) => ({ cliente, valorCents }))
+    .sort((a, b) => b.valorCents - a.valorCents || a.cliente.localeCompare(b.cliente))
+    .slice(0, quantos);
 }
 
 export function preverRecebimentosDoContexto(
