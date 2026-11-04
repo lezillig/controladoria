@@ -2,6 +2,7 @@ import { waitUntil } from "@vercel/functions";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { urlsCandidatasDoSistema } from "@/lib/appUrl";
+import { acionarCondutorGithub, condutorGithubConfigurado } from "./condutorGithub";
 
 // Disparo da próxima invocação do ciclo.
 //
@@ -72,6 +73,22 @@ async function registrarDesfecho(companyId: string | undefined, texto: string | 
   });
 }
 
+// RECUSADA A AUTOCHAMADA, A CONDUÇÃO VAI PARA O GITHUB.
+//
+// Em 04/11/2026 a Vercel passou a recusar a autochamada com 508 (laço) no
+// meio da carga, e o vigia agendado do GitHub, que devia retomar a cada 30
+// minutos, ficou mais de 12 horas sem disparar — a fila de agendamentos do
+// GitHub atrasa ou descarta. O acionamento direto (workflow_dispatch) não
+// espera fila: com GITHUB_DISPATCH_TOKEN, a rodada que não conseguiu chamar a
+// próxima entrega a carga ao condutor na hora. Sem o token, o texto diz o que
+// falta, na tela de sincronização.
+async function passarAoCondutor(data: string | null): Promise<string> {
+  if (!condutorGithubConfigurado())
+    return "Sem GITHUB_DISPATCH_TOKEN na Vercel, a carga espera o vigia do GitHub ou o botão Sincronizar agora.";
+  const r = await acionarCondutorGithub(data);
+  return r.ok ? "A condução passou para o GitHub Actions." : r.detalhe;
+}
+
 export function dispararProximaInvocacao(params?: {
   ciclo?: number;
   data?: string | null;
@@ -119,7 +136,7 @@ export function dispararProximaInvocacao(params?: {
           console.error(`[ciclo] ${texto}`);
           falhas.push(texto);
           if (!ultima) continue;
-          await registrarDesfecho(params?.companyId, falhas.join(" "));
+          await registrarDesfecho(params?.companyId, `${falhas.join(" ")} ${await passarAoCondutor(params?.data ?? null)}`);
           return;
         }
         if (r.status === 404 && !ultima) {
@@ -150,8 +167,10 @@ export function dispararProximaInvocacao(params?: {
             ? "A proteção de deploy da Vercel está barrando a chamada que o sistema faz a si mesmo. Em Settings → Deployment Protection, gere o Protection Bypass for Automation e cadastre o valor como VERCEL_AUTOMATION_BYPASS_SECRET — ou desligue a proteção para Production. (Se o bypass já existe, o CRON_SECRET é que está divergente.)"
             : r.status === 404
               ? `Nenhum endereço do sistema respondeu à rota do ciclo (${bases.join(", ")}). Confira se APP_URL aponta para o domínio de produção.`
-              : (corpo?.error ?? "");
-        const texto = `${falhas.length ? `${falhas.join(" ")} ` : ""}Encadeamento recusado com HTTP ${r.status} em ${base}. ${causa}`.trim();
+              : r.status === 508
+                ? "A Vercel recusou a autochamada como laço (508, visto em 04/11/2026 com a carga parada por horas): a função chamando a si mesma em sequência é bloqueada pela plataforma."
+                : (corpo?.error ?? "");
+        const texto = `${falhas.length ? `${falhas.join(" ")} ` : ""}Encadeamento recusado com HTTP ${r.status} em ${base}. ${causa} ${await passarAoCondutor(params?.data ?? null)}`.trim();
         console.error(`[ciclo] ${texto}`);
         await registrarDesfecho(params?.companyId, texto);
         return;
