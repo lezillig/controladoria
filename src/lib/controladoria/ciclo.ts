@@ -502,6 +502,30 @@ export async function executarPasso(params: {
   return nadaAFazer("Nada a fazer.");
 }
 
+// RETOMAR A SINCRONIZAÇÃO DO DIA QUE CAIU POR ERRO DE EXECUÇÃO.
+//
+// Em 04/11/2026 a gravação dos títulos da AZUL caiu (valor de boleto acima do
+// INT4). A execução do dia ficou em ERRO, e ERRO contava como "o dia já
+// rodou": corrigido o defeito e publicado, o ciclo respondia "já concluído" e
+// o faturamento de novembro só chegaria no dia seguinte. Agora a execução que
+// caiu por erro de execução é retomada DO PONTO EM QUE PAROU (fase e cursor
+// ficam), até MAXIMO_RETOMADAS vezes no dia e com um intervalo entre elas,
+// para um defeito que persiste não virar laço. Recusa da conta pela Omie e
+// conexão desativada não são retomadas: repetir não muda nada.
+export const MAXIMO_RETOMADAS = 3;
+export const INTERVALO_ENTRE_RETOMADAS_MS = 10 * 60_000;
+
+export function podeRetomarAposErro(
+  run: Pick<OmieSyncRun, "status" | "erro" | "retomadas" | "finalizadoEm" | "backfill">,
+  agora = Date.now()
+): boolean {
+  if (run.status !== "ERRO" || run.backfill) return false;
+  if (run.retomadas >= MAXIMO_RETOMADAS) return false;
+  const erro = run.erro ?? "";
+  if (erro.includes(PREFIXO_RECUSA) || erro.includes("Conexão da execução não está mais ativa")) return false;
+  return !run.finalizadoEm || agora - run.finalizadoEm.getTime() >= INTERVALO_ENTRE_RETOMADAS_MS;
+}
+
 // Decide em que execução trabalhar, nesta ordem de prioridade:
 //   1. execução já em andamento (retoma de onde parou);
 //   2. próxima janela de carga histórica de alguma conexão;
@@ -588,7 +612,15 @@ export async function obterOuCriarRun(
         janelaFim: janelaFimDoDia,
         status: { in: ["CONCLUIDO", "ERRO"] },
       },
+      orderBy: { iniciadoEm: "desc" },
     });
+    if (jaRodou && podeRetomarAposErro(jaRodou)) {
+      return prisma.omieSyncRun.update({
+        where: { id: jaRodou.id },
+        // O erro sai: a execução volta a valer; quantas retomadas houve fica em `retomadas`.
+        data: { status: "EXECUTANDO", finalizadoEm: null, retomadas: { increment: 1 }, erro: null },
+      });
+    }
     if (jaRodou) continue;
 
     return prisma.omieSyncRun.create({
