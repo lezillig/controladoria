@@ -99,6 +99,17 @@ export default function ErroDaPagina({
                 Identificador do erro: {error.digest}
               </p>
             )}
+            {/* SEM DIGEST, O ERRO FOI NO NAVEGADOR (montagem de componente,
+                navegação que não recebeu a página). Não passou pelo servidor,
+                então não está na lista de falhas da Sincronização — e a
+                mensagem é a do próprio navegador, sem dado do servidor. Visto
+                no radar de licitações (nov/2026): a tela caía sem nenhum
+                identificador, e não havia como saber a causa. */}
+            {!error.digest && error.message && (
+              <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 font-mono text-xs text-slate-700">
+                Erro no navegador: {error.message.slice(0, 300)}
+              </p>
+            )}
             {causa ? (
               <p className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-relaxed text-slate-700">
                 <span className="font-medium text-slate-900">O que aconteceu: </span>
