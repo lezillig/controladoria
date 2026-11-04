@@ -769,6 +769,9 @@ model OmieSyncRun {
   achados        Int            @default(0)
   erro           String?
   detalhes       Json?
+  // Quantas vezes a sincronização do dia foi retomada depois de cair por
+  // erro de execução (ver podeRetomarAposErro em ciclo.ts).
+  retomadas      Int            @default(0)
 
   @@index([companyId, iniciadoEm])
   @@index([companyId, status])
