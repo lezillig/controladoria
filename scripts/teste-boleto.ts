@@ -77,6 +77,12 @@ conferir("banco, valor, vencimento, dígito", [gravado.boletoBanco, gravado.bole
 conferir("o código inteiro não é gravado (só o hash)", JSON.stringify(gravado).includes(itau.slice(19)), false);
 conferir("o mesmo boleto, por código ou linha, dá o mesmo hash", boletoDoTitulo(itau, venc).boletoHash, gravado.boletoHash);
 conferir("sem código, nada", boletoDoTitulo(null, venc), { boletoHash: null, boletoBanco: null, boletoValorCents: null, boletoVencimento: null, boletoDigitoValido: null });
+// 04/11/2026: um código lido com 7.046.588.465 centavos derrubou a gravação do
+// lote e parou a sincronização. Valor acima do INT4 é leitura errada: fica
+// "não lido", e o título entra.
+conferir("valor impossível (R$ 70 mi) vira não lido", boletoDoTitulo(codigoDeBarras("341", "2026-08-10", 7_046_588_465), venc).boletoValorCents, null);
+conferir("arrecadação com valor de 11 dígitos acima do teto vira não lido", boletoDoTitulo("8260" + "99999999999" + "0".repeat(29), venc).boletoValorCents, null);
+conferir("valor normal continua lido", boletoDoTitulo(itau, venc).boletoValorCents, 1_234_56);
 
 console.log("O que vira versão");
 const base = { codigoLancamento: "L1", parceiroCodigo: "F", valorDocumentoCents: 100, categoriaCodigo: "c", contaCorrenteCodigo: "1", dataVencimento: venc, numeroDocumento: "1" };

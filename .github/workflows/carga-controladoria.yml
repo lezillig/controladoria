@@ -198,6 +198,23 @@ jobs:
               exit 1
             fi
 
+            # ERRO NUMA EMPRESA NÃO É CICLO CONCLUÍDO. Em 04/11/2026 a gravação
+            # dos títulos da AZUL caiu (valor acima do INT4) e a rota respondeu
+            # sem trabalho a seguir; este passo dizia "Carga concluída" e o job
+            # ficava verde com a sincronização parada havia horas.
+            erros=$(printf '%s' "$corpo" | jq -r '[.resultados[]? | select(.erro) | "\(.empresa): \(.erro)"] | join(" | ")' 2>/dev/null)
+            if [ -n "$erros" ]; then
+              echo "::error::A rodada $rodada falhou: $erros"
+              {
+                echo "## Carga interrompida por erro"
+                echo ""
+                echo '```'
+                echo "$erros"
+                echo '```'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+
             continua=$(printf '%s' "$corpo" | jq -r '.continua')
             if [ "$continua" != "true" ]; then
               echo "Ciclo concluído: a rota respondeu que não sobrou trabalho."

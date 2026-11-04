@@ -251,17 +251,26 @@ export function ehTrocaDeConta(antes: string | null, depois: string | null): boo
 export type BoletoDoTitulo = Pick<TituloNormalizado, "boletoHash" | "boletoBanco" | "boletoValorCents" | "boletoVencimento" | "boletoDigitoValido">;
 const SEM_BOLETO: BoletoDoTitulo = { boletoHash: null, boletoBanco: null, boletoValorCents: null, boletoVencimento: null, boletoDigitoValido: null };
 
+// Teto do INT4 da coluna (R$ 21,4 milhões). Em 04/11/2026 um código lido
+// com 7.046.588.465 centavos (R$ 70 mi num título a pagar) derrubou a gravação
+// do lote inteiro e a sincronização parou nos títulos da AZUL por horas.
+// Boleto desse tamanho não existe na operação: é leitura errada do código
+// (concessionária, linha digitada com dígito a mais) e vira "valor não lido" —
+// a regra de valor divergente fica calada para ele, o resto do título entra.
+const TETO_VALOR_BOLETO_CENTS = 2_147_483_647;
+const valorPlausivel = (v: number | null) => (v !== null && v > 0 && v <= TETO_VALOR_BOLETO_CENTS ? v : null);
+
 export function boletoDoTitulo(texto: string | null, vencimentoDoTitulo: Date): BoletoDoTitulo {
   const b = lerBoleto(texto, vencimentoDoTitulo);
   if (!b) return SEM_BOLETO;
   const chave = process.env.CONTROLADORIA_HASH_KEY;
   const hash = chave ? `h1:${createHmac("sha256", chave).update(b.codigoDeBarras).digest("hex")}` : createHash("sha256").update(b.codigoDeBarras).digest("hex");
-  if (b.tipo === "arrecadacao") return { ...SEM_BOLETO, boletoHash: hash, boletoValorCents: b.valorCents };
+  if (b.tipo === "arrecadacao") return { ...SEM_BOLETO, boletoHash: hash, boletoValorCents: valorPlausivel(b.valorCents) };
   return {
     boletoHash: hash,
     boletoBanco: b.banco,
     // Zero no código é "valor livre" (quem paga digita): não é valor impresso.
-    boletoValorCents: b.valorCents > 0 ? b.valorCents : null,
+    boletoValorCents: valorPlausivel(b.valorCents),
     boletoVencimento: b.vencimento,
     boletoDigitoValido: b.digitoValido,
   };
