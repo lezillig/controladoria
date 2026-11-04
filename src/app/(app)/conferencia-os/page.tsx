@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { cobrancasQueCitamOs, comissoesNoBanco, conferenciaDeOsNoBanco, titulosDaConferencia, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
-import { CATEGORIA_FORA_DA_OS, type ProjetoConferido } from "@/lib/controladoria/conferenciaDeOs";
+import { cobrancasQueCitamOs, comissoesNoBanco, conferenciaDeOsNoBanco, projetosParecidos, titulosDaConferencia, TITULOS_NA_FICHA, TITULOS_NO_DETALHE } from "@/lib/controladoria/conferenciaDeOsNoBanco";
+import { CATEGORIA_FORA_DA_OS, fichaDaOs, osDigitada, type CobrancaCitada, type ProjetoConferido } from "@/lib/controladoria/conferenciaDeOs";
 import { fmtBRL, fmtData, fmtNumero, fmtPercent } from "@/lib/controladoria/format";
 import { larguraPainel } from "@/lib/ui";
 import { escopoDaPagina, podeAcao } from "../_dados";
-import { Kpi, Secao, SeletorEmpresa, Tabela } from "../_componentes";
+import { Kpi, LinhasDeValor, Secao, SeletorEmpresa, Tabela } from "../_componentes";
 import ConferirOsNaOmie from "./ConferirOsNaOmie";
 import FiltroCategorias from "./FiltroCategorias";
 
@@ -19,7 +19,7 @@ const PERIODOS = [1, 3, 6, 12, 0];
 const LISTA = 60;
 const lista = (l: string[], n = 3) => (l.length === 0 ? "—" : l.slice(0, n).join(", ") + (l.length > n ? ` +${l.length - n}` : ""));
 
-export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string; ano?: string; os?: string; lista?: string; fornecedor?: string; cat?: string | string[] }> }) {
+export default async function ConferenciaOsPage({ searchParams }: { searchParams: Promise<{ empresa?: string; meses?: string; ano?: string; os?: string; lista?: string; fornecedor?: string; cat?: string | string[]; historico?: string }> }) {
   const params = await searchParams;
   const { session, escopo, periodo, conexoes, config } = await escopoDaPagina("titulos", params.empresa);
   const meses = params.meses !== undefined && PERIODOS.includes(Number(params.meses)) ? Number(params.meses) : 3;
@@ -58,14 +58,41 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
   // (?lista=), no mesmo recorte da tela.
   const semProjeto = params.lista === "receber-sem-projeto" ? "RECEBER" : params.lista === "pagar-sem-projeto" ? "PAGAR" : null;
   const verComissoes = params.lista === "comissoes";
+  // A FICHA DA OS (?os=, pela busca ou clicando numa OS das tabelas): tudo o
+  // que ela recebeu e gastou — pelo projeto e pela ordem de serviço (aba
+  // Diversos) —, a conta dela e os parceiros. Pela busca, todo o histórico
+  // (historico=1); pelo clique numa tabela, o período da tela, para a ficha
+  // somar o mesmo que a linha clicada.
+  const osBuscada = params.os ? osDigitada(params.os) : "";
+  const todoOHistorico = params.historico === "1";
+  const fichaTitulos = osBuscada
+    ? await titulosDaConferencia({
+        companyId: session.companyId,
+        conexaoId: escopo.conexaoId,
+        desde,
+        ate,
+        projetoNome: osBuscada,
+        pelaOrdemDeServico: true,
+        todoOHistorico,
+        limite: TITULOS_NA_FICHA,
+      })
+    : null;
+  const ficha = fichaTitulos ? fichaDaOs(fichaTitulos.titulos, r.taxaImpostos) : null;
+  const [parecidos, citacoesDaOs] = osBuscada
+    ? await Promise.all([
+        fichaTitulos && fichaTitulos.total === 0 ? projetosParecidos(session.companyId, osBuscada) : Promise.resolve([]),
+        cobrancasQueCitamOs({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde: todoOHistorico ? config.dataInicioBase : desde, ate, oss: [osBuscada] }),
+      ])
+    : [[] as string[], new Map<string, CobrancaCitada[]>()];
+  const cobrancasCitando = citacoesDaOs.get(osBuscada) ?? [];
+  const titulosDaLista = fichaTitulos ? fichaTitulos.titulos.filter((t) => !params.fornecedor || (t.parceiro?.trim() || (t.natureza === "PAGAR" ? "(sem fornecedor)" : "(sem cliente)")) === params.fornecedor) : [];
   const detalhe =
-    params.os || semProjeto || verComissoes
+    !osBuscada && (semProjeto || verComissoes)
       ? await titulosDaConferencia({
           companyId: session.companyId,
           conexaoId: escopo.conexaoId,
           desde,
           ate,
-          projetoNome: params.os,
           semProjeto: semProjeto ?? undefined,
           comissoes: verComissoes,
           fornecedor: params.fornecedor,
@@ -84,8 +111,20 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
     return `/conferencia-os?${q}#detalhe`;
   };
   const fechar = () => `/conferencia-os${filtroDaTela().size ? `?${filtroDaTela()}` : ""}`;
+  // Links de dentro da ficha: a mesma OS, o mesmo recorte (período da tela ou
+  // todo o histórico), e o que mudar.
+  const naFicha = (extra: Record<string, string | null>, ancora = "ficha-os") => {
+    const q = filtroDaTela();
+    q.set("os", osBuscada);
+    if (todoOHistorico) q.set("historico", "1");
+    for (const [k, v] of Object.entries(extra)) {
+      if (v === null) q.delete(k);
+      else q.set(k, v);
+    }
+    return `/conferencia-os?${q}#${ancora}`;
+  };
   const NomeOs = ({ nome, empresas = [] }: { nome: string; empresas?: string[] }) => (
-    <Link href={abrir({ os: nome })} className="font-medium text-blue-800 hover:underline" title="Ver os títulos desta OS">
+    <Link href={abrir({ os: nome }).replace("#detalhe", "#ficha-os")} className="font-medium text-blue-800 hover:underline" title="Abrir a ficha desta OS">
       {nome}
       {empresas.length > 1 && <span className="ml-1 text-xs text-amber-700">({empresas.join(" + ")})</span>}
     </Link>
@@ -165,12 +204,241 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
         </p>
       )}
 
+      {/* BUSCAR UMA OS: o número (do projeto ou da ordem de serviço) abre a
+          ficha com tudo o que ela recebeu e gastou. GET: o endereço vira o
+          filtro, e dá para mandar o link. */}
+      <form method="get" action="/conferencia-os#ficha-os" className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+        {params.empresa && <input type="hidden" name="empresa" value={params.empresa} />}
+        {ano ? <input type="hidden" name="ano" value={String(ano)} /> : meses !== 3 ? <input type="hidden" name="meses" value={String(meses)} /> : null}
+        <label className="flex flex-col text-xs font-medium text-slate-600">
+          Buscar OS
+          <input
+            name="os"
+            defaultValue={params.os ?? ""}
+            placeholder="ex.: 14641"
+            inputMode="numeric"
+            className="mt-1 w-40 rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+            required
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          <input type="checkbox" name="historico" value="1" defaultChecked={params.os === undefined || todoOHistorico} /> em todo o histórico (sem o período da tela)
+        </label>
+        <button type="submit" className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+          Abrir a OS
+        </button>
+        <span className="text-xs text-slate-500">Pelo nome do projeto ou pela ordem de serviço (aba Diversos); traz as receitas por cliente, os custos por fornecedor e a margem.</span>
+      </form>
+
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Kpi rotulo="A pagar com projeto" valor={fmtPercent(pct(pagar.comProjetoCents, pagar.cents), 0)} apoio={`${fmtNumero(pagar.comProjeto)} de ${fmtNumero(pagar.titulos)} títulos · ${fmtNumero(pagar.comOs)} com OS`} tom={pct(pagar.comProjetoCents, pagar.cents) === null ? "neutro" : (pct(pagar.comProjetoCents, pagar.cents) ?? 0) >= 60 ? "bom" : "atencao"} href={abrir({ lista: "pagar-sem-projeto" })} />
         <Kpi rotulo="A receber com projeto" valor={fmtPercent(pct(receber.comProjetoCents, receber.cents), 0)} apoio={`${fmtNumero(receber.comProjeto)} de ${fmtNumero(receber.titulos)} títulos · ${fmtNumero(receber.comOs)} com OS`} href={abrir({ lista: "receber-sem-projeto" })} />
         <Kpi rotulo="Custo sem cobrança" valor={fmtBRL(r.custoSemReceita.reduce((s, p) => s + p.custoCents, 0))} apoio={`${r.custoSemReceita.length} projetos`} tom={r.custoSemReceita.length > 0 ? "ruim" : "bom"} href="#nao-faturada" />
         <Kpi rotulo="OS com prejuízo" valor={fmtBRL(r.comPrejuizo.reduce((s, p) => s + p.resultadoCents, 0))} apoio={`${r.comPrejuizo.length} OS faturadas`} tom={r.comPrejuizo.length > 0 ? "ruim" : "bom"} href="#prejuizo" />
       </div>
+
+      {ficha && fichaTitulos && (
+        <section id="ficha-os" className="scroll-mt-4 space-y-4">
+          <Secao
+            titulo={`OS ${osBuscada}${fichaTitulos.total > 0 ? ` — ${fichaTitulos.total} título(s)` : ""}`}
+            descricao={
+              (todoOHistorico ? "Em todo o histórico" : `De ${fmtData(desde)} a ${fmtData(ate)} (o período da tela)`) +
+              (ficha.primeiraCompetencia ? `; competências de ${fmtData(ficha.primeiraCompetencia)} a ${fmtData(ficha.ultimaCompetencia)}` : "") +
+              ". Títulos com o projeto da OS ou com ela na ordem de serviço (aba Diversos), por competência, sem cancelados."
+            }
+            acao={
+              <div className="flex flex-wrap items-center gap-3 text-xs">
+                <Link href={naFicha({ historico: todoOHistorico ? null : "1", fornecedor: null })} className="text-blue-700 hover:underline">
+                  {todoOHistorico ? "Só o período da tela" : "Ver todo o histórico"}
+                </Link>
+                <Link href={fechar()} className="text-slate-500 hover:text-slate-800">
+                  Fechar ✕
+                </Link>
+              </div>
+            }
+          >
+            {fichaTitulos.total === 0 ? (
+              <div className="text-sm text-slate-600">
+                <p>Nenhum título com a OS {osBuscada}, nem como projeto nem na ordem de serviço{todoOHistorico ? "" : ", no período da tela"}.</p>
+                {!todoOHistorico && (
+                  <Link href={naFicha({ historico: "1" })} className="mt-1 inline-block text-blue-700 hover:underline">
+                    Procurar em todo o histórico →
+                  </Link>
+                )}
+                {parecidos.length > 0 && (
+                  <p className="mt-2">
+                    Projetos parecidos:{" "}
+                    {parecidos.map((n, i) => (
+                      <span key={n}>
+                        {i > 0 && ", "}
+                        <Link href={naFicha({ os: n })} className="text-blue-700 hover:underline">
+                          {n}
+                        </Link>
+                      </span>
+                    ))}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <Kpi rotulo="Receita" valor={fmtBRL(ficha.receitaCents)} apoio={`${ficha.clientes.length} cliente(s) · recebido ${fmtBRL(ficha.recebidoCents)}`} href="#os-clientes" />
+                  <Kpi rotulo="Custo" valor={fmtBRL(ficha.custoCents)} apoio={`${ficha.fornecedores.length} fornecedor(es) · pago ${fmtBRL(ficha.pagoCents)}`} href="#os-fornecedores" />
+                  <Kpi rotulo="Resultado" valor={fmtBRL(ficha.resultadoCents)} apoio="receita − tributos − custo" tom={ficha.resultadoCents < 0 ? "ruim" : "bom"} href="#os-conta" />
+                  <Kpi
+                    rotulo="Margem"
+                    valor={ficha.margemPercent === null ? "—" : fmtPercent(ficha.margemPercent, 1)}
+                    apoio={ficha.margemPercent === null ? "sem receita" : "resultado ÷ receita"}
+                    tom={ficha.margemPercent === null ? "neutro" : ficha.margemPercent < 0 ? "ruim" : "bom"}
+                    semDetalhe="percentual do resultado sobre a receita — a conta está no quadro ao lado"
+                  />
+                </div>
+
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div id="os-conta" className="scroll-mt-4">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">A conta da OS</p>
+                    <LinhasDeValor
+                      linhas={[
+                        { rotulo: "Receita (a receber)", valor: fmtBRL(ficha.receitaCents), href: "#os-clientes" },
+                        {
+                          rotulo: "(−) Tributos sobre a receita",
+                          valor: fmtBRL(ficha.tributosCents),
+                          detalhe: `taxa efetiva de deduções da empresa no período da tela (${taxas || "sem receita no período"})`,
+                        },
+                        { rotulo: "= Receita líquida", valor: fmtBRL(ficha.receitaLiquidaCents), destaque: true },
+                        { rotulo: "(−) Custo (a pagar)", valor: fmtBRL(ficha.custoCents), href: "#os-fornecedores" },
+                        { rotulo: "= Resultado", valor: fmtBRL(ficha.resultadoCents), destaque: true, tom: ficha.resultadoCents < 0 ? "ruim" : "bom" },
+                        { rotulo: "Margem sobre a receita", valor: ficha.margemPercent === null ? "—" : fmtPercent(ficha.margemPercent, 1) },
+                        { rotulo: "Margem bruta (antes dos tributos)", valor: fmtBRL(ficha.margemBrutaCents), detalhe: "receita − custo" },
+                        { rotulo: "Custo ÷ receita", valor: ficha.custoSobreReceitaPercent === null ? "—" : fmtPercent(ficha.custoSobreReceitaPercent, 1) },
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">No caixa</p>
+                    <LinhasDeValor
+                      linhas={[
+                        { rotulo: "Recebido", valor: fmtBRL(ficha.recebidoCents), detalhe: `falta receber ${fmtBRL(Math.max(0, ficha.receitaCents - ficha.recebidoCents))}` },
+                        { rotulo: "Pago", valor: fmtBRL(ficha.pagoCents), detalhe: `falta pagar ${fmtBRL(Math.max(0, ficha.custoCents - ficha.pagoCents))}` },
+                        { rotulo: "= Saldo de caixa da OS até agora", valor: fmtBRL(ficha.recebidoCents - ficha.pagoCents), destaque: true, tom: ficha.recebidoCents - ficha.pagoCents < 0 ? "ruim" : "bom" },
+                      ]}
+                    />
+                    {ficha.custoPorCategoria.length > 0 && (
+                      <>
+                        <p className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">Custo por categoria</p>
+                        <LinhasDeValor
+                          linhas={ficha.custoPorCategoria.map((c) => ({ rotulo: c.categoria, valor: fmtBRL(c.cents), detalhe: `${fmtPercent(c.participacaoPercent, 1)} do custo` }))}
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <div id="os-clientes" className="scroll-mt-4">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Receitas por cliente — {fmtBRL(ficha.receitaCents)}
+                  </p>
+                  <Tabela
+                    colunas={["Cliente", "Títulos", "Valor", "% da receita", "Recebido", "Categorias"]}
+                    alinharDireita={[1, 2, 3, 4]}
+                    linhas={ficha.clientes.map((c) => [
+                      <Link key="c" href={naFicha({ fornecedor: c.nome }, "os-titulos")} className="font-medium text-blue-800 hover:underline">
+                        {c.nome}
+                      </Link>,
+                      fmtNumero(c.titulos),
+                      fmtBRL(c.cents),
+                      fmtPercent(c.participacaoPercent, 1),
+                      fmtBRL(c.pagoCents),
+                      lista(c.categorias, 2),
+                    ])}
+                    vazio="Nenhuma conta a receber nesta OS — custo sem cobrança."
+                  />
+                  {cobrancasCitando.length > 0 && (
+                    <p className="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      Em outro projeto, {cobrancasCitando.length} conta(s) a receber citam esta OS (observação, documento ou ordem de serviço), somando{" "}
+                      {fmtBRL(cobrancasCitando.reduce((s2, c2) => s2 + c2.valorCents, 0))}:{" "}
+                      {cobrancasCitando.slice(0, 5).map((c2) => `${c2.cliente ?? "—"} · ${c2.documento ?? "s/ doc."} · projeto ${c2.projeto ?? "—"} · ${fmtBRL(c2.valorCents)}`).join("; ")}
+                      {cobrancasCitando.length > 5 ? "…" : ""}. Não estão somadas aqui: se são desta OS, o projeto delas está trocado.
+                    </p>
+                  )}
+                </div>
+
+                <div id="os-fornecedores" className="scroll-mt-4">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Custos por fornecedor — {fmtBRL(ficha.custoCents)}
+                  </p>
+                  <Tabela
+                    colunas={["Fornecedor", "Títulos", "Valor", "% do custo", "% da receita", "Pago", "Categorias"]}
+                    alinharDireita={[1, 2, 3, 4, 5]}
+                    linhas={ficha.fornecedores.map((f) => [
+                      <Link key="f" href={naFicha({ fornecedor: f.nome }, "os-titulos")} className="font-medium text-blue-800 hover:underline">
+                        {f.nome}
+                      </Link>,
+                      fmtNumero(f.titulos),
+                      fmtBRL(f.cents),
+                      fmtPercent(f.participacaoPercent, 1),
+                      ficha.receitaCents > 0 ? fmtPercent((f.cents / ficha.receitaCents) * 100, 1) : "—",
+                      fmtBRL(f.pagoCents),
+                      lista(f.categorias, 2),
+                    ])}
+                    vazio="Nenhuma conta a pagar nesta OS."
+                  />
+                </div>
+
+                {ficha.foraDaConta.length > 0 && (
+                  <p className="text-xs text-slate-500">
+                    Fora da conta (multa e diretoria não são custo da viagem):{" "}
+                    {ficha.foraDaConta.map((f) => `${f.categoria} (${f.natureza}) ${fmtBRL(f.cents)}`).join("; ")}.
+                  </p>
+                )}
+
+                <div id="os-titulos" className="scroll-mt-4">
+                  <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Títulos{params.fornecedor ? ` de ${params.fornecedor}` : ""} — {fmtNumero(titulosDaLista.length)} · a receber{" "}
+                      {fmtBRL(titulosDaLista.filter((t) => t.natureza === "RECEBER").reduce((s2, t) => s2 + t.valorCents, 0))} · a pagar{" "}
+                      {fmtBRL(titulosDaLista.filter((t) => t.natureza === "PAGAR").reduce((s2, t) => s2 + t.valorCents, 0))}
+                    </p>
+                    {params.fornecedor && (
+                      <Link href={naFicha({ fornecedor: null }, "os-titulos")} className="text-xs text-blue-700 hover:underline">
+                        Ver todos os títulos da OS
+                      </Link>
+                    )}
+                  </div>
+                  <Tabela
+                    colunas={["Lado", "Empresa", "Competência", "Vencimento", "Parceiro", "Categoria", "Documento", "Parcela", "Projeto", "OS", "Valor", "Pago", "Situação"]}
+                    alinharDireita={[10, 11]}
+                    linhas={titulosDaLista.map((t) => [
+                      t.natureza === "PAGAR" ? <span key="l" className="text-red-700">a pagar</span> : <span key="l" className="text-emerald-700">a receber</span>,
+                      t.empresa,
+                      t.competencia ? fmtData(t.competencia) : "—",
+                      t.vencimento ? fmtData(t.vencimento) : "—",
+                      t.parceiro ?? "—",
+                      t.categoria ?? "—",
+                      t.documento ?? "—",
+                      t.parcela ?? "—",
+                      t.projeto ?? "—",
+                      t.os ?? "—",
+                      fmtBRL(t.valorCents),
+                      fmtBRL(t.pagoCents),
+                      CATEGORIA_FORA_DA_OS.test(t.categoria ?? "") ? <span key="s" className="text-slate-400">desconsiderada</span> : (t.status ?? "—"),
+                    ])}
+                    vazio="Nenhum título."
+                  />
+                  {fichaTitulos.total > fichaTitulos.titulos.length && (
+                    <p className="mt-2 text-xs text-amber-800">
+                      A OS tem {fmtNumero(fichaTitulos.total)} títulos; a ficha soma os {fmtNumero(fichaTitulos.titulos.length)} primeiros. Um número tão grande costuma ser contrato, não OS.
+                    </p>
+                  )}
+                  <ConferirOsNaOmie
+                    titulos={fichaTitulos.titulos.map((t) => ({ id: t.id, rotulo: `${t.natureza === "PAGAR" ? "a pagar" : "a receber"} · ${t.parceiro ?? "—"} · ${t.documento ?? "s/ doc."} ${t.parcela ?? ""} · ${fmtBRL(t.valorCents)}` }))}
+                  />
+                </div>
+              </div>
+            )}
+          </Secao>
+        </section>
+      )}
 
       {detalhe && (
         <section id="detalhe">

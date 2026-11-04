@@ -179,6 +179,7 @@ export async function conferenciaDeOsNoBanco(params: { companyId: string; conexa
 // entre as empresas na visão do grupo).
 export type TituloDaOs = {
   id: string;
+  conexaoId: string;
   empresa: string;
   natureza: string;
   projeto: string | null;
@@ -195,6 +196,19 @@ export type TituloDaOs = {
 };
 
 export const TITULOS_NO_DETALHE = 400;
+// A ficha de uma OS soma tudo o que ela tem: uma OS tem dezenas de títulos,
+// não milhares — o teto só existe para um número digitado errado (um projeto
+// de contrato inteiro) não trazer a base.
+export const TITULOS_NA_FICHA = 3000;
+
+// Projetos cujo nome CONTÉM o que foi digitado, para a busca que não achou
+// nada sugerir o que existe ("1464" → 14641, 14642…).
+export async function projetosParecidos(companyId: string, texto: string, quantos = 12): Promise<string[]> {
+  const t = texto.trim();
+  if (t.length < 2) return [];
+  const linhas = await prisma.omieProjeto.findMany({ where: { companyId, nome: { contains: t, mode: "insensitive" } }, select: { nome: true }, orderBy: { nome: "asc" }, take: 50 });
+  return [...new Set(linhas.map((l) => l.nome.trim()))].slice(0, quantos);
+}
 
 export async function titulosDaConferencia(params: {
   companyId: string;
@@ -207,8 +221,15 @@ export async function titulosDaConferencia(params: {
   fornecedor?: string;
   // Só as comissões (categoria de comissão), com ou sem projeto.
   comissoes?: boolean;
+  // A FICHA DA OS (busca da tela): também o título cuja ORDEM DE SERVIÇO (aba
+  // Diversos) é o número procurado, em qualquer projeto — e, com
+  // `todoOHistorico`, sem o recorte de período.
+  pelaOrdemDeServico?: boolean;
+  todoOHistorico?: boolean;
+  limite?: number;
 }): Promise<{ titulos: TituloDaOs[]; total: number }> {
   const { companyId, conexaoId, desde, ate } = params;
+  const limite = params.limite ?? TITULOS_NO_DETALHE;
   let codigos: { conexaoId: string; codigo: string }[] = [];
   if (params.projetoNome) {
     const alvo = params.projetoNome.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
@@ -220,11 +241,17 @@ export async function titulosDaConferencia(params: {
   const projetoSql = params.comissoes
     ? Prisma.sql`AND t.natureza = 'PAGAR' AND COALESCE(t."categoriaDescricao", c.descricao, '') ~* ${CATEGORIA_COMISSAO.source}`
     : params.projetoNome
-    ? Prisma.sql`AND (${Prisma.join(codigos.map((c) => (c.conexaoId ? Prisma.sql`(t."conexaoId" = ${c.conexaoId} AND t."projetoCodigo" = ${c.codigo})` : Prisma.sql`t."projetoCodigo" = ${c.codigo}`)), " OR ")})`
+    ? Prisma.sql`AND (${Prisma.join(
+        [
+          ...codigos.map((c) => (c.conexaoId ? Prisma.sql`(t."conexaoId" = ${c.conexaoId} AND t."projetoCodigo" = ${c.codigo})` : Prisma.sql`t."projetoCodigo" = ${c.codigo}`)),
+          ...(params.pelaOrdemDeServico ? [Prisma.sql`btrim(t."ordemServicoNumero") = ${params.projetoNome.trim()}`] : []),
+        ],
+        " OR "
+      )})`
     : Prisma.sql`AND NULLIF(t."projetoCodigo", '') IS NULL AND t.natureza = ${params.semProjeto ?? "PAGAR"}::${tipoDoBanco("OmieNaturezaTitulo")}`;
   const fornecedorSql = params.fornecedor ? Prisma.sql`AND t."parceiroNome" = ${params.fornecedor}` : Prisma.empty;
   const linhas = await prisma.$queryRaw<(Omit<TituloDaOs, "valorCents" | "pagoCents"> & { valorCents: bigint; pagoCents: bigint | null; total: bigint })[]>`
-    SELECT t.id, t."conexaoApelido" AS empresa, t.natureza::text AS natureza,
+    SELECT t.id, t."conexaoId" AS "conexaoId", t."conexaoApelido" AS empresa, t.natureza::text AS natureza,
            COALESCE(p.nome, t."projetoCodigo") AS projeto, t."ordemServicoNumero" AS os,
            ${competenciaSql("t")} AS competencia, t."dataVencimento" AS vencimento, t."parceiroNome" AS parceiro,
            COALESCE(t."categoriaDescricao", c.descricao, t."categoriaCodigo") AS categoria,
@@ -237,13 +264,12 @@ export async function titulosDaConferencia(params: {
      WHERE t."companyId" = ${companyId}
        AND t.cancelado = false
        AND ${semProvisaoFuturaSql("t")}
-       AND ${competenciaSql("t")} >= ${desde}
-       AND ${competenciaSql("t")} <= ${ate}
+       ${params.todoOHistorico ? Prisma.empty : Prisma.sql`AND ${competenciaSql("t")} >= ${desde} AND ${competenciaSql("t")} <= ${ate}`}
        ${filtroConexaoTitulo(conexaoId, companyId)}
        ${projetoSql}
        ${fornecedorSql}
      ORDER BY t.natureza, ${competenciaSql("t")}, t."valorDocumentoCents" DESC
-     LIMIT ${TITULOS_NO_DETALHE}`;
+     LIMIT ${limite}`;
   return {
     total: Number(linhas[0]?.total ?? 0),
     titulos: linhas.map(({ total, valorCents, pagoCents, ...t }) => {

@@ -268,3 +268,104 @@ export function numerosCitados(t: { observacao: string | null; documento: string
   if (PROJETO_NUMERICO.test(os) && !achados.has(os)) achados.set(os, "ordem de serviço");
   return achados;
 }
+
+// A FICHA DE UMA OS — tudo o que ela recebeu e gastou, por cliente e por
+// fornecedor, e a conta dela. A mesma regra da conferência acima: multa e
+// diretoria ficam fora da conta (aparecem à parte), e os tributos sobre a
+// receita saem pela taxa efetiva de deduções da empresa de cada cobrança.
+export type TituloDaFicha = {
+  conexaoId: string;
+  natureza: string;
+  parceiro: string | null;
+  categoria: string | null;
+  valorCents: number;
+  pagoCents: number;
+  competencia: Date | null;
+};
+export type ParteDaFicha = { nome: string; titulos: number; cents: number; pagoCents: number; categorias: string[]; participacaoPercent: number };
+export type FichaDaOs = {
+  receitaCents: number;
+  tributosCents: number;
+  receitaLiquidaCents: number;
+  custoCents: number;
+  resultadoCents: number;
+  // Resultado ÷ receita; nulo sem receita.
+  margemPercent: number | null;
+  // Receita − custo, antes dos tributos.
+  margemBrutaCents: number;
+  custoSobreReceitaPercent: number | null;
+  recebidoCents: number;
+  pagoCents: number;
+  clientes: ParteDaFicha[];
+  fornecedores: ParteDaFicha[];
+  custoPorCategoria: { categoria: string; cents: number; participacaoPercent: number }[];
+  foraDaConta: { natureza: string; categoria: string; titulos: number; cents: number }[];
+  primeiraCompetencia: Date | null;
+  ultimaCompetencia: Date | null;
+};
+
+export function fichaDaOs(titulos: TituloDaFicha[], taxaImpostos: Map<string, number>): FichaDaOs {
+  const fora = new Map<string, { natureza: string; categoria: string; titulos: number; cents: number }>();
+  const contam = titulos.filter((t) => {
+    if (!CATEGORIA_FORA_DA_OS.test(t.categoria ?? "")) return true;
+    const natureza = t.natureza === "PAGAR" ? "a pagar" : "a receber";
+    const k = `${natureza}|${t.categoria}`;
+    const f = fora.get(k) ?? { natureza, categoria: t.categoria ?? "", titulos: 0, cents: 0 };
+    f.titulos += 1;
+    f.cents += t.valorCents;
+    fora.set(k, f);
+    return false;
+  });
+  const receber = contam.filter((t) => t.natureza === "RECEBER");
+  const pagar = contam.filter((t) => t.natureza === "PAGAR");
+  const soma = (l: TituloDaFicha[], f: (t: TituloDaFicha) => number) => l.reduce((s, t) => s + f(t), 0);
+  const receitaCents = soma(receber, (t) => t.valorCents);
+  const tributosCents = soma(receber, (t) => Math.round(t.valorCents * (taxaImpostos.get(t.conexaoId) ?? 0)));
+  const custoCents = soma(pagar, (t) => t.valorCents);
+  const resultadoCents = receitaCents - tributosCents - custoCents;
+
+  const porParte = (l: TituloDaFicha[], vazio: string, total: number): ParteDaFicha[] => {
+    const m = new Map<string, { nome: string; titulos: number; cents: number; pagoCents: number; cats: Map<string, number> }>();
+    for (const t of l) {
+      const nome = t.parceiro?.trim() || vazio;
+      const p = m.get(nome) ?? { nome, titulos: 0, cents: 0, pagoCents: 0, cats: new Map() };
+      p.titulos += 1;
+      p.cents += t.valorCents;
+      p.pagoCents += t.pagoCents;
+      if (t.categoria) p.cats.set(t.categoria, (p.cats.get(t.categoria) ?? 0) + t.valorCents);
+      m.set(nome, p);
+    }
+    return [...m.values()]
+      .map(({ cats, ...p }) => ({ ...p, categorias: [...cats.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c), participacaoPercent: total > 0 ? (p.cents / total) * 100 : 0 }))
+      .sort((a, b) => b.cents - a.cents || a.nome.localeCompare(b.nome));
+  };
+  const categorias = new Map<string, number>();
+  for (const t of pagar) categorias.set(t.categoria ?? "(sem categoria)", (categorias.get(t.categoria ?? "(sem categoria)") ?? 0) + t.valorCents);
+  const datas = contam.map((t) => t.competencia).filter((d): d is Date => d !== null).map((d) => d.getTime());
+
+  return {
+    receitaCents,
+    tributosCents,
+    receitaLiquidaCents: receitaCents - tributosCents,
+    custoCents,
+    resultadoCents,
+    margemPercent: receitaCents > 0 ? (resultadoCents / receitaCents) * 100 : null,
+    margemBrutaCents: receitaCents - custoCents,
+    custoSobreReceitaPercent: receitaCents > 0 ? (custoCents / receitaCents) * 100 : null,
+    recebidoCents: soma(receber, (t) => t.pagoCents),
+    pagoCents: soma(pagar, (t) => t.pagoCents),
+    clientes: porParte(receber, "(sem cliente)", receitaCents),
+    fornecedores: porParte(pagar, "(sem fornecedor)", custoCents),
+    custoPorCategoria: [...categorias.entries()]
+      .map(([categoria, cents]) => ({ categoria, cents, participacaoPercent: custoCents > 0 ? (cents / custoCents) * 100 : 0 }))
+      .sort((a, b) => b.cents - a.cents),
+    foraDaConta: [...fora.values()].sort((a, b) => b.cents - a.cents),
+    primeiraCompetencia: datas.length ? new Date(Math.min(...datas)) : null,
+    ultimaCompetencia: datas.length ? new Date(Math.max(...datas)) : null,
+  };
+}
+
+// O que se digita na busca: "OS 14641", "os-14641", " 14641 " → "14641".
+export function osDigitada(texto: string | undefined | null): string {
+  return (texto ?? "").trim().replace(/^o\.?\s*s\.?\s*[-:nº°#]*\s*/i, "").trim();
+}

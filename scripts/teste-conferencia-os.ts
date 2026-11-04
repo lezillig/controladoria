@@ -6,7 +6,7 @@
 //    item da listagem das contas a pagar.
 // 3. Com Postgres (TESTE_DATABASE_URL): a colheita no banco.
 import { PrismaClient } from "@prisma/client";
-import { chaveDoProjeto, conferirOs, numerosCitados, type GrupoOs } from "../src/lib/controladoria/conferenciaDeOs";
+import { chaveDoProjeto, conferirOs, fichaDaOs, numerosCitados, osDigitada, type GrupoOs } from "../src/lib/controladoria/conferenciaDeOs";
 import { planejarEtapasProjetos, projetoDoItem } from "../src/lib/omie/sync";
 
 let falhas = 0;
@@ -170,6 +170,8 @@ async function banco() {
         // Multa de trânsito repetida: desconsiderada (não é duplicidade de OS).
         t({ natureza: "PAGAR", categoriaCodigo: "M1", projetoCodigo: "901", parceiroNome: "DETRAN", numeroDocumento: "AIT1", valorDocumentoCents: 30_00 }),
         t({ natureza: "PAGAR", categoriaCodigo: "M1", projetoCodigo: "902", parceiroNome: "DETRAN", numeroDocumento: "AIT1", valorDocumentoCents: 30_00 }),
+        // A mesma OS 14638 com um pedágio de 2025: só a ficha com todo o histórico o vê.
+        t({ natureza: "PAGAR", categoriaCodigo: "T1", projetoCodigo: "901", parceiroNome: "ECOVIAS", valorDocumentoCents: 10_00, dataEmissao: new Date(2025, 2, 5), dataVencimento: new Date(2025, 2, 25) }),
       ],
     });
     const r = await conferenciaDeOsNoBanco({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30) });
@@ -190,14 +192,60 @@ async function banco() {
     const cit = await cobrancasQueCitamOs({ companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30), oss: ["14641", "14638"] });
     conferir("cobrança em outro projeto que cita a OS", [...cit.entries()].map(([os, l]) => [os, l.map((c) => [c.projeto, c.valorCents, c.onde])]), [["14641", [["SMPED", 950_00, "observação"]]]]);
     conferir("documento em duplicidade", r.duplicidades.map((d) => [d.documento, d.vezes, d.projetos.sort()]), [["18953", 2, ["14638", "14641"]]]);
+    // A FICHA: pelo projeto, no período; com todo o histórico; pela ordem de serviço.
+    const periodo = { companyId: E, conexaoId: null, desde: new Date(2026, 8, 1), ate: new Date(2026, 8, 30) };
+    const fPer = await titulosDaConferencia({ ...periodo, projetoNome: "14638", pelaOrdemDeServico: true, limite: 3000 });
+    const fichaPer = fichaDaOs(fPer.titulos, new Map([[az.id, 0.1]]));
+    conferir(
+      "ficha no período: receita, tributos, custo (sem a multa), resultado",
+      [fichaPer.receitaCents, fichaPer.tributosCents, fichaPer.custoCents, fichaPer.resultadoCents, fichaPer.foraDaConta.map((x) => x.cents)],
+      [500_00, 50_00, 420_00, 30_00, [30_00]]
+    );
+    conferir("ficha no período: fornecedores", fichaPer.fornecedores.map((x) => [x.nome, x.titulos, x.cents]), [["TRANSCOMIN", 2, 380_00], ["VENDEDOR A", 1, 25_00], ["SEM PARAR", 1, 15_00]]);
+    const fHist = await titulosDaConferencia({ ...periodo, projetoNome: "14638", pelaOrdemDeServico: true, todoOHistorico: true, limite: 3000 });
+    conferir("ficha com todo o histórico pega o pedágio de 2025", fichaDaOs(fHist.titulos, new Map()).custoCents, 430_00);
+    const fOs = await titulosDaConferencia({ ...periodo, projetoNome: "11972", pelaOrdemDeServico: true, limite: 3000 });
+    conferir("ficha pela ordem de serviço (aba Diversos)", fOs.titulos.map((x) => [x.natureza, x.parceiro, x.valorCents]), [["RECEBER", "SMPED", 500_00]]);
+    const fNada = await titulosDaConferencia({ ...periodo, projetoNome: "99999", pelaOrdemDeServico: true, todoOHistorico: true, limite: 3000 });
+    conferir("OS que não existe: nada", fNada.total, 0);
   } finally {
     await limpar();
     await prisma.$disconnect();
   }
 }
 
+function ficha() {
+  console.log("\nFicha da OS");
+  conferir("o que se digita vira o número", ["OS 14641", "os-14641", " 14641 ", "O.S. 14641", "Nº 14641"].map(osDigitada), ["14641", "14641", "14641", "14641", "Nº 14641"]);
+  const t = (x: Partial<Parameters<typeof fichaDaOs>[0][number]>) => ({ conexaoId: "AZ", natureza: "PAGAR", parceiro: "TRANSCOMIN", categoria: "Compra de Serviços", valorCents: 0, pagoCents: 0, competencia: new Date(2026, 8, 10), ...x });
+  const f = fichaDaOs(
+    [
+      t({ natureza: "RECEBER", parceiro: "SMPED", categoria: "Clientes - Serviços Prestados", valorCents: 1_000_00, pagoCents: 600_00 }),
+      t({ natureza: "RECEBER", conexaoId: "MZ", parceiro: "FEMSA", categoria: "Clientes - Serviços Prestados", valorCents: 500_00 }),
+      t({ valorCents: 600_00, pagoCents: 600_00 }),
+      t({ valorCents: 200_00, competencia: new Date(2026, 8, 20) }),
+      t({ parceiro: "SEM PARAR", categoria: "Pedágio", valorCents: 50_00, pagoCents: 50_00 }),
+      t({ parceiro: null, categoria: "Combustível", valorCents: 100_00 }),
+      t({ parceiro: "DETRAN", categoria: "Multa de Trânsito", valorCents: 300_00 }),
+    ],
+    new Map([["AZ", 0.1], ["MZ", 0.2]])
+  );
+  conferir(
+    "a conta: receita − tributos (taxa de cada empresa) − custo, multa fora",
+    [f.receitaCents, f.tributosCents, f.custoCents, f.resultadoCents, f.margemBrutaCents, Math.round((f.margemPercent ?? 0) * 10) / 10],
+    [1_500_00, 200_00, 950_00, 350_00, 550_00, 23.3]
+  );
+  conferir("custos por fornecedor, do maior ao menor", f.fornecedores.map((x) => [x.nome, x.titulos, x.cents, Math.round(x.participacaoPercent)]), [["TRANSCOMIN", 2, 800_00, 84], ["(sem fornecedor)", 1, 100_00, 11], ["SEM PARAR", 1, 50_00, 5]]);
+  conferir("receitas por cliente, com o recebido", f.clientes.map((x) => [x.nome, x.cents, x.pagoCents]), [["SMPED", 1_000_00, 600_00], ["FEMSA", 500_00, 0]]);
+  conferir("caixa: recebido e pago", [f.recebidoCents, f.pagoCents], [600_00, 650_00]);
+  conferir("fora da conta", f.foraDaConta, [{ natureza: "a pagar", categoria: "Multa de Trânsito", titulos: 1, cents: 300_00 }]);
+  conferir("custo por categoria", f.custoPorCategoria.map((c) => [c.categoria, c.cents]), [["Compra de Serviços", 800_00], ["Combustível", 100_00], ["Pedágio", 50_00]]);
+  conferir("sem receita: margem nula", fichaDaOs([t({ valorCents: 100_00 })], new Map()).margemPercent, null);
+}
+
 (async () => {
   pura();
+  ficha();
   citacoes();
   fase();
   await banco();
