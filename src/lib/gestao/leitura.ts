@@ -578,19 +578,22 @@ export async function lerAdaptacoes(companyId: string): Promise<Map<string, numb
   return new Map(linhas.map((l) => [l.vehicleId, Number(l.totalCents ?? 0)]));
 }
 
-// AS MULTAS QUE A EMPRESA ASSUMIU no período (decisão "quem paga" do
-// fechamento da multa na gestão), por veículo, pela data da infração — pelo
-// valor pago na Omie quando já conferido. Opcional: depende do GRANT de Multa.
+// AS MULTAS QUE A EMPRESA ASSUMIU no período (a tratativa da multa na gestão:
+// empresa assume, inclusive a NIC), por veículo, pela data da infração — pelo
+// valor pago na Omie quando já conferido. A multa cancelada na LW fica fora.
+// Opcional: depende do GRANT de TratativaMulta e Multa.
 export async function lerMultasAssumidas(companyId: string, inicio: Date, fim: Date): Promise<Map<string, number>> {
   const linhas = await lerOpcional(
     () => prismaGestao.$queryRaw<{ vehicleId: string; totalCents: number | bigint | null }[]>`
-      SELECT "vehicleId", SUM(COALESCE("omieValorPagoCents", "valorCents")) AS "totalCents"
-      FROM public."Multa"
-      WHERE "companyId" = ${companyId} AND "quemPaga" = 'empresa' AND "vehicleId" IS NOT NULL
-        AND "dataInfracao" >= ${inicio} AND "dataInfracao" <= ${fim}
-      GROUP BY "vehicleId"
+      SELECT t."vehicleId", SUM(COALESCE(t."omieValorPagoCents", t."valorCents")) AS "totalCents"
+      FROM public."TratativaMulta" t
+      LEFT JOIN public."Multa" m ON m.id = t."multaId"
+      WHERE t."companyId" = ${companyId} AND t."empresaAssume" AND t."vehicleId" IS NOT NULL
+        AND t."dataInfracao" >= ${inicio} AND t."dataInfracao" <= ${fim}
+        AND COALESCE(upper(m."situacaoLw"), '') NOT LIKE '%CANCELAD%'
+      GROUP BY t."vehicleId"
     `,
-    "as multas assumidas pela empresa (Multa)"
+    "as multas assumidas pela empresa (TratativaMulta)"
   );
   return new Map(linhas.map((l) => [l.vehicleId, Number(l.totalCents ?? 0)]));
 }

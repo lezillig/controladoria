@@ -170,7 +170,8 @@ async function noBanco() {
     ["Financiamento", `CREATE TABLE public."Financiamento" (id text PRIMARY KEY, "companyId" text, chave text, banco text, modalidade text, "numeroContrato" text, grupo text, cota text, "valorCents" int, "taxaPct" numeric(9,4), "diaVencimento" int, "totalParcelas" int, "parcelasPagas" int, "valorParcelaCents" int, "saldoQuitacaoCents" int, "dataFinal" timestamp, situacao text, contemplacao text, "dataContemplacao" timestamp, quitado boolean DEFAULT false, "posicaoEm" timestamp, origem text)`],
     ["FinanciamentoVeiculo", `CREATE TABLE public."FinanciamentoVeiculo" (id text PRIMARY KEY, "companyId" text, "financiamentoId" text, placa text, "vehicleId" text, "parcelaCents" int, "saldoCents" int, ativo boolean DEFAULT true)`],
     ["Vehicle", `CREATE TABLE public."Vehicle" (id text PRIMARY KEY, "companyId" text, plate text, status text, "currentMileage" int, model text, type text, year int)`],
-    ["Multa", `CREATE TABLE public."Multa" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "dataInfracao" timestamp, "valorCents" int, "omieValorPagoCents" int, "quemPaga" text)`],
+    ["Multa", `CREATE TABLE public."Multa" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "dataInfracao" timestamp, "valorCents" int, "situacaoLw" text)`],
+    ["TratativaMulta", `CREATE TABLE public."TratativaMulta" (id text PRIMARY KEY, "companyId" text, "multaId" text, "vehicleId" text, "dataInfracao" timestamp, "valorCents" int, "omieValorPagoCents" int, "empresaAssume" boolean DEFAULT false)`],
     ["VehicleTrip", `CREATE TABLE public."VehicleTrip" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "startAt" timestamp, "distanceKm" float8)`],
     ["VehicleUsageLog", `CREATE TABLE public."VehicleUsageLog" (id text PRIMARY KEY, "companyId" text, "vehicleId" text, "driverId" text, "checkInAt" timestamp, "checkOutAt" timestamp, "kmInicial" int, "kmFinal" int)`],
   ] as const) {
@@ -183,7 +184,7 @@ async function noBanco() {
     await sql(`ALTER TABLE public."Vehicle" ADD COLUMN IF NOT EXISTS ${col}`);
 
   const limpar = async () => {
-    for (const t of ["FinanciamentoVeiculo", "Financiamento", "Vehicle", "Multa", "VehicleTrip", "VehicleUsageLog"]) if (await existe(t)) await sql(`DELETE FROM public."${t}" WHERE "companyId" = '${EMP}'`);
+    for (const t of ["FinanciamentoVeiculo", "Financiamento", "Vehicle", "Multa", "TratativaMulta", "VehicleTrip", "VehicleUsageLog"]) if (await existe(t)) await sql(`DELETE FROM public."${t}" WHERE "companyId" = '${EMP}'`);
     for (const t of ["audPendencia", "audLog", "frotaParcelaOmie", "frotaInstituicaoParceiro", "omieBaixa", "omieTitulo", "omieParceiro", "omieConexao"] as const) {
       await (prisma[t] as unknown as { deleteMany: (a: object) => Promise<unknown> }).deleteMany({ where: { companyId: EMP } });
     }
@@ -256,6 +257,9 @@ async function noBanco() {
     conferir("contrato a contrato", [fg.gestaoDisponivel, ga.parcelasLigadas, ga.atrasadas.quantidade, ga.quitadoNaOmie, gb.quitadoNaOmie, gb.ultimoPagamento], [true, 2, 1, false, true, "2026-10-15"]);
     const mg = await ig.multasParaGestao(EMP, [{ ait: "1DK2312751", dataInfracao: d("2026-09-10") }, { ait: "ZZZ999999", dataInfracao: d("2026-09-10") }], d("2026-09-01"));
     conferir("multa paga pelo AIT; a sem AIT aparece como paga sem multa", [mg.pagamentos.map((p) => [p.ait, p.pago, p.dataPagamento]), mg.semMulta?.map((t) => t.numeroDocumento)], [[["1DK2312751", true, "2026-10-05"]], ["MULTA AVULSA"]]);
+    // A gestão manda as multas em lotes: o AIT de outro lote vem em "conhecidos".
+    const mc = await ig.multasParaGestao(EMP, [], d("2026-09-01"), ["1DK-231.2751"]);
+    conferir("AIT conhecido de outro lote não vira pago sem multa", [mc.pagamentos.length, mc.semMulta?.map((t) => t.numeroDocumento)], [0, ["MULTA AVULSA"]]);
 
     console.log("\n7. O agente diário");
     await prisma.audPendencia.create({ data: { companyId: EMP, agente: "agente-frota", tipo: "apolice", titulo: "x", perfilAprovador: "operacao" } });
@@ -276,10 +280,13 @@ async function noBanco() {
     );
 
     console.log("\n8. O patrimônio para a rentabilidade");
-    await sql(`INSERT INTO public."Multa" (id, "companyId", "vehicleId", "dataInfracao", "valorCents", "omieValorPagoCents", "quemPaga") VALUES
-      ('mu-1', '${EMP}', 'vf-a', '2026-10-05', 19523, 15618, 'empresa'), ('mu-2', '${EMP}', 'vf-a', '2026-10-06', 13000, NULL, 'motorista'), ('mu-3', '${EMP}', 'vf-a', '2026-09-06', 9000, NULL, 'empresa')`);
+    await sql(`INSERT INTO public."Multa" (id, "companyId", "vehicleId", "dataInfracao", "valorCents", "situacaoLw") VALUES
+      ('mu-4', '${EMP}', 'vf-a', '2026-10-07', 5000, 'Cancelada')`);
+    await sql(`INSERT INTO public."TratativaMulta" (id, "companyId", "multaId", "vehicleId", "dataInfracao", "valorCents", "omieValorPagoCents", "empresaAssume") VALUES
+      ('tm-1', '${EMP}', NULL, 'vf-a', '2026-10-05', 19523, 15618, true), ('tm-2', '${EMP}', NULL, 'vf-a', '2026-10-06', 13000, NULL, false),
+      ('tm-3', '${EMP}', NULL, 'vf-a', '2026-09-06', 9000, NULL, true), ('tm-4', '${EMP}', 'mu-4', 'vf-a', '2026-10-07', 5000, NULL, true)`);
     const pat = await patrimonioDaFrota(EMP, { inicio: d("2026-10-01"), fim: d("2026-10-31") });
-    conferir("multas assumidas no mês, pelo valor pago na Omie (a do motorista e a de outro mês ficam fora)", pat.multas.get("vf-a"), 15618);
+    conferir("multas assumidas no mês, pelo valor pago na Omie (a do motorista, a de outro mês e a cancelada ficam fora)", pat.multas.get("vf-a"), 15618);
     const { lerKmPorVeiculo } = await import("../src/lib/gestao/leitura");
     await sql(`INSERT INTO public."VehicleTrip" (id, "companyId", "vehicleId", "startAt", "distanceKm") VALUES ('t-1', '${EMP}', 'vf-a', '2026-10-03 08:00', 120.4), ('t-2', '${EMP}', 'vf-a', '2026-10-04 08:00', 80.0), ('t-3', '${EMP}', 'vf-a', '2026-09-30 08:00', 999)`);
     await sql(`INSERT INTO public."VehicleUsageLog" (id, "companyId", "vehicleId", "driverId", "checkInAt", "kmInicial", "kmFinal") VALUES ('u-1', '${EMP}', 'vf-a', 'd', '2026-10-03 07:00', 1000, 1300), ('u-2', '${EMP}', 'vf-b', 'd', '2026-10-05 07:00', 5000, 5150)`);

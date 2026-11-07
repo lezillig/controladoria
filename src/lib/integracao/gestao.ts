@@ -131,7 +131,10 @@ export function casarTitulosComAits(titulos: TituloOmie[], aits: string[]): Paga
 export type MultaPedida = { ait: string; dataInfracao: Date };
 const SELECAO = { id: true, conexaoApelido: true, numeroDocumento: true, observacao: true, dataVencimento: true, valorDocumentoCents: true, valorPagoCents: true, liquidado: true, dataUltimaBaixa: true, categoriaDescricao: true, parceiroNome: true } as const;
 
-export async function multasParaGestao(companyId: string, multas: MultaPedida[], desde: Date | null) {
+// `conhecidos`: todos os AITs que a gestão tem (só para o "pago sem multa":
+// a busca do pagamento vai em lotes de até 3000, e um título de multa de
+// outro lote não pode aparecer como sem multa).
+export async function multasParaGestao(companyId: string, multas: MultaPedida[], desde: Date | null, conhecidos: string[] = []) {
   const pedidas = multas.map((m) => ({ ...m, ait: normalizarAit(m.ait) })).filter((m) => m.ait.length >= 6);
   const pagamentos: PagamentoDeMulta[] = [];
   for (let i = 0; i < pedidas.length; i += 40) {
@@ -153,7 +156,7 @@ export async function multasParaGestao(companyId: string, multas: MultaPedida[],
   let semMulta: Omit<PagamentoDeMulta, "ait">[] | null = null;
   if (desde) {
     const ligados = new Set(pagamentos.map((p) => p.tituloId));
-    const aits = pedidas.map((m) => m.ait);
+    const aits = [...new Set([...pedidas.map((m) => m.ait), ...conhecidos.map(normalizarAit)])].filter((a) => a.length >= 6);
     const titulos = await prisma.omieTitulo.findMany({
       where: { companyId, natureza: "PAGAR", cancelado: false, dataVencimento: { gte: desde }, categoriaDescricao: { contains: "MULTA", mode: "insensitive" } },
       select: SELECAO,

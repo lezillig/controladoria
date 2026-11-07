@@ -101,8 +101,10 @@ GRANT SELECT ON public."FinanciamentoVeiculo" TO controladoria_leitura;
 -- propriedade. Opcional como as de cima.
 GRANT SELECT ON public."AdaptacaoVeiculo"     TO controladoria_leitura;
 
--- Multas que a empresa assumiu (custo do veículo na rentabilidade).
+-- Multas que a empresa assumiu (custo do veículo na rentabilidade): a
+-- tratativa da multa diz quem paga; a multa da LW, se foi cancelada.
 GRANT SELECT ON public."Multa"                TO controladoria_leitura;
+GRANT SELECT ON public."TratativaMulta"       TO controladoria_leitura;
 
 -- Viagens da Ituran (km rodado por veículo: custo por km na rentabilidade).
 GRANT SELECT ON public."VehicleTrip"          TO controladoria_leitura;
