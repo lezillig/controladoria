@@ -146,6 +146,7 @@ export async function carregarContexto(
     saldosInformados,
     patrimonioDaFrota,
     kmDoMesFechado,
+    boletosAntesDaJanela,
   ] = await Promise.all([
     prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" } }),
     // Título EM ABERTO entra sempre, por mais velho que seja.
@@ -224,11 +225,13 @@ export async function carregarContexto(
     // saúde da sincronização olhava uma execução só — a última concluída de
     // qualquer conexão —, e uma conexão falhando todo dia enquanto a outra
     // concluía ficava invisível: a consolidação rodava sobre um espelho velho
-    // e nenhum achado dizia isso. Cinquenta linhas cobrem semanas das duas.
+    // e nenhum achado dizia isso. Uma por conexão (DISTINCT): as "cinquenta
+    // mais recentes" deixavam de fora a conexão parada há mais de três
+    // semanas — justamente a que mais precisa do alerta.
     prisma.omieSyncRun.findMany({
       where: { companyId, backfill: false, conexaoId: { not: null } },
-      orderBy: { iniciadoEm: "desc" },
-      take: 50,
+      orderBy: [{ conexaoId: "asc" }, { iniciadoEm: "desc" }],
+      distinct: ["conexaoId"],
     }),
     // Base da materialidade: o baixado nos últimos 12 meses pelo resumo
     // mensal. Sem ela, em janeiro a materialidade caía ao piso de R$ 500 e
@@ -297,6 +300,15 @@ export async function carregarContexto(
       const mes = ultimoMesFechado(dataReferencia);
       return lerKmPorVeiculo(companyId, mes.inicio, mes.fim);
     })(),
+    // O HÁBITO DE BANCO DE CADA FORNECEDOR antes da janela (18 meses): com só
+    // os boletos da janela, o banco que o fornecedor usou o ano todo e não
+    // usou nos últimos meses parecia "novo" (FR-BOLETO-BANCO-NOVO). Agrupado
+    // no banco: algumas centenas de linhas.
+    prisma.omieTitulo.groupBy({
+      by: ["conexaoApelido", "parceiroCodigo", "parceiroNome", "boletoBanco"],
+      where: { ...escopo, natureza: "PAGAR", cancelado: false, boletoBanco: { not: null }, dataVencimento: { lt: desde, gte: somarDias(desde, -540) } },
+      _count: { _all: true },
+    }),
   ]);
 
   // As colisões de código entre as contas (chaveCategoria.ts), sobre TODAS as
@@ -377,6 +389,7 @@ export async function carregarContexto(
     contratos,
     ctes,
     receita: receitaDoContexto,
+    boletosAntesDaJanela: boletosAntesDaJanela.map((b) => ({ conexaoApelido: b.conexaoApelido, parceiroCodigo: b.parceiroCodigo, parceiroNome: b.parceiroNome, boletoBanco: b.boletoBanco!, quantidade: b._count._all })),
   };
 }
 

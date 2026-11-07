@@ -111,6 +111,22 @@ const REGRAS_DEPENDENTES_DE_CONTRATOS = [
 // título" não é achado, é ausência de fonte.
 const REGRAS_DEPENDENTES_DE_CTE = ["FI-CTE-CANCELADO-COM-TITULO", "FI-CTE-SEM-TITULO", "FI-CTE-VALOR-DIVERGENTE"];
 
+// AS BASES QUE NAO VIERAM NESTA RODADA e as regras que dependem delas. O
+// supervisor suprime o que essas regras emitiriam; o motor (engine.ts) nao
+// fecha sozinho os achados delas — a regra calou porque nao tinha o dado, nao
+// porque o problema acabou. So a gestao tinha essa protecao; um dia sem
+// extrato fechava como OBSOLETO toda "baixa sem movimento" aberta.
+export function basesAusentes(ctx: ContextoAuditoria): { regras: string[]; motivo: string }[] {
+  const q = avaliarQualidadeDaBase(ctx);
+  const r: { regras: string[]; motivo: string }[] = [];
+  if (!q.temExtrato) r.push({ regras: REGRAS_DEPENDENTES_DE_EXTRATO, motivo: "extrato bancário não importado nesta base" });
+  if (!q.temNotas) r.push({ regras: REGRAS_DEPENDENTES_DE_NOTAS, motivo: "notas fiscais não sincronizadas nesta base" });
+  if ((ctx.contratos ?? []).length === 0) r.push({ regras: REGRAS_DEPENDENTES_DE_CONTRATOS, motivo: "contratos de serviço não espelhados nesta base" });
+  if ((ctx.ctes ?? []).length === 0) r.push({ regras: REGRAS_DEPENDENTES_DE_CTE, motivo: "CT-e não espelhados nesta base (painel do contador indisponível ou fase ainda não rodou)" });
+  return r;
+}
+export const regrasSemBase = (ctx: Parameters<typeof basesAusentes>[0]) => new Set(basesAusentes(ctx).flatMap((b) => b.regras));
+
 // Pares de regras que descrevem o MESMO fato por caminhos diferentes. A
 // primeira e a principal (mais especifica/acionavel); a segunda vira
 // relacionada, com severidade rebaixada, para o mesmo problema nao ocupar
@@ -314,18 +330,7 @@ export function supervisionar(
     if (candidatos.length < antes) observacoes.push(`${antes - candidatos.length} achado(s) suprimido(s): ${motivo}`);
   };
 
-  if (!qualidadeDaBase.temExtrato) {
-    suprimirPorBase(REGRAS_DEPENDENTES_DE_EXTRATO, "extrato bancário não importado nesta base");
-  }
-  if (!qualidadeDaBase.temNotas) {
-    suprimirPorBase(REGRAS_DEPENDENTES_DE_NOTAS, "notas fiscais não sincronizadas nesta base");
-  }
-  if ((ctx.contratos ?? []).length === 0) {
-    suprimirPorBase(REGRAS_DEPENDENTES_DE_CONTRATOS, "contratos de serviço não espelhados nesta base");
-  }
-  if ((ctx.ctes ?? []).length === 0) {
-    suprimirPorBase(REGRAS_DEPENDENTES_DE_CTE, "CT-e não espelhados nesta base (painel do contador indisponível ou fase ainda não rodou)");
-  }
+  for (const { regras, motivo } of basesAusentes(ctx)) suprimirPorBase(regras, motivo);
 
   // ---- Controle 2: coerência aritmética ----
   // O supervisor NAO corrige o numero do agente — ele o desqualifica. Numero

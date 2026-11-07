@@ -140,6 +140,15 @@ console.log("\n2. O que não pode fechar sozinho");
   conferir("com a gestão de volta, fecha como sempre", podeFecharSozinho(fantasma, NENHUMA, agentes, undefined, comGestao), true);
   conferir("regra só da Omie fecha mesmo com a gestão fora", podeFecharSozinho(achado(), NENHUMA, agentes, undefined, semGestao), true);
 }
+{
+  // OUTRA BASE FORA (extrato, notas, contratos, CT-e): a regra que depende
+  // dela calou por falta de dado, como a gestão.
+  const semExtrato = { titulosNoContexto: new Set<string>(), gestaoDisponivel: true, regrasSemBase: new Set(["CF-BAIXA-SEM-MOVIMENTO"]) };
+  const semMovimento = achado({ chave: "CF-BAIXA-SEM-MOVIMENTO|b1", regra: "CF-BAIXA-SEM-MOVIMENTO" });
+  conferir("sem o extrato, a regra do extrato não fecha", podeFecharSozinho(semMovimento, NENHUMA, TODOS_OK, undefined, semExtrato), false);
+  conferir("com o extrato, fecha como sempre", podeFecharSozinho(semMovimento, NENHUMA, TODOS_OK, undefined, { ...semExtrato, regrasSemBase: new Set<string>() }), true);
+  conferir("outra regra fecha mesmo sem o extrato", podeFecharSozinho(achado(), NENHUMA, TODOS_OK, undefined, semExtrato), true);
+}
 
 // ------------------------------------------------- 3. tratativa humana
 console.log("\n3. Tratativa humana é intocável");

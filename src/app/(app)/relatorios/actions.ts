@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { prisma } from "@/lib/prisma";
 import { conciliarConformidade } from "@/lib/conformidade/conciliacao";
 import { carregarConformidade } from "@/lib/conformidade/panorama";
 import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
@@ -36,6 +37,24 @@ export async function gerarRelatorioAgora(formData: FormData): Promise<Resultado
   if (Number.isNaN(dataReferencia.getTime())) return { erro: "Data inválida." };
   if (dataReferencia > new Date()) return { erro: "Não é possível gerar relatório de uma data futura." };
 
+  // DIA QUE JA PASSOU E JA TEM RELATORIO: nao se refaz. O relatorio gravado
+  // (e o que foi enviado) e o registro do que se sabia naquele dia; regera-lo
+  // com os dados de hoje sobrescrevia a prova. Dia passado sem relatorio
+  // (o ciclo falhou) gera um novo, sem regravar a medicao do BSC.
+  const ehReferenciaDoDia = dataReferencia.getTime() === dataReferenciaPadrao().getTime();
+  if (!ehReferenciaDoDia) {
+    const ja = await prisma.relatorioDiario.findFirst({
+      where: { companyId: session.companyId, dataReferencia, conexaoId: null },
+      select: { id: true, status: true, geradoEm: true },
+    });
+    if (ja) {
+      return {
+        relatorioId: ja.id,
+        erro: `O relatório de ${dataReferencia.toLocaleDateString("pt-BR")} já existe (gerado em ${ja.geradoEm.toLocaleDateString("pt-BR")}${ja.status === "ENVIADO" ? ", enviado" : ""}). Ele é o registro do que se sabia naquele dia e não é refeito: abra-o na lista.`,
+      };
+    }
+  }
+
   try {
     const ctx = await carregarContexto(session.companyId, dataReferencia, undefined, {
       desde: janelaDeAuditoria(dataReferencia),
@@ -51,7 +70,6 @@ export async function gerarRelatorioAgora(formData: FormData): Promise<Resultado
     // depois não estava vencido) e fechava em massa os achados de hoje que
     // aquela data não via. Para uma data passada, o relatório sai sobre os
     // achados já persistidos, que é o que se sabia — e continua sendo.
-    const ehReferenciaDoDia = dataReferencia.getTime() === dataReferenciaPadrao().getTime();
     if (ehReferenciaDoDia) await executarAuditoria(ctx);
     // Mesma ordem do ciclo diário (ver ciclo.ts): a conciliação com os
     // apontamentos da consultoria depende dos achados já persistidos.
@@ -63,7 +81,7 @@ export async function gerarRelatorioAgora(formData: FormData): Promise<Resultado
     // invocação, com contexto novo.
     ctx.conformidade = await carregarConformidade(session.companyId);
 
-    const resultado = await gerarEEnviarRelatorio(ctx, { enviar });
+    const resultado = await gerarEEnviarRelatorio(ctx, { enviar, dataPassada: !ehReferenciaDoDia });
 
     await registrarEvento({
       companyId: session.companyId,

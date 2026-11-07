@@ -178,6 +178,9 @@ export type ContextoAuditoria = {
   // `conexoes`), com qualquer status. Opcional para os testes, que montam o
   // contexto à mão.
   ultimaExecucaoPorConexao?: (OmieSyncRun | null)[];
+  // Os bancos dos boletos de cada fornecedor nos 18 meses ANTES da janela
+  // (FR-BOLETO-BANCO-NOVO): o hábito não cabe só na janela.
+  boletosAntesDaJanela?: { conexaoApelido: string; parceiroCodigo: string | null; parceiroNome: string | null; boletoBanco: string; quantidade: number }[];
   // Baixado nos últimos 12 meses fechados, do resumo mensal. Base da
   // materialidade quando o ano corrente ainda é curto.
   baixadoEm12MesesCents?: number | null;

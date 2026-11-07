@@ -158,12 +158,24 @@ export function alteracaoAntesDoPagamento(t: OmieTitulo): { quando: Date; quem: 
 function bancoNovo(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidade: number): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
   const bancarios = comBoleto.filter((t) => Boolean(t.boletoBanco));
+  // O historico antes da janela entra no habito (o fornecedor que usou o banco
+  // o ano todo nao "estreia" o banco hoje). Chave sem documento: o agrupado no
+  // banco vem por codigo e nome, e chaveParceiro cai neles quando nao ha CNPJ.
+  const antes = new Map<string, { bancos: Set<string>; quantidade: number }>();
+  for (const b of ctx.boletosAntesDaJanela ?? []) {
+    const k = chaveParceiro({ parceiroCodigo: b.parceiroCodigo, parceiroNome: b.parceiroNome, conexaoApelido: b.conexaoApelido });
+    const h = antes.get(k) ?? { bancos: new Set<string>(), quantidade: 0 };
+    h.bancos.add(b.boletoBanco);
+    h.quantidade += b.quantidade;
+    antes.set(k, h);
+  }
   for (const titulos of agrupar(bancarios, (t) => chaveParceiro(t)).values()) {
     const ordem = [...titulos].sort((a, b) => a.dataVencimento.getTime() - b.dataVencimento.getTime() || a.codigoLancamento.localeCompare(b.codigoLancamento));
-    for (let i = BOLETOS_PARA_HABITO; i < ordem.length; i++) {
+    const historico = antes.get(chaveParceiro({ ...ordem[0], parceiroDocumento: null })) ?? { bancos: new Set<string>(), quantidade: 0 };
+    for (let i = Math.max(0, BOLETOS_PARA_HABITO - historico.quantidade); i < ordem.length; i++) {
       const t = ordem[i];
       const anteriores = ordem.slice(0, i);
-      const habituais = new Set(anteriores.map((a) => a.boletoBanco as string));
+      const habituais = new Set([...historico.bancos, ...anteriores.map((a) => a.boletoBanco as string)]);
       if (habituais.has(t.boletoBanco as string) || t.valorDocumentoCents < materialidade / 2) continue;
       const nome = nomeParceiro(ctx, t);
       const deSempre = [...habituais].map(banco).join(", ");

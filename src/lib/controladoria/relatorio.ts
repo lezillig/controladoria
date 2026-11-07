@@ -37,7 +37,10 @@ export type ResultadoRelatorio = {
 
 export async function gerarEEnviarRelatorio(
   ctx: ContextoAuditoria,
-  opcoes: { enviar: boolean; conexao?: OmieConexao } = { enviar: true }
+  // `dataPassada`: relatorio pedido a mao para um dia que ja passou. A medicao
+  // do BSC daquele dia NAO e regravada: ela foi tirada com os dados que se
+  // tinham no dia, e a de agora usaria os de hoje com a data de entao.
+  opcoes: { enviar: boolean; conexao?: OmieConexao; dataPassada?: boolean } = { enviar: true }
 ): Promise<ResultadoRelatorio> {
   const conexao = opcoes.conexao ?? null;
   // Nome da empresa: o da conexão quando o relatório é de uma empresa só, o do
@@ -68,7 +71,7 @@ export async function gerarEEnviarRelatorio(
   });
 
   const bsc = await medirBsc(ctx);
-  await gravarSnapshotBsc(ctx, bsc);
+  if (!opcoes.dataPassada) await gravarSnapshotBsc(ctx, bsc);
 
   const qualidadeDaBase = avaliarQualidadeDaBase(ctx);
   const conformidade = montarPanoramaConformidade(ctx.conformidade, ctx.dataReferencia);

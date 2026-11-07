@@ -95,13 +95,34 @@ function datasIncoerentes(ctx: ContextoAuditoria): AchadoNovo[] {
 // (ERRO conta como rodou) e a consolidação sai sobre um espelho velho da
 // Azul sem nenhum achado dizer isso. Aqui, uma linha por conexão cuja última
 // execução terminou em erro ou está velha.
-function syncPorConexao(ctx: ContextoAuditoria): AchadoNovo[] {
+export function syncPorConexao(ctx: Pick<ContextoAuditoria, "conexoes" | "ultimaExecucaoPorConexao" | "agora" | "dataReferencia">): AchadoNovo[] {
   const execucoes = ctx.ultimaExecucaoPorConexao;
   if (!execucoes) return [];
   const achados: AchadoNovo[] = [];
   ctx.conexoes.forEach((conexao, i) => {
     const ultima = execucoes[i];
-    if (!ultima) return;
+    // Conexão ativa que NUNCA sincronizou (cadastrada há mais que a
+    // tolerância): os números dela não existem nas telas, e o silêncio aqui
+    // fazia parecer que estava tudo em dia.
+    if (!ultima) {
+      const desde = conexao.criadoEm ? diasEntre(conexao.criadoEm, ctx.agora) : 0;
+      if (desde <= DIAS_TOLERANCIA_SYNC) return;
+      achados.push({
+        regra: "AD-SYNC-CONEXAO",
+        tipo: "ESTADO",
+        severidade: "ALTA",
+        categoria: "CONFORMIDADE",
+        titulo: `A ${conexao.apelido} nunca sincronizou`,
+        descricao: `A conexão ${conexao.apelido} está ativa desde ${fmtData(conexao.criadoEm)} e não tem nenhuma execução de sincronização do dia. Nada dela (títulos, baixas, notas) entra nas telas nem na auditoria.`,
+        recomendacao: "Abrir Controladoria → Sincronização e rodar a sincronização manual dessa conexão; se falhar, conferir a credencial em Conexões Omie.",
+        dataReferencia: ctx.dataReferencia,
+        entidadeTipo: "OmieConexao",
+        entidadeRef: conexao.apelido,
+        evidencia: { conexao: conexao.apelido, status: "SEM_EXECUCAO", ativaDesde: conexao.criadoEm?.toISOString() ?? null },
+        chave: chaveAchado("AD-SYNC-CONEXAO", conexao.apelido),
+      });
+      return;
+    }
     const referencia = ultima.finalizadoEm ?? ultima.iniciadoEm;
     const atraso = diasEntre(referencia, ctx.agora);
     const comErro = ultima.status === "ERRO";

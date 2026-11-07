@@ -144,6 +144,17 @@ const depois = titulo({ boletoBanco: "260", dataVencimento: new Date("2026-10-10
 conferir("só o primeiro boleto do banco novo", regras(ctx([...pagos(3, "341"), novo, depois])), ["FR-BOLETO-BANCO-NOVO"]);
 conferir("com dois boletos só, não há hábito", regras(ctx([...pagos(2, "341"), titulo({ boletoBanco: "260", dataVencimento: new Date("2026-09-10T12:00:00Z") })])), []);
 conferir("outro fornecedor não conta no hábito", regras(ctx([...pagos(3, "341"), titulo({ boletoBanco: "260", parceiroDocumento: "99888777000100", parceiroCodigo: "2" })])), []);
+// O hábito antes da janela: o fornecedor que pagou pelo Nubank o ano passado
+// todo não "estreia" o Nubank hoje; e três boletos do Itaú antes da janela já
+// fazem hábito para o primeiro boleto de outro banco dentro dela.
+{
+  const base = titulo({});
+  const antes = (banco: string, quantidade: number) => ({ conexaoApelido: base.conexaoApelido, parceiroCodigo: base.parceiroCodigo, parceiroNome: base.parceiroNome, boletoBanco: banco, quantidade });
+  const comHistorico = (titulos: Titulo[], historico: ReturnType<typeof antes>[]) => ({ ...ctx(titulos), boletosAntesDaJanela: historico }) as unknown as ContextoAuditoria;
+  conferir("banco usado antes da janela não é novo", regras(comHistorico([...pagos(3, "341"), novo], [antes("341", 6), antes("260", 4)])), []);
+  conferir("o Itaú da janela é novo para quem sempre cobrou pelo Nubank", regras(comHistorico([...pagos(1, "341")], [antes("260", 4)])), ["FR-BOLETO-BANCO-NOVO"]);
+  conferir("três do Itaú antes da janela: o primeiro do Nubank dentro dela é novo", regras(comHistorico([novo], [antes("341", 3)])), ["FR-BOLETO-BANCO-NOVO"]);
+}
 
 const t1 = titulo({ boletoHash: "igual" });
 const t2 = titulo({ boletoHash: "igual", parceiroNome: "FORNECEDOR B", parceiroDocumento: "99888777000100", parceiroCodigo: "2" });

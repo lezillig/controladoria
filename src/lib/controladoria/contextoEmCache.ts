@@ -45,7 +45,13 @@ async function versaoDosDados(companyId: string): Promise<string> {
       (SELECT COUNT(*) || ':' || COALESCE(MAX("atualizadoEm")::text, '') FROM ${tabela("OmieConexao")} WHERE "companyId" = ${companyId}),
       (SELECT MAX("atualizadoEm")::text FROM ${tabela("ControladoriaConfig")} WHERE "companyId" = ${companyId}),
       (SELECT MAX("vistoEm")::text FROM ${tabela("OmieTituloVersao")} WHERE "companyId" = ${companyId}),
-      (SELECT COUNT(*) || ':' || COALESCE(MAX("criadoEm")::text, '') FROM ${tabela("SaldoBancarioInformado")} WHERE "companyId" = ${companyId})
+      (SELECT COUNT(*) || ':' || COALESCE(MAX("criadoEm")::text, '') FROM ${tabela("SaldoBancarioInformado")} WHERE "companyId" = ${companyId}),
+      -- A conformidade entra no contexto (apontamentos da consultoria e seus
+      -- vinculos): sem ela na versao, o apontamento lancado nao aparecia ate o
+      -- retrato expirar.
+      (SELECT COUNT(*) || ':' || COALESCE(MAX("atualizadoEm")::text, '') FROM ${tabela("ConformidadeApontamento")} WHERE "companyId" = ${companyId}),
+      (SELECT COUNT(*) || ':' || COALESCE(MAX("criadoEm")::text, '') FROM ${tabela("ConformidadeDocumento")} WHERE "companyId" = ${companyId}),
+      (SELECT COUNT(*) || ':' || COALESCE(MAX("criadoEm")::text, '') FROM ${tabela("ConformidadeVinculo")} WHERE "companyId" = ${companyId})
     ) AS v`);
   return v?.v ?? "";
 }

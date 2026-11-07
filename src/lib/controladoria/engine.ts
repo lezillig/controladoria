@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { tabela, tipoDoBanco } from "@/lib/esquemaDoBanco";
 import { achadosSemTratativa } from "./agents/administrativo";
 import { AGENTES } from "./registry";
-import { chaveDeTratativa, supervisionar, type AchadoRevisado, type HistoricoAchado, type QualidadeDaBase } from "./supervisor";
+import { chaveDeTratativa, regrasSemBase, supervisionar, type AchadoRevisado, type HistoricoAchado, type QualidadeDaBase } from "./supervisor";
 import type { AchadoNovo, ContextoAuditoria } from "./types";
 
 // MOTOR DE AUDITORIA
@@ -191,6 +191,7 @@ export async function executarAuditoria(ctx: ContextoAuditoria, opcoes: OpcoesDa
   const base = {
     titulosNoContexto: new Set(ctx.titulos.map((t) => t.id)),
     gestaoDisponivel: ctx.gestao?.disponivel !== false,
+    regrasSemBase: regrasSemBase(ctx),
   };
   const fechaveis = anteriores.filter(
     (a) => !(opcoes.retroativa && a.tipo === "ESTADO") && podeFecharSozinho(a, chavesEmitidas, agentesOk, janela, base)
@@ -567,7 +568,7 @@ export function podeFecharSozinho(
   janela?: { desde: Date; ate?: Date },
   // O que a rodada efetivamente leu. Sem isto (chamada antiga), vale o
   // comportamento anterior: não se sabe o que faltou.
-  base?: { titulosNoContexto?: Set<string>; gestaoDisponivel?: boolean }
+  base?: { titulosNoContexto?: Set<string>; gestaoDisponivel?: boolean; regrasSemBase?: Set<string> }
 ): boolean {
   // 1. Tratado por gente não volta a ser mexido por máquina. RESOLVIDO e
   //    IGNORADO carregam justificativa registrada; sobrescrevê-los apagaria o
@@ -642,5 +643,9 @@ export function podeFecharSozinho(
   //    e o dia seguinte os reabria como ABERTO, apagando o "em análise" de
   //    quem já os olhava.
   if (base?.gestaoDisponivel === false && dependeDaGestao(achado)) return false;
+  //    E o mesmo para as outras bases (extrato, notas, contratos, CT-e): a
+  //    regra que depende de uma base que nao veio hoje calou por falta de
+  //    dado (supervisor.ts, basesAusentes).
+  if (achado.regra && base?.regrasSemBase?.has(achado.regra)) return false;
   return agentesOk.includes(achado.agente);
 }

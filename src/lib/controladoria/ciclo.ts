@@ -519,11 +519,19 @@ export function podeRetomarAposErro(
   run: Pick<OmieSyncRun, "status" | "erro" | "retomadas" | "finalizadoEm" | "backfill">,
   agora = Date.now()
 ): boolean {
+  if (!aindaVaiRetomar(run)) return false;
+  return !run.finalizadoEm || agora - run.finalizadoEm.getTime() >= INTERVALO_ENTRE_RETOMADAS_MS;
+}
+
+// A execução em ERRO que AINDA vai ser retomada (só falta o intervalo). A
+// consolidação do dia espera por ela: consolidar no intervalo auditava e
+// mandava o relatório com o espelho velho daquela empresa, e a retomada que
+// vinha depois atualizava os títulos sem ninguém reauditar o dia.
+export function aindaVaiRetomar(run: Pick<OmieSyncRun, "status" | "erro" | "retomadas" | "backfill">): boolean {
   if (run.status !== "ERRO" || run.backfill) return false;
   if (run.retomadas >= MAXIMO_RETOMADAS) return false;
   const erro = run.erro ?? "";
-  if (erro.includes(PREFIXO_RECUSA) || erro.includes("Conexão da execução não está mais ativa")) return false;
-  return !run.finalizadoEm || agora - run.finalizadoEm.getTime() >= INTERVALO_ENTRE_RETOMADAS_MS;
+  return !(erro.includes(PREFIXO_RECUSA) || erro.includes("Conexão da execução não está mais ativa"));
 }
 
 // Decide em que execução trabalhar, nesta ordem de prioridade:
@@ -604,6 +612,7 @@ export async function obterOuCriarRun(
   const janelaInicioDoDia = inicioDoDia(somarDias(dataReferencia, -3));
 
   // ---- 3. Sincronização do dia, por conexão ----
+  let esperandoRetomada = false;
   for (const conexao of conexoes) {
     const jaRodou = await prisma.omieSyncRun.findFirst({
       where: {
@@ -621,6 +630,7 @@ export async function obterOuCriarRun(
         data: { status: "EXECUTANDO", finalizadoEm: null, retomadas: { increment: 1 }, erro: null },
       });
     }
+    if (jaRodou && aindaVaiRetomar(jaRodou)) esperandoRetomada = true;
     if (jaRodou) continue;
 
     return prisma.omieSyncRun.create({
@@ -643,6 +653,9 @@ export async function obterOuCriarRun(
     where: { companyId, conexaoId: null, backfill: false, janelaFim: janelaFimDoDia },
   });
   if (consolidacaoFeita) return null;
+  // Uma empresa caiu e ainda vai ser retomada: a consolidação espera (no
+  // máximo MAXIMO_RETOMADAS intervalos) em vez de auditar o grupo pela metade.
+  if (esperandoRetomada) return null;
 
   return prisma.omieSyncRun.create({
     data: {
