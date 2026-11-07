@@ -146,7 +146,7 @@ console.log("\n3b. Pessimista: cada cliente no pior dia dele (p90 das baixas)");
   // corporativo, de 22/09 para 23/09. O incerto continua fora.
   conferir("pessimista por horizonte (7, 30, 45, 90)", [h(7), h(30), h(45), h(90)], [0, 3_000, 3_000, 14_000]);
   conferir(
-    "contratual ≥ realista ≥ pessimista em todo horizonte",
+    "realista ≥ pessimista em todo horizonte",
     prev.porHorizonte.every((p) => p.pessimistaCents <= p.realistaCents),
     true
   );

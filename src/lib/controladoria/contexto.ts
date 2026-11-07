@@ -351,6 +351,7 @@ export async function carregarContexto(
     versoesDeTitulo,
     frota: {
       vendaPorVeiculo: new Map(patrimonioDaFrota.veiculos.filter((v) => v.dataVenda).map((v) => [v.id, v.dataVenda as Date])),
+      compraPorVeiculo: new Map(patrimonioDaFrota.veiculos.filter((v) => v.dataCompra).map((v) => [v.id, v.dataCompra as Date])),
       // Só o financiamento ainda correndo: quitado ou com o prazo vencido não
       // é parcela do mês.
       parcelaPorVeiculo: patrimonioDaFrota.financiamentos.reduce((m, f) => {

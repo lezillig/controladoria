@@ -46,6 +46,25 @@ function liquidoDoTitulo(t: OmieTitulo): number {
 
 const pago = (t: OmieTitulo) => t.liquidado || t.valorPagoCents > 0;
 
+// TÍTULO PAGO É FATO CONSUMADO (EVENTO); o que ainda vai ser pago é ESTADO,
+// que fecha sozinho quando o boleto é corrigido. Sem isto, em janeiro — a
+// janela da auditoria começa em dezembro — os títulos pagos antes saíam do
+// contexto e os achados deles fechavam como OBSOLETO sem ninguém olhar. Como
+// EVENTO de título, o motor só os fecha quando o título foi relido.
+const tipoDoAchado = (t: OmieTitulo): "ESTADO" | "EVENTO" => (pago(t) ? "EVENTO" : "ESTADO");
+
+// O MESMO BOLETO PARA VÁRIAS NOTAS: uma fatura que junta duas ou três notas
+// num boleto só, com o valor da soma. Não é pagamento em dobro nem valor
+// divergente — é a forma de cobrar de muito fornecedor.
+function boletoDaSoma(titulos: OmieTitulo[]): boolean {
+  const valor = titulos[0]?.boletoValorCents ?? null;
+  if (valor === null || titulos.length < 2) return false;
+  const bruto = titulos.reduce((s, t) => s + t.valorDocumentoCents, 0);
+  const liquido = titulos.reduce((s, t) => s + liquidoDoTitulo(t), 0);
+  const tolerancia = Math.max(TOLERANCIA_CENTS, Math.round(bruto * TOLERANCIA_PCT));
+  return Math.abs(valor - bruto) <= tolerancia || Math.abs(valor - liquido) <= tolerancia || (valor >= liquido - tolerancia && valor <= bruto + tolerancia);
+}
+
 function situacaoDoPagamento(t: OmieTitulo): string {
   return pago(t)
     ? `Já foi pago${t.dataUltimaBaixa ? ` em ${fmtData(t.dataUltimaBaixa)}` : ""} (${fmtBRL(t.valorPagoCents)}).`
@@ -57,7 +76,7 @@ const CONFIRMAR =
   "conferir que o beneficiário mostrado antes de pagar é o CNPJ do fornecedor. Se já foi pago, conferir o beneficiário no comprovante.";
 
 export function auditarBoletos(ctx: ContextoAuditoria, materialidade: number): AchadoNovo[] {
-  const comBoleto = titulosAtivos(ctx, "PAGAR").filter((t) => t.boletoHash !== null);
+  const comBoleto = titulosAtivos(ctx, "PAGAR").filter((t) => Boolean(t.boletoHash));
   if (comBoleto.length === 0) return [];
   return [...boletoTrocado(ctx, materialidade), ...bancoNovo(ctx, comBoleto, materialidade), ...boletoRepetido(ctx, comBoleto, materialidade), ...valorDivergente(ctx, comBoleto, materialidade), ...boletoInvalido(ctx, comBoleto)];
 }
@@ -108,7 +127,8 @@ function boletoTrocado(ctx: ContextoAuditoria, materialidade: number): AchadoNov
           incluidoPor: t.usuarioInclusao ?? "—",
           alteradoPor: t.usuarioAlteracao ?? "—",
         },
-        chave: chaveAchado("FR-BOLETO-TROCADO", t.conexaoApelido, t.codigoLancamento, troca.vistoEm.toISOString().slice(0, 10)),
+        // O instante inteiro, não o dia: duas trocas no mesmo dia são duas.
+        chave: chaveAchado("FR-BOLETO-TROCADO", t.conexaoApelido, t.codigoLancamento, troca.vistoEm.toISOString()),
       });
     }
   }
@@ -137,7 +157,7 @@ export function alteracaoAntesDoPagamento(t: OmieTitulo): { quando: Date; quem: 
 // novo é apontado: a partir dele, o banco passa a ser do histórico.
 function bancoNovo(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidade: number): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
-  const bancarios = comBoleto.filter((t) => t.boletoBanco !== null);
+  const bancarios = comBoleto.filter((t) => Boolean(t.boletoBanco));
   for (const titulos of agrupar(bancarios, (t) => chaveParceiro(t)).values()) {
     const ordem = [...titulos].sort((a, b) => a.dataVencimento.getTime() - b.dataVencimento.getTime() || a.codigoLancamento.localeCompare(b.codigoLancamento));
     for (let i = BOLETOS_PARA_HABITO; i < ordem.length; i++) {
@@ -157,7 +177,7 @@ function bancoNovo(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidad
       if (alteracao?.outraPessoa) severidade = agravar(severidade);
       achados.push({
         regra: "FR-BOLETO-BANCO-NOVO",
-        tipo: "ESTADO",
+        tipo: tipoDoAchado(t),
         severidade,
         categoria: "FRAUDE",
         titulo: `${nome} sempre cobrou por ${deSempre}; este boleto é de ${banco(t.boletoBanco)}${alteracao ? " (título alterado antes de pagar)" : ""}`,
@@ -201,8 +221,11 @@ function bancoNovo(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidad
 // fazer um pagamento parecer outro.
 function boletoRepetido(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidade: number): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
-  for (const titulos of agrupar(comBoleto, (t) => t.boletoHash as string).values()) {
+  for (const [hash, titulos] of agrupar(comBoleto, (t) => t.boletoHash as string)) {
     if (titulos.length < 2) continue;
+    // Um boleto que paga a soma das notas, do mesmo fornecedor: cobrança
+    // agrupada, não duplicidade.
+    if (new Set(titulos.map((t) => chaveParceiro(t))).size === 1 && boletoDaSoma(titulos)) continue;
     const ordem = [...titulos].sort((a, b) => a.dataVencimento.getTime() - b.dataVencimento.getTime() || a.codigoLancamento.localeCompare(b.codigoLancamento));
     const pagos = ordem.filter(pago);
     // O excesso: tudo o que passa do primeiro título.
@@ -214,7 +237,7 @@ function boletoRepetido(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materia
     if (nomes.length > 1) severidade = agravar(severidade);
     achados.push({
       regra: "FR-BOLETO-REPETIDO",
-      tipo: "ESTADO",
+      tipo: pagos.length >= 2 ? "EVENTO" : "ESTADO",
       severidade: peloMenos(severidade, "MEDIA"),
       categoria: "FRAUDE",
       titulo: `O mesmo boleto em ${ordem.length} títulos (${nomes.join(" / ")})`,
@@ -235,7 +258,9 @@ function boletoRepetido(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materia
         banco: banco(primeiro.boletoBanco),
         pagos: pagos.length,
       },
-      chave: chaveAchado("FR-BOLETO-REPETIDO", ...ordem.map((t) => `${t.conexaoApelido}:${t.codigoLancamento}`)),
+      // Pelo boleto (o hash), não pelos títulos: entrar ou sair um título do
+      // grupo não fecha um achado e abre outro.
+      chave: chaveAchado("FR-BOLETO-REPETIDO", hash.slice(0, 24)),
     });
   }
   return achados;
@@ -246,18 +271,25 @@ function boletoRepetido(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materia
 // parcela, de uma nota já paga) colado neste, ou valor alterado no boleto.
 function valorDivergente(ctx: ContextoAuditoria, comBoleto: OmieTitulo[], materialidade: number): AchadoNovo[] {
   const achados: AchadoNovo[] = [];
+  const porBoleto = agrupar(comBoleto, (t) => t.boletoHash as string);
   for (const t of comBoleto) {
     if (t.boletoValorCents === null) continue;
+    // O boleto que paga a soma das notas do mesmo fornecedor não diverge de
+    // nenhuma delas.
+    const doMesmoBoleto = (porBoleto.get(t.boletoHash as string) ?? []).filter((x) => chaveParceiro(x) === chaveParceiro(t));
+    if (doMesmoBoleto.length > 1 && boletoDaSoma(doMesmoBoleto)) continue;
     const liquido = liquidoDoTitulo(t);
     const tolerancia = Math.max(TOLERANCIA_CENTS, Math.round(t.valorDocumentoCents * TOLERANCIA_PCT));
     const diferenca = t.boletoValorCents - liquido;
-    if (Math.abs(t.boletoValorCents - t.valorDocumentoCents) <= tolerancia || Math.abs(diferenca) <= tolerancia) continue;
+    // Entre o líquido e o bruto: retenção aplicada em parte (o ISS retido, o
+    // IR não) — não é cobrar a mais.
+    if (t.boletoValorCents >= liquido - tolerancia && t.boletoValorCents <= t.valorDocumentoCents + tolerancia) continue;
     if (Math.abs(diferenca) < materialidade / 10) continue;
     const nome = nomeParceiro(ctx, t);
     const aMais = diferenca > 0;
     achados.push({
       regra: "FR-BOLETO-VALOR-DIVERGENTE",
-      tipo: "ESTADO",
+      tipo: tipoDoAchado(t),
       severidade: aMais ? agravar(severidadePorValor(diferenca, materialidade)) : severidadePorValor(-diferenca, materialidade),
       categoria: "FRAUDE",
       titulo: `Boleto de ${fmtBRL(t.boletoValorCents)} em título de ${fmtBRL(t.valorDocumentoCents)} — ${referenciaTitulo(t)} (${nome})`,

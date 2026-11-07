@@ -25,15 +25,19 @@ function contexto(p: {
   veiculos: ReturnType<typeof veiculo>[];
   km?: [string, number][];
   vendas?: [string, Date][];
+  compras?: [string, Date][];
   parcelas?: [string, number][];
   abastecimentos?: { vehicleId: string; dia: number; valorCents: number }[];
 }): ContextoAuditoria {
   return {
+    // Hoje em novembro: outubro é o último mês fechado (a regra só olha ele).
+    agora: new Date(2026, 10, 5),
     veiculos: p.veiculos,
     abastecimentos: (p.abastecimentos ?? []).map((a) => ({ vehicleId: a.vehicleId, dataHora: new Date(2026, 9, a.dia), valorCents: a.valorCents })),
     usosDeVeiculo: [],
     frota: {
       vendaPorVeiculo: new Map(p.vendas ?? []),
+      compraPorVeiculo: new Map(p.compras ?? []),
       parcelaPorVeiculo: new Map(p.parcelas ?? []),
       kmDoMesFechado: new Map((p.km ?? []).map(([id, km]) => [id, { km, fonte: "ituran" as const }])),
     },
@@ -70,6 +74,12 @@ conferir(
 conferir("custo abaixo do piso: calado", rodar(contexto({ ...base, parcelas: [] }), [linha("6", 300_00)]), []);
 conferir("só a parcela já basta (financiamento de veículo parado)", rodar(contexto(base), []).map((a) => [a[1], a[2]]), [["4", 3_500_00], ["7", 2_800_00]]);
 conferir("sem a leitura da frota (contexto antigo): calado", veiculoParadoComCusto({ veiculos: base.veiculos, abastecimentos: [] } as unknown as ContextoAuditoria, outubro, rateio(custos), MATERIALIDADE), []);
+conferir("comprado no próprio mês: chegando à frota, não é parado", rodar(contexto({ ...base, compras: [["4", new Date(2026, 9, 20)]] }), custos).map((a) => a[1]), ["6", "7"]);
+conferir(
+  "varredura de um mês antigo (retroativa): calada",
+  veiculoParadoComCusto({ ...contexto(base), agora: new Date(2026, 11, 5) } as ContextoAuditoria, outubro, rateio(custos), MATERIALIDADE),
+  []
+);
 const achado = veiculoParadoComCusto(contexto(base), outubro, rateio(custos), MATERIALIDADE).find((a) => a.entidadeId === "7")!;
 conferir("o vendido diz quando foi vendido e o que ainda sai", [achado.titulo.includes("vendido em 15/08/2026"), achado.descricao.includes("parcela")], [true, true]);
 

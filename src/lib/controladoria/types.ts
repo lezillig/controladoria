@@ -157,6 +157,7 @@ export type ContextoAuditoria = {
   // a regra de veículo parado com custo se cala.
   frota?: {
     vendaPorVeiculo: Map<string, Date>;
+    compraPorVeiculo?: Map<string, Date>;
     parcelaPorVeiculo: Map<string, number>;
     kmDoMesFechado: Map<string, KmDoVeiculo>;
   };

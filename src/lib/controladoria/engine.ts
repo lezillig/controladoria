@@ -532,7 +532,11 @@ export async function reabrirSeNecessario(companyId: string, chave: string): Pro
 // 45 dias. Passado o prazo, o silêncio da regra não é reavaliação — é o
 // relógio dela. Sem esta lista, o indício de fraude mais grave do agente
 // sumia sozinho no 46º dia, sem ninguém ter olhado.
-const REGRAS_SEM_FECHAMENTO_AUTOMATICO = new Set(["FR-CONTA-ALTERADA", "FR-CONTA-ALTERADA-REPETIDA"]);
+//
+// O veículo parado com custo também: a regra olha só o último mês fechado, e
+// no mês seguinte deixa de reavaliar o anterior — o silêncio é o calendário
+// dela, não a condição que sumiu. Uma pessoa fecha.
+const REGRAS_SEM_FECHAMENTO_AUTOMATICO = new Set(["FR-CONTA-ALTERADA", "FR-CONTA-ALTERADA-REPETIDA", "RE-VEICULO-INATIVO-COM-CUSTO", "RE-VEICULO-OCIOSO"]);
 
 // O que só existe com a gestão de motoristas lida: os agentes de frota e de
 // pessoal inteiros, e as regras de outros agentes que cruzam com a folha ou

@@ -35,6 +35,19 @@ const PALAVRAS_DE_RAZAO_SOCIAL = new Set(
   "LTDA ME EPP EIRELI SA S A CIA COMPANHIA MEI SOCIEDADE LIMITADA UNIPESSOAL COMERCIO COMERCIAL SERVICOS SERVICO INDUSTRIA DE DA DO DAS DOS E EM".split(" ")
 );
 
+// Palavras de SETOR: estão no nome de muita empresa diferente. "AUTO" não
+// distingue o AUTO POSTO SAO JORGE da AUTO PECAS RAPIDA — confere-se pelo que
+// é próprio do nome. Só quando o nome não tem nada além delas é que elas
+// valem, e aí é preciso casar duas.
+const PALAVRAS_DE_SETOR = new Set(
+  (
+    "AUTO POSTO POSTOS PECAS TRANSPORTE TRANSPORTES TRANSPORTADORA LOGISTICA LOCACAO LOCACOES LOCADORA VEICULOS VEICULO " +
+    "DISTRIBUIDORA DISTRIBUIDOR INDUSTRIA ENGENHARIA TECNOLOGIA SISTEMAS CONSULTORIA ASSESSORIA CONSTRUCOES CONSTRUTORA " +
+    "MATERIAIS BRASIL BRASILEIRA GRUPO EMPRESA REDE CENTRO NACIONAL PAULISTA PAULO SANTO SANTA MECANICA OFICINA PNEUS " +
+    "COMBUSTIVEIS COMBUSTIVEL TURISMO FRETAMENTO VIAGENS SEGUROS SEGURADORA CORRETORA ADMINISTRADORA PARTICIPACOES"
+  ).split(/\s+/)
+);
+
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
 const palavras = (s: string) => semAcento(s).replace(/[^A-Z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
 
@@ -50,13 +63,17 @@ export function nomeNoExtrato(memo: string): string | null {
 // Documento (CNPJ ou CPF) escrito na linha: 11 ou 14 dígitos seguidos, com ou
 // sem pontuação.
 export function documentoNoExtrato(memo: string): string | null {
-  const m = /(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})|(\d{3}\.?\d{3}\.?\d{3}-?\d{2})/.exec(memo);
+  // Isolado: dígito colado antes ou depois é outro número (nosso número,
+  // código de barras), e um pedaço dele lido como CNPJ dava "diverge".
+  const m = /(?<!\d)(?:\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}|\d{3}\.?\d{3}\.?\d{3}-?\d{2})(?!\d)/.exec(memo);
   if (!m) return null;
   const d = m[0].replace(/\D/g, "");
   return d.length === 14 || d.length === 11 ? d : null;
 }
 
 export type Veredito = "confere" | "diverge" | "sem-nome";
+// "sem-nome" também cobre o INCONCLUSIVO: documento de outro com o nome do
+// fornecedor (o banco pode escrever o CNPJ de quem cobra pelo fornecedor).
 
 // A linha do banco é do fornecedor? Confere se o documento escrito é o dele
 // (no CNPJ, a mesma raiz: matriz e filial são a mesma empresa) ou se uma
@@ -64,29 +81,39 @@ export type Veredito = "confere" | "diverge" | "sem-nome";
 // O banco corta o nome no meio ("AUTO POSTO SAO JO"): a última palavra vale
 // pelo começo.
 export function conferirBeneficiario(memo: string, fornecedor: { nomes: (string | null)[]; documento: string | null }): Veredito {
+  const nome = nomeNoExtrato(memo);
+  const doBanco = nome ? nome.split(" ") : [];
+  const todas = [
+    ...new Set(
+      fornecedor.nomes
+        .filter((n): n is string => Boolean(n))
+        .flatMap((n) => palavras(normalizarRazaoSocial(n)))
+        .filter((p) => p.length >= 4 && !PALAVRAS_DE_RAZAO_SOCIAL.has(p) && !PALAVRAS_DO_BANCO.has(p))
+    ),
+  ];
+  const proprias = todas.filter((p) => !PALAVRAS_DE_SETOR.has(p));
+  // Quantas palavras do nome do fornecedor estão no nome do banco. Só a
+  // última palavra do banco pode vir cortada ("AUTO POSTO SAO JO").
+  const casadas = (lista: string[]) =>
+    lista.filter((p) => doBanco.some((b, i) => b.length >= 3 && (b === p || (i === doBanco.length - 1 && p.startsWith(b))))).length;
+  // O banco corta o nome no meio: "AUTO POSTO SAO JO" é o começo de "AUTO
+  // POSTO SAO JORGE". Começo com dez letras ou mais conta como o nome.
+  const comeco =
+    !!nome &&
+    nome.length >= 10 &&
+    fornecedor.nomes.some((n) => !!n && palavras(n).join(" ").startsWith(nome));
+  const nomeConfere = comeco || (proprias.length > 0 ? casadas(proprias) >= 1 : todas.length > 0 && casadas(todas) >= Math.min(2, todas.length));
+
   const doc = documentoNoExtrato(memo);
   const docFornecedor = (fornecedor.documento ?? "").replace(/\D/g, "");
   if (doc && docFornecedor) {
-    if (doc.length === 14 && docFornecedor.length === 14) return doc.slice(0, 8) === docFornecedor.slice(0, 8) ? "confere" : "diverge";
-    return doc === docFornecedor ? "confere" : "diverge";
+    const mesmo = doc.length === 14 && docFornecedor.length === 14 ? doc.slice(0, 8) === docFornecedor.slice(0, 8) : doc === docFornecedor;
+    if (mesmo) return "confere";
+    // Documento de outro, mas com o nome do fornecedor: inconclusivo.
+    return nomeConfere ? "sem-nome" : "diverge";
   }
-  const nome = nomeNoExtrato(memo);
-  if (!nome) return "sem-nome";
-  const doBanco = nome.split(" ");
-  const proprias = new Set(
-    fornecedor.nomes
-      .filter((n): n is string => Boolean(n))
-      .flatMap((n) => palavras(normalizarRazaoSocial(n)))
-      .filter((p) => p.length >= 4 && !PALAVRAS_DE_RAZAO_SOCIAL.has(p) && !PALAVRAS_DO_BANCO.has(p))
-  );
-  if (proprias.size === 0) return "sem-nome";
-  const casa = doBanco.some((b, i) => {
-    if (b.length < 3) return false;
-    if (proprias.has(b)) return true;
-    // Só a última palavra pode vir cortada.
-    return i === doBanco.length - 1 && b.length >= 3 && [...proprias].some((p) => p.startsWith(b));
-  });
-  return casa ? "confere" : "diverge";
+  if (!nome || todas.length === 0) return "sem-nome";
+  return nomeConfere ? "confere" : "diverge";
 }
 
 // CPF escrito na linha não aparece inteiro em tela (CLAUDE.md).

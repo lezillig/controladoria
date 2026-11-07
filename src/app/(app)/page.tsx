@@ -525,7 +525,12 @@ export default async function ControladoriaPage({
         <Secao
           id="vazamentos"
           titulo="Onde o dinheiro escapa"
-          descricao={`As ${vazamentos.maiores.length} maiores de ${vazamentos.origens} origem(ns) de perda no mês somam ${fmtBRL(vazamentos.somaDosMaioresCents)} dos ${fmtBRL(vazamentos.totalCents)} do cartão "Perdas do mês". Nenhuma delas trava a operação quando cortada.`}
+          descricao={
+            `As ${vazamentos.maiores.length} maiores de ${vazamentos.origens} origem(ns) de perda no mês somam ${fmtBRL(vazamentos.somaDosMaioresCents)} dos ${fmtBRL(c.mesAtual.perdaTotalCents)} do cartão "Perdas do mês". Nenhuma delas trava a operação quando cortada.` +
+            // As origens somadas vêm de outra consulta: se não baterem com o
+            // cartão, a tela diz, em vez de esconder o desencontro.
+            (vazamentos.totalCents !== c.mesAtual.perdaTotalCents ? ` Atenção: as origens somam ${fmtBRL(vazamentos.totalCents)}, diferente do cartão — conferir.` : "")
+          }
         >
           <Tabela
             colunas={["Origem", "No mês", "Média por mês (6 meses antes)", "Repete?", "O que fazer"]}

@@ -195,6 +195,10 @@ const FRACAO_MINIMA_COM_RASTRO = 0.5;
 export function veiculoParadoComCusto(ctx: ContextoAuditoria, periodo: Periodo, porVeiculo: ResultadoRateio<LinhaCusto>, materialidade: number): AchadoNovo[] {
   const frota = ctx.frota;
   if (!frota) return [];
+  // Só o último mês fechado DE HOJE. A varredura retroativa avalia meses
+  // antigos com a situação ATUAL de cada veículo (o baixado hoje rodava em
+  // 2025) e os km relidos de agora: seria achado falso.
+  if (ultimoMesFechado(ctx.agora ?? new Date()).inicio.getTime() !== periodo.inicio.getTime()) return [];
   const achados: AchadoNovo[] = [];
   const custoOmie = new Map(porVeiculo.linhas.map((l) => [l.id, l]));
   // Abaixo disto não vale a conversa: uma tarifa de rastreador perdida.
@@ -212,6 +216,10 @@ export function veiculoParadoComCusto(ctx: ContextoAuditoria, periodo: Periodo, 
     const venda = frota.vendaPorVeiculo.get(v.id) ?? null;
     // Vendido no próprio mês: o custo até a venda é legítimo.
     if (venda && venda >= periodo.inicio) continue;
+    // Comprado no mês ou depois: ainda chegando à frota (emplacamento,
+    // adaptação) — parcela correndo sem km é o esperado.
+    const compra = frota.compraPorVeiculo?.get(v.id);
+    if (compra && compra >= periodo.inicio) continue;
     const foraDaFrota = v.status === "INATIVO" || venda !== null;
     const ocioso = !foraDaFrota && v.status === "ATIVO" && rastroSuficiente && !comRastro.has(v.id);
     if (!foraDaFrota && !ocioso) continue;

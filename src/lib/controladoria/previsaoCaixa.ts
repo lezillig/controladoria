@@ -161,8 +161,10 @@ export type TituloPrevisto = {
   atrasoUsadoDias: number;
   // A data no pior dia do cliente (cenário pessimista). Nula quando a
   // realista é nula: o pessimista só ATRASA o que a realista conta — nunca
-  // conta o que ela já deu por incerto, para os três cenários ficarem em
-  // ordem (contratual ≥ realista ≥ pessimista).
+  // conta o que ela já deu por incerto. Por isso realista ≥ pessimista em
+  // todo horizonte. (A contratual NÃO entra nessa ordem: ela deixa de fora o
+  // vencido, e a realista conta o vencido que o cliente ainda vai pagar no
+  // prazo de costume — a realista pode passar da contratual.)
   dataPessimista: Date | null;
   padraoProprio: boolean;
 };

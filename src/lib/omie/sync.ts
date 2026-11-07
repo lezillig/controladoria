@@ -795,6 +795,10 @@ async function sincronizarTitulos(ctx: ContextoFase, backfill: boolean): Promise
               update: {
                 ...semBaixas(t),
                 ...(passo.natureza === "PAGAR" && !t.projetoCodigo ? { projetoCodigo: undefined } : {}),
+                // Leitura SEM código de barras não apaga o boleto gravado: a
+                // sequência A → (sem código) → B virava duas leituras sem troca
+                // e o FR-BOLETO-TROCADO nunca via A → B.
+                ...(t.boletoHash === null ? { boletoHash: undefined, boletoBanco: undefined, boletoValorCents: undefined, boletoVencimento: undefined, boletoDigitoValido: undefined } : {}),
                 sincronizadoEm: new Date(),
                 excluidoNaOmieEm: null,
               },

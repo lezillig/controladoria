@@ -367,5 +367,7 @@ export function fichaDaOs(titulos: TituloDaFicha[], taxaImpostos: Map<string, nu
 
 // O que se digita na busca: "OS 14641", "os-14641", " 14641 " → "14641".
 export function osDigitada(texto: string | undefined | null): string {
-  return (texto ?? "").trim().replace(/^o\.?\s*s\.?\s*[-:nº°#]*\s*/i, "").trim();
+  // Só tira o "OS" quando vem um número depois: "OSASCO FRETAMENTO" e "OSNI
+  // LOCACOES" são nomes de projeto, não "OS ASCO".
+  return (texto ?? "").trim().replace(/^o\.?\s*s\.?\s*[-:nº°#]*\s*(?=\d)/i, "").trim();
 }

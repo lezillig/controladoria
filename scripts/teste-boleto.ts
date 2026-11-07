@@ -156,6 +156,18 @@ conferir("boleto pelo líquido das retenções não é divergência", regras(ctx
 conferir("boleto pelo valor do título", regras(ctx([titulo({ boletoValorCents: 50_000_00 })])), []);
 conferir("centavos de diferença não contam", regras(ctx([titulo({ boletoValorCents: 50_000_90 })])), []);
 
+conferir(
+  "um boleto para duas notas do mesmo fornecedor (valor = soma): nem repetido nem divergente",
+  regras(ctx([titulo({ boletoHash: "soma", boletoValorCents: 80_000_00, valorDocumentoCents: 50_000_00 }), titulo({ boletoHash: "soma", boletoValorCents: 80_000_00, valorDocumentoCents: 30_000_00 })])),
+  []
+);
+conferir("retenção aplicada em parte (entre o líquido e o bruto): não é divergência", regras(ctx([titulo({ boletoValorCents: 48_000_00, retencaoIssCents: 2_500_00, retencaoIrCents: 750_00 })])), []);
+conferir(
+  "achado de título pago é EVENTO (não fecha quando o título sai da janela); a pagar é ESTADO",
+  auditarBoletos(ctx([titulo({ boletoValorCents: 58_000_00, liquidado: true, valorPagoCents: 58_000_00 }), titulo({ boletoValorCents: 58_000_00 })]), 10_000_00).map((a) => a.tipo),
+  ["EVENTO", "ESTADO"]
+);
+conferir("repetido: a chave é do boleto, não dos títulos", auditarBoletos(ctx([t1, t2]), 10_000_00)[0]?.chave.startsWith("FR-BOLETO-REPETIDO|igual"), true);
 conferir("dígito que não fecha, ainda a pagar", regras(ctx([titulo({ boletoDigitoValido: false })])), ["FR-BOLETO-INVALIDO"]);
 conferir("dígito que não fecha, já pago: calado", regras(ctx([titulo({ boletoDigitoValido: false, liquidado: true, valorPagoCents: 50_000_00 })])), []);
 
@@ -196,9 +208,13 @@ conferir("mesmo fornecedor, nome cortado pelo banco", conferirBeneficiario("PAG 
 conferir("mesmo fornecedor pelo nome fantasia", conferirBeneficiario("PIX ENVIADO POSTO SAO JORGE", posto), "confere");
 conferir("outra pessoa recebeu", conferirBeneficiario("PAGAMENTO DE BOLETO - MARIA APARECIDA SILVA", posto), "diverge");
 conferir("CNPJ da filial do fornecedor confere (mesma raiz)", conferirBeneficiario("PIX ENVIADO 12.345.678/0002-71", posto), "confere");
-conferir("CNPJ de outra empresa diverge, mesmo com o nome parecido", conferirBeneficiario("PIX ENVIADO POSTO SAO JORGE 98.765.432/0001-10", posto), "diverge");
+conferir("CNPJ de outra empresa e nome de outra: diverge", conferirBeneficiario("PIX ENVIADO MARIA SILVA 98.765.432/0001-10", posto), "diverge");
 conferir("só vocabulário do banco: não se julga", conferirBeneficiario("PAGTO COBRANCA 0012345", posto), "sem-nome");
 conferir("palavra genérica (LTDA, COMERCIO) não basta para conferir", conferirBeneficiario("PAG BOLETO COMERCIO LTDA", { nomes: ["COMERCIO DE PECAS ALFA LTDA"], documento: null }), "diverge");
+conferir("nosso número / código de barras não é lido como CNPJ", conferirBeneficiario("PAG BOLETO 23793381286008200011 AUTO POSTO SAO JORGE", posto), "confere");
+conferir("palavra de setor (AUTO) sozinha não confirma outro fornecedor", conferirBeneficiario("PIX ENVIADO AUTO PECAS RAPIDA ME", posto), "diverge");
+conferir("CNPJ de outro com o nome do fornecedor: inconclusivo, não diverge", conferirBeneficiario("PAG BOLETO POSTO SAO JORGE 98.765.432/0001-10", posto), "sem-nome");
+conferir("nome só de palavras de setor precisa casar duas", [conferirBeneficiario("PIX ENVIADO AUTO PECAS", { nomes: ["AUTO PECAS LTDA"], documento: null }), conferirBeneficiario("PIX ENVIADO AUTO VIACAO", { nomes: ["AUTO PECAS LTDA"], documento: null })], ["confere", "diverge"]);
 conferir("CPF da linha sai mascarado", memoSemCpf("PIX ENVIADO 123.456.789-01 FULANO"), "PIX ENVIADO ***.456.789-** FULANO");
 
 if (falhas) {

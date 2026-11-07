@@ -172,7 +172,7 @@ export default async function FluxoCaixaPage({
         titulo="Projeção por horizonte"
         descricao={
           "Contratual: cada recebível entra no vencimento. Realista: cada cliente entra quando costuma pagar, pelo histórico dele, " +
-          `e o vencido além do padrão fica de fora (${fmtBRL(previsao.incertoTotalCents)} hoje). A diferença entre as duas colunas é o otimismo embutido na primeira. ` +
+          `e o vencido além do padrão fica de fora (${fmtBRL(previsao.incertoTotalCents)} hoje). A diferença entre as duas colunas é o otimismo embutido na primeira — e pode ser negativa: a realista conta o vencido que o cliente ainda vai pagar no prazo de costume, que a contratual deixa de fora. ` +
           "Pessimista: os mesmos recebíveis da realista, cada cliente no pior dia dele."
         }
       >

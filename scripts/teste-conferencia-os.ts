@@ -216,7 +216,7 @@ async function banco() {
 
 function ficha() {
   console.log("\nFicha da OS");
-  conferir("o que se digita vira o número", ["OS 14641", "os-14641", " 14641 ", "O.S. 14641", "Nº 14641"].map(osDigitada), ["14641", "14641", "14641", "14641", "Nº 14641"]);
+  conferir("o que se digita vira o número", ["OS 14641", "os-14641", " 14641 ", "O.S. 14641", "OS Nº 14641", "OSASCO FRETAMENTO", "OSNI LOCACOES"].map(osDigitada), ["14641", "14641", "14641", "14641", "14641", "OSASCO FRETAMENTO", "OSNI LOCACOES"]);
   const t = (x: Partial<Parameters<typeof fichaDaOs>[0][number]>) => ({ conexaoId: "AZ", natureza: "PAGAR", parceiro: "TRANSCOMIN", categoria: "Compra de Serviços", valorCents: 0, pagoCents: 0, competencia: new Date(2026, 8, 10), ...x });
   const f = fichaDaOs(
     [
