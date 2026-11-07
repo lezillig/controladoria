@@ -29,7 +29,10 @@ conferir("coluna inexistente → versão da gestão", [coluna.tipo, coluna.texto
 const conexao = motivoDaFalhaNaGestao("Can't reach database server at `[REDIGIDO]`", tabelas, "separado");
 conferir("sem conexão", conexao.tipo, "conexao");
 
-conferir("outro erro mostra a mensagem", motivoDaFalhaNaGestao("algo inesperado", tabelas, "separado").tipo, "outro");
+const outro = motivoDaFalhaNaGestao("algo inesperado com usuario_x", tabelas, "separado");
+conferir("outro erro: tipo outro, sem ecoar a mensagem do banco", [outro.tipo, outro.texto.includes("usuario_x")], ["outro", false]);
+const cred = motivoDaFalhaNaGestao("P1000: Authentication failed against database server, the provided database credentials for `leitor_gestao` are not valid.", tabelas, "separado");
+conferir("credencial recusada: tipo próprio, sem o nome do usuário", [cred.tipo, cred.texto.includes("leitor_gestao")], ["credencial", false]);
 
 if (falhas) {
   console.log(`\n${falhas} falha(s).`);

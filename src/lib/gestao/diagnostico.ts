@@ -10,7 +10,7 @@
 // A mensagem já chega redigida (sem host nem senha) de quem chama.
 
 export type MotivoDaFalha = {
-  tipo: "permissao" | "tabela" | "coluna" | "conexao" | "outro";
+  tipo: "permissao" | "credencial" | "tabela" | "coluna" | "conexao" | "outro";
   titulo: string;
   texto: string;
   // O comando que resolve, quando há um — para copiar e colar no editor SQL.
@@ -20,6 +20,16 @@ export type MotivoDaFalha = {
 export function motivoDaFalhaNaGestao(mensagem: string, tabelas: string[], modo: "separado" | "mesmo-banco"): MotivoDaFalha {
   const lista = tabelas.map((t) => `public."${t}"`).join(", ");
   const conexao = modo === "separado" ? "a conexão GESTAO_DATABASE_URL" : "a conexão principal (sem GESTAO_DATABASE_URL, a controladoria lê a gestão no próprio banco)";
+  // Credencial recusada: a mensagem do Prisma traz o NOME DO USUÁRIO do banco
+  // ("credentials for `<usuário>`") — não vai para a tela, e o conserto é
+  // outro (a senha da variável, não um GRANT).
+  if (/P1000|P1010|authentication failed|password authentication|credentials for/i.test(mensagem)) {
+    return {
+      tipo: "credencial",
+      titulo: "O banco da gestão recusou a credencial",
+      texto: `O usuário ou a senha de ${conexao} não foram aceitos pelo banco da gestão. Confira a variável na Vercel (usuário e senha do papel de leitura, ver docs/papel-leitura-gestao.sql).`,
+    };
+  }
   if (/42501|permission denied/i.test(mensagem)) {
     return {
       tipo: "permissao",
@@ -53,9 +63,12 @@ export function motivoDaFalhaNaGestao(mensagem: string, tabelas: string[], modo:
       texto: "O banco da gestão não respondeu agora (fora do ar, suspenso ou lento para acordar). As ligações com a Omie continuam gravadas; tente de novo em instantes.",
     };
   }
+  // O texto do erro NÃO vai para a tela: mensagem de banco carrega nome de
+  // usuário, de tabela e às vezes trecho de dado. Ele está no log do servidor
+  // (leitura.ts registra a mensagem redigida).
   return {
     tipo: "outro",
     titulo: "Não foi possível ler a gestão",
-    texto: `A leitura de ${tabelas.join(" e ")} falhou: ${mensagem.slice(0, 300)}`,
+    texto: `A leitura de ${tabelas.join(" e ")} falhou por um motivo que não é permissão, versão nem conexão. O erro completo está no log do servidor da Vercel, com "[gestao] leitura dos contratos falhou".`,
   };
 }

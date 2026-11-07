@@ -32,6 +32,8 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
   const ate = ano ? (ano === hoje.getFullYear() ? hoje : new Date(ano, 11, 31)) : hoje;
   const desde = ano ? new Date(ano, 0, 1) : meses === 0 ? config.dataInicioBase : new Date(ate.getFullYear(), ate.getMonth() - (meses - 1), 1);
   const podeInvestigar = await podeAcao(session, "investigar");
+  // Conferir na Omie grava no espelho e gasta a cota: é ação (sincronizar).
+  const podeConferirNaOmie = await podeAcao(session, "sincronizar");
   const [r, comissoes] = await Promise.all([
     conferenciaDeOsNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
     comissoesNoBanco({ companyId: session.companyId, conexaoId: escopo.conexaoId, desde, ate }),
@@ -430,9 +432,11 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
                       A OS tem {fmtNumero(fichaTitulos.total)} títulos; a ficha soma os {fmtNumero(fichaTitulos.titulos.length)} primeiros. Um número tão grande costuma ser contrato, não OS.
                     </p>
                   )}
-                  <ConferirOsNaOmie
-                    titulos={fichaTitulos.titulos.map((t) => ({ id: t.id, rotulo: `${t.natureza === "PAGAR" ? "a pagar" : "a receber"} · ${t.parceiro ?? "—"} · ${t.documento ?? "s/ doc."} ${t.parcela ?? ""} · ${fmtBRL(t.valorCents)}` }))}
-                  />
+                  {podeConferirNaOmie && (
+                    <ConferirOsNaOmie
+                      titulos={fichaTitulos.titulos.map((t) => ({ id: t.id, rotulo: `${t.natureza === "PAGAR" ? "a pagar" : "a receber"} · ${t.parceiro ?? "—"} · ${t.documento ?? "s/ doc."} ${t.parcela ?? ""} · ${fmtBRL(t.valorCents)}` }))}
+                    />
+                  )}
                 </div>
               </div>
             )}
@@ -482,11 +486,6 @@ export default async function ConferenciaOsPage({ searchParams }: { searchParams
                 A pagar {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "PAGAR").reduce((s, t) => s + t.valorCents, 0))} · a receber{" "}
                 {fmtBRL(detalhe.titulos.filter((t) => t.natureza === "RECEBER").reduce((s, t) => s + t.valorCents, 0))}. Multa (ex.: Multa de Trânsito) e diretoria aparecem como &ldquo;desconsiderada&rdquo; e ficam fora da conta da OS.
               </p>
-            )}
-            {params.os && detalhe.titulos.length > 0 && (
-              <ConferirOsNaOmie
-                titulos={detalhe.titulos.map((t) => ({ id: t.id, rotulo: `${t.natureza === "PAGAR" ? "a pagar" : "a receber"} · ${t.parceiro ?? "—"} · ${t.documento ?? "s/ doc."} ${t.parcela ?? ""} · ${fmtBRL(t.valorCents)}` }))}
-              />
             )}
           </Secao>
         </section>

@@ -30,6 +30,14 @@ import { inputClass, larguraPainel, secondaryButtonClass } from "@/lib/ui";
 
 export const dynamic = "force-dynamic";
 
+// O "Voltar" só leva para dentro do sistema. `startsWith("/")` aceitava
+// "//site.externo" e "/\site.externo", que o navegador lê como outro domínio:
+// um link legítimo daqui com o "Voltar" apontando para uma página falsa de
+// login.
+function voltaSegura(volta: string | undefined): string {
+  return volta && /^\/(?![\/\\])/.test(volta) ? volta : "/";
+}
+
 type Params = {
   fonte?: string;
   natureza?: string;
@@ -99,7 +107,7 @@ export default async function DetalhamentoPage({ searchParams }: { searchParams:
     }
   }
 
-  const volta = params.volta && params.volta.startsWith("/") ? params.volta : "/";
+  const volta = voltaSegura(params.volta);
 
   if (!dados) {
     return (

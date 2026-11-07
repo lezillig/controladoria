@@ -44,13 +44,37 @@ export function valorOfx(v: string | null): number | null {
   return Math.round(n * 100) * (negativo ? -1 : 1);
 }
 
+// OS BLOCOS <TAG>…</TAG> EM TEMPO LINEAR. As expressões `<TAG>([\s\S]*?)</TAG>`
+// eram quadráticas quando a tag não fecha: um OFX de 350 KB com aberturas
+// sem fechamento levava segundos de CPU, e o limite de 5 MB dava minutos com o
+// servidor parado. Aqui cada abertura procura o fechamento a partir dela, e o
+// cursor nunca volta.
+function blocos(texto: string, nome: string, maximo = Infinity): string[] {
+  const alto = texto.toUpperCase();
+  const abre = `<${nome}>`;
+  const fecha = `</${nome}>`;
+  const achados: string[] = [];
+  let i = alto.indexOf(abre);
+  while (i >= 0 && achados.length < maximo) {
+    const inicio = i + abre.length;
+    const fim = alto.indexOf(fecha, inicio);
+    if (fim < 0) break;
+    achados.push(texto.slice(inicio, fim));
+    i = alto.indexOf(abre, fim + fecha.length);
+  }
+  return achados;
+}
+
+// Mais lançamentos que isto num arquivo não é extrato de uma conta: é engano
+// ou abuso, e o cruzamento com a Omie não precisa dele.
+export const MAXIMO_DE_LANCAMENTOS = 20_000;
+
 export function lerOfx(texto: string): ExtratoOfx {
-  const conta = /<(BANKACCTFROM|CCACCTFROM)>([\s\S]*?)<\/\1>/i.exec(texto)?.[2] ?? texto;
-  const lista = /<BANKTRANLIST>([\s\S]*?)<\/BANKTRANLIST>/i.exec(texto)?.[1] ?? "";
-  const saldo = /<LEDGERBAL>([\s\S]*?)<\/LEDGERBAL>/i.exec(texto)?.[1] ?? "";
+  const conta = blocos(texto, "BANKACCTFROM", 1)[0] ?? blocos(texto, "CCACCTFROM", 1)[0] ?? texto.slice(0, 4000);
+  const lista = blocos(texto, "BANKTRANLIST", 1)[0] ?? "";
+  const saldo = blocos(texto, "LEDGERBAL", 1)[0] ?? "";
   const lancamentos: LancamentoOfx[] = [];
-  for (const m of texto.matchAll(/<STMTTRN>([\s\S]*?)<\/STMTTRN>/gi)) {
-    const b = m[1];
+  for (const b of blocos(texto, "STMTTRN", MAXIMO_DE_LANCAMENTOS)) {
     const data = dataOfx(tag(b, "DTPOSTED"));
     const valorCents = valorOfx(tag(b, "TRNAMT"));
     if (!data || valorCents === null) continue;
@@ -107,12 +131,16 @@ export function cruzarOfx(params: { banco: LancamentoOfx[]; omie: LadoOmie[]; at
   const agendados = params.banco.filter((b) => b.data.getTime() > limite);
   const banco = params.banco.filter((b) => b.data.getTime() <= limite).sort((a, b) => a.data.getTime() - b.data.getTime());
   const livres = new Set(params.omie.map((o) => o.id));
+  // Indexado por valor: só se compara com o que tem o mesmo valor, em vez de
+  // cada linha do banco contra cada linha da Omie.
+  const porValor = new Map<number, LadoOmie[]>();
+  for (const o of params.omie) porValor.set(o.valorCents, [...(porValor.get(o.valorCents) ?? []), o]);
   const casados: CruzamentoOfx["casados"] = [];
   const soNoBanco: LancamentoOfx[] = [];
   for (const b of banco) {
     let melhor: LadoOmie | null = null;
-    for (const o of params.omie) {
-      if (!livres.has(o.id) || o.valorCents !== b.valorCents) continue;
+    for (const o of porValor.get(b.valorCents) ?? []) {
+      if (!livres.has(o.id)) continue;
       const d = Math.abs(o.data.getTime() - b.data.getTime());
       if (d > folga) continue;
       if (!melhor || d < Math.abs(melhor.data.getTime() - b.data.getTime())) melhor = o;

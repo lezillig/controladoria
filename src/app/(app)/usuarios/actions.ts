@@ -3,6 +3,7 @@
 import { randomUUID } from "crypto";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { prismaGestao } from "@/lib/gestao/cliente";
 import { PERMISSOES, perderiaGestaoDeUsuarios } from "@/lib/acessos";
@@ -146,6 +147,37 @@ export async function criarUsuario(formData: FormData): Promise<ResultadoUsuario
   };
 }
 
+// QUEM NÃO É ADMIN NÃO MEXE NO ACESSO DE UM ADMIN. O perfil vale também para
+// o ADMIN (acessos.ts), e "gerir usuários" pode vir de um papel abaixo dele:
+// sem esta trava, um usuário do financeiro atribuía ao ADMIN um perfil só com
+// o painel — ou editava o perfil que o ADMIN usa — e o ADMIN perdia esta tela,
+// recuperável só no banco. Gestão fora do ar conta como "alcança": sem saber
+// o papel de quem é atingido, a mudança espera.
+const ERRO_ALCANCA_ADMIN = "Esta mudança alcança um usuário ADMIN — só outro ADMIN pode fazê-la.";
+async function alcancaAdmin(companyId: string, userIds: string[]): Promise<boolean> {
+  if (userIds.length === 0) return false;
+  try {
+    const linhas = await prismaGestao.$queryRaw<{ id: string }[]>`
+      SELECT id FROM public."User"
+       WHERE "companyId" = ${companyId} AND role::text = 'ADMIN' AND id IN (${Prisma.join(userIds)})
+       LIMIT 1`;
+    return linhas.length > 0;
+  } catch {
+    return true;
+  }
+}
+async function haAdminSemPerfil(companyId: string): Promise<boolean> {
+  try {
+    const admins = await prismaGestao.$queryRaw<{ id: string }[]>`
+      SELECT id FROM public."User" WHERE "companyId" = ${companyId} AND role::text = 'ADMIN' AND active`;
+    if (admins.length === 0) return false;
+    const comPerfil = await prisma.usuarioPerfil.count({ where: { companyId, userId: { in: admins.map((a) => a.id) } } });
+    return comPerfil < admins.length;
+  } catch {
+    return true;
+  }
+}
+
 export async function atribuirPerfil(formData: FormData): Promise<ResultadoUsuario> {
   const session = await exigirPermissao("gerir-usuarios");
 
@@ -157,6 +189,7 @@ export async function atribuirPerfil(formData: FormData): Promise<ResultadoUsuar
     const perfil = await prisma.perfilAcesso.findFirst({ where: { id: perfilId, companyId: session.companyId }, select: { id: true } });
     if (!perfil) return { erro: "Perfil não encontrado." };
   }
+  if (session.role !== "ADMIN" && (await alcancaAdmin(session.companyId, [userId]))) return { erro: ERRO_ALCANCA_ADMIN };
 
   // Trocar o PRÓPRIO perfil por um sem "gerir usuários" (ou removê-lo e cair
   // num padrão/papel sem ela) tranca a pessoa fora desta tela na hora.
@@ -237,6 +270,14 @@ export async function salvarPerfil(formData: FormData): Promise<ResultadoUsuario
   // alcança: o próprio perfil atribuído sendo editado, ou — sem perfil
   // próprio — este perfil virando o padrão, ou deixando de ser o padrão (aí
   // valem as regras do papel). Ver `perderiaGestaoDeUsuarios`.
+  // Perfil de um ADMIN — atribuído a ele, ou o padrão de quem não tem perfil
+  // próprio — só outro ADMIN altera.
+  if (session.role !== "ADMIN") {
+    const atribuidos = id ? (await prisma.usuarioPerfil.findMany({ where: { companyId: session.companyId, perfilId: id }, select: { userId: true } })).map((a) => a.userId) : [];
+    const mexeNoPadrao = padrao || Boolean(anterior?.padrao);
+    if ((await alcancaAdmin(session.companyId, atribuidos)) || (mexeNoPadrao && (await haAdminSemPerfil(session.companyId)))) return { erro: ERRO_ALCANCA_ADMIN };
+  }
+
   const minhaAtribuicao = await prisma.usuarioPerfil.findUnique({
     where: { companyId_userId: { companyId: session.companyId, userId: session.userId } },
     select: { perfilId: true },

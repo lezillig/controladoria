@@ -34,7 +34,12 @@ function celula(valor: string | number | null | undefined): string {
     return valor.toFixed(2).replace(".", ",");
   }
 
-  const texto = String(valor);
+  // Texto que começa com = + - @ (ou tabulação) vira FÓRMULA no Excel. Nome de
+  // parceiro e observação vêm da Omie, digitados por qualquer um: um
+  // "=HYPERLINK(...)" num nome de fornecedor executaria ao abrir a planilha.
+  // O apóstrofo na frente faz o Excel tratar como texto.
+  const bruto = String(valor);
+  const texto = /^[=+\-@\t\r]/.test(bruto) ? `'${bruto}` : bruto;
   // Aspas duplicadas e campo entre aspas quando há separador, aspas ou quebra
   // de linha. Descrição de categoria com ponto e vírgula existe, e sem isto
   // ela desloca todas as colunas à direita — o tipo de erro que passa

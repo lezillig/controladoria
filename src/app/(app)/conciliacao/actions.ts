@@ -119,9 +119,14 @@ export async function conferirOfx(_anterior: ResultadoOfx | null, formData: Form
   const escolhida = String(formData.get("conta") ?? "");
   const conta = (escolhida ? contas.find((c) => `${c.conexaoId}:${c.codigo}` === escolhida) : null) ?? contaDoOfx(ofx, contas);
   const iso = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
-  const datas = ofx.lancamentos.map((l) => l.data.getTime());
   const hoje = new Date();
   const ate = ofx.fim ?? new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate()));
+  // A janela da consulta à Omie sai da data mais antiga do arquivo: um
+  // lançamento com data de 1900 carregaria o extrato inteiro da conta. Vale o
+  // último ano e pouco antes do fim do arquivo; o resto não entra.
+  const corte = ate.getTime() - 400 * 86_400_000;
+  ofx.lancamentos = ofx.lancamentos.filter((l) => l.data.getTime() >= corte);
+  const datas = ofx.lancamentos.map((l) => l.data.getTime());
   const base: ResultadoOfx = {
     arquivo: { banco: ofx.banco, conta: ofx.conta, de: datas.length ? iso(new Date(Math.min(...datas))) : null, ate: iso(ate), lancamentos: ofx.lancamentos.length, saldoCents: ofx.saldoCents },
     contas: contas.map((c) => ({ chave: `${c.conexaoId}:${c.codigo}`, rotulo: `${c.conexaoApelido} · ${c.descricao}${c.numeroConta ? ` (${c.banco ?? "?"} / ${c.numeroConta})` : ""}` })),
@@ -181,6 +186,19 @@ export async function conferirOfx(_anterior: ResultadoOfx | null, formData: Form
       data: { companyId: session.companyId, conexaoId: conta.conexaoId, contaCodigo: conta.codigo, descricao: conta.descricao, data: ofx.saldoEm ?? ate, valorCents: BigInt(ofx.saldoCents), autorNome: `${session.name} (OFX)` },
     });
     saldoGravado = true;
+    // Na trilha como o saldo digitado: o saldo do banco muda o "saldo em
+    // caixa" de todo o sistema, e quem o gravou precisa ficar registrado.
+    await registrarEvento({
+      companyId: session.companyId,
+      userId: session.userId,
+      userNome: session.name,
+      userEmail: session.email,
+      acao: "SALDO_INFORMADO",
+      entidadeTipo: "SaldoBancarioInformado",
+      descricao: `Saldo do banco gravado do OFX: ${conta.conexaoApelido} · ${conta.descricao} em ${(ofx.saldoEm ?? ate).toISOString().slice(0, 10).split("-").reverse().join("/")} = ${(ofx.saldoCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`,
+    }).catch(() => {
+      // o saldo já está gravado
+    });
     revalidatePath("/conciliacao");
   }
 
