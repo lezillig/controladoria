@@ -126,12 +126,12 @@ export default function ConexaoForm({ conexao }: { conexao?: ConexaoEmEdicao }) 
             <input name="representanteNome" defaultValue={conexao?.representanteNome} className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>RG</label>
-            <input name="representanteRg" defaultValue={conexao?.representanteRg} className={inputClass} />
+            <label className={labelClass}>RG{conexao?.representanteRg ? " (em branco mantém; - apaga)" : ""}</label>
+            <input name="representanteRg" placeholder={conexao?.representanteRg || ""} className={inputClass} />
           </div>
           <div>
-            <label className={labelClass}>CPF</label>
-            <input name="representanteCpf" defaultValue={conexao?.representanteCpf} placeholder="000.000.000-00" className={inputClass} />
+            <label className={labelClass}>CPF{conexao?.representanteCpf ? " (em branco mantém; - apaga)" : ""}</label>
+            <input name="representanteCpf" placeholder={conexao?.representanteCpf || "000.000.000-00"} className={inputClass} />
           </div>
           <div>
             <label className={labelClass}>Cargo</label>

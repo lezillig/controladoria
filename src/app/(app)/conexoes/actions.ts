@@ -74,14 +74,23 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
 
   // Dados para propostas: texto livre, vazio vira nulo.
   const texto = (campo: string) => String(formData.get(campo) ?? "").trim() || null;
-  const cpf = texto("representanteCpf");
+  // RG e CPF do representante nao voltam inteiros ao formulario (a tela mostra
+  // mascarado): em branco MANTEM o que esta gravado, "-" apaga.
+  const documento = (campo: string) => {
+    const v = texto(campo);
+    if (v === "-") return { valor: null };
+    return v === null && id ? undefined : { valor: v };
+  };
+  const rg = documento("representanteRg");
+  const cpfCampo = documento("representanteCpf");
+  const cpf = cpfCampo?.valor ?? null;
   if (cpf && cpf.replace(/\D/g, "").length !== 11) return { erro: "CPF do representante deve ter 11 dígitos." };
   const proposta = {
     endereco: texto("endereco"),
     cidade: texto("cidade"),
     representanteNome: texto("representanteNome"),
-    representanteRg: texto("representanteRg"),
-    representanteCpf: cpf,
+    ...(rg ? { representanteRg: rg.valor } : {}),
+    ...(cpfCampo ? { representanteCpf: cpf } : {}),
     representanteCargo: texto("representanteCargo"),
   };
 
@@ -103,7 +112,7 @@ export async function salvarConexao(formData: FormData): Promise<ResultadoConexa
     entidadeId: conexao.id,
     descricao: `Conexão ${apelido} (${nome}) ${id ? "alterada" : "cadastrada"}, credencial ${credencialRef}, papel no grupo ${papelNoGrupo === "CORPORATIVO" ? "corporativo" : "operação"}.`,
     // RG e CPF do representante ficam fora da trilha: dado pessoal.
-    depois: { ...dados, representanteRg: proposta.representanteRg ? "(informado)" : null, representanteCpf: proposta.representanteCpf ? "(informado)" : null },
+    depois: { ...dados, representanteRg: "representanteRg" in proposta ? (proposta.representanteRg ? "(informado)" : null) : "(mantido)", representanteCpf: "representanteCpf" in proposta ? (proposta.representanteCpf ? "(informado)" : null) : "(mantido)" },
   });
 
   revalidatePath("/conexoes");

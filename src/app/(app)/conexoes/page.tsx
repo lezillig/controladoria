@@ -144,8 +144,10 @@ export default async function ConexoesPage() {
                             endereco: c.endereco ?? "",
                             cidade: c.cidade ?? "",
                             representanteNome: c.representanteNome ?? "",
-                            representanteRg: c.representanteRg ?? "",
-                            representanteCpf: c.representanteCpf ?? "",
+                            // Documento pessoal nao vai inteiro ao navegador: o
+                            // formulario mostra o mascarado e, em branco, mantem.
+                            representanteRg: c.representanteRg ? `****${c.representanteRg.replace(/\W/g, "").slice(-3)}` : "",
+                            representanteCpf: c.representanteCpf ? `***.${c.representanteCpf.replace(/\D/g, "").slice(3, 6)}.${c.representanteCpf.replace(/\D/g, "").slice(6, 9)}-**` : "",
                             representanteCargo: c.representanteCargo ?? "",
                           }}
                         />
