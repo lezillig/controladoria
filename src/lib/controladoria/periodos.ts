@@ -157,19 +157,49 @@ export function montarJanelas(dataReferencia: Date): JanelasRelatorio {
   };
 }
 
-// Fim de semana e feriado nacional fixo. Usado por duas regras distintas:
-// pagamento efetivado em dia nao util (indicio a verificar) e vencimento
-// caindo em dia nao util (risco operacional de atraso involuntario).
-// Deliberadamente so os feriados de data FIXA: feriado movel (Carnaval,
-// Corpus Christi, Sexta-Feira Santa) exigiria calendario externo, e um
-// falso-negativo aqui e melhor que uma tabela desatualizada em producao
-// dando alerta errado.
+// Fim de semana e feriado. Usado por duas regras distintas: pagamento
+// efetivado em dia nao util (indicio a verificar) e vencimento caindo em dia
+// nao util (risco operacional de atraso involuntario).
+//
+// Feriados: os nacionais de data fixa, os de Sao Paulo (sede das empresas:
+// 25/01 municipal, 09/07 estadual) e os MOVEIS, calculados pela Pascoa —
+// Sexta-feira Santa, Corpus Christi (feriado municipal em SP) e, para banco,
+// a segunda e a terca de Carnaval. Conta, nao tabela: nao desatualiza.
 // 20/11 (Consciência Negra) é feriado nacional desde 2024 (Lei 14.759/2023).
-export const FERIADOS_FIXOS = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"];
+// Mesma lista da gestao (feriados.json gerado pelo calendario.py de la).
+export const FERIADOS_FIXOS = ["01-01", "01-25", "04-21", "05-01", "07-09", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"];
+
+// Domingo de Pascoa (algoritmo de Meeus), como "AAAA-MM-DD".
+export function pascoa(ano: number): string {
+  const a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+}
+const moveis = new Map<number, { feriados: Set<string>; carnaval: Set<string> }>();
+function moveisDoAno(ano: number) {
+  let r = moveis.get(ano);
+  if (!r) {
+    const p = new Date(`${pascoa(ano)}T00:00:00Z`).getTime();
+    const dia = (n: number) => new Date(p + n * 86_400_000).toISOString().slice(0, 10);
+    r = { feriados: new Set([dia(-2), dia(60)]), carnaval: new Set([dia(-48), dia(-47)]) };
+    moveis.set(ano, r);
+  }
+  return r;
+}
+/** Feriado (fixo, de SP ou movel) na data AAAA-MM-DD. Carnaval nao entra: e ponto facultativo, nao feriado. */
+export function ehFeriado(iso: string): boolean {
+  return FERIADOS_FIXOS.includes(iso.slice(5, 10)) || moveisDoAno(Number(iso.slice(0, 4))).feriados.has(iso);
+}
+/** Segunda ou terca de Carnaval: banco fechado. */
+export function ehCarnaval(iso: string): boolean {
+  return moveisDoAno(Number(iso.slice(0, 4))).carnaval.has(iso);
+}
 
 export function ehDiaNaoUtil(d: Date): boolean {
   const diaSemana = d.getDay();
   if (diaSemana === 0 || diaSemana === 6) return true;
-  const chave = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  return FERIADOS_FIXOS.includes(chave);
+  const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return ehFeriado(iso) || ehCarnaval(iso);
 }

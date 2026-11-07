@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { ETAPAS, ROTULO_STATUS, chaveCompetencia, lerCompetencia, rotuloCompetencia, somarMeses, type LinhaDoChecklist, type Status } from "@/lib/controladoria/fechamentoFolha";
+import { ETAPAS, ROTULO_STATUS, chaveCompetencia, lerCompetencia, podeMarcarItem, rotuloCompetencia, somarMeses, type LinhaDoChecklist, type Status } from "@/lib/controladoria/fechamentoFolha";
 import { alertasDaFolha, checklistDaFolha } from "@/lib/controladoria/fechamentoFolhaNoBanco";
 import { fmtBRL, fmtData } from "@/lib/controladoria/format";
 import { badgeClass, larguraPainel } from "@/lib/ui";
-import { exigirPermissao, podeAcao } from "../_dados";
+import { acessoDaSessao, exigirPermissao } from "../_dados";
 import { Kpi, Secao } from "../_componentes";
 import { marcarItemDaFolha } from "./actions";
 
@@ -15,6 +15,7 @@ const COR: Record<Status, string> = {
   feito: "bg-emerald-100 text-emerald-800",
   "omie-ok": "bg-emerald-100 text-emerald-800",
   "omie-atraso": "bg-amber-100 text-amber-800",
+  divergente: "bg-red-100 text-red-800",
   atrasado: "bg-red-100 text-red-800",
   "vence-logo": "bg-amber-100 text-amber-800",
   pendente: "bg-slate-100 text-slate-700",
@@ -27,7 +28,9 @@ const resolvido = (s: Status) => s === "feito" || s === "omie-ok" || s === "omie
 export default async function FolhaPage({ searchParams }: { searchParams: Promise<{ competencia?: string }> }) {
   const params = await searchParams;
   const session = await exigirPermissao("folha");
-  const podeMarcar = await podeAcao(session, "marcar-folha");
+  // Cada item tem um responsável: o botão aparece só para quem pode marcar
+  // AQUELE item (a ação confere de novo).
+  const permissoes = (await acessoDaSessao(session)).permissoes;
   const hoje = new Date();
   const atual = { ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 };
   const c = lerCompetencia(params.competencia) ?? atual;
@@ -83,7 +86,7 @@ export default async function FolhaPage({ searchParams }: { searchParams: Promis
             {deOutras.map((a, i) => (
               <li key={i}>
                 <Link href={`/folha?competencia=${chaveCompetencia(a.competencia)}`} className="hover:underline">
-                  {a.status === "atrasado" ? "Atrasado" : "Vence logo"}: {a.titulo} — {a.empresa}, folha de {rotuloCompetencia(a.competencia)}, prazo {fmtData(a.prazo)}
+                  {a.status === "atrasado" ? "Atrasado" : a.status === "divergente" ? "Marcado com título em aberto" : "Vence logo"}: {a.titulo} — {a.empresa}, folha de {rotuloCompetencia(a.competencia)}, prazo {fmtData(a.prazo)}
                 </Link>
               </li>
             ))}
@@ -99,7 +102,7 @@ export default async function FolhaPage({ searchParams }: { searchParams: Promis
             {linhas
               .filter((l) => l.item.etapa === etapa)
               .map((l) => (
-                <Linha key={l.item.chave} l={l} conexoes={conexoes} competencia={chaveCompetencia(c)} podeMarcar={podeMarcar} />
+                <Linha key={l.item.chave} l={l} conexoes={conexoes} competencia={chaveCompetencia(c)} podeMarcar={podeMarcarItem(l.item, permissoes)} />
               ))}
           </div>
         </Secao>

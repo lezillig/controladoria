@@ -1,4 +1,5 @@
-import { FERIADOS_FIXOS } from "./periodos";
+import { ehCarnaval, ehFeriado } from "./periodos";
+import type { Permissao } from "@/lib/acessos";
 
 // O FECHAMENTO DA FOLHA — o calendário do fluxograma validado pelo RH e pela
 // Contabilidade (Azul Mob, v4, out/2026), virado checklist mensal.
@@ -23,9 +24,10 @@ import { FERIADOS_FIXOS } from "./periodos";
 // categoria (VT/VA/VR, plano de saúde, salários, INSS, FGTS, IRRF) pago até o
 // prazo. Sem banco: a colheita está em fechamentoFolhaNoBanco.ts.
 //
-// Dias úteis: fim de semana e feriado nacional fixo (os móveis ficam de fora,
-// como em periodos.ts). Para o salário, sábado CONTA como dia útil — é a
-// leitura do Ministério do Trabalho para o 5º dia útil.
+// Dias úteis: fim de semana e feriado — fixos, de São Paulo e os móveis pela
+// Páscoa (periodos.ts). Para o salário, sábado CONTA como dia útil — é a
+// leitura do Ministério do Trabalho para o 5º dia útil — e o Carnaval não é
+// feriado; para guias e banco, o Carnaval fecha o dia.
 
 export type Competencia = { ano: number; mes: number };
 export type Responsavel = "RH" | "RH · Financeiro" | "Financeiro" | "Contabilidade";
@@ -44,6 +46,16 @@ export type ItemFolha = {
   // Tela do sistema que ajuda a cumprir o item.
   link?: { href: string; rotulo: string };
 };
+
+// QUEM MARCA O QUE. O item é de um responsável; marcar "salário pago" ou "INSS
+// recolhido" não é do RH. "RH · Financeiro" aceita qualquer dos dois.
+export const PERMISSAO_DO_RESPONSAVEL: Record<Responsavel, Permissao[]> = {
+  RH: ["marcar-folha"],
+  "RH · Financeiro": ["marcar-folha", "marcar-folha-financeiro"],
+  Financeiro: ["marcar-folha-financeiro"],
+  Contabilidade: ["marcar-folha-contabilidade"],
+};
+export const podeMarcarItem = (item: Pick<ItemFolha, "responsavel">, permissoes: Set<string>) => PERMISSAO_DO_RESPONSAVEL[item.responsavel].some((p) => permissoes.has(p));
 
 export const ETAPAS: Record<ItemFolha["etapa"], { nome: string; pratica: string }> = {
   1: { nome: "Preparação", pratica: "Reunir tudo o que muda a folha no mês antes de calcular qualquer valor." },
@@ -70,8 +82,9 @@ export const somarMeses = (c: Competencia, n: number): Competencia => {
 // ---- Dias úteis (UTC, meia-noite) ----
 const dia = (c: Competencia, d: number) => new Date(Date.UTC(c.ano, c.mes - 1, d));
 const ultimoDia = (c: Competencia) => new Date(Date.UTC(c.ano, c.mes, 0)).getUTCDate();
-const feriado = (d: Date) => FERIADOS_FIXOS.includes(`${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`);
-export const naoUtil = (d: Date, sabadoConta = false) => d.getUTCDay() === 0 || (!sabadoConta && d.getUTCDay() === 6) || feriado(d);
+const isoUtc = (d: Date) => d.toISOString().slice(0, 10);
+export const naoUtil = (d: Date, sabadoConta = false) =>
+  d.getUTCDay() === 0 || (!sabadoConta && (d.getUTCDay() === 6 || ehCarnaval(isoUtc(d)))) || ehFeriado(isoUtc(d));
 
 export function ultimoDiaUtil(c: Competencia): Date {
   let d = dia(c, ultimoDia(c));
@@ -294,12 +307,13 @@ export const ITENS_FOLHA: ItemFolha[] = [
 export type TituloDaFolha = { categoria: string | null; parceiro: string | null; valorCents: number; vencimento: Date; liquidado: boolean; pagoEm: Date | null };
 export type Evidencia = { titulos: TituloDaFolha[]; valorCents: number; pagos: number; emAberto: number; ultimoPagamento: Date | null };
 export type Marca = { feitoEm: Date; feitoPor: string | null; observacao: string | null };
-export type Status = "feito" | "omie-ok" | "omie-atraso" | "atrasado" | "vence-logo" | "pendente" | "futuro" | "sem-prazo";
+export type Status = "feito" | "omie-ok" | "omie-atraso" | "divergente" | "atrasado" | "vence-logo" | "pendente" | "futuro" | "sem-prazo";
 
 export const ROTULO_STATUS: Record<Status, string> = {
   feito: "Feito",
   "omie-ok": "Pago no prazo (Omie)",
   "omie-atraso": "Pago com atraso (Omie)",
+  divergente: "Marcado, mas a Omie tem título em aberto",
   atrasado: "Atrasado",
   "vence-logo": "Vence em até 2 dias",
   pendente: "Pendente",
@@ -326,12 +340,15 @@ export function evidenciaDoItem(item: ItemFolha, c: Competencia, titulos: Titulo
   };
 }
 
+// A OMIE VEM ANTES DA MARCA. Quando há título do item, é ele que diz se foi
+// pago e quando: a marca manual não esconde o atraso nem o título em aberto
+// (marca com título em aberto vira "divergente"). Sem título, vale a marca.
 export function statusDoItem(params: { prazo: Prazo; marca: Marca | null; evidencia: Evidencia | null; hoje: Date }): Status {
   const { prazo, marca, evidencia, hoje } = params;
-  if (marca) return "feito";
   if (evidencia && evidencia.pagos > 0 && evidencia.emAberto === 0 && evidencia.ultimoPagamento) {
     return prazo.ate && evidencia.ultimoPagamento.getTime() > prazo.ate.getTime() + 86_399_999 ? "omie-atraso" : "omie-ok";
   }
+  if (marca) return evidencia && evidencia.emAberto > 0 ? "divergente" : "feito";
   if (!prazo.ate) return "sem-prazo";
   const hojeDia = Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth(), hoje.getUTCDate());
   if (hojeDia > prazo.ate.getTime()) return "atrasado";

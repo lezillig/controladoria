@@ -2,15 +2,18 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { ITENS_FOLHA, lerCompetencia } from "@/lib/controladoria/fechamentoFolha";
+import { ITENS_FOLHA, lerCompetencia, podeMarcarItem } from "@/lib/controladoria/fechamentoFolha";
 import { registrarEvento } from "@/lib/controladoria/trilha";
-import { exigirPermissao } from "../_dados";
+import { acessoDaSessao, exigirPermissao } from "../_dados";
 
 // MARCAR UM ITEM DO FECHAMENTO DA FOLHA — feito ou desfeito, por empresa e
-// competência. Desmarcar apaga a marca; a trilha guarda as duas ações.
+// competência. Cada item é de um responsável (RH, Financeiro, Contabilidade) e
+// só quem tem a permissão dele marca. Marcar e desmarcar são LINHAS NOVAS (a
+// tabela é só de acréscimo; o banco recusa alterar ou apagar), gravadas na
+// mesma transação do evento da trilha: sem trilha, não há marca.
 
 export async function marcarItemDaFolha(formData: FormData): Promise<void> {
-  const session = await exigirPermissao("marcar-folha");
+  const session = await exigirPermissao("folha");
   const conexaoId = String(formData.get("conexaoId") ?? "");
   const competencia = String(formData.get("competencia") ?? "");
   const chave = String(formData.get("chave") ?? "");
@@ -20,21 +23,19 @@ export async function marcarItemDaFolha(formData: FormData): Promise<void> {
   const item = ITENS_FOLHA.find((i) => i.chave === chave);
   const c = lerCompetencia(competencia);
   if (!item || !c) return;
+  const acesso = await acessoDaSessao(session);
+  if (!podeMarcarItem(item, acesso.permissoes)) throw new Error(`Este item é do ${item.responsavel}: seu perfil não marca.`);
   const conexao = await prisma.omieConexao.findFirst({ where: { id: conexaoId, companyId: session.companyId }, select: { id: true, apelido: true } });
   if (!conexao) return;
 
   const onde = { companyId: session.companyId, conexaoId, competencia, chave };
-  if (feito) {
-    await prisma.folhaFechamentoMarca.upsert({
-      where: { companyId_conexaoId_competencia_chave: onde },
-      create: { ...onde, feitoPor: session.name, observacao },
-      update: { feitoPor: session.name, feitoEm: new Date(), observacao },
-    });
-  } else {
-    await prisma.folhaFechamentoMarca.deleteMany({ where: onde });
-  }
-  try {
+  await prisma.$transaction(async (tx) => {
+    const ultima = await tx.folhaFechamentoMarca.findFirst({ where: onde, orderBy: [{ feitoEm: "desc" }, { id: "desc" }], select: { acao: true } });
+    // Desmarcar o que não está marcado (ou marcar de novo) não vira linha.
+    if ((ultima?.acao ?? "desfeito") === (feito ? "feito" : "desfeito")) return;
+    await tx.folhaFechamentoMarca.create({ data: { ...onde, acao: feito ? "feito" : "desfeito", feitoPor: session.name, feitoPorId: session.userId, observacao } });
     await registrarEvento({
+      tx,
       companyId: session.companyId,
       userId: session.userId,
       userNome: session.name,
@@ -43,9 +44,7 @@ export async function marcarItemDaFolha(formData: FormData): Promise<void> {
       entidadeTipo: "FolhaFechamentoMarca",
       descricao: `${feito ? "Marcou" : "Desmarcou"} "${item.titulo(c)}" — ${conexao.apelido}, folha ${competencia}${observacao ? ` (${observacao})` : ""}`,
     });
-  } catch {
-    // a marca já está gravada
-  }
+  });
   revalidatePath("/folha");
   revalidatePath("/");
 }

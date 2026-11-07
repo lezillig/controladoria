@@ -2360,6 +2360,9 @@ model CentroCustoVinculo {
 // pela Contabilidade (calendário em src/lib/controladoria/fechamentoFolha.ts).
 // Uma marca por item, competência e empresa: quem marcou e quando. Desmarcar
 // apaga a marca (a trilha de auditoria guarda as duas ações).
+// SÓ DE ACRÉSCIMO (o banco recusa UPDATE e DELETE): marcar e desmarcar são
+// linhas novas, e o estado do item é a última linha dele. Desmarcar apagava a
+// marca — "quem disse que o ponto estava fechado?" ficava sem resposta.
 model FolhaFechamentoMarca {
   id          String   @id @default(cuid())
   companyId   String
@@ -2367,12 +2370,15 @@ model FolhaFechamentoMarca {
   // "AAAA-MM": a folha do mês (outubro = 2026-10).
   competencia String
   chave       String
+  // "feito" | "desfeito"
+  acao        String   @default("feito")
   feitoEm     DateTime @default(now())
   feitoPor    String?
+  feitoPorId  String?
   observacao  String?
 
-  @@unique([companyId, conexaoId, competencia, chave])
   @@index([companyId, competencia])
+  @@index([companyId, conexaoId, competencia, chave, feitoEm])
 }
 
 // SALDO INFORMADO À MÃO — o que o banco mostra e a Omie não tem (aplicação

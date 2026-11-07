@@ -14,7 +14,8 @@ export async function checklistDaFolha(params: { companyId: string; competencia:
   const conexoes = await prisma.omieConexao.findMany({ where: { companyId, ativa: true }, orderBy: { ordem: "asc" }, select: { id: true, apelido: true } });
   const ids = conexoes.map((x) => x.id);
   const [marcas, titulos, quadros] = await Promise.all([
-    prisma.folhaFechamentoMarca.findMany({ where: { companyId, competencia: chave } }),
+    // So de acrescimo: a ultima linha de cada item e o estado dele.
+    prisma.folhaFechamentoMarca.findMany({ where: { companyId, competencia: chave }, orderBy: [{ feitoEm: "asc" }, { id: "asc" }] }),
     prisma.omieTitulo.findMany({
       where: {
         companyId,
@@ -29,7 +30,9 @@ export async function checklistDaFolha(params: { companyId: string; competencia:
   ]);
 
   const empresas = conexoes.map((cx) => {
-    const m = new Map<string, Marca>(marcas.filter((x) => x.conexaoId === cx.id).map((x) => [x.chave, { feitoEm: x.feitoEm, feitoPor: x.feitoPor, observacao: x.observacao }]));
+    const ultima = new Map<string, (typeof marcas)[number]>();
+    for (const x of marcas) if (x.conexaoId === cx.id) ultima.set(x.chave, x);
+    const m = new Map<string, Marca>([...ultima.values()].filter((x) => x.acao === "feito").map((x) => [x.chave, { feitoEm: x.feitoEm, feitoPor: x.feitoPor, observacao: x.observacao }]));
     const q = quadros.find((x) => x.conexaoId === cx.id);
     if (q && !m.has("RELATORIOS")) m.set("RELATORIOS", { feitoEm: q.importadoEm, feitoPor: q.importadoPorNome ?? "importação do quadro", observacao: `Quadro com ${q.pessoas} pessoa(s) importado` });
     const t: TituloDaFolha[] = titulos
@@ -52,13 +55,13 @@ export const ALERTAS_DESDE = new Date(Date.UTC(2026, 9, 27));
 
 export async function alertasDaFolha(companyId: string, hoje = new Date()) {
   const atual: Competencia = { ano: hoje.getUTCFullYear(), mes: hoje.getUTCMonth() + 1 };
-  const alertas: { competencia: Competencia; titulo: string; empresa: string; status: "atrasado" | "vence-logo"; prazo: Date }[] = [];
+  const alertas: { competencia: Competencia; titulo: string; empresa: string; status: "atrasado" | "vence-logo" | "divergente"; prazo: Date }[] = [];
   for (const c of [somarMeses(atual, -2), somarMeses(atual, -1), atual]) {
     const { conexoes, linhas } = await checklistDaFolha({ companyId, competencia: c, hoje });
     const apelido = new Map(conexoes.map((x) => [x.id, x.apelido]));
     for (const l of linhas)
       for (const e of l.porEmpresa)
-        if ((e.status === "atrasado" || e.status === "vence-logo") && l.prazo.ate && l.prazo.ate >= ALERTAS_DESDE)
+        if ((e.status === "atrasado" || e.status === "vence-logo" || e.status === "divergente") && l.prazo.ate && l.prazo.ate >= ALERTAS_DESDE)
           alertas.push({ competencia: c, titulo: l.titulo, empresa: apelido.get(e.conexaoId) ?? "?", status: e.status, prazo: l.prazo.ate });
   }
   return alertas;

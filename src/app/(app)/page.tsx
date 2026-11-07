@@ -242,6 +242,7 @@ export default async function ControladoriaPage({
         <Link href="/folha" className="block rounded-xl border border-red-200 bg-red-50 px-4 py-3 hover:bg-red-100">
           <p className="text-sm font-medium text-red-900">
             Fechamento da folha: {alertasFolha.filter((a) => a.status === "atrasado").length} atrasado(s), {alertasFolha.filter((a) => a.status === "vence-logo").length} vencendo em até 2 dias
+            {alertasFolha.some((a) => a.status === "divergente") ? `, ${alertasFolha.filter((a) => a.status === "divergente").length} marcado(s) com título em aberto na Omie` : ""}
           </p>
           <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs text-red-800">
             {alertasFolha.slice(0, 6).map((a, i) => (

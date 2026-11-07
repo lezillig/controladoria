@@ -19,6 +19,8 @@ export async function registrarEvento(params: {
   descricao: string;
   antes?: unknown;
   depois?: unknown;
+  // Dentro de uma transacao: o registro so vale se o evento for gravado junto.
+  tx?: Pick<typeof prisma, "controladoriaEventLog">;
 }): Promise<void> {
   // IP e user-agent vêm do cabeçalho da requisição: sem eles, "quem" fica
   // registrado mas "de onde" não — e é justamente o que importa quando a
@@ -27,7 +29,7 @@ export async function registrarEvento(params: {
   const ip =
     cabecalhos.get("x-forwarded-for")?.split(",")[0]?.trim() ?? cabecalhos.get("x-real-ip") ?? null;
 
-  await prisma.controladoriaEventLog.create({
+  await (params.tx ?? prisma).controladoriaEventLog.create({
     data: {
       companyId: params.companyId,
       userId: params.userId ?? null,
