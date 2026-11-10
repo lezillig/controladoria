@@ -68,6 +68,8 @@
     "teste:contexto-cache": "tsx scripts/teste-contexto-cache.ts",
     "teste:folha": "tsx scripts/teste-folha.ts",
     "teste:regras-cobertura": "tsx scripts/teste-regras-cobertura.ts",
+    "teste:ia": "tsx scripts/teste-ia.ts",
+    "regua:ia": "tsx scripts/regua-ia.ts",
     "teste:conciliado-ate": "tsx scripts/teste-conciliado-ate.ts",
     "teste:auditoria-mes": "tsx scripts/teste-auditoria-mes.ts",
     "teste:recuperacao": "tsx scripts/teste-recuperacao.ts",

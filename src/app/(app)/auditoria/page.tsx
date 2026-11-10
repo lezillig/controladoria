@@ -143,6 +143,16 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
     }),
   ]);
 
+  // As triagens automáticas dos achados desta página (ver triagem.ts).
+  const triagens = new Map(
+    (
+      await prisma.investigacao.findMany({
+        where: { companyId: session.companyId, origem: "TRIAGEM", achadoId: { in: achados.map((a) => a.id) } },
+        select: { id: true, achadoId: true, status: true, recomendacao: true },
+      })
+    ).map((t) => [t.achadoId as string, t])
+  );
+
   const totalEmAberto = contagens.reduce((acc, c) => acc + c._count, 0);
 
   // A mesma regra pode emitir em duas categorias (CP-DUPLICIDADE é FRAUDE
@@ -379,6 +389,24 @@ export default async function AuditoriaPage({ searchParams }: { searchParams: Pr
                           {a.conexaoApelido && <span>empresa: {a.conexaoApelido}</span>}
                           <span>chave: {a.chave}</span>
                         </p>
+                        {/* A triagem automática deste achado, quando houve: a
+                            recomendação e o caminho para as consultas feitas. */}
+                        {triagens.has(a.id) && (
+                          <p className="mt-3 text-xs text-slate-600">
+                            Triagem automática:{" "}
+                            <Link href={`/auditoria/investigar?id=${triagens.get(a.id)!.id}`} className="font-semibold text-blue-700 hover:underline">
+                              {triagens.get(a.id)!.status === "EXECUTANDO"
+                                ? "em andamento"
+                                : triagens.get(a.id)!.status === "ERRO"
+                                  ? "não fechou — ver"
+                                  : triagens.get(a.id)!.recomendacao === "SEGURAR"
+                                    ? "recomenda segurar o pagamento"
+                                    : triagens.get(a.id)!.recomendacao === "LIBERAR"
+                                      ? "recomenda liberar"
+                                      : "recomenda verificar antes de pagar"}
+                            </Link>
+                          </p>
+                        )}
                         {podeInvestigar && (
                           <Link
                             href={`/auditoria/investigar?pergunta=${encodeURIComponent(

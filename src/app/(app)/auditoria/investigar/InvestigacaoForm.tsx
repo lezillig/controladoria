@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { inputClass, labelClass, primaryButtonClass } from "@/lib/ui";
 import type { EstadoInvestigacao } from "@/lib/controladoria/investigador";
 import { Secao } from "../../_componentes";
-import { avancar, iniciar } from "./actions";
+import { avancar, iniciar, segundaOpiniao } from "./actions";
 import { tratarAchado } from "../actions";
 
 // O que a tela precisa saber de cada especialista. O prompt fica no servidor.
@@ -98,6 +98,8 @@ export default function InvestigacaoForm({
   // digitá-la de novo.
   const [pergunta, setPergunta] = useState(inicial?.pergunta ?? perguntaInicial ?? "");
   const [especialistaId, setEspecialistaId] = useState(especialistaInicial);
+  // Resposta rápida ou parecer completo (ver esforcoDaPergunta no servidor).
+  const [profundidade, setProfundidade] = useState<"rapida" | "completa">("completa");
   const [processando, iniciarTransicao] = useTransition();
   const router = useRouter();
 
@@ -126,7 +128,15 @@ export default function InvestigacaoForm({
         }
         if (r.estado) setEstado(r.estado);
         if (!r.estado || r.estado.status !== "EXECUTANDO") {
-          router.refresh();
+          // O ENDEREÇO SÓ MUDA AQUI, com a investigação terminada. Antes ele
+          // era trocado (history.replaceState) logo depois de criar a
+          // pergunta, e no Next 16 essa troca entra na mesma fila das
+          // chamadas ao servidor com prioridade: a primeira rodada, pedida no
+          // mesmo instante, ficava órfã na fila e nunca saía — a tela parava
+          // em "Lendo a pergunta" para sempre. Com a navegação no fim, não há
+          // chamada pendente para ela atropelar.
+          if (new URLSearchParams(window.location.search).get("id") === id) router.refresh();
+          else router.replace(`/auditoria/investigar?id=${id}`, { scroll: false });
           return;
         }
       }
@@ -190,12 +200,12 @@ export default function InvestigacaoForm({
                 return;
               }
               setEstado(r.estado);
-              window.history.replaceState(null, "", `/auditoria/investigar?id=${r.estado.id}`);
               conduzir(r.estado.id);
             });
           }}
         >
           <input type="hidden" name="especialista" value={especialista.id} />
+          <input type="hidden" name="profundidade" value={profundidade} />
           <div>
             <label className={labelClass} htmlFor="pergunta">
               O que você quer saber? *
@@ -242,6 +252,29 @@ export default function InvestigacaoForm({
             </div>
           )}
 
+          {/* A profundidade muda o custo e o tempo: quem pergunta escolhe. */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500">Profundidade:</span>
+            {(
+              [
+                ["completa", ehInvestigador ? "Investigação completa" : "Parecer completo", "O padrão: mais consultas e mais raciocínio."],
+                ["rapida", "Resposta rápida", "Menos consultas e menos raciocínio: mais barata e mais curta. Para pergunta direta."],
+              ] as const
+            ).map(([valor, rotulo, dica]) => (
+              <button
+                key={valor}
+                type="button"
+                title={dica}
+                onClick={() => setProfundidade(valor)}
+                className={`rounded-full border px-2.5 py-1 ${
+                  profundidade === valor ? "border-blue-500 bg-blue-50 font-semibold text-blue-900" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300"
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             <button type="submit" disabled={processando || pergunta.trim().length < 8} className={primaryButtonClass}>
               {processando ? (ehInvestigador ? "Investigando..." : "Preparando o parecer...") : ehInvestigador ? "Investigar" : "Pedir o parecer"}
@@ -273,6 +306,9 @@ export default function InvestigacaoForm({
               ? "Lendo a pergunta e decidindo por onde começar..."
               : "Lendo o pedido e decidindo o que consultar. Um parecer leva alguns minutos; pode deixar a aba aberta."
             : `${estado.consultas.length} consulta(s) feitas — última: ${ultimaConsulta?.ferramenta} (${ultimaConsulta?.resumo}). Continuando...`}
+          {/* O que o modelo estava fazendo na última rodada (resumo do
+              raciocínio dele). Some quando a resposta fecha. */}
+          {estado.andamento && <span className="mt-1 block text-xs italic text-blue-800">Agora: {estado.andamento}</span>}
         </p>
       )}
 
@@ -285,8 +321,62 @@ export default function InvestigacaoForm({
           titulo={ehInvestigador ? "Resposta" : `Parecer — ${especialista.nome}`}
           descricao={`${estado.consultas.length} consulta(s) à base · ${estado.empresa} · modelo ${estado.modelo ?? "—"}`}
         >
+          {estado.origem === "TRIAGEM" && (
+            <p
+              className={`mb-3 rounded-lg px-3 py-2 text-sm font-semibold ${
+                estado.recomendacao === "SEGURAR"
+                  ? "bg-red-50 text-red-800"
+                  : estado.recomendacao === "LIBERAR"
+                    ? "bg-emerald-50 text-emerald-800"
+                    : "bg-amber-50 text-amber-900"
+              }`}
+            >
+              Triagem automática — recomendação:{" "}
+              {estado.recomendacao === "SEGURAR" ? "segurar o pagamento" : estado.recomendacao === "LIBERAR" ? "pode liberar" : "verificar antes de pagar"}.
+              <span className="font-normal"> A decisão é de quem paga; confira as consultas abaixo.</span>
+            </p>
+          )}
+          {estado.origem === "SEGUNDA_OPINIAO" && estado.origemId && (
+            <p className="mb-3 text-xs text-slate-500">
+              Segunda opinião sobre{" "}
+              <a href={`/auditoria/investigar?id=${estado.origemId}`} className="text-blue-700 hover:underline">
+                a investigação original
+              </a>
+              .
+            </p>
+          )}
           <div className="whitespace-pre-wrap text-sm leading-relaxed text-slate-800">{estado.resposta}</div>
         </Secao>
+      )}
+
+      {/* SEGUNDA OPINIÃO: só para o que o investigador respondeu (os pareceres
+          dos especialistas já rodam no modelo maior). Leva a pergunta, cada
+          consulta com o que devolveu e a conclusão para o auditor revisar. */}
+      {estado && estado.status !== "EXECUTANDO" && estado.especialista === "investigador" && estado.origem !== "SEGUNDA_OPINIAO" && !processando && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          <span>A resposta não convenceu, ou o assunto é dinheiro demais para uma leitura só?</span>
+          <button
+            type="button"
+            className="font-semibold text-blue-700 underline"
+            onClick={() => {
+              setErro(null);
+              iniciarTransicao(async () => {
+                const r = await segundaOpiniao(estado.id);
+                if (r.erro || !r.estado) {
+                  setErro(r.erro ?? "Não consegui pedir a segunda opinião.");
+                  return;
+                }
+                setEspecialistaId(r.estado.especialista);
+                setEstado(r.estado);
+                if (r.estado.status === "EXECUTANDO") conduzir(r.estado.id);
+                else router.replace(`/auditoria/investigar?id=${r.estado.id}`, { scroll: false });
+              });
+            }}
+          >
+            Pedir segunda opinião ao auditor
+          </button>
+          <span className="text-xs text-slate-500">Parecer no modelo mais capaz, com o caminho desta investigação em mãos.</span>
+        </div>
       )}
 
       {estado && estado.consultas.length > 0 && (

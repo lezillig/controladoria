@@ -12,6 +12,7 @@ import { fundamentacaoParaLeitura } from "./obrigacoes";
 import { fundamentacaoDaTransicao } from "./regime";
 import { lerMsg } from "./outlook";
 import { rotuloCompetencia } from "./tipos";
+import { registrarUso } from "@/lib/ia/uso";
 
 // LEITURA AUTOMÁTICA DO RELATÓRIO DA CONSULTORIA.
 //
@@ -47,9 +48,11 @@ import { rotuloCompetencia } from "./tipos";
 //
 // O QUE FARIA VOLTAR ATRÁS: apontamento que só existe em página de imagem
 // (carimbo, print de tela, tabela escaneada) e que o modelo menor não enxerga.
-// A conferência é direta — reler o mesmo documento nos dois e comparar as
-// listas —, e o botão "reler" da tela existe para isso. Se acontecer, voltar
-// para `claude-fable-5-1` com `high` é a troca destas duas linhas.
+// A conferência é direta — reler o mesmo documento no modelo maior e comparar
+// as listas —, e desde 11/2026 a tela faz isso com um botão ("Conferir
+// leitura", ver conferencia.ts): o que só a segunda leitura achou entra como
+// proposta, e o que só a primeira achou fica marcado. Se a diferença aparecer
+// com frequência, a troca é destas duas linhas.
 const MODELO_LEITURA = "claude-sonnet-5";
 const ESFORCO_LEITURA = "medium" as const;
 
@@ -212,7 +215,7 @@ export type ResultadoLeitura =
   | { ok: true; leitura: LeituraDocumento; textoExtraido: string | null }
   | { ok: false; erro: string; textoExtraido: string | null };
 
-export async function lerDocumento(params: {
+type ParametrosDaLeitura = {
   conteudo: Buffer;
   arquivoNome: string;
   mimeType: string;
@@ -220,20 +223,33 @@ export async function lerDocumento(params: {
   emissor: string | null;
   competencia: Date;
   empresa: string;
-}): Promise<ResultadoLeitura> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  const formato = classificarArquivo(params.arquivoNome, params.mimeType);
+};
 
+type Esforco = "low" | "medium" | "high" | "xhigh";
+
+// O PEDIDO de leitura, separado de quem o envia. A leitura da tela manda na
+// hora (lerDocumento); a conferência (conferencia.ts) manda o MESMO pedido a
+// outro modelo, em lote. Montado num lugar só, os dois leem o documento do
+// mesmo jeito — e a diferença entre as listas é do modelo, não do pedido.
+export type PedidoDeLeitura =
+  | {
+      ok: true;
+      corpo: {
+        model: string;
+        max_tokens: number;
+        output_config: { effort: Esforco; format: ReturnType<typeof betaZodOutputFormat<typeof LeituraSchema>> };
+        system: string;
+        messages: Anthropic.Beta.BetaMessageParam[];
+      };
+      textoExtraido: string | null;
+    }
+  | { ok: false; erro: string; textoExtraido: string | null };
+
+export function montarPedidoDeLeitura(params: ParametrosDaLeitura, opcoes: { modelo: string; esforco: Esforco }): PedidoDeLeitura {
+  const formato = classificarArquivo(params.arquivoNome, params.mimeType);
   const extracao = extrairTexto(formato, params.conteudo, params.arquivoNome);
   const textoExtraido = extracao.texto;
 
-  if (!apiKey) {
-    return {
-      ok: false,
-      erro: "Leitura automática indisponível (ANTHROPIC_API_KEY não configurada).",
-      textoExtraido,
-    };
-  }
   if (formato === "NAO_SUPORTADO") {
     return {
       ok: false,
@@ -267,6 +283,103 @@ export async function lerDocumento(params: {
     .filter(Boolean)
     .join("\n");
 
+  return {
+    ok: true,
+    textoExtraido,
+    corpo: {
+      model: opcoes.modelo,
+      // O teto vale para RACIOCÍNIO + resposta. Com 16 mil, o modelo pensou
+      // por ~11 mil tokens num PDF de quinze páginas e a lista de
+      // apontamentos saiu cortada no meio de uma string. 32 mil deixa
+      // espaço para os dois; o timeout explícito de quem envia é o que
+      // permite pedir isso sem streaming. É um ANTEPARO, não um controle de
+      // custo — quem regula o gasto é o esforço.
+      max_tokens: 32000,
+      output_config: {
+        effort: opcoes.esforco,
+        format: betaZodOutputFormat(LeituraSchema),
+      },
+      system: SYSTEM_PROMPT,
+      messages: [
+        { role: "user", content: mensagemDeFundamentacao() },
+        {
+          role: "assistant",
+          content: "Catálogo recebido. Envie o documento.",
+        },
+        {
+          role: "user",
+          content: [
+            ...blocosDoDocumento(formato, params, textoExtraido),
+            { type: "text", text: instrucao },
+          ],
+        },
+      ],
+    },
+  };
+}
+
+/** Lê a resposta do modelo: recusa, corte por teto, e só então o JSON. */
+export function interpretarLeitura(message: Anthropic.Beta.BetaMessage, textoExtraido: string | null): ResultadoLeitura {
+  // Recusa vem como HTTP 200 com stop_reason próprio, possivelmente sem
+  // conteúdo. Conferida antes de ler o resultado, e explicada na tela: a
+  // pessoa precisa saber que o documento não foi lido, e por quê.
+  if (message.stop_reason === "refusal") {
+    return {
+      ok: false,
+      erro: `A leitura automática foi recusada pelo modelo (categoria ${message.stop_details?.category ?? "não informada"}). Cadastre os apontamentos manualmente.`,
+      textoExtraido,
+    };
+  }
+  if (message.stop_reason === "max_tokens") {
+    return {
+      ok: false,
+      erro: "A leitura estourou o teto de tokens (documento longo ou denso demais para uma leitura só) — divida-o e envie as partes.",
+      textoExtraido,
+    };
+  }
+
+  const textoDaResposta = message.content
+    .filter(
+      (b): b is Extract<(typeof message.content)[number], { type: "text" }> =>
+        b.type === "text",
+    )
+    .map((b) => b.text)
+    .join("");
+  let leitura: LeituraDocumento | null = null;
+  try {
+    leitura = LeituraSchema.parse(JSON.parse(textoDaResposta));
+  } catch (e) {
+    return {
+      ok: false,
+      erro: `A resposta do modelo não está no formato esperado (${e instanceof Error ? e.message.slice(0, 160) : "erro"}; stop_reason ${message.stop_reason ?? "?"}).`,
+      textoExtraido,
+    };
+  }
+  if (!leitura)
+    return {
+      ok: false,
+      erro: "A leitura automática não devolveu um resultado utilizável.",
+      textoExtraido,
+    };
+  return { ok: true, leitura, textoExtraido };
+}
+
+export async function lerDocumento(
+  params: ParametrosDaLeitura & { companyId?: string | null; userId?: string | null; userNome?: string | null },
+): Promise<ResultadoLeitura> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const pedido = montarPedidoDeLeitura(params, { modelo: MODELO_LEITURA, esforco: ESFORCO_LEITURA });
+  const textoExtraido = pedido.textoExtraido;
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      erro: "Leitura automática indisponível (ANTHROPIC_API_KEY não configurada).",
+      textoExtraido,
+    };
+  }
+  if (!pedido.ok) return pedido;
+
   try {
     const client = new Anthropic({ apiKey });
     // Sem streaming, o SDK estima a duração pelo max_tokens (60 min por 128 mil
@@ -279,88 +392,27 @@ export async function lerDocumento(params: {
     // `create` cru, e não o helper `parse`: o helper tenta decodificar o JSON
     // ANTES de olhar o stop_reason e, quando a saída vem cortada, o erro que
     // sobe é "Unterminated string in JSON at position 15573" — foi o que a tela
-    // mostrou em 21/09/2026 — em vez do motivo do corte. Aqui a ordem é a
-    // certa: recusa, corte por teto, e só então o JSON.
+    // mostrou em 21/09/2026 — em vez do motivo do corte. A ordem certa está em
+    // interpretarLeitura: recusa, corte por teto, e só então o JSON.
     const message = await client.beta.messages.create(
       {
-        model: MODELO_LEITURA,
-        // O teto vale para RACIOCÍNIO + resposta. Com 16 mil, o modelo pensou
-        // por ~11 mil tokens num PDF de quinze páginas e a lista de
-        // apontamentos saiu cortada no meio de uma string. 32 mil deixa
-        // espaço para os dois; o timeout explícito abaixo é o que permite
-        // pedir isso sem streaming. É um ANTEPARO, não um controle de custo —
-        // quem regula o gasto é o esforço abaixo.
-        max_tokens: 32000,
-        output_config: {
-          effort: ESFORCO_LEITURA,
-          format: betaZodOutputFormat(LeituraSchema),
-        },
+        ...pedido.corpo,
         // Documento de risco fiscal e trabalhista pode esbarrar num classificador
         // de segurança por engano. Com o fallback, a API refaz a leitura em outro
         // modelo em vez de devolver o documento sem apontamentos.
         betas: ["server-side-fallback-2026-07-01"],
         fallbacks: "default",
-        system: SYSTEM_PROMPT,
-        messages: [
-          { role: "user", content: mensagemDeFundamentacao() },
-          {
-            role: "assistant",
-            content: "Catálogo recebido. Envie o documento.",
-          },
-          {
-            role: "user",
-            content: [
-              ...blocosDoDocumento(formato, params, textoExtraido),
-              { type: "text", text: instrucao },
-            ],
-          },
-        ],
       },
       { timeout: 270_000, maxRetries: 0 },
     );
-
-    // Recusa vem como HTTP 200 com stop_reason próprio, possivelmente sem
-    // conteúdo. Conferida antes de ler o resultado, e explicada na tela: a
-    // pessoa precisa saber que o documento não foi lido, e por quê.
-    if (message.stop_reason === "refusal") {
-      return {
-        ok: false,
-        erro: `A leitura automática foi recusada pelo modelo (categoria ${message.stop_details?.category ?? "não informada"}). Cadastre os apontamentos manualmente.`,
-        textoExtraido,
-      };
-    }
-    if (message.stop_reason === "max_tokens") {
-      return {
-        ok: false,
-        erro: "A leitura estourou o teto de tokens (documento longo ou denso demais para uma leitura só) — divida-o e envie as partes.",
-        textoExtraido,
-      };
-    }
-
-    const textoDaResposta = message.content
-      .filter(
-        (b): b is Extract<(typeof message.content)[number], { type: "text" }> =>
-          b.type === "text",
-      )
-      .map((b) => b.text)
-      .join("");
-    let leitura: LeituraDocumento | null = null;
-    try {
-      leitura = LeituraSchema.parse(JSON.parse(textoDaResposta));
-    } catch (e) {
-      return {
-        ok: false,
-        erro: `A resposta do modelo não está no formato esperado (${e instanceof Error ? e.message.slice(0, 160) : "erro"}; stop_reason ${message.stop_reason ?? "?"}, ${textoDaResposta.length} caracteres).`,
-        textoExtraido,
-      };
-    }
-    if (!leitura)
-      return {
-        ok: false,
-        erro: "A leitura automática não devolveu um resultado utilizável.",
-        textoExtraido,
-      };
-    return { ok: true, leitura, textoExtraido };
+    await registrarUso({
+      companyId: params.companyId ?? null,
+      origem: "conformidade",
+      message,
+      userId: params.userId ?? null,
+      userNome: params.userNome ?? null,
+    });
+    return interpretarLeitura(message, textoExtraido);
   } catch (e) {
     // A falha é registrada no documento e mostrada na tela com o botão de
     // tentar de novo. O upload em si nunca é desfeito por causa dela: o

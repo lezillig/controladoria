@@ -35,9 +35,11 @@ import {
   excluirDocumento,
   removerVinculo,
   reprocessarDocumentoPelaTela,
+  conferirLeitura,
   validarApontamento,
 } from "./actions";
 import { larguraPainel } from "@/lib/ui";
+import { coletarLotes, isLoteDisponivel } from "@/lib/ia/lote";
 
 // CONFORMIDADE — o que a empresa recebe sobre si mesma.
 //
@@ -69,14 +71,24 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
 
   const hoje = inicioDoDia(new Date());
 
-  const [conexoes, dados] = await Promise.all([
+  // Conferências da leitura que estavam na fila: recolhe as que terminaram
+  // antes de montar a tela — quem abre para ver o resultado não espera a
+  // próxima passada do ciclo. Falha aqui não impede a tela.
+  if (isLoteDisponivel()) await coletarLotes({ companyId: session.companyId, tipo: "conformidade_conferencia" }).catch(() => undefined);
+
+  const [conexoes, dados, conferenciasNaFila] = await Promise.all([
     prisma.omieConexao.findMany({
       where: { companyId: session.companyId, ativa: true },
       orderBy: { ordem: "asc" },
       select: { id: true, apelido: true, nome: true },
     }),
     carregarConformidade(session.companyId, escopo.conexaoId ?? undefined),
+    prisma.iaLote.findMany({
+      where: { companyId: session.companyId, tipo: "conformidade_conferencia", status: "ENVIADO" },
+      select: { referenciaId: true },
+    }),
   ]);
+  const naFila = new Set(conferenciasNaFila.map((l) => l.referenciaId));
 
   const panorama = montarPanoramaConformidade(dados, hoje);
 
@@ -360,6 +372,14 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
                       {fmtDiaDoInstante(d.criadoEm)}
                       {d.enviadoPorNome ? ` por ${d.enviadoPorNome}` : ""}
                     </span>
+                    {/* O que a conferência da leitura deu (segunda leitura, em lote). */}
+                    {naFila.has(d.id) ? (
+                      <span className="mt-0.5 block text-xs text-amber-700">Conferência na fila — o resultado aparece aqui (em geral em menos de uma hora).</span>
+                    ) : d.conferenciaResumo ? (
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        Conferência{d.conferidoEm ? ` de ${fmtDiaDoInstante(d.conferidoEm)}` : ""}: {d.conferenciaResumo}
+                      </span>
+                    ) : null}
                   </span>,
                   d.conexaoApelido ?? "grupo",
                   <StatusLeitura key="l" extracao={d.extracao} erro={d.extracaoErro} />,
@@ -374,6 +394,20 @@ export default async function ConformidadePage({ searchParams }: { searchParams:
                             <form action={reprocessarDocumentoPelaTela}>
                               <input type="hidden" name="id" value={d.id} />
                               <ReprocessarButton rotulo={d.extracao === "ERRO" ? "tentar de novo" : "reler"} />
+                            </form>
+                          )}
+                          {/* Segunda leitura no modelo maior, comparada com a
+                              primeira: pega o que só está em página de imagem. */}
+                          {d.extracao === "EXTRAIDO" && !naFila.has(d.id) && (
+                            <form action={conferirLeitura}>
+                              <input type="hidden" name="id" value={d.id} />
+                              <button
+                                type="submit"
+                                title="Relê o documento no modelo mais capaz, em lote (metade do preço), e mostra o que uma leitura achou e a outra não."
+                                className="text-xs font-medium text-blue-700 hover:underline"
+                              >
+                                conferir leitura
+                              </button>
                             </form>
                           )}
                           <form action={excluirDocumento}>
@@ -626,6 +660,9 @@ function CartaoApontamento({
         {a.competenciaAlvo && <span>refere-se a {rotuloCompetencia(a.competenciaAlvo)}</span>}
         {reincidente && <span>desde {rotuloCompetencia(a.primeiraCompetencia)}</span>}
         {a.propostoPorIa && <span>{a.validado ? "lido automaticamente, conferido" : "lido automaticamente"}</span>}
+        {a.conferencia === "SO_NA_SEGUNDA" && <span className="font-medium text-amber-700">só a segunda leitura achou</span>}
+        {a.conferencia === "NAO_CONFIRMADO" && <span className="font-medium text-amber-700">a segunda leitura não achou</span>}
+        {a.conferencia === "CONFIRMADO" && <span className="text-emerald-700">confirmado pelas duas leituras</span>}
       </p>
 
       {podeGerir && (

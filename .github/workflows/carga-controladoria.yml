@@ -231,3 +231,59 @@ jobs:
 
           echo "::error::Teto de $MAX_RODADAS rodadas atingido sem o ciclo terminar. Rode de novo para continuar de onde parou, ou investigue se alguma fase deixou de avançar."
           exit 1
+
+      # A IA QUE RODA SOZINHA (triagem dos achados críticos de antifraude,
+      # parecer mensal, coleta dos pedidos em lote) tem rota própria, com teto
+      # de 300 segundos — uma chamada do modelo maior não cabe nos 60 do
+      # ciclo. Este passo a conduz do mesmo jeito: chama em laço enquanto a
+      # rota disser que sobrou trabalho. Roda depois do ciclo e também nas
+      # execuções do vigia (a cada meia hora), que é o que recolhe um lote
+      # pouco depois de ele ficar pronto.
+      #
+      # A resposta só traz contagens, de propósito: este log é público.
+      # Falha aqui não derruba o job — a carga do dia já terminou no passo
+      # anterior, e a próxima execução tenta de novo.
+      - name: Conduzir a IA (triagem, parecer mensal, lotes)
+        if: success()
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          if [ -z "${APP_URL:-}" ] || [ -z "${CRON_SECRET:-}" ]; then
+            echo "Sem APP_URL/CRON_SECRET: nada a conduzir."
+            exit 0
+          fi
+          rota="${APP_URL%/}/api/cron/ia"
+          # Cada rodada avança uma triagem; 3 triagens de até 16 idas cada
+          # cabem com folga em 40 rodadas.
+          MAX_RODADAS=40
+          rodada=0
+          while [ "$rodada" -lt "$MAX_RODADAS" ]; do
+            args=(-sS --max-time 320 -H "Authorization: Bearer $CRON_SECRET" -w '\n%{http_code}')
+            if [ -n "${BYPASS:-}" ]; then
+              args+=(-H "x-vercel-protection-bypass: $BYPASS")
+            fi
+            resposta=$(curl "${args[@]}" "$rota")
+            if [ $? -ne 0 ]; then
+              resposta=$'\n000'
+            fi
+            http=$(printf '%s' "$resposta" | tail -n 1)
+            corpo=$(printf '%s' "$resposta" | sed '$d')
+            if [ "$http" != "200" ]; then
+              # 404 = produção ainda sem esta rota (deploy anterior): não é erro.
+              echo "::warning::A rota da IA respondeu HTTP $http na rodada $rodada. Fica para a próxima execução."
+              exit 0
+            fi
+            echo "rodada $rodada · $(printf '%s' "$corpo" | jq -c 'del(.avisos)' 2>/dev/null) · avisos: $(printf '%s' "$corpo" | jq -c '.avisos // []' 2>/dev/null)"
+            continua=$(printf '%s' "$corpo" | jq -r '.continua // false' 2>/dev/null)
+            if [ "$continua" != "true" ]; then
+              exit 0
+            fi
+            rodada=$((rodada + 1))
+          done
+          echo "::warning::Teto de $MAX_RODADAS rodadas da IA atingido; o restante fica para a próxima execução."
+          exit 0

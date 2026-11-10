@@ -97,7 +97,7 @@ export async function gerarEEnviarRelatorio(
     limitacoesDaBase: qualidadeDaBase.limitacoes,
     conformidade,
     dre,
-  });
+  }, { companyId: ctx.companyId });
 
   const dados: DadosRelatorio = {
     empresa: empresa?.name ?? "Empresa",

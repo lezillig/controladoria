@@ -5,6 +5,7 @@ import {
   iniciarInvestigacao,
   type EstadoInvestigacao,
 } from "@/lib/controladoria/investigador";
+import { pedirSegundaOpiniao } from "@/lib/controladoria/segundaOpiniao";
 import { exigirPermissao, resolverEscopo } from "../../_dados";
 import { registrarEvento } from "@/lib/controladoria/trilha";
 import { redigir } from "@/lib/controladoria/falhas";
@@ -36,6 +37,8 @@ export async function iniciar(formData: FormData): Promise<RespostaDaAction> {
       empresa: escopo.apelido ?? "grupo (as duas empresas)",
       pergunta,
       especialista,
+      // Resposta rápida (esforço baixo) ou o parecer completo, que é o padrão.
+      profundidade: formData.get("profundidade") === "rapida" ? "rapida" : "completa",
       userId: session.userId,
       userNome: session.name,
     });
@@ -71,6 +74,34 @@ export async function avancar(id: string): Promise<RespostaDaAction> {
   } catch (e) {
     // ERRO VIRA RESPOSTA, NUNCA EXCEÇÃO — a action que lança some no cliente.
     return { erro: `A rodada não completou: ${mensagem(e)}` };
+  }
+}
+
+// Segunda opinião: a investigação do investigador sobe para o auditor, no
+// modelo maior, levando o caminho inteiro (ver segundaOpiniao.ts). Devolve a
+// investigação nova, que o navegador conduz como qualquer outra.
+export async function segundaOpiniao(id: string): Promise<RespostaDaAction> {
+  const session = await exigirPermissao("investigar");
+  try {
+    const r = await pedirSegundaOpiniao({ investigacaoId: id, companyId: session.companyId, userId: session.userId, userNome: session.name });
+    if (!r.ok) return { erro: r.erro };
+    try {
+      await registrarEvento({
+        companyId: session.companyId,
+        userId: session.userId,
+        userNome: session.name,
+        userEmail: session.email,
+        acao: "INVESTIGACAO_IA",
+        entidadeTipo: "Investigacao",
+        entidadeId: r.estado.id,
+        descricao: `Segunda opinião pedida sobre a investigação ${id}`,
+      });
+    } catch {
+      // A trilha não pode custar o pedido.
+    }
+    return { estado: r.estado };
+  } catch (e) {
+    return { erro: `Não consegui pedir a segunda opinião: ${mensagem(e)}` };
   }
 }
 

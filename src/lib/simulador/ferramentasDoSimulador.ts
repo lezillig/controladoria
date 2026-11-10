@@ -10,6 +10,7 @@ import { carregarEstudo, entradaInicial, regrasDeMargem, ROTULO_STATUS_ESTUDO, R
 import { simular } from "./motor";
 import { CAMPOS_PREMISSAS, escreverCaminho, lerCaminho, type MapaOrigem } from "./premissas";
 import { ROTULO_UNIDADE, type EntradaSimulacao, type ResultadoSimulacao, type UnidadePreco } from "./tipos";
+import { enviarArquivo } from "./importarEdital";
 
 // AS FERRAMENTAS DO SIMULADOR — o que o especialista de precificação consulta.
 //
@@ -372,5 +373,80 @@ export function ferramentasDoSimulador(escopo: { companyId: string }, consultas:
     },
   });
 
-  return [listarEstudos, lerEstudo, simularVariacao, custosReais, historicoDeDisputas, baseDeCustos];
+  // OS DOCUMENTOS DO PROCESSO, para o parecer de risco do edital.
+  //
+  // A leitura automática do edital TRANSCREVE o que vira premissa do estudo
+  // (rotas, frota, prazos, preço máximo). O que ela não faz é julgar o que o
+  // edital exige além disso: multa por atraso, glosa, garantia, idade máxima
+  // da frota, reajuste só depois de doze meses, seguro, preposto — cláusulas
+  // que mudam o custo ou o risco e não têm campo na planilha. Com os arquivos
+  // em mãos, o especialista lê o edital inteiro e confronta com o estudo.
+  //
+  // Os arquivos já estão guardados no estudo (SimArquivo). Vão à API pela
+  // Files API e voltam para o modelo como documento — o PDF inteiro, com
+  // tabela e carimbo, não um texto extraído. Ao fim da investigação são
+  // apagados de lá (ver `encerrar` em investigador.ts).
+  const TETO_DE_ARQUIVOS = 20;
+  const TETO_DE_BYTES = 60_000_000;
+  const documentosDoEdital = betaZodTool({
+    name: "documentos_do_edital",
+    description:
+      "Entrega para leitura os arquivos guardados num estudo (edital, termo de referência, minuta de contrato, planilha de custos, atas, propostas). Use quando a pergunta depender do TEXTO do edital — o parecer de risco, uma cláusula, uma exigência — e não só das premissas já transcritas no estudo. Os arquivos chegam inteiros; chame uma vez por estudo.",
+    inputSchema: z.object({ estudo: z.string().min(1).max(200).describe("Id, nome ou número do edital do estudo (como em ler_estudo).") }),
+    run: async (input) => {
+      const achado = await prisma.simEstudo.findFirst({
+        where: {
+          companyId: escopo.companyId,
+          OR: [{ id: input.estudo }, { nome: { contains: input.estudo, mode: "insensitive" } }, { numeroEdital: { contains: input.estudo, mode: "insensitive" } }],
+        },
+        orderBy: { atualizadoEm: "desc" },
+        select: { id: true, nome: true },
+      });
+      if (!achado) return `Nenhum estudo encontrado para "${input.estudo}". Use listar_estudos.`;
+      const guardados = await prisma.simArquivo.findMany({
+        where: { companyId: escopo.companyId, estudoId: achado.id },
+        orderBy: { criadoEm: "asc" },
+        select: { nome: true, tipo: true, mimeType: true, tamanhoBytes: true, conteudo: true },
+        take: TETO_DE_ARQUIVOS + 1,
+      });
+      if (guardados.length === 0) {
+        registrar("documentos_do_edital", input, `estudo "${achado.nome}": nenhum arquivo guardado`);
+        return `O estudo "${achado.nome}" não tem arquivos guardados. O parecer só pode se apoiar no que está no estudo (ler_estudo); diga isso na resposta.`;
+      }
+      const blocos: ({ type: "document"; source: { type: "file"; file_id: string }; title: string } | { type: "image"; source: { type: "file"; file_id: string } })[] = [];
+      const entregues: string[] = [];
+      const falhas: string[] = [];
+      let bytes = 0;
+      for (const a of guardados.slice(0, TETO_DE_ARQUIVOS)) {
+        if (bytes + a.tamanhoBytes > TETO_DE_BYTES) {
+          falhas.push(`${a.nome}: ficou de fora (o conjunto passou do limite de tamanho)`);
+          continue;
+        }
+        const envio = await enviarArquivo(Buffer.from(a.conteudo), a.nome, a.mimeType);
+        if (!envio.ok) {
+          falhas.push(envio.erro);
+          continue;
+        }
+        bytes += a.tamanhoBytes;
+        entregues.push(`${a.nome} (${a.tipo})`);
+        blocos.push(
+          envio.arquivo.bloco === "imagem"
+            ? { type: "image", source: { type: "file", file_id: envio.arquivo.fileId } }
+            : { type: "document", source: { type: "file", file_id: envio.arquivo.fileId }, title: a.nome.slice(0, 200) }
+        );
+      }
+      if (guardados.length > TETO_DE_ARQUIVOS) falhas.push(`há mais de ${TETO_DE_ARQUIVOS} arquivos no estudo; só os primeiros foram entregues`);
+      registrar("documentos_do_edital", input, `estudo "${achado.nome}": ${entregues.length} arquivo(s) entregue(s)${falhas.length ? `, ${falhas.length} de fora` : ""}`);
+      if (blocos.length === 0) return `Não consegui entregar os arquivos do estudo "${achado.nome}": ${falhas.join("; ")}.`;
+      return [
+        {
+          type: "text" as const,
+          text: `Arquivos do estudo "${achado.nome}", nesta ordem:\n${entregues.map((n, i) => `${i + 1}. ${n}`).join("\n")}${falhas.length ? `\n\nFicaram de fora (diga isso no parecer): ${falhas.join("; ")}` : ""}`,
+        },
+        ...blocos,
+      ];
+    },
+  });
+
+  return [listarEstudos, lerEstudo, simularVariacao, custosReais, historicoDeDisputas, baseDeCustos, documentosDoEdital];
 }

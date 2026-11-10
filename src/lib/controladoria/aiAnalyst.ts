@@ -7,7 +7,8 @@ import type { DreDoRelatorio } from "./dreNoBanco";
 import type { IndicadorMedido } from "./bsc";
 import type { PanoramaConformidade } from "@/lib/conformidade/panorama";
 import { ROTULO_AREA, rotuloCompetencia } from "@/lib/conformidade/tipos";
-import { registrarUso } from "./investigador";
+import { registrarUso } from "@/lib/ia/uso";
+import { mascararDocumentosNoTexto } from "@/lib/ia/mascara";
 
 // ANALISTA (camada 3) — escreve a leitura executiva do relatorio diario.
 //
@@ -235,10 +236,28 @@ function montarBriefing(entrada: EntradaAnalista): string {
   return linhas.join("\n");
 }
 
-// O modelo do analista. Fable 5.1 é o mais capaz para cruzar fatos e sustentar
+// O modelo do analista. Fable 5.2 é o mais capaz para cruzar fatos e sustentar
 // uma conclusão com evidência — que é exatamente o que se pede aqui. Custa
-// mais por chamada; são uma ou duas chamadas por dia.
-export const MODELO_ANALISTA = "claude-fable-5-1";
+// mais por chamada (US$ 8/40 por milhão de tokens, 20% abaixo do 5.1); são uma
+// ou duas chamadas por dia.
+// ANTHROPIC_MODELO_ANALISTA troca o modelo sem deploy de código (volta para o
+// 5.1, por exemplo, se a régua ou o uso mostrarem problema).
+export const MODELO_ANALISTA = process.env.ANTHROPIC_MODELO_ANALISTA || "claude-fable-5-2";
+
+// ESFORÇO DA LEITURA: "medium", e por quê. Esta chamada tem um teto de 50 s
+// (ver abaixo); estourou, o relatório sai sem a leitura. No Fable 5.2 o nível
+// alto pensa antes de quase toda resposta e demora bem mais que o médio — num
+// teto de 50 s, é o caminho para a leitura faltar no e-mail. E o 5.2 em nível
+// mais baixo já rende perto do que o 5.1 entregava nos mais altos.
+//
+// A régua (scripts/regua-ia.ts) mede tempo e acerto nos três níveis sobre
+// briefings de exemplo. Se ela mostrar que "high" cabe no teto, a troca é uma
+// variável de ambiente — NARRATIVA_ESFORCO=high —, sem deploy de código.
+const ESFORCOS = ["low", "medium", "high", "xhigh"] as const;
+type Esforco = (typeof ESFORCOS)[number];
+export function esforcoDaNarrativa(valor = process.env.NARRATIVA_ESFORCO): Esforco {
+  return (ESFORCOS as readonly string[]).includes(valor ?? "") ? (valor as Esforco) : "medium";
+}
 
 // Teto de espera pela leitura. A chamada roda dentro da função do ciclo
 // diário (60 s no cron) e uma resposta longa deste modelo pode passar de um
@@ -249,7 +268,24 @@ export const MODELO_ANALISTA = "claude-fable-5-1";
 // dobraria o tempo.
 const TETO_DA_NARRATIVA_MS = Number(process.env.NARRATIVA_TIMEOUT_MS ?? 50_000);
 
-export async function gerarNarrativa(entrada: EntradaAnalista, opcoes: { timeoutMs?: number } = {}): Promise<Narrativa | null> {
+// O PEDIDO da leitura, separado de quem o envia: o relatório diário manda com
+// o modelo e o esforço de produção; a régua (scripts/regua-ia.ts) manda o
+// MESMO pedido com outros, para comparar sem reescrever o prompt.
+export function pedidoDaNarrativa(briefing: string, opcoes: { modelo?: string; esforco?: Esforco } = {}) {
+  return {
+    model: opcoes.modelo ?? MODELO_ANALISTA,
+    max_tokens: 16000,
+    // O nível vem de esforcoDaNarrativa (acima). O raciocínio fica por conta
+    // do modelo (sempre ligado neste modelo; não há parâmetro de thinking a
+    // passar).
+    output_config: { effort: opcoes.esforco ?? esforcoDaNarrativa(), format: betaZodOutputFormat(NarrativaSchema) },
+    system: SYSTEM_PROMPT,
+    messages: [{ role: "user" as const, content: `${briefing}\n\nEscreva a leitura executiva deste relatório.` }],
+  };
+}
+export { NarrativaSchema };
+
+export async function gerarNarrativa(entrada: EntradaAnalista, opcoes: { timeoutMs?: number; companyId?: string | null } = {}): Promise<Narrativa | null> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;
 
@@ -257,31 +293,18 @@ export async function gerarNarrativa(entrada: EntradaAnalista, opcoes: { timeout
 
   try {
     const message = await client.beta.messages.parse({
-      model: MODELO_ANALISTA,
-      max_tokens: 16000,
-      // Esforço alto: a leitura roda uma vez por dia e o que se quer dela é
-      // justamente o cruzamento entre achados, que esforço baixo não faz. O
-      // raciocínio fica por conta do modelo (sempre ligado neste modelo; não
-      // há parâmetro de thinking a passar).
-      output_config: { effort: "high", format: betaZodOutputFormat(NarrativaSchema) },
+      // O briefing passa pelo filtro de documento pessoal: título de achado e
+      // nome de entidade vêm da Omie como foram digitados.
+      ...pedidoDaNarrativa(mascararDocumentosNoTexto(montarBriefing(entrada))),
       // Recusa por classificador de segurança é rara neste domínio, mas não é
       // impossível (texto de fraude, vazamento, senha em título de fornecedor).
       // Com o fallback, a API refaz a mesma chamada num modelo de cobertura
       // mais ampla em vez de deixar o relatório sem leitura.
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: `${montarBriefing(entrada)}
-
-Escreva a leitura executiva deste relatório.`,
-        },
-      ],
     }, { timeout: opcoes.timeoutMs ?? TETO_DA_NARRATIVA_MS, maxRetries: 0 });
 
-    registrarUso("analista", message);
+    await registrarUso({ companyId: opcoes.companyId ?? null, origem: "analista", message });
 
     // A recusa chega como resposta bem-sucedida (HTTP 200) com stop_reason
     // próprio — e conteúdo possivelmente vazio. Tem de ser verificada ANTES

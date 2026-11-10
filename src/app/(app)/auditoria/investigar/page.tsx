@@ -112,6 +112,7 @@ export default async function InvestigarPage({
               </span>,
               <span key="r" className="whitespace-nowrap text-xs text-slate-600">
                 {especialistaPorId(h.especialista).nome}
+                {h.origem === "TRIAGEM" ? " · triagem" : h.origem === "SEGUNDA_OPINIAO" ? " · 2ª opinião" : ""}
               </span>,
               <Link key="p" href={`/auditoria/investigar?id=${h.id}`} className="text-blue-700 hover:underline">
                 {h.pergunta.length > 90 ? `${h.pergunta.slice(0, 90)}…` : h.pergunta}

@@ -561,7 +561,7 @@ export async function preencherPlanilhaDoEdital(estudoId: string, arquivoId: str
     return { erro: "Não foi possível abrir a planilha (arquivo protegido ou corrompido)." };
   }
   const catalogo = catalogoDoEstudo(inicial.entrada, resultado);
-  const m = await mapearPlanilha(inventario, catalogo, { estudo: carregado.estudo.nome, arquivo: arquivo.nome });
+  const m = await mapearPlanilha(inventario, catalogo, { estudo: carregado.estudo.nome, arquivo: arquivo.nome, companyId: session.companyId, userId: session.userId, userNome: session.name });
   if (!m.ok) return { erro: m.erro };
   const unidade = inicial.entrada.unidadePreco ?? "KM";
   const preco = resultado.lote ? resultado.lote.precoPropostaUnidade : (resultado.itens[0]?.precoUnidade ?? 0);
@@ -601,7 +601,7 @@ export async function lerEditalEnviado(arquivosJson: string): Promise<{ erro?: s
   }
   const arquivos = arquivosAssinadosValidos(session.companyId, bruto);
   if (!arquivos) return { erro: "Arquivos do edital inválidos — envie de novo." };
-  const r = await lerEdital(arquivos, { empresa: "Azul Mob (fretamento e transporte de passageiros, São Paulo)" });
+  const r = await lerEdital(arquivos, { empresa: "Azul Mob (fretamento e transporte de passageiros, São Paulo)", companyId: session.companyId, userId: session.userId, userNome: session.name });
   if (!r.ok) return { erro: r.erro };
   const estudo = editalParaEstudo(r.edital);
   estudo.leitura = { modelo: nomeDoModelo(r.leitura.modelo), refeitaPorque: r.leitura.refeitaPorque };

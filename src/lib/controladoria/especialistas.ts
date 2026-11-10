@@ -20,11 +20,11 @@ import { AGENTES } from "./registry";
 //
 // MODELO POR ESPECIALISTA. O investigador continua no Sonnet 5: a qualidade
 // dele vem da consulta certa, que o Sonnet faz tão bem quanto os maiores, a um
-// quinto do preço — e são dezenas de perguntas por semana. Os especialistas
-// rodam no Fable 5.1, o modelo mais capaz disponível: um parecer de controller
+// quarto do preço — e são dezenas de perguntas por semana. Os especialistas
+// rodam no Fable 5.2, o modelo mais capaz disponível: um parecer de controller
 // ou uma proposta de cenário é uma peça de raciocínio longo sobre dezenas de
 // números, feita poucas vezes por mês, e é exatamente o trabalho em que a
-// diferença entre os modelos aparece. Custa mais por chamada (US$ 10/50 por
+// diferença entre os modelos aparece. Custa mais por chamada (US$ 8/40 por
 // milhão de tokens contra US$ 2/10), e a tela diz isso antes do clique.
 
 export type EspecialistaId = "investigador" | "auditor" | "controller" | "custos" | "orcamento" | "precificacao";
@@ -55,7 +55,9 @@ export type Especialista = {
   objetivos: Objetivo[];
 };
 
-export const MODELO_ESPECIALISTA = "claude-fable-5-1";
+// ANTHROPIC_MODELO_ESPECIALISTA troca o modelo dos especialistas sem deploy de
+// código — a alavanca de volta para o 5.1, se for preciso.
+export const MODELO_ESPECIALISTA = process.env.ANTHROPIC_MODELO_ESPECIALISTA || "claude-fable-5-2";
 export const MODELO_INVESTIGADOR = "claude-sonnet-5";
 
 // A PARTE COMUM do prompt de todo especialista. É o contrato que o sistema
@@ -197,10 +199,13 @@ Em licitação você conhece a Lei 14.133: preço máximo do edital como teto po
 
 O sistema tem um simulador de custos com um motor único; você o consulta pelas ferramentas. ler_estudo devolve a conta da tela — premissas com a origem de cada uma (BASE = base de custos da empresa; REAL = medido nos custos reais; PADRAO = estimativa do simulador; HISTORICO = estimativa de mercado de uma planilha antiga; AJUSTE = alterado à mão) e o painel de decisão. simular_variacao roda o mesmo motor numa cópia, sem gravar: use-a para responder "e se" com número, nunca estime a diferença de cabeça. custos_reais diz o que a empresa gasta de fato; historico_de_disputas diz onde o preço dela ficou contra o vencedor. O diferencial desta empresa é precificar com o custo real — então, sempre que uma premissa decisiva estiver como PADRAO ou HISTORICO e houver indicador real para ela, compare os dois e diga qual usar e por quê.
 
+O texto do edital também está ao seu alcance: documentos_do_edital entrega os arquivos guardados no estudo (edital, termo de referência, minuta de contrato, planilha) para você ler inteiros. A leitura automática que criou o estudo só transcreve o que vira premissa; o que o edital exige além disso — multa, glosa, garantia, idade de frota, seguro, prazo de pagamento, regra de reajuste — só aparece no texto. No parecer de risco, cite a cláusula pelo número e o trecho, e diga quando um arquivo ficou de fora.
+
 Como você responde "posso lançar?": o veredicto do painel e o motivo, a margem e a faixa de lance (piso de lucro zero, margem mínima, alvo, teto), as três premissas que mais derrubam o lucro e se cada uma está medida ou estimada, a utilização de equilíbrio contra a prevista, e o que conferir antes de assinar. Quando recomendar um preço, diga a margem que ele dá e o que ele pressupõe. Quando o estudo não tiver rotas, itens ou base suficiente, diga o que falta em vez de opinar sobre uma conta vazia.
 
 ${CONTRATO}`,
     objetivos: [
+      { rotulo: "Risco do edital", pergunta: "Para o estudo mais recente em andamento, leia os documentos do edital (documentos_do_edital) e o estudo (ler_estudo) e dê o parecer de risco: as cláusulas que mudam o custo ou o risco e a simulação pode não ter capturado — multas e glosas, garantia de execução, idade máxima e características da frota, seguros, preposto e exigências de pessoal, prazo de pagamento, regra de reajuste e repactuação, condições de rescisão, exigências de habilitação difíceis de cumprir. Para cada uma: a cláusula (número e trecho), o efeito provável em dinheiro ou em risco, se o estudo já a considera, e o que perguntar no pedido de esclarecimento. Feche com os três pontos que decidem se vale disputar." },
       { rotulo: "Posso lançar?", pergunta: "Leia o estudo mais recente em andamento e diga se vale lançar: veredicto, margem, faixa de lance, as premissas que mais mexem no resultado (medidas ou estimadas?) e o que conferir antes de enviar a proposta." },
       { rotulo: "Até onde descer no lance", pergunta: "Para o estudo mais recente em andamento, monte a escada de lances: o preço de abertura, os degraus até a margem mínima da empresa e o piso de lucro zero, com a margem de cada degrau. Simule os degraus pelo motor." },
       { rotulo: "Premissas contra o custo real", pergunta: "Compare as premissas do estudo mais recente com os custos reais medidos da empresa: onde a simulação está otimista ou pessimista, quanto isso muda o preço (simule) e quais premissas trocar pelo número real." },
@@ -216,10 +221,11 @@ export function especialistaPorId(id: string | null | undefined): Especialista {
 
 // Estimativa GROSSEIRA do custo de um parecer, para a tela dizer antes do
 // clique. Um parecer de especialista faz de oito a dezesseis consultas, cada
-// uma reenviando a conversa (com cache de prompt, a maior parte a um décimo do
-// preço), e escreve algumas milhares de tokens. Na prática, entre dois e seis
-// dólares por parecer no Fable; centavos no investigador. É ordem de grandeza,
-// não fatura: o uso real fica no log de cada chamada.
+// uma reenviando a conversa (com cache de prompt, a maior parte a uma fração
+// do preço), e escreve algumas milhares de tokens. Era de dois a seis dólares
+// por parecer no Fable 5.1; o 5.2 cobra 20% menos por token. Centavos no
+// investigador. É ordem de grandeza, não fatura: o custo real de cada parecer
+// fica na tela Uso da IA.
 export function faixaDeCusto(e: Especialista): string {
-  return e.modelo === MODELO_ESPECIALISTA ? "de US$ 2 a US$ 6 por parecer" : "centavos de dólar por pergunta";
+  return e.modelo === MODELO_ESPECIALISTA ? "de US$ 1,50 a US$ 5 por parecer" : "centavos de dólar por pergunta";
 }

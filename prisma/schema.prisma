@@ -953,6 +953,18 @@ model ControladoriaConfig {
   // estado, não um evento: sem esta marca ele mandaria e-mail todo dia até
   // alguém resolver — e e-mail diário é o que o alerta existe para evitar.
   ultimoAlertaCaixaEm                 DateTime?
+  // IA. Teto mensal de gasto em CENTAVOS DE DÓLAR (a API cobra em dólar):
+  // atingido, o que roda sozinho para até o mês virar. Nulo = sem teto.
+  iaTetoMensalUsdCents                Int?      @default(10000)
+  // Triagem automática dos achados críticos de antifraude, e quantas por dia.
+  iaTriagemAutomatica                 Boolean   @default(true)
+  iaTriagemPorDia                     Int       @default(3)
+  // Parecer mensal do controller pedido sozinho quando o mês vira.
+  iaParecerMensalAutomatico           Boolean   @default(true)
+  // Orçamento de tokens por parecer dos especialistas (o modelo vê a contagem
+  // e dosa o trabalho). Nulo = desligado: o valor certo sai do uso medido no
+  // painel da IA, não de palpite.
+  iaOrcamentoTokensParecer            Int?
   atualizadoEm                        DateTime  @updatedAt
 }
 
@@ -1105,6 +1117,12 @@ model ConformidadeDocumento {
   extraidoEm   DateTime?
   resumo       String?
 
+  // CONFERÊNCIA DA LEITURA: uma segunda leitura, por outro modelo, comparada
+  // com a primeira. Quando foi feita, por qual modelo, e o que deu.
+  conferidoEm        DateTime?
+  conferenciaModelo  String?
+  conferenciaResumo  String?
+
   enviadoPorUserId String?
   enviadoPorNome   String?
   criadoEm         DateTime @default(now())
@@ -1177,6 +1195,10 @@ model ConformidadeApontamento {
   // texto extraído por máquina não pode entrar no relatório da diretoria com a
   // mesma autoridade de um ponto conferido.
   propostoPorIa     Boolean   @default(false)
+  // Resultado da conferência da leitura, quando houve: CONFIRMADO (as duas
+  // leituras acharam), NAO_CONFIRMADO (só a primeira) ou SO_NA_SEGUNDA (só a
+  // segunda — nasce como proposta, para uma pessoa validar).
+  conferencia       String?
   validado          Boolean   @default(false)
   validadoPorUserId String?
   validadoEm        DateTime?
@@ -1525,11 +1547,113 @@ model Investigacao {
   resposta     String?
   erro         String?
   modelo       String?
+  // De onde veio: PESSOA (alguém perguntou na tela), TRIAGEM (o ciclo abriu
+  // sozinho para um achado crítico de antifraude) ou SEGUNDA_OPINIAO (um
+  // especialista relendo a investigação de `origemId`).
+  origem       String    @default("PESSOA")
+  achadoId     String?
+  origemId     String?
+  // Só na triagem: SEGURAR | LIBERAR | VERIFICAR, lida da última linha da
+  // resposta. A decisão continua de uma pessoa; isto é a recomendação.
+  recomendacao String?
+  // Quando a triagem entrou no e-mail. Nulo = ainda não avisada.
+  avisadaEm    DateTime?
+  // Impressão digital de modelo + prompt + ferramentas com que a conversa
+  // começou. Mudou no meio (deploy que alterou o catálogo de agentes ou uma
+  // ferramenta), a conversa gravada não vale mais para a API: recomeça limpa.
+  prefixoHash  String?
+  reinicios    Int       @default(0)
+  // low | medium | high | xhigh, escolhido na pergunta. Nulo = o do especialista.
+  esforco      String?
+  // O que o modelo estava fazendo na última rodada (resumo do raciocínio).
+  andamento    String?
   criadoEm     DateTime  @default(now())
   atualizadoEm DateTime  @updatedAt
   concluidaEm  DateTime?
 
   @@index([companyId, criadoEm])
+  @@index([companyId, origem, status])
+  @@index([achadoId])
+}
+
+// ============================================================================
+// Uso da IA (migração 20261109120000)
+// ============================================================================
+// Uma linha por chamada à API: quem pediu, para qual função, em que modelo
+// respondeu e quanto custou (ver src/lib/ia/uso.ts). Custo em MILIONÉSIMOS de
+// dólar — em centavos quase toda chamada arredondaria para zero.
+model IaUso {
+  id                 String   @id @default(cuid())
+  companyId          String?
+  origem             String
+  referenciaTipo     String?
+  referenciaId       String?
+  modelo             String
+  userId             String?
+  userNome           String?
+  entradaTokens      Int
+  cacheLidoTokens    Int      @default(0)
+  cacheGravadoTokens Int      @default(0)
+  saidaTokens        Int
+  custoMicroUsd      Int
+  // Modelo fora da tabela de preços: cobrado pelo mais caro, para o teto
+  // errar para o lado seguro.
+  precoEstimado      Boolean  @default(false)
+  lote               Boolean  @default(false)
+  criadoEm           DateTime @default(now())
+
+  @@index([companyId, criadoEm])
+  @@index([companyId, origem, criadoEm])
+}
+
+// Pedido enviado em LOTE à API (metade do preço, resposta em até 24 horas —
+// em geral em menos de uma). O que ninguém espera na tela vai por aqui: o
+// parecer mensal e a conferência da leitura de conformidade. A coleta é feita
+// pela rota /api/cron/ia e ao abrir a tela que espera o resultado.
+model IaLote {
+  id           String    @id @default(cuid())
+  companyId    String
+  // parecer_mensal | conformidade_conferencia
+  tipo         String
+  referenciaId String
+  // Id do lote na API. Nulo enquanto o envio não foi aceito.
+  batchId      String?
+  // ENVIADO | CONCLUIDO | ERRO
+  status       String    @default("ENVIADO")
+  erro         String?
+  userId       String?
+  userNome     String?
+  criadoEm     DateTime  @default(now())
+  concluidoEm  DateTime?
+
+  @@index([companyId, status])
+  @@index([tipo, referenciaId])
+}
+
+// PARECER MENSAL DO CONTROLLER: o mês inteiro em uma leitura. O `briefing` é o
+// texto exato que foi ao modelo, montado pelas mesmas funções das telas — todo
+// número do parecer tem de estar nele, e fica guardado para ser conferido.
+model ParecerMensal {
+  id          String    @id @default(cuid())
+  companyId   String
+  // "grupo" ou o id da conexão: texto, e não chave estrangeira nula, para a
+  // unicidade valer também no consolidado.
+  recorte     String
+  empresa     String
+  // AAAA-MM
+  competencia String
+  // AGUARDANDO | PRONTO | ERRO
+  status      String    @default("AGUARDANDO")
+  briefing    String
+  parecer     Json?
+  modelo      String?
+  erro        String?
+  pedidoPor   String?
+  criadoEm    DateTime  @default(now())
+  concluidoEm DateTime?
+
+  @@unique([companyId, recorte, competencia])
+  @@index([companyId, competencia])
 }
 
 // ============================================================================

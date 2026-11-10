@@ -58,7 +58,7 @@ const analise = ferramentasDeAnalise(escopo, [], new Date(2026, 8, 22));
 const simulador = ferramentasDoSimulador({ companyId: "teste" }, []);
 const nomes = [...auditoria, ...analise, ...simulador].map((f) => f.name);
 conferir("nenhum nome de ferramenta repetido entre os três conjuntos", new Set(nomes).size, nomes.length);
-conferir("as ferramentas do simulador existem", simulador.map((f) => f.name), ["listar_estudos", "ler_estudo", "simular_variacao", "custos_reais", "historico_de_disputas", "base_de_custos"]);
+conferir("as ferramentas do simulador existem", simulador.map((f) => f.name), ["listar_estudos", "ler_estudo", "simular_variacao", "custos_reais", "historico_de_disputas", "base_de_custos", "documentos_do_edital"]);
 conferir("só o especialista de precificação recebe as do simulador", ESPECIALISTAS.filter((e) => e.ferramentas.includes("simulador")).map((e) => e.id), ["precificacao"]);
 conferir("a precificação é instruída a simular em vez de estimar", /simular_variacao roda o mesmo motor/.test(especialistaPorId("precificacao").systemPrompt), true);
 conferir("as ferramentas de análise existem", analise.length >= 11, true);

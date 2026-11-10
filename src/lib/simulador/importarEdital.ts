@@ -4,6 +4,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { classificarArquivo, extrairTexto, mimeParaModelo } from "@/lib/conformidade/extracao";
 import { EditalSchema, type EditalLido } from "./editalParaEstudo";
 import { LIMITE_PARTE } from "./dividirPdf";
+import { registrarUso } from "@/lib/ia/uso";
 
 // LEITURA AUTOMÁTICA DO EDITAL — o botão "Importar edital" de Novo estudo.
 //
@@ -201,7 +202,8 @@ Escreva em português do Brasil.`;
 export type Leitura = { modelo: string; refeitaPorque: string | null; avisos: string[] };
 export async function lerEdital(
   arquivos: ArquivoEnviado[],
-  contexto: { empresa: string }
+  // `companyId` e a pessoa são de quem pediu: é para o registro de custo.
+  contexto: { empresa: string; companyId?: string | null; userId?: string | null; userNome?: string | null }
 ): Promise<{ ok: true; edital: EditalLido; leitura: Leitura } | { ok: false; erro: string }> {
   if (!isLeituraDeEditalDisponivel()) return { ok: false, erro: "Leitura automática indisponível (ANTHROPIC_API_KEY não configurada)." };
   if (arquivos.length === 0) return { ok: false, erro: "Nenhum arquivo enviado." };
@@ -257,7 +259,7 @@ export function jsonDaResposta(texto: string): unknown {
 // `estruturada`: com a saída estruturada da API (o formato garantido). Se a
 // API recusar o schema ("grammar too large"), a mesma leitura vai sem ela, com
 // o schema no prompt e a validação aqui (zod).
-async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto: { empresa: string }, tempoMs: number, estruturada = true): Promise<ResultadoDoModelo> {
+async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto: { empresa: string; companyId?: string | null; userId?: string | null; userNome?: string | null }, tempoMs: number, estruturada = true): Promise<ResultadoDoModelo> {
   const inicio = Date.now();
   try {
     const blocos: Anthropic.Beta.BetaContentBlockParam[] = arquivos.map((a) =>
@@ -292,6 +294,7 @@ async function lerComModelo(modelo: string, arquivos: ArquivoEnviado[], contexto
       },
       { timeout: tempoMs, maxRetries: 0 }
     );
+    await registrarUso({ companyId: contexto.companyId ?? null, origem: "edital", message, userId: contexto.userId, userNome: contexto.userNome });
     if (message.stop_reason === "refusal")
       return { ok: false, definitivo: false, erro: `A leitura foi recusada pelo modelo (categoria ${message.stop_details?.category ?? "não informada"}). Preencha o estudo à mão.` };
     if (message.stop_reason === "max_tokens") return { ok: false, definitivo: false, erro: "O edital tem dados demais para uma leitura só: envie só o edital, o termo de referência e a planilha de itinerários." };

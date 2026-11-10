@@ -5,6 +5,7 @@ import { disponibilidadeGestao, listarEmpresasAtivas } from "@/lib/gestao/leitur
 import { dataReferenciaPadrao, executarPasso } from "@/lib/controladoria/ciclo";
 import { existeAlgumaCredencialOmie } from "@/lib/omie/client";
 import { anotarNaExecucao, dispararProximaInvocacao } from "@/lib/controladoria/encadear";
+import { dispararRotaDaIa } from "@/lib/ia/disparo";
 import { autorizado } from "@/lib/controladoria/autorizacaoDoCiclo";
 import { acionarCondutorGithub, condutorGithubConfigurado } from "@/lib/controladoria/condutorGithub";
 import { recalcularPendentes } from "@/lib/controladoria/historico";
@@ -208,6 +209,11 @@ export async function GET(req: NextRequest) {
   if (encadeou) {
     dispararProximaInvocacao({ ciclo: ciclo + 1, data: dataParam });
   }
+
+  // Ciclo concluído e ninguém conduzindo de fora: a triagem dos achados
+  // críticos, o parecer mensal e a coleta dos lotes têm rota própria, com
+  // mais tempo. Com o condutor do GitHub, quem a chama é ele.
+  if (!continua && !conduzidoDeFora) dispararRotaDaIa();
 
   return NextResponse.json({
     dataReferencia: dataReferencia.toISOString().slice(0, 10),

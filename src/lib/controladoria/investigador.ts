@@ -8,13 +8,17 @@ import { AGENTES } from "./registry";
 import { especialistaPorId, type Especialista } from "./especialistas";
 import { ferramentasDeAnalise } from "./ferramentasDeAnalise";
 import { ferramentasDoSimulador } from "@/lib/simulador/ferramentasDoSimulador";
+import { createHash } from "node:crypto";
+import { clienteDaIa } from "@/lib/ia/cliente";
+import { comMascara } from "@/lib/ia/mascara";
+import { registrarUso, type OrigemDoUso } from "@/lib/ia/uso";
 
 // O investigador roda num modelo mais barato que o analista do relatório
 // diário, de propósito. O relatório é uma chamada por dia e é onde o
 // cruzamento fino entre achados vale mais; a investigação é interativa, pode
 // ser feita dezenas de vezes por semana, e o que decide a qualidade dela é a
-// consulta certa — que o Sonnet 5 faz tão bem quanto os maiores, a um quinto
-// do preço por token (US$ 2/10 contra US$ 10/50 por milhão).
+// consulta certa — que o Sonnet 5 faz tão bem quanto os maiores, a um quarto
+// do preço por token (US$ 2/10 contra US$ 8/40 por milhão).
 export { MODELO_INVESTIGADOR } from "./especialistas";
 
 // INVESTIGADOR — a IA que CONSULTA a base para responder uma pergunta de
@@ -67,7 +71,19 @@ export type EstadoInvestigacao = {
   modelo: string | null;
   criadoEm: Date;
   userNome: string | null;
+  // PESSOA (alguém perguntou), TRIAGEM (aberta pelo ciclo para um achado
+  // crítico) ou SEGUNDA_OPINIAO (especialista relendo outra investigação).
+  origem: OrigemDaInvestigacao;
+  achadoId: string | null;
+  origemId: string | null;
+  // Só na triagem: SEGURAR | LIBERAR | VERIFICAR.
+  recomendacao: string | null;
+  // O que o modelo estava fazendo na última rodada, enquanto EXECUTANDO.
+  andamento: string | null;
+  esforco: string | null;
 };
+
+export type OrigemDaInvestigacao = "PESSOA" | "TRIAGEM" | "SEGUNDA_OPINIAO";
 
 export function isInvestigadorDisponivel(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY);
@@ -93,22 +109,6 @@ function limitarTexto(valor: unknown, teto: number): unknown {
   const texto = JSON.stringify(valor ?? null);
   if (texto.length <= teto) return valor;
   return { truncado: true, tamanhoOriginal: texto.length, inicio: texto.slice(0, teto) };
-}
-
-// USO POR CHAMADA, no log. É a única medida real de custo (tokens de entrada,
-// lidos do cache, gravados no cache, de saída) e a única prova de que o cache
-// de prompt está funcionando: `cache_read` alto na segunda rodada é o sinal
-// saudável; zero, o sinal de prefixo instável. Também registra o modelo que
-// de fato respondeu — com fallback do lado do servidor, pode não ser o pedido.
-export function registrarUso(
-  origem: string,
-  message: { model: string; usage: { input_tokens: number; output_tokens: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }
-): void {
-  const u = message.usage;
-  console.log(
-    `[${origem}] ${message.model} entrada=${u.input_tokens} cache_lido=${u.cache_read_input_tokens ?? 0} ` +
-      `cache_gravado=${u.cache_creation_input_tokens ?? 0} saida=${u.output_tokens}`
-  );
 }
 
 const SYSTEM_PROMPT = `Você é o auditor investigador da controladoria de um grupo brasileiro de fretamento e transporte de passageiros (duas empresas, Azul Mob e MCZ, ambas com contabilidade na Omie). Uma pessoa da controladoria faz uma pergunta; você a responde consultando o espelho da Omie e a base de achados da auditoria, através das ferramentas disponíveis.
@@ -553,6 +553,29 @@ function configuracaoDaChamada(e: Especialista) {
     : { maxTokens: 32000, tempoLimiteMs: 200_000, orcamentoDaRodadaMs: 60_000 };
 }
 
+// ESFORÇO POR PERGUNTA. "Quanto venceu ontem?" não merece o mesmo raciocínio
+// de "onde cortar sem parar a operação?". Quem pergunta escolhe: resposta
+// rápida (esforço baixo — mais barata, mais curta, e no Fable 5.2 ainda perto
+// do que o 5.1 entregava em esforço alto) ou o parecer completo, que é o
+// padrão do especialista. O nível fica gravado na investigação e NÃO muda no
+// meio: trocar o esforço entre rodadas jogaria fora o cache da conversa.
+//
+// No investigador (Sonnet) o rápido é "medium", não "low": o Sonnet segue o
+// nível à risca e em esforço baixo responde menos do que a pergunta pede.
+export type Profundidade = "rapida" | "completa";
+export function esforcoDaPergunta(e: Especialista, profundidade: Profundidade | undefined): Especialista["effort"] | null {
+  if (profundidade !== "rapida") return null;
+  return e.id === "investigador" ? "medium" : "low";
+}
+const ESFORCOS_VALIDOS = ["low", "medium", "high", "xhigh"] as const;
+function esforcoDaRodada(gravado: string | null, e: Especialista): Especialista["effort"] {
+  return (ESFORCOS_VALIDOS as readonly string[]).includes(gravado ?? "") ? (gravado as Especialista["effort"]) : e.effort;
+}
+// A resposta rápida também tem menos idas e vindas: metade do teto.
+function maximoDeConsultasDa(e: Especialista, esforcoGravado: string | null): number {
+  return esforcoGravado && esforcoGravado !== e.effort ? Math.max(4, Math.ceil(e.maximoDeConsultas / 2)) : e.maximoDeConsultas;
+}
+
 function mensagemInicial(params: { empresa: string; pergunta: string }): Anthropic.Beta.BetaMessageParam {
   return {
     role: "user",
@@ -563,10 +586,91 @@ ${params.pergunta.trim()}`,
   };
 }
 
-function estadoDe(row: {
+// IMPRESSÃO DIGITAL DO PREFIXO — modelo, prompt de sistema e ferramentas com
+// que a conversa começou.
+//
+// A investigação fica gravada e continua em outra requisição, às vezes depois
+// de um deploy. O Fable 5.2 só aceita de volta um bloco de raciocínio se o que
+// veio ANTES dele (sistema, ferramentas, histórico) for exatamente o que era
+// quando ele foi produzido — e confere isso em toda conta. O prompt do
+// investigador inclui o catálogo de agentes, que muda sempre que um agente é
+// criado ou alterado: sem esta conferência, um parecer aberto durante o
+// deploy quebrava com um 400 que a pessoa não tinha como entender.
+//
+// Com a impressão gravada, a rodada sabe ANTES de chamar a API que o prefixo
+// mudou, e recomeça a conversa do zero (a pergunta é a mesma; as consultas são
+// refeitas). Uma vez só: se mudar de novo, encerra pedindo a pergunta de novo.
+//
+// `FORMATO_DA_CHAMADA` entra na conta para o caso de a forma do pedido mudar
+// (um parâmetro novo de raciocínio, por exemplo) sem mudar prompt nem
+// ferramenta: basta trocar o valor.
+const FORMATO_DA_CHAMADA = "2026-11-a";
+const MAXIMO_DE_REINICIOS = 1;
+
+export function impressaoDoPrefixo(p: {
+  modelo: string;
+  system: string;
+  ferramentas: { name: string; description?: string; input_schema?: unknown }[];
+}): string {
+  const h = createHash("sha256");
+  for (const parte of [FORMATO_DA_CHAMADA, p.modelo, p.system]) h.update(parte).update("\0");
+  for (const f of p.ferramentas) h.update(f.name).update("\0").update(f.description ?? "").update("\0").update(JSON.stringify(f.input_schema ?? null)).update("\0");
+  return h.digest("hex");
+}
+
+export function decidirRetomada(p: {
+  prefixoGravado: string | null;
+  prefixoAtual: string;
+  temRespostaDoModelo: boolean;
+  reinicios: number;
+}): "seguir" | "recomecar" | "desistir" {
+  // Sem resposta do modelo ainda não há bloco de raciocínio a invalidar.
+  if (!p.temRespostaDoModelo || p.prefixoGravado === p.prefixoAtual) return "seguir";
+  return p.reinicios >= MAXIMO_DE_REINICIOS ? "desistir" : "recomecar";
+}
+
+// ANDAMENTO: o que o modelo estava fazendo na última rodada. Com
+// `display: "summarized"` os blocos de raciocínio trazem um resumo legível; a
+// tela mostra o mais recente em vez de só um "aguarde" — um parecer leva
+// minutos, e quem espera quer saber se está andando e para onde.
+export function andamentoDe(conteudo: { type: string; thinking?: string | null }[]): string | null {
+  const textos = conteudo
+    .filter((b) => b.type === "thinking" && typeof b.thinking === "string" && b.thinking.trim().length > 0)
+    .map((b) => (b.thinking as string).replace(/\s+/g, " ").trim());
+  const ultimo = textos[textos.length - 1];
+  if (!ultimo) return null;
+  return ultimo.length > 400 ? `${ultimo.slice(0, 399)}…` : ultimo;
+}
+
+// ÚLTIMO PASSO. Antes, a investigação que chegava ao teto de consultas
+// terminava com erro e nada do que foi consultado virava resposta. Agora, na
+// penúltima ida, o resultado das consultas vai acompanhado deste aviso — e o
+// modelo fecha com o que tem, dizendo o que faltou.
+export const AVISO_DE_ULTIMO_PASSO =
+  "Este é o último passo disponível desta investigação: não há mais consultas. Responda agora com o que já foi consultado, citando os dados, e diga claramente o que ficou por conferir.";
+
+// A RECOMENDAÇÃO DA TRIAGEM, lida da resposta. A triagem pede que o parecer
+// termine com uma linha "RECOMENDAÇÃO: SEGURAR | LIBERAR | VERIFICAR". Sem a
+// linha (ou com outra palavra), vale VERIFICAR: na dúvida, uma pessoa olha.
+export type RecomendacaoDaTriagem = "SEGURAR" | "LIBERAR" | "VERIFICAR";
+export function recomendacaoDaTriagem(resposta: string): RecomendacaoDaTriagem {
+  const todas = [...resposta.matchAll(/RECOMENDA[ÇC][ÃA]O\s*:[\s*_`]*(SEGURAR|LIBERAR|VERIFICAR)/gi)];
+  const ultima = todas[todas.length - 1]?.[1]?.toUpperCase();
+  return ultima === "SEGURAR" || ultima === "LIBERAR" ? ultima : "VERIFICAR";
+}
+
+// Recursos opcionais da API que este processo já viu serem recusados. Um
+// parâmetro em beta que a conta não aceite não pode derrubar o parecer: a
+// rodada tira o recurso e refaz a chamada, e as seguintes já saem sem ele.
+const recursosRecusados = new Set<"orcamento" | "andamento">();
+
+type LinhaDaInvestigacao = {
   id: string; status: string; especialista: string; pergunta: string; empresa: string; resposta: string | null; erro: string | null;
   consultas: unknown; iteracoes: number; modelo: string | null; criadoEm: Date; userNome: string | null;
-}): EstadoInvestigacao {
+  origem: string; achadoId: string | null; origemId: string | null; recomendacao: string | null; andamento: string | null; esforco: string | null;
+};
+
+function estadoDe(row: LinhaDaInvestigacao): EstadoInvestigacao {
   return {
     id: row.id,
     status: row.status as StatusInvestigacao,
@@ -580,6 +684,12 @@ function estadoDe(row: {
     modelo: row.modelo,
     criadoEm: row.criadoEm,
     userNome: row.userNome,
+    origem: row.origem as OrigemDaInvestigacao,
+    achadoId: row.achadoId,
+    origemId: row.origemId,
+    recomendacao: row.recomendacao,
+    andamento: row.andamento,
+    esforco: row.esforco,
   };
 }
 
@@ -589,21 +699,34 @@ export async function iniciarInvestigacao(params: {
   empresa: string;
   pergunta: string;
   especialista?: string;
+  profundidade?: Profundidade;
   userId: string | null;
   userNome: string | null;
+  // Triagem automática e segunda opinião: de onde veio, a que achado ou a que
+  // investigação se refere, e o texto que abre a conversa (a pergunta gravada
+  // continua sendo a curta, que é a que a tela mostra).
+  origem?: OrigemDaInvestigacao;
+  achadoId?: string | null;
+  origemId?: string | null;
+  abertura?: string;
 }): Promise<EstadoInvestigacao> {
+  // Id desconhecido cai no investigador: um valor inventado no formulário
+  // não pode escolher um prompt que não existe.
+  const especialista = especialistaPorId(params.especialista);
   const row = await prisma.investigacao.create({
     data: {
       companyId: params.companyId,
       conexaoId: params.conexaoId,
       empresa: params.empresa,
-      // Id desconhecido cai no investigador: um valor inventado no formulário
-      // não pode escolher um prompt que não existe.
-      especialista: especialistaPorId(params.especialista).id,
+      especialista: especialista.id,
       pergunta: params.pergunta.trim(),
       userId: params.userId,
       userNome: params.userNome,
-      mensagens: [mensagemInicial(params)] as unknown as Prisma.InputJsonValue,
+      origem: params.origem ?? "PESSOA",
+      achadoId: params.achadoId ?? null,
+      origemId: params.origemId ?? null,
+      esforco: esforcoDaPergunta(especialista, params.profundidade),
+      mensagens: [mensagemInicial({ empresa: params.empresa, pergunta: params.abertura ?? params.pergunta })] as unknown as Prisma.InputJsonValue,
       consultas: [],
     },
   });
@@ -624,6 +747,36 @@ export async function listarInvestigacoes(companyId: string, limite = 10): Promi
   return rows.map(estadoDe);
 }
 
+function origemDoUso(row: { origem: string; especialista: string }): OrigemDoUso {
+  if (row.origem === "TRIAGEM") return "triagem";
+  if (row.origem === "SEGUNDA_OPINIAO") return "segunda_opiniao";
+  return especialistaPorId(row.especialista).id;
+}
+
+// ORÇAMENTO DE TOKENS do parecer (só especialistas, só se configurado). O
+// modelo vê quanto tem e quanto sobra, e dosa as consultas para fechar a
+// resposta dentro disso. O que já saiu nas rodadas anteriores vem do registro
+// de uso desta investigação.
+async function orcamentoDeTokens(row: { id: string; companyId: string }, ehInvestigador: boolean): Promise<{ total: number; remaining: number } | null> {
+  if (ehInvestigador || recursosRecusados.has("orcamento")) return null;
+  const config = await prisma.controladoriaConfig.findUnique({ where: { companyId: row.companyId }, select: { iaOrcamentoTokensParecer: true } });
+  const total = config?.iaOrcamentoTokensParecer;
+  // 20 mil é o mínimo que a API aceita.
+  if (!total || total < 20_000) return null;
+  const gasto = await prisma.iaUso.aggregate({ where: { referenciaTipo: "Investigacao", referenciaId: row.id }, _sum: { saidaTokens: true } });
+  return { total, remaining: Math.max(1, total - (gasto._sum.saidaTokens ?? 0)) };
+}
+
+// Os arquivos que uma ferramenta enviou à API para o modelo ler (documentos do
+// edital). Ficam guardados lá enquanto a investigação corre; ao encerrar, são
+// apagados — o original continua no banco, no estudo.
+function arquivosEnviados(mensagens: unknown): string[] {
+  const ids = new Set<string>();
+  const texto = JSON.stringify(mensagens ?? []);
+  for (const m of texto.matchAll(/"file_id":"(file_[A-Za-z0-9_-]{8,})"/g)) ids.add(m[1]);
+  return [...ids];
+}
+
 // Avança uma investigação em andamento pelo que couber no orçamento da rodada.
 // Idempotente por construção: se duas rodadas disputarem a mesma investigação,
 // a segunda lê o estado gravado pela primeira e continua dali.
@@ -641,6 +794,8 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
   const especialista = especialistaPorId(row.especialista);
   const ehInvestigador = especialista.id === "investigador";
   const configuracao = configuracaoDaChamada(especialista);
+  const esforco = esforcoDaRodada(row.esforco, especialista);
+  const maximoDeConsultas = maximoDeConsultasDa(especialista, row.esforco);
 
   // O TEMPO LIMITE É EXPLÍCITO no cliente, e é por dois motivos. O primeiro é o
   // teto da hospedagem: a rodada tem 300 segundos, e uma chamada que passasse
@@ -649,15 +804,69 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
   // chamada sem streaming — foi o erro "Streaming is required" que a leitura de
   // conformidade já encontrou. Uma chamada abortada NÃO encerra o parecer: a
   // rodada grava o que tem e a próxima refaz a mesma chamada.
-  const client = new Anthropic({ apiKey, timeout: configuracao.tempoLimiteMs, maxRetries: 0 });
-  const consultas: ConsultaFeita[] = Array.isArray(row.consultas) ? (row.consultas as ConsultaFeita[]) : [];
+  const client = clienteDaIa({ timeout: configuracao.tempoLimiteMs, maxRetries: 0 });
+  let consultas: ConsultaFeita[] = Array.isArray(row.consultas) ? (row.consultas as ConsultaFeita[]) : [];
   let mensagens = row.mensagens as unknown as Anthropic.Beta.BetaMessageParam[];
   let iteracoes = row.iteracoes;
+  let reinicios = row.reinicios;
   const inicio = Date.now();
   const escopo = { companyId: row.companyId, conexaoId: row.conexaoId };
 
+  const systemPrompt = ehInvestigador ? SYSTEM_PROMPT : especialista.systemPrompt;
+  // As ferramentas escrevem em `consultas` por referência; a lista é montada
+  // de novo a cada recomeço para apontar para a lista certa.
+  const montarFerramentas = () =>
+    // Tudo que uma ferramenta devolve passa pelo filtro de documento pessoal
+    // antes de ir ao modelo (ver src/lib/ia/mascara.ts).
+    comMascara([
+      ...(especialista.ferramentas.includes("auditoria") ? ferramentasDeAuditoria(escopo, consultas) : []),
+      ...(especialista.ferramentas.includes("analise") ? ferramentasDeAnalise(escopo, consultas) : []),
+      ...(especialista.ferramentas.includes("simulador") ? ferramentasDoSimulador(escopo, consultas) : []),
+    ]);
+  let ferramentas = montarFerramentas();
+  const prefixo = impressaoDoPrefixo({ modelo: especialista.modelo, system: systemPrompt, ferramentas });
+
+  // Recomeça a conversa do zero, mantendo a pergunta. As consultas já feitas
+  // continuam na lista (a pessoa as viu), com uma linha dizendo o que houve.
+  const recomecar = async (motivo: string) => {
+    reinicios++;
+    iteracoes = 0;
+    mensagens = [mensagens[0]];
+    consultas = [...consultas, { ferramenta: "recomeço", entrada: {}, resumo: motivo }];
+    ferramentas = montarFerramentas();
+    await prisma.investigacao.update({
+      where: { id: row.id },
+      data: {
+        mensagens: mensagens as unknown as Prisma.InputJsonValue,
+        consultas: consultas as unknown as Prisma.InputJsonValue,
+        iteracoes,
+        reinicios,
+        prefixoHash: prefixo,
+        andamento: null,
+      },
+    });
+    console.warn(`[${especialista.id}] investigação ${row.id} recomeçou: ${motivo}`);
+  };
+
+  const retomada = decidirRetomada({
+    prefixoGravado: row.prefixoHash,
+    prefixoAtual: prefixo,
+    temRespostaDoModelo: mensagens.some((m) => m.role === "assistant"),
+    reinicios,
+  });
+  if (retomada === "desistir") {
+    return encerrar(row.id, { erro: "O sistema foi atualizado mais de uma vez durante esta investigação. Faça a pergunta de novo.", mensagens, consultas, iteracoes });
+  }
+  if (retomada === "recomecar") {
+    await recomecar("O sistema foi atualizado durante a investigação: a conversa recomeçou do início e as consultas foram refeitas.");
+  } else if (row.prefixoHash !== prefixo) {
+    await prisma.investigacao.update({ where: { id: row.id }, data: { prefixoHash: prefixo } });
+  }
+
   try {
     while (true) {
+      const orcamento = await orcamentoDeTokens(row, ehInvestigador);
+      const comAndamento = !recursosRecusados.has("andamento");
       const runner = client.beta.messages.toolRunner({
         model: especialista.modelo,
         max_tokens: configuracao.maxTokens,
@@ -665,10 +874,13 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
         // o nível à risca e em esforço baixo tende a responder menos do que a
         // pergunta pede. Se uma resposta parecer rasa, o ajuste é subir para
         // xhigh — não trocar de modelo. Nos especialistas (Fable), alto é o
-        // ponto de partida recomendado; o raciocínio é sempre ligado e não há
-        // parâmetro de thinking a passar.
-        output_config: { effort: especialista.effort },
-        betas: ["server-side-fallback-2026-07-01"],
+        // ponto de partida recomendado. O nível é o gravado na investigação
+        // (ver esforcoDaPergunta) e não muda entre rodadas.
+        output_config: { effort: esforco, ...(orcamento ? { task_budget: { type: "tokens" as const, ...orcamento } } : {}) },
+        // O raciocínio é sempre ligado nestes modelos; o que se pede aqui é o
+        // RESUMO dele, para a tela mostrar o andamento.
+        ...(comAndamento ? { thinking: { type: "adaptive" as const, display: "summarized" as const } } : {}),
+        betas: ["server-side-fallback-2026-07-01", ...(orcamento ? ["task-budgets-2026-03-13"] : [])],
         fallbacks: "default",
         // CACHE DE PROMPT. O prefixo estável (ferramentas + system) é o mesmo
         // em toda rodada de toda investigação, e cada rodada reenviava tudo a
@@ -677,13 +889,9 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
         // system juntos; o marcador de nível superior anda com a conversa e
         // guarda o histórico já enviado. As rodadas são seguidas (o navegador
         // chama de novo em segundos), dentro dos 5 minutos do cache.
-        system: [{ type: "text", text: ehInvestigador ? SYSTEM_PROMPT : especialista.systemPrompt, cache_control: { type: "ephemeral" } }],
+        system: [{ type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } }],
         cache_control: { type: "ephemeral" },
-        tools: [
-          ...(especialista.ferramentas.includes("auditoria") ? ferramentasDeAuditoria(escopo, consultas) : []),
-          ...(especialista.ferramentas.includes("analise") ? ferramentasDeAnalise(escopo, consultas) : []),
-          ...(especialista.ferramentas.includes("simulador") ? ferramentasDoSimulador(escopo, consultas) : []),
-        ],
+        tools: ferramentas,
         messages: mensagens,
       });
 
@@ -704,16 +912,45 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
         if (e instanceof Anthropic.APIConnectionTimeoutError || e instanceof Anthropic.APIUserAbortError) {
           iteracoes++;
           const parcial = await prisma.investigacao.update({ where: { id: row.id }, data: { iteracoes } });
-          if (iteracoes >= especialista.maximoDeConsultas) {
+          if (iteracoes >= maximoDeConsultas) {
             return encerrar(row.id, { erro: "O modelo passou do tempo limite repetidas vezes. Faça uma pergunta mais específica.", mensagens, consultas, iteracoes });
           }
           return estadoDe(parcial);
+        }
+        // PEDIDO RECUSADO (400). Três causas têm conserto aqui, sem a pessoa
+        // perceber: um recurso opcional que a conta não aceita (sai e a
+        // chamada é refeita) e a conversa gravada que não vale mais para a
+        // API (recomeça limpa, uma vez). O resto sobe como erro.
+        if (e instanceof Anthropic.BadRequestError) {
+          const texto = e.message.toLowerCase();
+          if (orcamento && texto.includes("task_budget")) {
+            recursosRecusados.add("orcamento");
+            continue;
+          }
+          if (comAndamento && texto.includes("display")) {
+            recursosRecusados.add("andamento");
+            continue;
+          }
+          const conversaInvalida = /thinking|signature|prefix/.test(texto) && mensagens.some((m) => m.role === "assistant");
+          if (conversaInvalida && reinicios < MAXIMO_DE_REINICIOS) {
+            await recomecar("A conversa gravada não foi aceita de volta pela API: recomeçou do início e as consultas foram refeitas.");
+            continue;
+          }
         }
         throw e;
       }
       if (!message) throw new Error("o modelo não devolveu resposta");
       iteracoes++;
-      registrarUso(especialista.id, message);
+      await registrarUso({
+        companyId: row.companyId,
+        origem: origemDoUso(row),
+        message,
+        userId: row.userId,
+        userNome: row.userNome,
+        referenciaTipo: "Investigacao",
+        referenciaId: row.id,
+      });
+      const andamento = andamentoDe(message.content as { type: string; thinking?: string | null }[]);
 
       // Resposta cortada pelo teto de tokens NÃO é resposta pronta: com
       // raciocínio adaptativo, o corte costuma cair no meio do pensamento e
@@ -735,18 +972,27 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
 
       if (message.stop_reason === "tool_use") {
         const respostaDasFerramentas = await runner.generateToolResponse();
-        mensagens = [
-          ...mensagens,
-          { role: "assistant", content: message.content },
-          ...(respostaDasFerramentas ? [respostaDasFerramentas] : []),
-        ];
 
-        if (iteracoes >= especialista.maximoDeConsultas) {
+        if (iteracoes >= maximoDeConsultas) {
           return encerrar(row.id, {
-            erro: `A investigação atingiu o limite de ${especialista.maximoDeConsultas} consultas sem fechar uma resposta. Faça uma pergunta mais específica.`,
-            mensagens, consultas, iteracoes,
+            erro: `A investigação atingiu o limite de ${maximoDeConsultas} consultas sem fechar uma resposta. Faça uma pergunta mais específica.`,
+            mensagens: [...mensagens, { role: "assistant", content: message.content }, ...(respostaDasFerramentas ? [respostaDasFerramentas] : [])],
+            consultas, iteracoes,
           });
         }
+
+        // Penúltima ida: o resultado das consultas leva junto o aviso de que
+        // a próxima resposta é a última (ver AVISO_DE_ULTIMO_PASSO). Vai no
+        // turno mais novo — nada do que já foi enviado é alterado.
+        const ultimoPasso = iteracoes === maximoDeConsultas - 1;
+        const resultados: Anthropic.Beta.BetaMessageParam[] = respostaDasFerramentas
+          ? [
+              ultimoPasso && Array.isArray(respostaDasFerramentas.content)
+                ? { ...respostaDasFerramentas, content: [...respostaDasFerramentas.content, { type: "text" as const, text: AVISO_DE_ULTIMO_PASSO }] }
+                : respostaDasFerramentas,
+            ]
+          : [];
+        mensagens = [...mensagens, { role: "assistant", content: message.content }, ...resultados];
 
         const parcial = await prisma.investigacao.update({
           where: { id: row.id },
@@ -754,6 +1000,7 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
             mensagens: mensagens as unknown as Prisma.InputJsonValue,
             consultas: consultas as unknown as Prisma.InputJsonValue,
             iteracoes,
+            ...(andamento ? { andamento } : {}),
           },
         });
         if (Date.now() - inicio > configuracao.orcamentoDaRodadaMs) return estadoDe(parcial);
@@ -771,7 +1018,14 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
       if (!texto) {
         return encerrar(row.id, { erro: "O modelo não devolveu texto.", mensagens, consultas, iteracoes });
       }
-      return encerrar(row.id, { resposta: texto, modelo: message.model, mensagens, consultas, iteracoes });
+      return encerrar(row.id, {
+        resposta: texto,
+        modelo: message.model,
+        mensagens,
+        consultas,
+        iteracoes,
+        ...(row.origem === "TRIAGEM" ? { recomendacao: recomendacaoDaTriagem(texto) } : {}),
+      });
     }
   } catch (e) {
     const erro =
@@ -790,6 +1044,7 @@ async function encerrar(
     resposta?: string;
     modelo?: string;
     erro?: string;
+    recomendacao?: RecomendacaoDaTriagem;
     mensagens?: Anthropic.Beta.BetaMessageParam[];
     consultas?: ConsultaFeita[];
     iteracoes?: number;
@@ -802,11 +1057,20 @@ async function encerrar(
       resposta: fim.resposta ?? null,
       modelo: fim.modelo ?? null,
       erro: fim.erro ?? null,
+      recomendacao: fim.recomendacao ?? null,
+      andamento: null,
       ...(fim.mensagens ? { mensagens: fim.mensagens as unknown as Prisma.InputJsonValue } : {}),
       ...(fim.consultas ? { consultas: fim.consultas as unknown as Prisma.InputJsonValue } : {}),
       ...(fim.iteracoes !== undefined ? { iteracoes: fim.iteracoes } : {}),
       concluidaEm: new Date(),
     },
   });
+  // Arquivos que a investigação mandou à API para leitura não ficam lá depois
+  // que ela termina. Falha ao apagar não muda o resultado.
+  const enviados = arquivosEnviados(fim.mensagens ?? row.mensagens);
+  if (enviados.length > 0) {
+    const { apagarArquivos } = await import("@/lib/simulador/importarEdital");
+    await apagarArquivos(enviados).catch(() => undefined);
+  }
   return estadoDe(row);
 }

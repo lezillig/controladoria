@@ -4,6 +4,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { cliente, comFallback, ESFORCO_EDITAL, isLeituraDeEditalDisponivel, mensagemDeErro, MODELO_EDITAL, MODELO_PLANILHA } from "./importarEdital";
 import type { EntradaSimulacao, ResultadoSimulacao } from "./tipos";
 import { ROTULO_UNIDADE } from "./tipos";
+import { registrarUso } from "@/lib/ia/uso";
 
 // A PLANILHA DE CUSTOS DO EDITAL, PREENCHIDA COM O ESTUDO.
 //
@@ -221,7 +222,7 @@ Responda em português do Brasil.`;
 export async function mapearPlanilha(
   inventario: { abas: string[]; celulas: CelulaDeEntrada[] },
   catalogo: ValorDoEstudo[],
-  contexto: { estudo: string; arquivo: string }
+  contexto: { estudo: string; arquivo: string; companyId?: string | null; userId?: string | null; userNome?: string | null }
 ): Promise<{ ok: true; mapa: MapaDaPlanilha } | { ok: false; erro: string }> {
   if (!isLeituraDeEditalDisponivel()) return { ok: false, erro: "Leitura automática indisponível (ANTHROPIC_API_KEY não configurada)." };
   if (inventario.celulas.length === 0) return { ok: false, erro: "A planilha não tem células de entrada lidas por fórmulas: não parece um modelo de planilha de custos." };
@@ -247,6 +248,7 @@ export async function mapearPlanilha(
         },
         { timeout: 120_000, maxRetries: 0 }
       );
+      await registrarUso({ companyId: contexto.companyId ?? null, origem: "planilha_edital", message, userId: contexto.userId, userNome: contexto.userNome });
       if (message.stop_reason === "refusal") {
         ultimoErro = "O mapeamento foi recusado pelo modelo. Preencha a planilha à mão.";
         continue;

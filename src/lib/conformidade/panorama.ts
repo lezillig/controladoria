@@ -32,6 +32,11 @@ export type DocumentoConformidade = {
   resumo: string | null;
   enviadoPorNome: string | null;
   criadoEm: Date;
+  // Conferência da leitura (segunda leitura, ver conferencia.ts). Opcionais:
+  // quem monta este tipo à mão (testes) não precisa conhecê-los.
+  conferidoEm?: Date | null;
+  conferenciaModelo?: string | null;
+  conferenciaResumo?: string | null;
 };
 
 export type ApontamentoConformidade = {
@@ -57,6 +62,8 @@ export type ApontamentoConformidade = {
   prazo: Date | null;
   observacaoTratativa: string | null;
   propostoPorIa: boolean;
+  // CONFIRMADO | NAO_CONFIRMADO | SO_NA_SEGUNDA, quando houve conferência.
+  conferencia?: string | null;
   validado: boolean;
   chaveRecorrencia: string;
   primeiraCompetencia: Date;
@@ -107,6 +114,9 @@ export async function carregarConformidade(companyId: string, conexaoId?: string
         resumo: true,
         enviadoPorNome: true,
         criadoEm: true,
+        conferidoEm: true,
+        conferenciaModelo: true,
+        conferenciaResumo: true,
       },
     }),
     prisma.conformidadeApontamento.findMany({
@@ -135,6 +145,7 @@ export async function carregarConformidade(companyId: string, conexaoId?: string
         prazo: true,
         observacaoTratativa: true,
         propostoPorIa: true,
+        conferencia: true,
         validado: true,
         chaveRecorrencia: true,
         primeiraCompetencia: true,
