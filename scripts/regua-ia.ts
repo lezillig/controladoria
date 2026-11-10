@@ -15,6 +15,7 @@
 // comportamento do modelo, não a base.
 //
 // USO
+//   Pelo botão: Actions → Régua da IA → Run workflow (.github/workflows/regua-ia.yml).
 //   ANTHROPIC_API_KEY=... npm run regua:ia              (tudo)
 //   ... npm run regua:ia -- --familia narrativa         (uma família)
 //   ... npm run regua:ia -- --teto-usd 8 --saida /caminho/regua.md
@@ -379,6 +380,10 @@ async function main() {
   );
   writeFileSync(saida, md.join("\n"));
   console.log(`\n${md.join("\n")}\nRelatório gravado em ${saida}`);
+  // Régua em que NENHUMA chamada respondeu não mediu nada (chave recusada, sem
+  // crédito, teto zerado). Sair com erro é o que deixa a execução vermelha no
+  // botão do Actions, em vez de um relatório vazio com cara de sucesso.
+  if (linhas.every((l) => l.erro !== null)) process.exitCode = 3;
 }
 
 main().catch((e) => {

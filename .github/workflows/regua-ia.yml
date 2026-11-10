@@ -1,0 +1,114 @@
+# RÉGUA DA IA — botão manual. Gasta API de verdade, por isso NÃO roda sozinha.
+#
+# A régua (scripts/regua-ia.ts) roda os mesmos pedidos de produção em mais de
+# um modelo e nível de esforço, sobre casos SINTÉTICOS com resposta conhecida,
+# e mede acerto, tempo e custo. Mora aqui, e não na máquina de alguém, por
+# dois motivos: quem decide o modelo não precisa programar para medir, e a
+# chave da API não sai do cofre de segredos do repositório.
+#
+# O log deste repositório é público. A régua pode ficar nele porque nenhum
+# dado real entra: os casos são inventados e o relatório traz só acerto, tempo
+# e custo por modelo.
+#
+# ---------------------------------------------------------------------------
+# ANTES DA PRIMEIRA EXECUÇÃO, cadastrar em Settings → Secrets and variables →
+# Actions → New repository secret:
+#
+#   ANTHROPIC_API_KEY — uma chave da Anthropic. Pode ser a mesma da Vercel;
+#   uma chave só para a régua separa o gasto dela no console.
+#
+# E, só se a chave for de uma conta com mais de um espaço de trabalho:
+#   ANTHROPIC_WORKSPACE_ID — o "wrkspc_…" do console.
+#
+# COMO RODAR: Actions → Régua da IA → Run workflow. O relatório aparece no
+# resumo da execução (aba Summary).
+# ---------------------------------------------------------------------------
+
+name: Régua da IA
+
+on:
+  workflow_dispatch:
+    inputs:
+      familia:
+        description: "O que medir"
+        type: choice
+        default: tudo
+        options:
+          - tudo
+          - narrativa
+          - parecer
+          - conformidade
+      teto_usd:
+        description: "Gasto máximo desta execução, em dólares (até 30)"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+# Uma régua por vez: duas juntas dobram o gasto e disputam o limite da conta,
+# o que estraga justamente a medida de tempo.
+concurrency:
+  group: regua-ia
+  cancel-in-progress: false
+
+jobs:
+  regua:
+    name: Medir modelos e esforço
+    runs-on: ubuntu-latest
+    # 13 chamadas, as maiores de alguns minutos cada.
+    timeout-minutes: 60
+    env:
+      # O postinstall roda `prisma generate`, que exige a variável; a régua
+      # não conecta em banco nenhum.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci?schema=controladoria
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar a régua
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          # Pelo ambiente, e não colados no script: o que se digita no botão
+          # não vira comando.
+          FAMILIA: ${{ inputs.familia }}
+          TETO: ${{ inputs.teto_usd }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::Falta o segredo ANTHROPIC_API_KEY no repositório (Settings → Secrets and variables → Actions → New repository secret)."
+            exit 1
+          fi
+          # O teto é a única trava de gasto: valor que não é número, ou alto
+          # demais por um zero a mais, para aqui e não na fatura.
+          if ! [[ "${TETO:-}" =~ ^[0-9]+([.][0-9]+)?$ ]] || ! awk -v t="$TETO" 'BEGIN { exit !(t > 0 && t <= 30) }'; then
+            echo "::error::Teto de gasto inválido: use um número entre 0 e 30 (dólares)."
+            exit 1
+          fi
+
+          args=(--teto-usd "$TETO" --saida regua-ia.md)
+          case "${FAMILIA:-tudo}" in
+            tudo) ;;
+            narrativa|parecer|conformidade) args+=(--familia "$FAMILIA") ;;
+            *) echo "::error::Família desconhecida."; exit 1 ;;
+          esac
+
+          npm run -s regua:ia -- "${args[@]}"
+          saida=$?
+          if [ -f regua-ia.md ]; then
+            cat regua-ia.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ "$saida" -ne 0 ]; then
+            echo "::error::A régua não mediu nada: nenhuma chamada respondeu. O motivo está nas linhas ERRO acima (chave recusada, sem crédito, modelo sem acesso)."
+          fi
+          exit "$saida"
