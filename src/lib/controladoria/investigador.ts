@@ -9,7 +9,7 @@ import { especialistaPorId, type Especialista } from "./especialistas";
 import { ferramentasDeAnalise } from "./ferramentasDeAnalise";
 import { ferramentasDoSimulador } from "@/lib/simulador/ferramentasDoSimulador";
 import { createHash } from "node:crypto";
-import { clienteDaIa } from "@/lib/ia/cliente";
+import { clienteDaIa, erroDaChamada } from "@/lib/ia/cliente";
 import { comMascara } from "@/lib/ia/mascara";
 import { registrarUso, type OrigemDoUso } from "@/lib/ia/uso";
 
@@ -1028,13 +1028,7 @@ export async function avancarInvestigacao(id: string, companyId: string): Promis
       });
     }
   } catch (e) {
-    const erro =
-      e instanceof Anthropic.APIError
-        ? `A API respondeu ${e.status ?? "sem status"}: ${e.message.slice(0, 300)}`
-        : e instanceof Error
-          ? e.message.slice(0, 300)
-          : "erro desconhecido";
-    return encerrar(row.id, { erro: `A investigação não completou: ${erro}`, mensagens, consultas, iteracoes });
+    return encerrar(row.id, { erro: `A investigação não completou: ${erroDaChamada(e)}`, mensagens, consultas, iteracoes });
   }
 }
 

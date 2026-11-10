@@ -50,8 +50,8 @@ export async function GET(req: NextRequest) {
       resumo.lotesNaFila += lotes.pendentes;
 
       const parecer = await pedirParecerDoMesSeCouber(empresa.id);
-      if (parecer?.includes("pedido")) resumo.pareceresPedidos++;
-      else if (parecer) resumo.avisos.push(`parecer mensal: ${parecer}`);
+      if (parecer.pedido) resumo.pareceresPedidos++;
+      else if (parecer.aviso) resumo.avisos.push(`parecer mensal: ${parecer.aviso}`);
 
       const abertas = await abrirTriagens(empresa.id);
       resumo.triagensAbertas += abertas.abertas;

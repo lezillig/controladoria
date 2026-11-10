@@ -13,6 +13,7 @@ import { fundamentacaoDaTransicao } from "./regime";
 import { lerMsg } from "./outlook";
 import { rotuloCompetencia } from "./tipos";
 import { registrarUso } from "@/lib/ia/uso";
+import { problemaDaConta } from "@/lib/ia/cliente";
 
 // LEITURA AUTOMÁTICA DO RELATÓRIO DA CONSULTORIA.
 //
@@ -513,6 +514,9 @@ export function sugestoesDoEmail(conteudo: Buffer): SugestoesDoEmail | null {
 }
 
 function mensagemDeErro(e: unknown): string {
+  // Chave recusada ou conta sem crédito não é problema do documento.
+  const conta = problemaDaConta(e);
+  if (conta) return conta;
   if (e instanceof Anthropic.APIError) {
     // A mensagem da API é útil e específica (PDF acima de 100 páginas, arquivo
     // acima do limite, formato de imagem recusado) — vale mais na tela do que

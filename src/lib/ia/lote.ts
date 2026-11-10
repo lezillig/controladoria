@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { prisma } from "@/lib/prisma";
-import { clienteDaIa } from "./cliente";
+import { clienteDaIa, erroDaChamada } from "./cliente";
 import { registrarUso, type OrigemDoUso } from "./uso";
 
 // PEDIDOS EM LOTE — metade do preço, sem ninguém esperando.
@@ -59,7 +59,7 @@ export async function enviarLote(p: {
     await prisma.iaLote.update({ where: { id: lote.id }, data: { batchId: enviado.id } });
     return { ok: true, loteId: lote.id };
   } catch (e) {
-    const erro = e instanceof Anthropic.APIError ? `A API respondeu ${e.status ?? "sem status"}: ${e.message.slice(0, 300)}` : e instanceof Error ? e.message.slice(0, 300) : "erro desconhecido";
+    const erro = erroDaChamada(e);
     await prisma.iaLote.update({ where: { id: lote.id }, data: { status: "ERRO", erro, concluidoEm: new Date() } });
     return { ok: false, erro };
   }

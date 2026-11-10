@@ -255,18 +255,56 @@ async function avisarParecerPronto(companyId: string, parecer: { id: string; com
 // resultado para baixo.
 export const DIA_DO_PARECER_AUTOMATICO = 6;
 
-/** Pede sozinho o parecer do mês anterior (consolidado), uma vez. */
-export async function pedirParecerDoMesSeCouber(companyId: string, agora = new Date()): Promise<string | null> {
-  if (agora.getDate() < DIA_DO_PARECER_AUTOMATICO) return null;
+// Quem assina o pedido que o sistema faz sozinho. É por este nome que a nova
+// tentativa reconhece um pedido que é dela para refazer.
+export const PEDIDO_AUTOMATICO = "Pedido automático";
+
+// De quanto em quanto tempo o pedido automático que falhou tenta de novo. Um
+// dia, com folga para o condutor que atrasa: a chave trocada de manhã vale no
+// ciclo seguinte, e uma chave que continua recusada custa uma tentativa por
+// dia, não uma a cada meia hora.
+const ESPERA_PARA_TENTAR_DE_NOVO_MS = 20 * 60 * 60_000;
+// Tentativa que a API aceitou é tentativa paga. Duas que terminaram em erro
+// (resposta fora do formato, recusa) não melhoram na terceira: daí em diante
+// quem decide pedir de novo é uma pessoa, na tela.
+const MAXIMO_DE_TENTATIVAS_PAGAS = 2;
+
+export type PedidoAutomatico = { pedido: boolean; aviso: string | null };
+
+/**
+ * O parecer do mês que fechou, pedido sozinho a partir do dia 6.
+ *
+ * O PEDIDO QUE FALHOU TENTA DE NOVO. No primeiro ciclo de produção a API
+ * recusou a chave; o pedido ficou gravado com erro e, como "já existia", o
+ * automático nunca mais tentaria naquele mês — mesmo depois de a chave ser
+ * trocada. Agora o pedido automático com erro é refeito uma vez por dia. O
+ * que uma pessoa pediu e falhou continua sendo dela para pedir de novo.
+ */
+export async function pedirParecerDoMesSeCouber(companyId: string, agora = new Date()): Promise<PedidoAutomatico> {
+  const nada: PedidoAutomatico = { pedido: false, aviso: null };
+  if (agora.getDate() < DIA_DO_PARECER_AUTOMATICO) return nada;
   const config = await prisma.controladoriaConfig.findUnique({ where: { companyId }, select: { iaParecerMensalAutomatico: true } });
-  if (!config?.iaParecerMensalAutomatico || !isLoteDisponivel()) return null;
+  if (!config?.iaParecerMensalAutomatico || !isLoteDisponivel()) return nada;
   const competencia = competenciaAnterior(agora);
   const existe = await prisma.parecerMensal.findUnique({
     where: { companyId_recorte_competencia: { companyId, recorte: "grupo", competencia } },
-    select: { id: true },
+    select: { id: true, status: true, pedidoPor: true, concluidoEm: true },
   });
-  if (existe) return null;
-  if ((await situacaoDoTeto(companyId, agora)).estourado) return "teto mensal da IA atingido";
-  const r = await pedirParecerMensal({ companyId, conexaoId: null, empresa: "grupo (as duas empresas)", competencia, pedidoPor: "Pedido automático" });
-  return r.ok ? `parecer de ${competencia} pedido` : r.erro;
+  if (existe) {
+    const falhouSozinho = existe.status === "ERRO" && existe.pedidoPor === PEDIDO_AUTOMATICO;
+    const esperou = existe.concluidoEm !== null && agora.getTime() - existe.concluidoEm.getTime() >= ESPERA_PARA_TENTAR_DE_NOVO_MS;
+    if (!falhouSozinho || !esperou) return nada;
+    const pagas = await prisma.iaLote.count({ where: { companyId, tipo: "parecer_mensal", referenciaId: existe.id, batchId: { not: null } } });
+    if (pagas >= MAXIMO_DE_TENTATIVAS_PAGAS) return nada;
+  }
+  if ((await situacaoDoTeto(companyId, agora)).estourado) return { pedido: false, aviso: "teto mensal da IA atingido" };
+  const r = await pedirParecerMensal({
+    companyId,
+    conexaoId: null,
+    empresa: "grupo (as duas empresas)",
+    competencia,
+    pedidoPor: PEDIDO_AUTOMATICO,
+    refazer: Boolean(existe),
+  });
+  return r.ok ? { pedido: true, aviso: null } : { pedido: false, aviso: r.erro };
 }

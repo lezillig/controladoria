@@ -12,6 +12,8 @@
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PrismaClient } from "@prisma/client";
+import Anthropic from "@anthropic-ai/sdk";
+import { erroDaChamada, problemaDaConta } from "../src/lib/ia/cliente";
 import { custoMicroUsd, precoDoModelo } from "../src/lib/ia/precos";
 import { comMascara, mascararDocumentosNoTexto } from "../src/lib/ia/mascara";
 import { mesValido } from "../src/lib/ia/painel";
@@ -136,6 +138,22 @@ function puros() {
   );
   conferir("competência anterior vira o ano em janeiro", [competenciaAnterior(new Date(2026, 10, 10)), competenciaAnterior(new Date(2027, 0, 5))], ["2026-10", "2026-12"]);
   conferir("competência e mês válidos", [competenciaValida("2026-13"), competenciaValida("2026-07"), mesValido("2026-7"), mesValido("2026-07")], [false, true, false, true]);
+
+  console.log("\nO problema da conta em uma frase");
+  // O envelope que a API devolveu no primeiro ciclo de produção.
+  const envelope = { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" }, request_id: "req_011Teste" };
+  const recusada = new Anthropic.AuthenticationError(401, envelope, undefined, new Headers());
+  conferir(
+    "chave recusada: diz o que conferir, com o motivo da API e sem o envelope",
+    [/foi recusada pela Anthropic \(401: invalid x-api-key\)/.test(erroDaChamada(recusada)), erroDaChamada(recusada).includes("ANTHROPIC_API_KEY"), /request_id|\{/.test(erroDaChamada(recusada))],
+    [true, true, false]
+  );
+  const semAcesso = new Anthropic.PermissionDeniedError(403, { type: "error", error: { type: "permission_error", message: "sem permissão" } }, undefined, new Headers());
+  conferir("chave sem acesso: aponta o espaço de trabalho", problemaDaConta(semAcesso)?.includes("ANTHROPIC_WORKSPACE_ID"), true);
+  const semCredito = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low to access the Anthropic API." } }, undefined, new Headers());
+  conferir("conta sem crédito: diz para comprar créditos", problemaDaConta(semCredito)?.includes("sem crédito"), true);
+  const formato = new Anthropic.BadRequestError(400, { type: "error", error: { type: "invalid_request_error", message: "output_config: campo desconhecido" } }, undefined, new Headers());
+  conferir("erro do pedido não é problema da conta: sai o que a API respondeu", [problemaDaConta(formato), erroDaChamada(formato).startsWith("A API respondeu 400")], [null, true]);
 }
 
 async function comMascaraNasFerramentas() {
@@ -165,6 +183,8 @@ async function comApiSimulada() {
   let fila: Resposta[] = [];
   const lotes = new Map<string, { customId: string; resultado: unknown }>();
   let proximoLote: unknown = null;
+  // Ligada, a API recusa a chave no envio do lote, como no primeiro ciclo real.
+  let chaveRecusada = false;
 
   const ler = (req: IncomingMessage) =>
     new Promise<string>((resolve) => {
@@ -188,6 +208,7 @@ async function comApiSimulada() {
       return responder(proxima.status ?? 200, proxima.corpo);
     }
     if (req.method === "POST" && caminho === "/v1/messages/batches") {
+      if (chaveRecusada) return responder(401, { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" }, request_id: "req_teste" });
       const id = `msgbatch_${lotes.size + 1}`;
       const pedido = (corpo.requests as { custom_id: string }[])[0];
       lotes.set(id, { customId: pedido.custom_id, resultado: proximoLote });
@@ -217,7 +238,7 @@ async function comApiSimulada() {
   const { abrirTriagens, avancarUmaTriagem, avisarTriagens } = await import("../src/lib/controladoria/triagem");
   const { situacaoDoTeto } = await import("../src/lib/ia/uso");
   const { coletarLotes } = await import("../src/lib/ia/lote");
-  const { pedirParecerMensal } = await import("../src/lib/controladoria/parecerMensal");
+  const { pedirParecerMensal, pedirParecerDoMesSeCouber, PEDIDO_AUTOMATICO } = await import("../src/lib/controladoria/parecerMensal");
   const { pedirConferencia } = await import("../src/lib/conformidade/conferencia");
   const { chaveRecorrencia } = await import("../src/lib/conformidade/tipos");
   const { resumoDoUso, chamadasDoUso, mesCorrente } = await import("../src/lib/ia/painel");
@@ -350,6 +371,47 @@ async function comApiSimulada() {
     const usoDoLote = await prisma.iaUso.findFirstOrThrow({ where: { companyId, origem: "parecer_mensal" } });
     conferir("o uso em lote custa metade", [usoDoLote.lote, usoDoLote.custoMicroUsd], [true, 14_000]);
     conferir("parecer de mês que não fechou é recusado", (await pedirParecerMensal({ companyId, conexaoId: null, empresa: "grupo", competencia: "2999-01", pedidoPor: "x" })).ok, false);
+
+    console.log("\nParecer automático que falhou tenta de novo");
+    // Outra empresa, sem parecer nenhum: é o estado em que a produção estava.
+    const outra = `${companyId}-auto`;
+    await prisma.controladoriaConfig.create({ data: { companyId: outra, dataInicioBase: new Date(2025, 0, 1), emailsRelatorio: "" } });
+    // Dia 10 do mês corrente: passa do dia 6 e pede o mesmo mês fechado, em qualquer dia em que o teste rode.
+    const dia10 = new Date();
+    dia10.setDate(10);
+    const envios = () => pedidos.filter((p) => p.caminho === "POST /v1/messages/batches").length;
+    const linha = () => prisma.parecerMensal.findFirstOrThrow({ where: { companyId: outra, competencia } });
+    const haUmDia = () => prisma.parecerMensal.updateMany({ where: { companyId: outra }, data: { concluidoEm: new Date(dia10.getTime() - 21 * 60 * 60_000) } });
+    const agoraMesmo = () => prisma.parecerMensal.updateMany({ where: { companyId: outra }, data: { concluidoEm: dia10 } });
+
+    conferir("antes do dia 6 não pede", await pedirParecerDoMesSeCouber(outra, new Date(dia10.getFullYear(), dia10.getMonth(), 5)), { pedido: false, aviso: null });
+    chaveRecusada = true;
+    let antes = envios();
+    const recusado = await pedirParecerDoMesSeCouber(outra, dia10);
+    conferir("chave recusada: o aviso diz o que fazer, e não conta como pedido", [recusado.pedido, /foi recusada pela Anthropic/.test(recusado.aviso ?? ""), envios() - antes], [false, true, 1]);
+    conferir("o pedido fica com erro, assinado pelo automático", [(await linha()).status, (await linha()).pedidoPor], ["ERRO", PEDIDO_AUTOMATICO]);
+    await agoraMesmo();
+    antes = envios();
+    conferir("no mesmo dia não insiste", [await pedirParecerDoMesSeCouber(outra, dia10), envios() - antes], [{ pedido: false, aviso: null }, 0]);
+    await haUmDia();
+    await prisma.parecerMensal.updateMany({ where: { companyId: outra }, data: { pedidoPor: "Pessoa de Teste" } });
+    conferir("o que uma pessoa pediu e falhou é dela para pedir de novo", [await pedirParecerDoMesSeCouber(outra, dia10), envios() - antes], [{ pedido: false, aviso: null }, 0]);
+    await prisma.parecerMensal.updateMany({ where: { companyId: outra }, data: { pedidoPor: PEDIDO_AUTOMATICO } });
+    conferir("um dia depois tenta de novo (e a chave continua recusada)", [(await pedirParecerDoMesSeCouber(outra, dia10)).pedido, envios() - antes, (await linha()).status], [false, 1, "ERRO"]);
+
+    chaveRecusada = false;
+    await haUmDia();
+    // Resposta paga, mas fora do formato: o parecer termina em erro.
+    proximoLote = mensagem([{ type: "text", text: "isto não é o formato combinado" }], "end_turn", "claude-fable-5-2");
+    conferir("com a chave trocada, o pedido sai sozinho", [await pedirParecerDoMesSeCouber(outra, dia10), (await linha()).status], [{ pedido: true, aviso: null }, "AGUARDANDO"]);
+    await coletarLotes({ companyId: outra });
+    conferir("resposta fora do formato fecha com erro", (await linha()).status, "ERRO");
+    await haUmDia();
+    conferir("uma tentativa paga que falhou ainda tenta outra", (await pedirParecerDoMesSeCouber(outra, dia10)).pedido, true);
+    await coletarLotes({ companyId: outra });
+    await haUmDia();
+    antes = envios();
+    conferir("duas pagas que falharam: daí em diante é uma pessoa quem pede", [await pedirParecerDoMesSeCouber(outra, dia10), envios() - antes], [{ pedido: false, aviso: null }, 0]);
 
     console.log("\nConferência da leitura de conformidade");
     const competenciaDoc = new Date(2026, 8, 1);
