@@ -109,6 +109,13 @@ GRANT SELECT ON public."TratativaMulta"       TO controladoria_leitura;
 -- Viagens da Ituran (km rodado por veículo: custo por km na rentabilidade).
 GRANT SELECT ON public."VehicleTrip"          TO controladoria_leitura;
 
+-- Histórico de migrações da gestão (só nome e data de cada uma): é o que a
+-- tela de sincronização usa para dizer EM QUE VERSÃO está a gestão que a
+-- Controladoria lê — a prova de que a variável aponta para o banco de
+-- produção, e não para uma cópia antiga. Opcional: sem ela a tela só diz que
+-- não conseguiu ver a versão.
+GRANT SELECT ON public."_prisma_migrations"   TO controladoria_leitura;
+
 -- ---------------------------------------------------------------------------
 -- 4. Garantir que continue somente leitura no futuro
 -- ---------------------------------------------------------------------------

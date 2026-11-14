@@ -25,7 +25,8 @@ import RelerJanelaButton from "./RelerJanelaButton";
 import RelerPeriodoForm from "./RelerPeriodoForm";
 import AuditoriaRetroativaForm from "./AuditoriaRetroativaForm";
 import { achadosAbertosPorAno, anosAuditaveis } from "@/lib/controladoria/retroativa";
-import { leiturasOpcionaisPendentes } from "@/lib/gestao/leitura";
+import { leiturasOpcionaisPendentes, versaoDaGestaoLida } from "@/lib/gestao/leitura";
+import { gestaoLidaEstaAtrasada, leituraDaVersaoDaGestao, resumoDaVersaoDaGestao } from "@/lib/gestao/diagnostico";
 import { situacaoDoEnriquecimento } from "@/lib/receita/enriquecer";
 import ReceitaButton from "./ReceitaButton";
 
@@ -152,6 +153,7 @@ export default async function SincronizacaoPage() {
   // Lido DEPOIS das consultas: a disponibilidade é registrada pela própria
   // leitura da gestão, então só faz sentido consultá-la quando ela já rodou.
   const gestao = disponibilidadeGestao();
+  const versaoGestao = await versaoDaGestaoLida();
   const leiturasPendentes = leiturasOpcionaisPendentes();
 
   const ultimoDiario = execucoes.find((e) => e.status === "CONCLUIDO" && !e.backfill);
@@ -460,6 +462,20 @@ export default async function SincronizacaoPage() {
             </>
           )}
         </p>
+        {/* A PROVA de qual gestão está sendo lida: a última migração dela
+            aplicada no banco. "Mesmo banco" era uma suposição da configuração;
+            em produção a controladoria lia uma gestão parada no tempo e nada
+            na tela dizia. */}
+        {versaoGestao && gestaoLidaEstaAtrasada(versaoGestao) ? (
+          <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900">{leituraDaVersaoDaGestao(versaoGestao, modoDaConexaoGestao())}</p>
+        ) : versaoGestao ? (
+          <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            A gestão lida por aqui está na migração <strong>{resumoDaVersaoDaGestao(versaoGestao)}</strong>. Compare com a última publicação da gestão: se lá já
+            houve migração mais nova e aqui não, este não é o banco de produção dela.
+          </p>
+        ) : (
+          <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">{leituraDaVersaoDaGestao(null, modoDaConexaoGestao())}</p>
+        )}
         {!gestao.disponivel && gestao.erro && (
           <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{gestao.erro}</p>
         )}

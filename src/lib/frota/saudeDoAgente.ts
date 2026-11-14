@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
-import { lerContratosDaGestao, motivoDaFalhaDosContratos } from "@/lib/gestao/leitura";
-import type { MotivoDaFalha } from "@/lib/gestao/diagnostico";
+import { lerContratosDaGestao, motivoDaFalhaDosContratos, versaoDaGestaoLida } from "@/lib/gestao/leitura";
+import { leituraDaVersaoDaGestao, type MotivoDaFalha } from "@/lib/gestao/diagnostico";
+import { modoDaConexaoGestao } from "@/lib/gestao/cliente";
 
 // O AGENTE DE FINANCIAMENTOS ESTÁ RODANDO? — dito na tela de Pendências.
 //
@@ -29,6 +30,9 @@ export type SaudeDoAgente =
       // Por que a gestão não foi lida agora; nulo quando ela respondeu (o
       // agente só não rodou desde então — é o ciclo diário que não passou).
       motivo: MotivoDaFalha | null;
+      // Quando falta tabela ou coluna: em que versão está o banco lido como
+      // gestão, e o que isso prova (cópia antiga × gestão sem publicar).
+      versao: string | null;
     };
 
 const diaDe = (d: Date) => d.toISOString().slice(0, 10);
@@ -45,5 +49,7 @@ export async function saudeDoAgenteDeFinanciamentos(companyId: string, hoje = ne
   // Só agora, com o agente parado, vale a leitura de teste: ela diz o motivo
   // de hoje (permissão, versão, conexão) em vez de um "não respondeu".
   const leu = await lerContratosDaGestao(companyId);
-  return { parado: true, ultimaConclusao: dias === null ? null : ultimaConclusao, dias, motivo: leu ? null : motivoDaFalhaDosContratos() };
+  const motivo = leu ? null : motivoDaFalhaDosContratos();
+  const versao = motivo && (motivo.tipo === "tabela" || motivo.tipo === "coluna") ? leituraDaVersaoDaGestao(await versaoDaGestaoLida(), modoDaConexaoGestao()) : null;
+  return { parado: true, ultimaConclusao: dias === null ? null : ultimaConclusao, dias, motivo, versao };
 }

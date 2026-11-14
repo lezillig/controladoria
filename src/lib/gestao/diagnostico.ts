@@ -72,3 +72,50 @@ export function motivoDaFalhaNaGestao(mensagem: string, tabelas: string[], modo:
     texto: `A leitura de ${tabelas.join(" e ")} falhou por um motivo que não é permissão, versão nem conexão. O erro completo está no log do servidor da Vercel, com "[gestao] leitura dos contratos falhou".`,
   };
 }
+
+// EM QUE VERSÃO ESTÁ A GESTÃO QUE A CONTROLADORIA LÊ.
+//
+// "A tabela não existe no banco lido" tem duas causas com consertos opostos:
+// a gestão em produção ainda não publicou a tabela, ou a controladoria está
+// lendo OUTRO banco — uma cópia antiga da gestão, que continua respondendo
+// pelas tabelas de sempre (usuários, motoristas, veículos) e por isso nunca
+// deu erro. Em produção apareceu a segunda: sem GESTAO_DATABASE_URL, a
+// controladoria procurava os financiamentos num banco que não os tinha,
+// semanas depois de a gestão tê-los publicado.
+//
+// O que separa as duas é um fato do próprio banco: a última migração da
+// gestão aplicada nele (tabela `_prisma_migrations` do schema da gestão) e
+// quando. Banco de produção da gestão acompanha a `main` de lá; cópia antiga
+// parou no dia em que foi feita.
+
+// A migração da gestão que cria Financiamento e FinanciamentoVeiculo.
+export const MIGRACAO_DOS_FINANCIAMENTOS = "20261016120000";
+
+export type VersaoDaGestao = { migracao: string; aplicadaEm: Date; total: number };
+
+const dataBr = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+
+/** A frase que acompanha "tabela não existe": o que a versão do banco lido prova. */
+export function leituraDaVersaoDaGestao(versao: VersaoDaGestao | null, modo: "separado" | "mesmo-banco"): string {
+  if (!versao) {
+    return modo === "separado"
+      ? "Não foi possível ver em que versão está o banco da gestão (o papel de leitura não enxerga o histórico de migrações)."
+      : "Este banco não tem o histórico de migrações da gestão no schema public: ele não é o banco onde a gestão publica as mudanças dela.";
+  }
+  const carimbo = versao.migracao.slice(0, 14);
+  const quando = `${versao.migracao} (aplicada em ${dataBr(versao.aplicadaEm)})`;
+  if (carimbo < MIGRACAO_DOS_FINANCIAMENTOS) {
+    return `O banco lido como gestão parou na migração ${quando}. Os financiamentos entraram na gestão em 16/10/2026, depois disso. Se a tela de financiamentos da gestão funciona, este NÃO é o banco de produção dela: é uma cópia antiga, e os usuários, motoristas, veículos e abastecimentos que a controladoria lê também estão parados no dia em que a cópia foi feita. O conserto é apontar a controladoria para o banco de produção da gestão (GESTAO_DATABASE_URL na Vercel, com o papel somente leitura de docs/papel-leitura-gestao.sql).`;
+  }
+  return `O banco lido como gestão está na migração ${quando}, que já é posterior à dos financiamentos (16/10/2026): a tabela deveria existir. Confira no banco da gestão se ela foi criada no schema public.`;
+}
+
+/** A controladoria lê uma gestão anterior à versão de que precisa? */
+export function gestaoLidaEstaAtrasada(versao: VersaoDaGestao | null): boolean {
+  return versao !== null && versao.migracao.slice(0, 14) < MIGRACAO_DOS_FINANCIAMENTOS;
+}
+
+/** A versão em uma linha, para a tela de sincronização. */
+export function resumoDaVersaoDaGestao(versao: VersaoDaGestao): string {
+  return `${versao.migracao}, aplicada em ${dataBr(versao.aplicadaEm)} (${versao.total} migrações no total)`;
+}

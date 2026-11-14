@@ -274,8 +274,8 @@ async function noBanco() {
     conferir("concluiu hoje: em dia", await saudeDoAgenteDeFinanciamentos(EMP, hoje), { parado: false });
     conferir("concluiu ontem: ainda em dia (o ciclo roda de manhã)", await saudeDoAgenteDeFinanciamentos(EMP, d("2026-10-31")), { parado: false });
     const semRodar = await saudeDoAgenteDeFinanciamentos(EMP, d("2026-11-05"));
-    conferir("seis dias sem concluir, com a gestão respondendo: parado, sem motivo de leitura", semRodar, { parado: true, ultimaConclusao: hoje.toISOString(), dias: 6, motivo: null });
-    conferir("empresa em que ele nunca concluiu: parado, sem data", await saudeDoAgenteDeFinanciamentos(`${EMP}-outra`, hoje), { parado: true, ultimaConclusao: null, dias: null, motivo: null });
+    conferir("seis dias sem concluir, com a gestão respondendo: parado, sem motivo de leitura", semRodar, { parado: true, ultimaConclusao: hoje.toISOString(), dias: 6, motivo: null, versao: null });
+    conferir("empresa em que ele nunca concluiu: parado, sem data", await saudeDoAgenteDeFinanciamentos(`${EMP}-outra`, hoje), { parado: true, ultimaConclusao: null, dias: null, motivo: null, versao: null });
 
     console.log("\n7b. A semana em revista (relatório de segunda)");
     const { ehSegunda, montarSemana } = await import("../src/lib/controladoria/semana");
@@ -315,6 +315,25 @@ async function noBanco() {
         conferir("o agente diz o tipo da falha (vai para o log público, sem o texto do banco) e não marca o dia", [agFora.gestaoIndisponivel, agFora.motivo, await prisma.audLog.count({ where: { companyId: EMP, tabela: "Agente", registroId: "frota:2026-11-05" } })], [true, "tabela", 0]);
         const parado = await saudeDoAgenteDeFinanciamentos(EMP, d("2026-11-05"));
         conferir("a tela de Pendências recebe o motivo de hoje", parado.parado ? [parado.dias, parado.motivo?.tipo, parado.motivo?.titulo] : null, [6, "tabela", "A tabela não existe no banco lido"]);
+
+        // A PROVA DA VERSÃO: o histórico de migrações da gestão no banco lido.
+        const { versaoDaGestaoLida } = await import("../src/lib/gestao/leitura");
+        const tinhaHistorico = await existe("_prisma_migrations");
+        if (!tinhaHistorico) {
+          conferir("banco sem o histórico da gestão: sem versão, e a tela diz que ali a gestão não publica", [await versaoDaGestaoLida(), parado.parado && parado.versao?.includes("não é o banco onde a gestão publica")], [null, true]);
+          await sql(`CREATE TABLE public."_prisma_migrations" (id text PRIMARY KEY, migration_name text, finished_at timestamptz, rolled_back_at timestamptz)`);
+          try {
+            await sql(`INSERT INTO public."_prisma_migrations" VALUES
+              ('1', '20260801090000_base', '2026-08-01 12:00+00', NULL), ('2', '20260902110000_cartao_de_frota', '2026-09-02 15:00+00', NULL),
+              ('3', '20261201000000_desfeita', '2026-12-01 12:00+00', '2026-12-01 13:00+00'), ('4', '20261202000000_que_falhou', NULL, NULL)`);
+            const v = await versaoDaGestaoLida();
+            conferir("a última migração aplicada (desfeita e falhada não contam)", [v?.migracao, v?.total, v?.aplicadaEm.toISOString()], ["20260902110000_cartao_de_frota", 2, "2026-09-02T15:00:00.000Z"]);
+            const copia = await saudeDoAgenteDeFinanciamentos(EMP, d("2026-11-05"));
+            conferir("gestão parada antes dos financiamentos: a tela diz que é cópia antiga e o conserto", copia.parado ? [copia.versao?.includes("20260902110000_cartao_de_frota (aplicada em 02/09/2026)"), copia.versao?.includes("cópia antiga"), copia.versao?.includes("GESTAO_DATABASE_URL")] : null, [true, true, true]);
+          } finally {
+            await sql(`DROP TABLE IF EXISTS public."_prisma_migrations"`);
+          }
+        }
       } finally {
         await sql(`ALTER TABLE public."FinanciamentoFora" RENAME TO "Financiamento"`);
       }

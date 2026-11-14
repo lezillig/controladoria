@@ -65,6 +65,7 @@ export default async function PendenciasPage({ searchParams }: { searchParams: P
             <>
               <p className="mt-2 font-medium">{agente.motivo.titulo}</p>
               <p className="mt-0.5">{agente.motivo.texto}</p>
+              {agente.versao && <p className="mt-2">{agente.versao}</p>}
               {agente.motivo.sql && <pre className="mt-2 overflow-x-auto rounded-md bg-slate-900 px-3 py-2 text-xs text-slate-100">{agente.motivo.sql}</pre>}
             </>
           )}

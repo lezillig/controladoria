@@ -1,6 +1,6 @@
 import { prismaGestao } from "./cliente";
 import { redigir } from "@/lib/controladoria/falhas";
-import { motivoDaFalhaNaGestao, type MotivoDaFalha } from "./diagnostico";
+import { motivoDaFalhaNaGestao, type MotivoDaFalha, type VersaoDaGestao } from "./diagnostico";
 import { modoDaConexaoGestao } from "./cliente";
 
 // LEITURA DO SISTEMA DE GESTÃO (schema `public`) — SOMENTE LEITURA.
@@ -738,6 +738,28 @@ export async function lerContratosDaGestao(companyId: string): Promise<{ contrat
     const mensagem = redigir(e instanceof Error ? e.message : String(e));
     motivoDosContratos = motivoDaFalhaNaGestao(mensagem, ["Financiamento", "FinanciamentoVeiculo"], modoDaConexaoGestao());
     console.error(`[gestao] leitura dos contratos falhou (${motivoDosContratos.tipo}): ${mensagem.slice(0, 300)}`);
+    return null;
+  }
+}
+
+/**
+ * A última migração da gestão aplicada no banco que esta aplicação lê como
+ * gestão, e quantas são (ver diagnostico.ts). Nula quando o histórico não
+ * existe ali ou o papel de leitura não o enxerga — não é erro de ninguém, só
+ * falta de prova.
+ */
+export async function versaoDaGestaoLida(): Promise<VersaoDaGestao | null> {
+  try {
+    const linhas = await prismaGestao.$queryRaw<{ migracao: string; aplicadaEm: Date; total: bigint }[]>`
+      SELECT migration_name AS migracao, finished_at AS "aplicadaEm", (SELECT count(*) FROM public."_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL) AS total
+      FROM public."_prisma_migrations"
+      WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL
+      ORDER BY migration_name DESC
+      LIMIT 1
+    `;
+    const u = linhas[0];
+    return u ? { migracao: u.migracao, aplicadaEm: u.aplicadaEm, total: Number(u.total) } : null;
+  } catch {
     return null;
   }
 }
