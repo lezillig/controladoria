@@ -34,7 +34,7 @@ export function motivoDaFalhaNaGestao(mensagem: string, tabelas: string[], modo:
     return {
       tipo: "permissao",
       titulo: "Falta permissão de leitura na gestão",
-      texto: `O banco da gestão respondeu, mas recusou a leitura: o papel usado por ${conexao} não tem SELECT em ${tabelas.join(" e ")}. Essas tabelas entraram depois que o papel foi criado. Rode o comando abaixo no editor SQL do Neon, no banco da GESTÃO, com o papel dono do projeto (troque controladoria_leitura pelo nome do papel, se for outro).`,
+      texto: `O banco da gestão respondeu, mas recusou a leitura: o papel usado n${conexao} não tem SELECT em ${tabelas.join(" e ")}. Essas tabelas entraram depois que o papel foi criado. Rode o comando abaixo no editor SQL do Neon, no banco da GESTÃO, com o papel dono do projeto (troque controladoria_leitura pelo nome do papel, se for outro).`,
       sql: `GRANT SELECT ON ${lista} TO controladoria_leitura;`,
     };
   }

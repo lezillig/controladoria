@@ -5,6 +5,8 @@ import { larguraPainel } from "@/lib/ui";
 import { acessoDaSessao, exigirPermissao } from "../_dados";
 import { Kpi, Secao } from "../_componentes";
 import { decidir } from "./actions";
+import Link from "next/link";
+import { saudeDoAgenteDeFinanciamentos } from "@/lib/frota/saudeDoAgente";
 
 // PENDÊNCIAS — a fila única de decisões da plataforma (ADR-005): o que agentes
 // e cargas propõem e uma pessoa do perfil aprovador aprova ou rejeita. É a
@@ -12,7 +14,11 @@ import { decidir } from "./actions";
 // sem passar por aqui.
 
 const COR: Record<string, string> = { critica: "bg-red-100 text-red-800", alta: "bg-orange-100 text-orange-800", media: "bg-amber-100 text-amber-800", baixa: "bg-slate-100 text-slate-700" };
-const STATUS: Record<string, string> = { aguardando_aprovacao: "aguardando", aprovada: "aprovada", rejeitada: "rejeitada", executada: "executada", erro: "erro" };
+// "aprovada" sem "executada": nenhum tipo de pendência desta base tem executor
+// (src/lib/auditoria/executores.ts) — aprovar registra a decisão e quem a
+// tomou, e não lança nada na Omie. Dito na linha, para a aprovação não
+// parecer que algo foi feito.
+const STATUS: Record<string, string> = { aguardando_aprovacao: "aguardando", aprovada: "aprovada (decisão registrada; nada foi lançado na Omie)", rejeitada: "rejeitada", executada: "executada", erro: "erro" };
 
 // O recorte que os cartões abrem na lista: uma severidade ou "as que você decide".
 const RECORTES: Record<string, string> = { critica: "severidade crítica", alta: "severidade alta", minhas: "que você pode decidir" };
@@ -24,9 +30,12 @@ export default async function PendenciasPage({ searchParams }: { searchParams: P
   const acesso = await acessoDaSessao(session);
   const temPermissao = acesso.permissoes.has("decidir-pendencia");
   const perfis = acesso.perfilNome ? [acesso.perfilNome] : [];
-  const [abertas, decididas] = await Promise.all([
+  const [abertas, decididas, agente] = await Promise.all([
     prisma.audPendencia.findMany({ where: { companyId: session.companyId, status: "aguardando_aprovacao" }, orderBy: [{ criadaEm: "asc" }], take: 200 }),
     prisma.audPendencia.findMany({ where: { companyId: session.companyId, status: { not: "aguardando_aprovacao" } }, orderBy: { decididaEm: "desc" }, take: 30 }),
+    // Quem alimenta esta fila todo dia. Parado, a fila vazia não quer dizer
+    // "tudo em dia" (ver saudeDoAgente.ts).
+    saudeDoAgenteDeFinanciamentos(session.companyId),
   ]);
   const ordem = ["critica", "alta", "media", "baixa"];
   abertas.sort((a, b) => ordem.indexOf(a.severidade) - ordem.indexOf(b.severidade));
@@ -42,8 +51,32 @@ export default async function PendenciasPage({ searchParams }: { searchParams: P
           auditoria, com quem decidiu e o comentário.
         </p>
       </div>
+      {agente.parado && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">
+            O agente dos financiamentos {agente.ultimaConclusao ? `não conclui desde ${fmtData(agente.ultimaConclusao)}` : "ainda não concluiu nenhuma vez"}: a fila abaixo pode estar vazia por isso, e não
+            por estar tudo em dia.
+          </p>
+          <p className="mt-1">
+            É ele que traz para cá, todo dia, a parcela em atraso e a parcela que deveria estar lançada na Omie. Para isso lê os contratos na gestão
+            {agente.motivo ? " — e hoje essa leitura falha:" : "; a gestão responde agora, então ele volta a rodar no próximo ciclo diário (Sincronização)."}
+          </p>
+          {agente.motivo && (
+            <>
+              <p className="mt-2 font-medium">{agente.motivo.titulo}</p>
+              <p className="mt-0.5">{agente.motivo.texto}</p>
+              {agente.motivo.sql && <pre className="mt-2 overflow-x-auto rounded-md bg-slate-900 px-3 py-2 text-xs text-slate-100">{agente.motivo.sql}</pre>}
+            </>
+          )}
+          <p className="mt-2">
+            <Link href="/frota/financiamentos" className="font-medium text-blue-800 underline">
+              Abrir Financiamentos e consórcios
+            </Link>
+          </p>
+        </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-4">
-        <Kpi rotulo="Aguardando decisão" valor={fmtNumero(abertas.length)} tom={abertas.length ? "atencao" : "bom"} href="/pendencias#aguardando" />
+        <Kpi rotulo="Aguardando decisão" valor={fmtNumero(abertas.length)} tom={abertas.length || agente.parado ? "atencao" : "bom"} href="/pendencias#aguardando" />
         {["critica", "alta"].map((s) => (
           <Kpi
             key={s}
@@ -68,7 +101,10 @@ export default async function PendenciasPage({ searchParams }: { searchParams: P
         }
       >
         {lista.length === 0 ? (
-          <p className="text-sm text-slate-500">{ver ? "Nenhuma pendência aberta neste recorte." : "Nenhuma pendência aberta."}</p>
+          <p className="text-sm text-slate-500">
+            {ver ? "Nenhuma pendência aberta neste recorte." : "Nenhuma pendência aberta."}
+            {!ver && " Chegam aqui as parcelas de financiamento em atraso ou não lançadas (todo dia) e os centros de custo a criar na Omie (na carga do cadastro). Veículos, motoristas e multas são decididos no sistema de gestão; os achados da auditoria ficam em Auditoria."}
+          </p>
         ) : (
           <ul className="space-y-3">
             {lista.map((p) => {

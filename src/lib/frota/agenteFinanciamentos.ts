@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { criarPendencia } from "@/lib/auditoria/pendencias";
 import { conciliarParcelasOmie } from "./parcelasOmie";
 import { contratosComSituacao } from "./contratosDaGestao";
+import { motivoDaFalhaDosContratos } from "@/lib/gestao/leitura";
 
 // O AGENTE DIÁRIO DOS FINANCIAMENTOS (docs/plataforma/docs/04-padrao-de-agentes.md):
 // coleta → compara → aponta exceção → pendência para o Financeiro. Roda uma
@@ -46,7 +47,10 @@ const TIPOS_QUE_FORAM_PARA_A_GESTAO = [
   "saida-veiculo",
 ];
 
-export type ResultadoAgenteFinanciamentos = { parcelasLigadas: number; pendencias: number; encerradas: number; gestaoIndisponivel?: boolean; jaRodouHoje?: boolean };
+// `motivo` é o TIPO da falha (permissao, credencial, tabela, coluna, conexao,
+// outro), nunca o texto do banco: este resultado sai no log do condutor, que
+// é público. É o que deixa ver, sem abrir a produção, por que o agente parou.
+export type ResultadoAgenteFinanciamentos = { parcelasLigadas: number; pendencias: number; encerradas: number; gestaoIndisponivel?: boolean; motivo?: string; jaRodouHoje?: boolean };
 
 async function pendencia(p: Parameters<typeof criarPendencia>[0]) {
   const r = await criarPendencia(p);
@@ -101,7 +105,12 @@ export async function rodarAgenteFinanciamentos(companyId: string, hoje = new Da
       });
     }
   }
-  const resultado = { parcelasLigadas: conciliacao.ligacoes, pendencias, encerradas, ...(gestaoDisponivel ? {} : { gestaoIndisponivel: true }) };
+  const resultado = {
+    parcelasLigadas: conciliacao.ligacoes,
+    pendencias,
+    encerradas,
+    ...(gestaoDisponivel ? {} : { gestaoIndisponivel: true, motivo: motivoDaFalhaDosContratos()?.tipo ?? "outro" }),
+  };
   // Com a gestão fora do ar, não marca o dia: a próxima rodada tenta de novo.
   if (gestaoDisponivel) await prisma.audLog.create({ data: { companyId, agente: AGENTE, tabela: "Agente", registroId: marca, operacao: "insert", depois: resultado } });
   return resultado;

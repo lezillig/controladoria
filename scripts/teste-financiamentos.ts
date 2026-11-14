@@ -269,6 +269,14 @@ async function noBanco() {
     const ag2 = await rodarAgenteFinanciamentos(EMP, hoje, true);
     conferir("rodar de novo não duplica", [ag2.pendencias, await prisma.audPendencia.count({ where: { companyId: EMP } })], [0, 3]);
 
+    console.log("\n7a. O agente está rodando? (aviso da tela de Pendências)");
+    const { saudeDoAgenteDeFinanciamentos } = await import("../src/lib/frota/saudeDoAgente");
+    conferir("concluiu hoje: em dia", await saudeDoAgenteDeFinanciamentos(EMP, hoje), { parado: false });
+    conferir("concluiu ontem: ainda em dia (o ciclo roda de manhã)", await saudeDoAgenteDeFinanciamentos(EMP, d("2026-10-31")), { parado: false });
+    const semRodar = await saudeDoAgenteDeFinanciamentos(EMP, d("2026-11-05"));
+    conferir("seis dias sem concluir, com a gestão respondendo: parado, sem motivo de leitura", semRodar, { parado: true, ultimaConclusao: hoje.toISOString(), dias: 6, motivo: null });
+    conferir("empresa em que ele nunca concluiu: parado, sem data", await saudeDoAgenteDeFinanciamentos(`${EMP}-outra`, hoje), { parado: true, ultimaConclusao: null, dias: null, motivo: null });
+
     console.log("\n7b. A semana em revista (relatório de segunda)");
     const { ehSegunda, montarSemana } = await import("../src/lib/controladoria/semana");
     conferir("segunda-feira no horário de São Paulo", [ehSegunda(new Date("2026-11-02T10:00:00Z")), ehSegunda(new Date("2026-11-02T02:00:00Z"))], [true, false]);
@@ -303,6 +311,10 @@ async function noBanco() {
         conferir("não refaz nada e as ligações ficam", [fora.gestaoIndisponivel, await prisma.frotaParcelaOmie.count({ where: { companyId: EMP } })], [true, 4]);
         const fg2 = await ig.financiamentosParaGestao(EMP, hoje);
         conferir("a integração diz que não leu (e não \"nada pago\")", fg2.gestaoDisponivel, false);
+        const agFora = await rodarAgenteFinanciamentos(EMP, d("2026-11-05"), true);
+        conferir("o agente diz o tipo da falha (vai para o log público, sem o texto do banco) e não marca o dia", [agFora.gestaoIndisponivel, agFora.motivo, await prisma.audLog.count({ where: { companyId: EMP, tabela: "Agente", registroId: "frota:2026-11-05" } })], [true, "tabela", 0]);
+        const parado = await saudeDoAgenteDeFinanciamentos(EMP, d("2026-11-05"));
+        conferir("a tela de Pendências recebe o motivo de hoje", parado.parado ? [parado.dias, parado.motivo?.tipo, parado.motivo?.titulo] : null, [6, "tabela", "A tabela não existe no banco lido"]);
       } finally {
         await sql(`ALTER TABLE public."FinanciamentoFora" RENAME TO "Financiamento"`);
       }
