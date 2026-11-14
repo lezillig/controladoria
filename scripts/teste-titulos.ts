@@ -35,8 +35,8 @@ const titulo = (id: string, p: Partial<OmieTitulo>): OmieTitulo =>
   }) as OmieTitulo;
 
 const lista = [
-  titulo("a", { parceiroNome: "Comando da Aeronáutica", parceiroDocumento: "00394429009400", numeroDocumento: "11837", dataVencimento: d("2026-02-02"), valorDocumentoCents: 3_533_000, jurosCents: 1 }),
-  titulo("b", { parceiroNome: "Secretaria Municipal", parceiroDocumento: "07420613000127", numeroDocumento: "11836", dataVencimento: d("2026-02-05"), valorDocumentoCents: 2_858_333, jurosCents: 1, multaCents: 1 }),
+  titulo("a", { parceiroNome: "Órgão Federal de Teste", parceiroDocumento: "11111111000191", numeroDocumento: "20002", dataVencimento: d("2026-02-02"), valorDocumentoCents: 4_000_000, jurosCents: 1 }),
+  titulo("b", { parceiroNome: "Secretaria de Teste", parceiroDocumento: "22222222000172", numeroDocumento: "20001", dataVencimento: d("2026-02-05"), valorDocumentoCents: 3_000_000, jurosCents: 1, multaCents: 1 }),
   titulo("c", { parceiroNome: "Água Viva Ltda", parceiroDocumento: "11222333000181", numeroDocumento: "902", dataVencimento: d("2026-03-10"), valorDocumentoCents: 50_000, jurosCents: 700, multaCents: 2_000, tarifaCents: 300 }),
   titulo("d", { parceiroNome: "Zeta Transportes", numeroDocumento: "10", dataVencimento: d("2026-01-15"), valorDocumentoCents: 900_000, liquidado: false, status: "ATRASADO", saldoCents: 400_000 }),
   titulo("e", { parceiroNome: null, dataVencimento: d("2026-01-10"), valorDocumentoCents: 10_000, liquidado: false, status: "A VENCER" }),
@@ -54,7 +54,7 @@ conferir("saldo, do maior: título pago não tem saldo e vai para o fim", ids(or
 conferir("saldo, do menor: os pagos continuam no fim", ids(ordenarTitulos(lista, { coluna: "saldo", direcao: "asc" })), "edabc");
 conferir("nome de A a Z, sem tropeçar no acento; sem nome no fim", ids(ordenarTitulos(lista, { coluna: "parceiro", direcao: "asc" })), "cabde");
 conferir("nome de Z a A; sem nome continua no fim", ids(ordenarTitulos(lista, { coluna: "parceiro", direcao: "desc" })), "dbace");
-conferir("documento como número (10 antes de 902 antes de 11836)", ids(ordenarTitulos(lista, { coluna: "documento", direcao: "asc" })), "dcbae");
+conferir("documento como número (10 antes de 902 antes de 20001)", ids(ordenarTitulos(lista, { coluna: "documento", direcao: "asc" })), "dcbae");
 conferir("situação de A a Z, empate pelo vencimento", ids(ordenarTitulos(lista, { coluna: "situacao", direcao: "asc" })), "edabc");
 conferir("a lista de origem não é mexida", ids(lista), "abcde");
 
@@ -67,11 +67,11 @@ conferir("clicar na coluna que já ordena inverte; em outra, começa na direçã
 
 console.log("\n3. Busca");
 conferir("vazia devolve tudo", filtrarPorBusca(lista, "  ").length, 5);
-conferir("nome sem acento e sem caixa", ids(filtrarPorBusca(lista, "aeronautica")), "a");
+conferir("nome sem acento e sem caixa", ids(filtrarPorBusca(lista, "orgao federal")), "a");
 conferir("parte do nome com acento digitado", ids(filtrarPorBusca(lista, "ÁGUA")), "c");
-conferir("CNPJ com pontuação", ids(filtrarPorBusca(lista, "07.420.613/0001-27")), "b");
-conferir("CNPJ só com números, em parte", ids(filtrarPorBusca(lista, "00394429")), "a");
-conferir("número do documento", ids(filtrarPorBusca(lista, "1183")), "ab");
+conferir("CNPJ com pontuação", ids(filtrarPorBusca(lista, "22.222.222/0001-72")), "b");
+conferir("CNPJ só com números, em parte", ids(filtrarPorBusca(lista, "11111111")), "a");
+conferir("número do documento", ids(filtrarPorBusca(lista, "2000")), "ab");
 conferir("texto com número não vira busca de CNPJ", ids(filtrarPorBusca(lista, "zeta 1")), "");
 conferir("nada casa", ids(filtrarPorBusca(lista, "inexistente")), "");
 conferir("a busca é aparada e limitada", [lerBusca("  posto  "), lerBusca("x".repeat(200)).length, lerBusca(undefined)], ["posto", 80, ""]);

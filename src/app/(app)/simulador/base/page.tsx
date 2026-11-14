@@ -23,6 +23,7 @@ import { dataReferenciaPadrao } from "@/lib/controladoria/ciclo";
 import { larguraPainel, secondaryButtonClass } from "@/lib/ui";
 import { exigirPermissao, podeAcao } from "../../_dados";
 import { Secao } from "../../_componentes";
+import { compararIndiretos } from "@/lib/simulador/comparacaoDeIndiretos";
 import ImportarGabaritoForm from "./ImportarGabaritoForm";
 import { ParametrosBase, TabelaRegistrosBase, type ParametroTela, type RegistroTela } from "./EditorBase";
 
@@ -102,11 +103,11 @@ export default async function BaseDeCustosPage() {
   } catch (e) {
     console.warn("[simulador] base: DRE indisponível para os indiretos", e instanceof Error ? e.message.slice(0, 200) : e);
   }
-  const comparacao = [...doDre.entries()].map(([chave, v]) => ({
-    rotulo: CATALOGO_PARAMETROS.find((d) => d.chave === chave)?.rotulo ?? chave,
-    atual: v.valor,
-    antiga: pelaEmissao.get(chave)?.valor ?? null,
-  }));
+  // Despesas de um lado, faturamento do outro (comparacaoDeIndiretos.ts): o
+  // total é só das despesas.
+  const indiretos = compararIndiretos(doDre, pelaEmissao, (chave) => CATALOGO_PARAMETROS.find((d) => d.chave === chave)?.rotulo ?? chave);
+  const comparacao = indiretos.linhas;
+  const pct = (fracao: number) => `${(fracao * 100).toFixed(2).replace(".", ",")}%`;
   const atualPorChave = new Map(parametros.map((p) => [p.chave, p]));
   const anteriorPorChave = new Map<string, (typeof encerrados)[number]>();
   for (const e of encerrados) if (!anteriorPorChave.has(e.chave)) anteriorPorChave.set(e.chave, e);
@@ -237,7 +238,7 @@ export default async function BaseDeCustosPage() {
       {(comparacao.length > 0 || porEmpresa.length > 0) && (
         <Secao
           titulo="Indiretos: regra nova × regra antiga"
-          descricao={`Média mensal dos doze meses fechados (${meses[0] ?? ""} a ${meses[meses.length - 1] ?? ""}). Regra nova: despesa no mês do vencimento (desde 27/10/2026). Regra antiga: tudo pelo mês da emissão/lançamento. A diferença entre as duas é só efeito da regra; buraco de dados aparece na tabela de despesas por empresa logo abaixo.`}
+          descricao={`Média mensal dos doze meses fechados (${meses[0] ?? ""} a ${meses[meses.length - 1] ?? ""}). Regra nova: despesa no mês do vencimento (desde 27/10/2026). Regra antiga: tudo pelo mês da emissão/lançamento. A diferença entre as duas é só efeito da regra; buraco de dados aparece na tabela de despesas por empresa logo abaixo. O total soma só as despesas indiretas; o faturamento é o divisor do rateio e fica fora dele. O rateio que vai para o preço soma ainda o pró-labore fixo da base.`}
         >
           {comparacao.length === 0 && <p className="text-sm text-slate-500">Sem indiretos calculados do DRE (categorias ainda não classificadas ou sem meses fechados).</p>}
           <div className={`overflow-x-auto ${comparacao.length === 0 ? "hidden" : ""}`}>
@@ -254,7 +255,7 @@ export default async function BaseDeCustosPage() {
                 {comparacao.map((c) => {
                   const dif = c.antiga === null ? null : c.atual - c.antiga;
                   return (
-                    <tr key={c.rotulo} className="border-b border-slate-100">
+                    <tr key={c.chave} className="border-b border-slate-100">
                       <td className="py-1.5 pr-3 text-slate-700">{c.rotulo}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums">{brl(c.atual)}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{c.antiga === null ? "—" : brl(c.antiga)}</td>
@@ -264,12 +265,40 @@ export default async function BaseDeCustosPage() {
                     </tr>
                   );
                 })}
-                <tr className="font-semibold">
-                  <td className="py-1.5 pr-3">Total</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(comparacao.reduce((a, c) => a + c.atual, 0))}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(comparacao.reduce((a, c) => a + (c.antiga ?? 0), 0))}</td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(comparacao.reduce((a, c) => a + c.atual - (c.antiga ?? c.atual), 0))}</td>
+                <tr className="border-b border-slate-300 font-semibold">
+                  <td className="py-1.5 pr-3">Total dos indiretos</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(indiretos.total.atual)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{brl(indiretos.total.antiga)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {brl(indiretos.total.diferenca)}
+                    {indiretos.total.antiga ? ` (${((indiretos.total.diferenca / indiretos.total.antiga) * 100).toFixed(1).replace(".", ",")}%)` : ""}
+                  </td>
                 </tr>
+                {/* O FATURAMENTO NÃO É DESPESA: é o divisor do rateio. Fica
+                    abaixo do total, fora da soma, com a conta que ele serve
+                    para fazer. */}
+                {indiretos.faturamento && indiretos.sobreFaturamento && (
+                  <>
+                    <tr className="border-b border-slate-100 text-slate-500">
+                      <td className="py-1.5 pr-3">Faturamento mensal médio (divisor do rateio; não entra no total)</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{brl(indiretos.faturamento.atual)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{indiretos.faturamento.antiga === null ? "—" : brl(indiretos.faturamento.antiga)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {indiretos.faturamento.antiga === null ? "—" : brl(indiretos.faturamento.atual - indiretos.faturamento.antiga)}
+                      </td>
+                    </tr>
+                    <tr className="font-semibold">
+                      <td className="py-1.5 pr-3">Indiretos ÷ faturamento</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{pct(indiretos.sobreFaturamento.atual)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{indiretos.sobreFaturamento.antiga === null ? "—" : pct(indiretos.sobreFaturamento.antiga)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {indiretos.sobreFaturamento.antiga === null
+                          ? "—"
+                          : `${((indiretos.sobreFaturamento.atual - indiretos.sobreFaturamento.antiga) * 100).toFixed(2).replace(".", ",")} p.p.`}
+                      </td>
+                    </tr>
+                  </>
+                )}
               </tbody>
             </table>
           </div>

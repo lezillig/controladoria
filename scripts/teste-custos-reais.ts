@@ -11,6 +11,7 @@
 //
 // Sem banco.
 import { baseComIndiretosDoDre, indiretosDoDre, nomesDosFornecedores, padraoDoNome } from "../src/lib/simulador/indiretosDoDre";
+import { compararIndiretos, rotuloParaTela } from "../src/lib/simulador/comparacaoDeIndiretos";
 import {
   aplicarIndicadores,
   analisarCustosReais,
@@ -419,6 +420,28 @@ console.log("\nINDIRETOS DA BASE vindos do DRE consolidado");
   perto("gerais = comercial + outras despesas", ind.get("gerais")?.valor, 200 + 500);
   perto("faturamento médio = receita bruta", ind.get("faturamento_medio")?.valor, 50_000);
   ok("oficina própria não tem linha no DRE", !ind.has("oficina"));
+
+  // A TABELA "regra nova × regra antiga" de /simulador/base: o faturamento é o
+  // divisor do rateio, não uma despesa. Somado no total, o "Total" saía maior
+  // que a receita inteira. Números inventados.
+  {
+    const mapa = (v: Record<string, number>) => new Map(Object.entries(v).map(([k, valor]) => [k, { valor }]));
+    const nova = mapa({ contabilidade: 1_500, folha_adm: 28_000, sistemas: 1_200, sede_garagem_sp: 8_000, gerais: 900, faturamento_medio: 600_000 });
+    const antiga = mapa({ contabilidade: 1_400, folha_adm: 27_500, sistemas: 1_300, sede_garagem_sp: 7_500, gerais: 850, faturamento_medio: 600_000 });
+    const c = compararIndiretos(nova, antiga, (k) => (k === "sistemas" ? "Sistemas (gestão de motoristas" : k));
+    ok("o faturamento não é linha de despesa", c.linhas.length === 5 && !c.linhas.some((l) => l.chave === "faturamento_medio"), c.linhas.map((l) => l.chave).join(","));
+    perto("total dos indiretos, regra nova (sem o faturamento)", c.total.atual, 39_600);
+    perto("total dos indiretos, regra antiga", c.total.antiga, 38_550);
+    perto("diferença do total", c.total.diferenca, 1_050);
+    perto("o faturamento vem à parte", c.faturamento?.atual, 600_000);
+    perto("indiretos ÷ faturamento, regra nova (6,6%)", c.sobreFaturamento?.atual, 0.066, 1e-12);
+    perto("indiretos ÷ faturamento, regra antiga (6,425%)", c.sobreFaturamento?.antiga ?? undefined, 0.06425, 1e-12);
+    ok("rótulo cortado do catálogo fecha o parêntese na tela", c.linhas.find((l) => l.chave === "sistemas")?.rotulo === "Sistemas (gestão de motoristas…)" && rotuloParaTela("Contabilidade, jurídico") === "Contabilidade, jurídico");
+    const semAntiga = compararIndiretos(mapa({ gerais: 1_000, oficina: 500, faturamento_medio: 10_000 }), mapa({ gerais: 900 }), (k) => k);
+    ok("linha sem regra antiga não entra na diferença, e sem faturamento antigo não há percentual antigo", semAntiga.total.diferenca === 100 && semAntiga.total.antiga === 900 && semAntiga.sobreFaturamento?.antiga === null && semAntiga.sobreFaturamento?.atual === 0.15, JSON.stringify(semAntiga));
+    const semReceita = compararIndiretos(mapa({ gerais: 1_000 }), mapa({ gerais: 900 }), (k) => k);
+    ok("sem faturamento no DRE: só o total, sem a conta do rateio", semReceita.faturamento === null && semReceita.sobreFaturamento === null && semReceita.total.atual === 1_000);
+  }
   ok("a fonte diz o período", /média de 10 meses fechados/.test(ind.get("folha_adm")?.fonte ?? ""), ind.get("folha_adm")?.fonte);
 
   const baseComValor = {
