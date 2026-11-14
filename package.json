@@ -74,7 +74,8 @@
     "teste:auditoria-mes": "tsx scripts/teste-auditoria-mes.ts",
     "teste:recuperacao": "tsx scripts/teste-recuperacao.ts",
     "teste:cadastro": "tsx scripts/teste-cadastro.ts",
-    "teste:financiamentos": "tsx scripts/teste-financiamentos.ts"
+    "teste:financiamentos": "tsx scripts/teste-financiamentos.ts",
+    "teste:titulos": "tsx scripts/teste-titulos.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",

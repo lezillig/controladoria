@@ -8,6 +8,19 @@ import Filtros from "../Filtros";
 import { larguraPainel } from "@/lib/ui";
 import { fmtCnae } from "@/lib/receita/cliente";
 import { janelaDeAuditoria } from "@/lib/controladoria/contexto";
+import {
+  COLUNAS_DE_ORDEM,
+  ORDEM_PADRAO,
+  ROTULO_DA_ORDEM,
+  encargosDoTitulo,
+  filtrarPorBusca,
+  lerBusca,
+  lerOrdem,
+  ordenarTitulos,
+  proximaOrdem,
+  type ColunaDeOrdem,
+  type Ordem,
+} from "@/lib/controladoria/ordemDeTitulos";
 
 // CONTAS A PAGAR E A RECEBER numa tela só, alternada por querystring.
 //
@@ -17,7 +30,10 @@ import { janelaDeAuditoria } from "@/lib/controladoria/contexto";
 // diferentes — foi por isso que os títulos também moram numa tabela só no
 // banco (ver OmieTitulo no schema).
 
-type Params = { natureza?: string; filtro?: string; empresa?: string; competencia?: string };
+type Params = { natureza?: string; filtro?: string; empresa?: string; competencia?: string; ordem?: string; dir?: string; busca?: string };
+
+// Quantas linhas a lista mostra. A ordem escolhida vale ANTES deste corte.
+const LIMITE_DA_LISTA = 300;
 
 export default async function TitulosPage({ searchParams }: { searchParams: Promise<Params> }) {
   const params = await searchParams;
@@ -74,9 +90,47 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
     };
   });
 
-  const ordenada = [...lista]
-    .sort((a, b) => a.dataVencimento.getTime() - b.dataVencimento.getTime())
-    .slice(0, 300);
+  // A ORDEM E A BUSCA DA LISTA (ordemDeTitulos.ts): quem lê escolhe a coluna e
+  // se quer o maior ou o menor primeiro, e acha um cliente pelo nome. As duas
+  // valem sobre a lista inteira do filtro, antes do corte das 300 linhas.
+  const ordem = lerOrdem(params.ordem, params.dir);
+  const busca = lerBusca(params.busca);
+  const filtrada = filtrarPorBusca(lista, busca);
+  const ordenada = ordenarTitulos(filtrada, ordem).slice(0, LIMITE_DA_LISTA);
+  const ordemPadrao = ordem.coluna === ORDEM_PADRAO.coluna && ordem.direcao === ORDEM_PADRAO.direcao;
+  // O endereço da lista com a ordem e a busca de agora (ou as que o clique
+  // muda). Os cartões e o quadro lá de cima NÃO passam por aqui: eles abrem a
+  // lista que soma o número deles, sem busca nenhuma no meio.
+  const urlDaLista = (muda: { filtro?: string; ordem?: Ordem; busca?: string } = {}) => {
+    const q = new URLSearchParams({ natureza, filtro: muda.filtro ?? filtro });
+    if (escopo.conexaoId) q.set("empresa", escopo.conexaoId);
+    if (periodo.competencia) q.set("competencia", periodo.competencia);
+    const o = muda.ordem ?? ordem;
+    if (o.coluna !== ORDEM_PADRAO.coluna || o.direcao !== ORDEM_PADRAO.direcao) {
+      q.set("ordem", o.coluna);
+      q.set("dir", o.direcao);
+    }
+    const b = muda.busca ?? busca;
+    if (b) q.set("busca", b);
+    return `/titulos?${q}#lista`;
+  };
+  const nomeDoParceiro = natureza === "PAGAR" ? "Fornecedor" : "Cliente";
+  const ROTULO_DA_COLUNA: Record<ColunaDeOrdem, string> = {
+    parceiro: nomeDoParceiro,
+    documento: "Documento",
+    vencimento: "Vencimento",
+    valor: "Valor",
+    saldo: "Saldo",
+    encargos: "Encargos",
+    situacao: "Situação",
+  };
+  // A soma do que a lista tem (a lista inteira do filtro, não só as linhas
+  // mostradas), para bater com o cartão que a abriu.
+  const somaDaLista = [
+    `valor ${fmtBRL(somar(filtrada, (t) => t.valorDocumentoCents))}`,
+    `saldo em aberto ${fmtBRL(somar(filtrada.filter(emAberto), saldoAberto))}`,
+    `encargos ${fmtBRL(somar(filtrada, encargosDoTitulo))}`,
+  ].join(" · ");
 
   const encargos = somar(todos, (t) => t.jurosCents + t.multaCents + t.tarifaCents);
   const rotulo = natureza === "PAGAR" ? "a pagar" : "a receber";
@@ -185,18 +239,66 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
 
       <Secao
         id="lista"
-        titulo={`${ordenada.length} título(s)`}
-        descricao={ordenada.length === 300 ? "Mostrando os 300 primeiros por vencimento." : undefined}
+        titulo={`${fmtNumero(filtrada.length)} título(s)${busca ? ` com “${busca}”` : ""}`}
+        descricao={`Soma da lista: ${somaDaLista}. Ordem: ${ROTULO_DA_ORDEM[ordem.coluna][ordem.direcao]}.${
+          filtrada.length > LIMITE_DA_LISTA ? ` Mostrando os ${LIMITE_DA_LISTA} primeiros nessa ordem.` : ""
+        }`}
         acao={
           <div className="flex flex-wrap gap-1 text-xs">
-            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="ABERTOS" rotulo="Em aberto" ativo={filtro === "ABERTOS"} />
-            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="VENCIDOS" rotulo="Vencidos" ativo={filtro === "VENCIDOS"} />
-            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="COM_ENCARGOS" rotulo="Com encargos" ativo={filtro === "COM_ENCARGOS"} />
-            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="PAGOS" rotulo="Pagos" ativo={filtro === "PAGOS"} />
-            <Filtro natureza={natureza} recorte={escopoNaUrl} valor="TODOS" rotulo="Todos" ativo={filtro === "TODOS"} />
+            <Filtro href={urlDaLista({ filtro: "ABERTOS" })} rotulo="Em aberto" ativo={filtro === "ABERTOS"} />
+            <Filtro href={urlDaLista({ filtro: "VENCIDOS" })} rotulo="Vencidos" ativo={filtro === "VENCIDOS"} />
+            <Filtro href={urlDaLista({ filtro: "COM_ENCARGOS" })} rotulo="Com encargos" ativo={filtro === "COM_ENCARGOS"} />
+            <Filtro href={urlDaLista({ filtro: "PAGOS" })} rotulo="Pagos" ativo={filtro === "PAGOS"} />
+            <Filtro href={urlDaLista({ filtro: "TODOS" })} rotulo="Todos" ativo={filtro === "TODOS"} />
           </div>
         }
       >
+        {/* FILTRAR E ORDENAR. Formulário GET: o que se escolhe vira endereço,
+            como os demais filtros da tela. O clique no título de uma coluna
+            faz o mesmo que os dois seletores. */}
+        {/* A `key` remonta o formulário quando a ordem ou a busca mudam por
+            fora dele (clique no título da coluna, "Limpar"): campo com
+            `defaultValue` não acompanha a navegação sozinho, e os seletores
+            ficavam mostrando a ordem anterior. */}
+        <form key={`${filtro}|${ordem.coluna}|${ordem.direcao}|${busca}`} action="/titulos#lista" method="get" className="mb-4 flex flex-wrap items-end gap-2 text-xs">
+          <input type="hidden" name="natureza" value={natureza} />
+          <input type="hidden" name="filtro" value={filtro} />
+          {escopo.conexaoId && <input type="hidden" name="empresa" value={escopo.conexaoId} />}
+          {periodo.competencia && <input type="hidden" name="competencia" value={periodo.competencia} />}
+          <label className="flex min-w-56 flex-1 flex-col gap-1 text-slate-600">
+            Filtrar por {nomeDoParceiro.toLowerCase()}, CNPJ ou documento
+            <input
+              name="busca"
+              defaultValue={busca}
+              maxLength={80}
+              placeholder="parte do nome, do CNPJ ou do número"
+              className="rounded-md border border-slate-300 px-2 py-1.5 text-sm text-slate-900"
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-slate-600">
+            Ordenar por
+            <select name="ordem" defaultValue={ordem.coluna} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
+              {COLUNAS_DE_ORDEM.map((c) => (
+                <option key={c} value={c}>
+                  {ROTULO_DA_COLUNA[c]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1 text-slate-600">
+            Ordem
+            <select name="dir" defaultValue={ordem.direcao} className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-900">
+              <option value="desc">Maior primeiro (ou Z a A)</option>
+              <option value="asc">Menor primeiro (ou A a Z)</option>
+            </select>
+          </label>
+          <button className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-600">Aplicar</button>
+          {(busca || !ordemPadrao) && (
+            <Link href={urlDaLista({ ordem: ORDEM_PADRAO, busca: "" })} className="px-1 py-1.5 text-blue-700 hover:underline">
+              Limpar
+            </Link>
+          )}
+        </form>
         {comStatusVelho.length > 0 && (filtro === "VENCIDOS" || filtro === "ABERTOS") && (
           <p className="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
             {fmtNumero(comStatusVelho.length)} título(s) vencido(s) há mais de 120 dias ({fmtBRL(somar(comStatusVelho, saldoAberto))}) ainda constam como “A VENCER”
@@ -204,7 +306,14 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
             com a data antiga, título apagado). A sincronização diária passou a relê-los, alguns meses por dia; até lá, confira na Omie antes de cobrar.
           </p>
         )}
-        {ordenada.length === 0 ? (
+        {ordenada.length === 0 && busca ? (
+          <AvisoVazio
+            titulo={`Nenhum título com “${busca}” neste filtro`}
+            descricao="A busca olha o nome, o CNPJ e o número do documento, dentro do filtro escolhido acima (Em aberto, Vencidos…)."
+            acaoHref={urlDaLista({ busca: "" })}
+            acaoLabel="Limpar a busca"
+          />
+        ) : ordenada.length === 0 ? (
           <AvisoVazio
             titulo="Nenhum título com esse filtro"
             descricao="Se a base ainda está vazia, rode a sincronização com a Omie."
@@ -213,11 +322,13 @@ export default async function TitulosPage({ searchParams }: { searchParams: Prom
           />
         ) : (
           <Tabela
-            colunas={[natureza === "PAGAR" ? "Fornecedor" : "Cliente", "Documento", "Vencimento", "Valor", "Saldo", "Encargos", "Situação"]}
+            colunas={COLUNAS_DE_ORDEM.map((c) => (
+              <Cabecalho key={c} rotulo={ROTULO_DA_COLUNA[c]} coluna={c} ordem={ordem} href={urlDaLista({ ordem: proximaOrdem(ordem, c) })} />
+            ))}
             alinharDireita={[3, 4, 5]}
             linhas={ordenada.map((t) => {
               const atraso = diasDeAtraso(t, ctx.dataReferencia);
-              const encargo = t.jurosCents + t.multaCents + t.tarifaCents;
+              const encargo = encargosDoTitulo(t);
               const receita = t.parceiroDocumento ? receitaPorCnpj.get(t.parceiroDocumento) : undefined;
               return [
                 <span key="p">
@@ -279,22 +390,29 @@ function Aba({ href, rotulo, ativo }: { href: string; rotulo: string; ativo: boo
   );
 }
 
-function Filtro({
-  natureza,
-  recorte,
-  valor,
-  rotulo,
-  ativo,
-}: {
-  natureza: string;
-  recorte: string;
-  valor: string;
-  rotulo: string;
-  ativo: boolean;
-}) {
+// O título de uma coluna da lista: o clique ordena por ela (a que já ordena
+// inverte). A seta diz a ordem de agora; as demais mostram que dá para clicar.
+function Cabecalho({ rotulo, coluna, ordem, href }: { rotulo: string; coluna: ColunaDeOrdem; ordem: Ordem; href: string }) {
+  const ativa = ordem.coluna === coluna;
+  const proxima = proximaOrdem(ordem, coluna);
   return (
     <Link
-      href={`/titulos?natureza=${natureza}&filtro=${valor}${recorte}`}
+      href={href}
+      title={`Ordenar por ${ROTULO_DA_ORDEM[coluna][proxima.direcao]}`}
+      className={`inline-flex items-center gap-1 whitespace-nowrap hover:text-slate-900 ${ativa ? "text-blue-700" : ""}`}
+    >
+      {rotulo}
+      <span aria-hidden className={ativa ? "" : "text-slate-300"}>
+        {ativa ? (ordem.direcao === "asc" ? "▲" : "▼") : "↕"}
+      </span>
+    </Link>
+  );
+}
+
+function Filtro({ href, rotulo, ativo }: { href: string; rotulo: string; ativo: boolean }) {
+  return (
+    <Link
+      href={href}
       className={`rounded-full px-3 py-1 font-medium ${
         ativo ? "bg-blue-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
       }`}

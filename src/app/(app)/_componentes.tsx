@@ -111,7 +111,9 @@ export function Tabela({
   alinharDireita = [],
   vazio = "Nenhum registro.",
 }: {
-  colunas: string[];
+  // Texto, ou um nó quando o título da coluna faz alguma coisa (a lista de
+  // títulos ordena pelo clique nele).
+  colunas: ReactNode[];
   linhas: ReactNode[][];
   alinharDireita?: number[];
   vazio?: string;
@@ -126,7 +128,7 @@ export function Tabela({
         <thead>
           <tr className="border-b border-slate-200 text-left text-xs font-medium uppercase tracking-wide text-slate-500">
             {colunas.map((c, i) => (
-              <th key={c} className={`px-3 py-2 ${alinharDireita.includes(i) ? "text-right" : ""}`}>
+              <th key={i} className={`px-3 py-2 ${alinharDireita.includes(i) ? "text-right" : ""}`}>
                 {c}
               </th>
             ))}
